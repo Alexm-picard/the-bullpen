@@ -3,7 +3,7 @@
   "_doc": "Single source of truth for phase progress. Hand-edited as work completes. /status reads this. Bump fields honestly — surgical cuts come from honest tracking.",
   "current_phase": "0",
   "weekly_hours_target": 13,
-  "last_updated": "2026-05-19",
+  "last_updated": "2026-05-19T22:55Z",
   "phases": [
     {
       "id": "0",
@@ -52,8 +52,8 @@
         },
         {
           "label": "GitHub repo, Actions running tests on push, deploy.sh working",
-          "done": false,
-          "details": "Workflows pre-staged at .github/workflows/{backend,training,frontend}.yml. deploy.sh stub exists at repo root. GitHub repo creation + first push is a manual user step."
+          "done": true,
+          "details": "Repo live at https://github.com/Alexm-picard/the-bullpen. All three workflows (backend / frontend / training) green on main as of commit 70a916c. deploy.sh stub at repo root; rsync+systemctl-restart path lands once WSL2 host exists. CI gotchas documented in docs/sessions/2026-05-19-wsl2-handoff.md."
         },
         {
           "label": "Prometheus + Grafana with one trivial dashboard",

@@ -5,8 +5,14 @@ model registry, A/B routing, drift detection, retraining triggers — serving
 three calibrated models (pitch outcome pre-pitch, pitch outcome post-pitch,
 batted ball per-park HR probability) for the duration of an MLB season.
 
-**Status:** Phase 0 (foundation). Pre-implementation went straight into
-scaffolding on 2026-05-19. See [`docs/phase-status.json`](docs/phase-status.json).
+**Status:** Phase 0 (foundation) — Mac-side scaffolding complete, all three
+CI workflows green on `main`, Vercel deploy live, transitioning to WSL2 for
+host-side completion (systemd, Cloudflare Tunnel, backups, restore drill).
+See [`docs/phase-status.json`](docs/phase-status.json) and
+[`docs/sessions/2026-05-19-wsl2-handoff.md`](docs/sessions/2026-05-19-wsl2-handoff.md).
+
+- **Live frontend** (once Vercel Auth is disabled): https://the-bullpen-ml-git-main-alexmpicards-projects.vercel.app/
+- **Repo**: https://github.com/Alexm-picard/the-bullpen
 
 **Read first:** [`docs/design.md`](docs/design.md),
 [`docs/plan.md`](docs/plan.md), [`docs/decisions.md`](docs/decisions.md),
