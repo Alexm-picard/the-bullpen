@@ -45,7 +45,7 @@
     },
     "vercel": {
       "command": "npx",
-      "args": ["-y", "vercel-mcp"]
+      "args": ["-y", "vercel-mcp", "VERCEL_API_KEY=${VERCEL_API_KEY}"]
     }
   }
 }

@@ -13,13 +13,14 @@ import os
 import sys
 
 import structlog
+from structlog.types import EventDict, WrappedLogger
 
 correlation_id_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "correlation_id", default=None
 )
 
 
-def _add_correlation_id(_: object, __: str, event_dict: dict[str, object]) -> dict[str, object]:
+def _add_correlation_id(_: WrappedLogger, __: str, event_dict: EventDict) -> EventDict:
     cid = correlation_id_var.get()
     if cid is not None:
         event_dict["correlation_id"] = cid

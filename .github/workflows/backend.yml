@@ -9,7 +9,6 @@ on:
 
 jobs:
   test:
-    if: hashFiles('backend/build.gradle.kts', 'backend/build.gradle') != ''
     runs-on: ubuntu-latest
     services:
       clickhouse:
@@ -29,7 +28,7 @@ jobs:
       - name: Spotless check (format must be clean)
         working-directory: backend
         run: ./gradlew spotlessCheck --no-daemon
-      - name: Static analysis (SpotBugs + Error Prone)
+      - name: Static analysis (SpotBugs)
         working-directory: backend
         run: ./gradlew spotbugsMain --no-daemon
       - name: Upload test reports on failure

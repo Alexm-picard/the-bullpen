@@ -48,6 +48,7 @@ reportMissingTypeStubs = false
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"
+pythonpath = ["src"]
 
 [tool.coverage.run]
 source = ["src/bullpen_training"]
