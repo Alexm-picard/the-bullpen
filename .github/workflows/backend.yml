@@ -7,14 +7,14 @@ on:
   pull_request:
     paths: ['backend/**']
 
+# ClickHouse is intentionally NOT a service container here:
+#   - clickhouse/clickhouse-server:*-alpine fails in Actions service runtime
+#     (`get_mempolicy: Operation not permitted`) — known Actions/Alpine clash.
+#   - Phase 1+ ClickHouse tests use Testcontainers, which spawn their own
+#     ephemeral container from inside the JVM at test time. No service block needed.
 jobs:
   test:
     runs-on: ubuntu-latest
-    services:
-      clickhouse:
-        image: clickhouse/clickhouse-server:24-alpine
-        ports: ['8123:8123', '9000:9000']
-        options: --health-cmd "wget -q --spider http://localhost:8123/ping" --health-interval 5s --health-timeout 3s --health-retries 12
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
