@@ -3,7 +3,7 @@
   "_doc": "Single source of truth for phase progress. Hand-edited as work completes. /status reads this. Bump fields honestly — surgical cuts come from honest tracking.",
   "current_phase": "0",
   "weekly_hours_target": 13,
-  "last_updated": "2026-05-19T22:55Z",
+  "last_updated": "2026-05-19T23:35Z",
   "phases": [
     {
       "id": "0",
@@ -48,7 +48,7 @@
         {
           "label": "React + Vite skeleton, deployed to Vercel, calling Spring /health via CORS",
           "done": true,
-          "details": "frontend/ scaffolded with Vite 8, React 19, Mantine 9, TanStack Query 5, Tailwind 4. CORS preflight from localhost:5173 to Spring localhost:8080 verified end-to-end. Vercel deploy is a one-time manual step still pending."
+          "details": "Live at https://thebullpen.net and https://www.thebullpen.net (both 200, served by Vercel, gray-clouded). Vite + React 19 + Mantine 9 + TanStack Query 5 + Tailwind 4. Vercel Authentication disabled, COMMIT_AUTHOR_REQUIRED resolved (commit author switched to am.picard03@gmail.com). Production deploy on commit f65ce5e. /health CORS preflight verified locally — once api.thebullpen.net Tunnel exists (Phase 0 WSL2 item), the live frontend will hit live backend."
         },
         {
           "label": "GitHub repo, Actions running tests on push, deploy.sh working",

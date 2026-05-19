@@ -5,13 +5,17 @@ model registry, A/B routing, drift detection, retraining triggers — serving
 three calibrated models (pitch outcome pre-pitch, pitch outcome post-pitch,
 batted ball per-park HR probability) for the duration of an MLB season.
 
-**Status:** Phase 0 (foundation) — Mac-side scaffolding complete, all three
-CI workflows green on `main`, Vercel deploy live, transitioning to WSL2 for
-host-side completion (systemd, Cloudflare Tunnel, backups, restore drill).
-See [`docs/phase-status.json`](docs/phase-status.json) and
-[`docs/sessions/2026-05-19-wsl2-handoff.md`](docs/sessions/2026-05-19-wsl2-handoff.md).
+**Status:** Phase 0 (foundation) — Mac-side complete (CI green, Vercel live
+at `thebullpen.net`, Discord webhook + Cloudflare DNS configured). Six
+host-side items left on WSL2: systemd autostart, Cloudflare Tunnel for
+`api.thebullpen.net`, Better Stack monitoring, USB backup + restore drill,
+reboot drill.
 
-- **Live frontend** (once Vercel Auth is disabled): https://the-bullpen-ml-git-main-alexmpicards-projects.vercel.app/
+See [`docs/phase-status.json`](docs/phase-status.json) and the WSL2
+continuation brief
+[`docs/sessions/2026-05-19-wsl2-phase-0-completion.md`](docs/sessions/2026-05-19-wsl2-phase-0-completion.md).
+
+- **Live frontend**: https://thebullpen.net/
 - **Repo**: https://github.com/Alexm-picard/the-bullpen
 
 **Read first:** [`docs/design.md`](docs/design.md),

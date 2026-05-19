@@ -1,5 +1,12 @@
 # Session handoff: macOS → WSL2 — Phase 0 continuation
 
+> **⚠️ SUPERSEDED** by
+> [`2026-05-19-wsl2-phase-0-completion.md`](2026-05-19-wsl2-phase-0-completion.md).
+> Several items this doc lists as pending are done — Vercel deploy is live at
+> `thebullpen.net`, Discord webhook works, Cloudflare DNS is configured, all
+> three CI workflows are green. Read the superseding doc instead. This one is
+> kept for history.
+
 **Written**: 2026-05-19, end of macOS dev session
 **Audience**: future-Claude (after the user opens Claude Code on WSL2) and future-self
 
