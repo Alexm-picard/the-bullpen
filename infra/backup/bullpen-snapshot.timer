@@ -1,0 +1,13 @@
+[Unit]
+Description=The Bullpen — daily snapshot timer (03:00 local)
+
+[Timer]
+# Daily at 03:00 local time (off-peak; outside any live-game window).
+# Persistent=true catches up if the host was off when the timer should have fired.
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+RandomizedDelaySec=15min
+Unit=bullpen-snapshot@%i.service
+
+[Install]
+WantedBy=timers.target

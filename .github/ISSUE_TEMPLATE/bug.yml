@@ -1,0 +1,46 @@
+name: Bug
+description: Something is broken or behaving unexpectedly
+labels: ["type:bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Symptom, not theory. What did you see vs what did you expect?
+    validations: { required: true }
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: Smallest steps that produce the bug. Include data/model id if relevant.
+    validations: { required: true }
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where
+      options:
+        - backend (api)
+        - backend (worker)
+        - training
+        - frontend
+        - infra / deploy
+        - registry / promotion
+        - drift / retraining
+        - contracts (Python↔Java boundary)
+        - unsure
+    validations: { required: true }
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - "p0 — prod broken or data integrity at risk"
+        - "p1 — feature broken, blocks development"
+        - "p2 — annoying but workable"
+        - "p3 — nice to fix"
+    validations: { required: true }
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Logs, screenshots, related decisions.md entry, hypothesis

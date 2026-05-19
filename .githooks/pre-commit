@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# Pre-commit hook for The Bullpen.
+#
+# Currently enforces:
+#   - contracts/feature_pipeline.json schema_hash matches actual file content
+#   - contracts/feature_pipeline.json pipeline_version was bumped when the schema changed
+#
+# Install: ./.githooks/install.sh   (sets git config core.hooksPath .githooks)
+
+set -uo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+FP="${REPO_ROOT}/contracts/feature_pipeline.json"
+
+# If feature_pipeline.json isn't staged, nothing to check
+if ! git diff --cached --name-only | grep -q '^contracts/feature_pipeline.json$'; then
+  exit 0
+fi
+
+if [[ ! -f "$FP" ]]; then
+  echo "PRE-COMMIT FAIL: contracts/feature_pipeline.json is staged but doesn't exist on disk." >&2
+  exit 1
+fi
+
+# Recompute schema hash (over the file content WITH the schema_hash field zeroed out,
+# to make the hash stable across self-updates).
+COMPUTED_HASH=$(python3 - "$FP" <<'PY'
+import hashlib, json, sys, copy
+path = sys.argv[1]
+with open(path) as f:
+    data = json.load(f)
+canonical = copy.deepcopy(data)
+canonical["schema_hash"] = ""  # exclude from hash
+blob = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()
+print(hashlib.sha256(blob).hexdigest())
+PY
+)
+
+DECLARED_HASH=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('schema_hash',''))" "$FP")
+
+if [[ "$COMPUTED_HASH" != "$DECLARED_HASH" ]]; then
+  echo "" >&2
+  echo "PRE-COMMIT FAIL: contracts/feature_pipeline.json schema_hash is stale." >&2
+  echo "  declared: $DECLARED_HASH" >&2
+  echo "  computed: $COMPUTED_HASH" >&2
+  echo "" >&2
+  echo "Update the schema_hash field to the computed value:" >&2
+  echo "  python3 -c \"import json,hashlib,copy; d=json.load(open('$FP')); c=copy.deepcopy(d); c['schema_hash']=''; d['schema_hash']=hashlib.sha256(json.dumps(c,sort_keys=True,separators=(',',':')).encode()).hexdigest(); json.dump(d,open('$FP','w'),indent=2)\"" >&2
+  echo "" >&2
+  echo "Then bump pipeline_version and re-stage." >&2
+  exit 1
+fi
+
+# Check pipeline_version was bumped if the schema itself changed
+# (Compare staged version against HEAD's version)
+NEW_VERSION=$(python3 -c "import json; print(json.load(open('$FP')).get('pipeline_version','MISSING'))" 2>/dev/null)
+OLD_VERSION=$(git show HEAD:contracts/feature_pipeline.json 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('pipeline_version','MISSING'))" 2>/dev/null || echo "NONE")
+
+if [[ "$OLD_VERSION" != "NONE" && "$NEW_VERSION" == "$OLD_VERSION" ]]; then
+  # Schema content changed (we're here because schema_hash check passed AFTER user fixed it),
+  # but version didn't bump. Require a bump.
+  STAGED_DIFF=$(git diff --cached -- "$FP" | grep -E '^[+-]' | grep -vE '^\+\+\+|^---|^[+-]\s*"schema_hash"' | wc -l | tr -d ' ')
+  if [[ "${STAGED_DIFF:-0}" -gt 0 ]]; then
+    echo "" >&2
+    echo "PRE-COMMIT FAIL: contracts/feature_pipeline.json changed but pipeline_version did not bump." >&2
+    echo "  pipeline_version: $OLD_VERSION (still)" >&2
+    echo "" >&2
+    echo "Bump pipeline_version (semver: MAJOR for breaking changes, MINOR for additions, PATCH for fixes)" >&2
+    echo "and re-stage." >&2
+    exit 1
+  fi
+fi
+
+echo "pre-commit: contracts/feature_pipeline.json OK (schema_hash=$DECLARED_HASH, pipeline_version=$NEW_VERSION)"
+exit 0

@@ -1,0 +1,8 @@
+server:
+  port: ${BULLPEN_API_PORT:8080}
+
+# api profile serves the React frontend's prediction requests
+spring:
+  threads:
+    virtual:
+      enabled: true

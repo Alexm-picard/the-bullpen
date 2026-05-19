@@ -1,0 +1,40 @@
+name: Idea
+description: Feature, improvement, or experiment to consider
+labels: ["type:idea"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: The idea
+      description: One sentence. What and why.
+    validations: { required: true }
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: What problem does this solve? Who feels it? Is there a related decisions.md entry?
+    validations: { required: true }
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Phase this fits (per plan.md)
+      options:
+        - Phase 0 — Foundation
+        - Phase 1 — Vertical Slice
+        - Phase 2 — Real Models
+        - Phase 3 — ML Systems Wrapper
+        - Phase 4 — Frontend Build-Out
+        - Phase 5 — Polish + Operate
+        - v1.5 (post-launch)
+        - unsure
+    validations: { required: true }
+  - type: textarea
+    id: scope
+    attributes:
+      label: Rough scope
+      description: Hours estimate (if you can), files touched, anything to discuss before committing
+  - type: textarea
+    id: tradeoff
+    attributes:
+      label: What gives if we do this?
+      description: Time has to come from somewhere. What gets cut or delayed?

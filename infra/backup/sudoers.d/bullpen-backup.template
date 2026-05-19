@@ -1,0 +1,25 @@
+# /etc/sudoers.d/bullpen-backup
+#
+# Narrow NOPASSWD rule for The Bullpen's USB backup script.
+# Allows ONE specific command path to run without a password prompt.
+# Nothing else is granted — all other sudo invocations behave normally.
+#
+# Install via: ./infra/backup/install-sudoers.sh
+# Validate manually: sudo visudo -c -f /etc/sudoers.d/bullpen-backup
+# Remove via: sudo rm /etc/sudoers.d/bullpen-backup
+#
+# Template variables (substituted by install-sudoers.sh):
+#   {{USER}}        — the Linux user that runs the backup interactively
+#   {{SCRIPT_PATH}} — absolute path to usb-backup.sh
+#
+# Security notes:
+# - The rule is scoped to a single absolute path. Sudo expands neither aliases nor globs,
+#   so this grants exactly nothing else.
+# - The script lives in the repo. Anyone with write access to the repo can modify it and
+#   thereby gain root-NOPASSWD execution. For solo dev on your own machine this is fine.
+# - To harden later: copy the script to /usr/local/sbin/bullpen-usb-backup (root:root, 0755)
+#   and re-run install-sudoers.sh with --hardened to point at the system path instead.
+# - File MUST be installed at /etc/sudoers.d/bullpen-backup with mode 0440 and owned by
+#   root:root. install-sudoers.sh handles this.
+
+{{USER}} ALL=(root) NOPASSWD: {{SCRIPT_PATH}}

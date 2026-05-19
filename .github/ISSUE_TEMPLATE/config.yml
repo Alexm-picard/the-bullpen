@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Lock a decision
+    url: https://github.com/derpthund/thebullpen/blob/main/docs/decisions.md
+    about: "For locking an architectural or process decision, use the /decide flow in Claude Code. Decisions are not GitHub Issues — they live in docs/decisions.md."

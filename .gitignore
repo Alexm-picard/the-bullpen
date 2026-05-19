@@ -1,0 +1,53 @@
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.iml
+*.swp
+
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+
+# --- Java / Gradle ---
+backend/.gradle/
+backend/build/
+backend/out/
+backend/bin/
+backend/data/                  # local SQLite registry; the schema lives in src/main/resources/db/migration
+backend/HELP.md
+
+# --- Python / uv ---
+training/.venv/
+training/.python-version
+training/__pycache__/
+training/**/__pycache__/
+training/.pytest_cache/
+training/.ruff_cache/
+training/.coverage
+training/htmlcov/
+training/build/
+training/dist/
+training/*.egg-info/
+
+# Model artifacts NEVER go in git (CLAUDE.md hard never-rule)
+training/artifacts/**
+!training/artifacts/.gitkeep
+
+# --- Frontend / Node ---
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/coverage/
+frontend/playwright-report/
+frontend/test-results/
+
+# --- Infra runtime state ---
+infra/clickhouse-data/
+infra/grafana-data/
+infra/prometheus-data/
+
+# --- Local logs ---
+*.log
+logs/

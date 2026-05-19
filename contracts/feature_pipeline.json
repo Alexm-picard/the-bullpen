@@ -1,0 +1,8 @@
+{
+  "columns": [],
+  "description": "Canonical Python<->Java feature contract. Phase 0 placeholder; Phase 1 will populate the real columns when the minimal batted-ball model lands.",
+  "notes": "Both /backend (registry schema-hash check at registration) and /training (ONNX export metadata) read from this file. See docs/design.md \u00a75 for the rationale.",
+  "pipeline_version": "0.1.0",
+  "schema_hash": "3dea57a13b5bc78485fea85c1257063cb970075a1e5182018cc94ab212d9707e",
+  "transformations": []
+}

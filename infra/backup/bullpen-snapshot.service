@@ -1,0 +1,16 @@
+[Unit]
+Description=The Bullpen — daily ClickHouse + SQLite snapshot
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Pull env from a file you keep at /etc/default/bullpen (chmod 600 — contains Discord webhook)
+EnvironmentFile=-/etc/default/bullpen
+ExecStart=/home/%i/code/thebullpen/infra/backup/clickhouse-snapshot.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+
+[Install]
+WantedBy=multi-user.target

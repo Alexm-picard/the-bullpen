@@ -1,0 +1,71 @@
+name: training
+
+on:
+  push:
+    branches: [main]
+    paths: ['training/**', 'contracts/**', '.github/workflows/training.yml']
+  pull_request:
+    paths: ['training/**', 'contracts/**']
+
+jobs:
+  lint-and-type:
+    if: hashFiles('training/pyproject.toml') != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - name: Sync deps
+        working-directory: training
+        run: uv sync --frozen
+      - name: Ruff format check
+        working-directory: training
+        run: uv run ruff format --check .
+      - name: Ruff lint
+        working-directory: training
+        run: uv run ruff check .
+      - name: Pyright
+        working-directory: training
+        run: uv run pyright
+
+  unit-tests:
+    if: hashFiles('training/pyproject.toml') != ''
+    runs-on: ubuntu-latest
+    needs: lint-and-type
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - working-directory: training
+        run: uv sync --frozen
+      - name: Unit tests
+        working-directory: training
+        run: uv run pytest -x --ignore=tests/leakage
+
+  # Required — CLAUDE.md rule 10. If this fails, the model is unsafe to ship.
+  leakage-tests:
+    if: hashFiles('training/tests/leakage') != ''
+    runs-on: ubuntu-latest
+    needs: lint-and-type
+    name: REQUIRED — temporal leakage tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - working-directory: training
+        run: uv sync --frozen
+      - name: Future contamination
+        working-directory: training
+        run: uv run pytest tests/leakage/test_future_contamination.py -v
+      - name: Shuffled target
+        working-directory: training
+        run: uv run pytest tests/leakage/test_shuffled_target.py -v
+      - name: Calendar date trace
+        working-directory: training
+        run: uv run pytest tests/leakage/test_calendar_date_trace.py -v
+      - name: ID consistency
+        working-directory: training
+        run: uv run pytest tests/leakage/test_id_consistency.py -v

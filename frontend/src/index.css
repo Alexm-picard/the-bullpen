@@ -1,0 +1,15 @@
+@import "tailwindcss";
+@import "@mantine/core/styles.css";
+
+/* Phase 4a will land the real editorial-data design tokens (Inter / JetBrains Mono /
+   Source Serif 4, palette as CSS vars, Mantine theme). For Phase 0 we only need a
+   clean baseline that proves Tailwind + Mantine load together. */
+
+:root {
+  font-family: system-ui, sans-serif;
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+}

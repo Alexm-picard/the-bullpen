@@ -1,0 +1,8 @@
+server:
+  port: ${BULLPEN_WORKER_PORT:8081}
+
+# worker profile runs drift jobs, ingestion, retraining queue consumer
+spring:
+  threads:
+    virtual:
+      enabled: true

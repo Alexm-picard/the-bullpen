@@ -1,0 +1,44 @@
+name: Cut proposal
+description: Propose dropping a feature/phase item per the soft-cut priority list
+labels: ["type:cut"]
+body:
+  - type: dropdown
+    id: cut
+    attributes:
+      label: Which cut from the soft-cut priority list (CLAUDE.md)
+      options:
+        - "1. Drop post-pitch head, keep pre-pitch only (~20h)"
+        - "2. Drop A/B real-routing, keep shadow only (~10h)"
+        - "3. Drop automated drift retraining, keep manual (~5h)"
+        - "4. Drop Game/Live view (~12h)"
+        - "5. Drop physics retrodiction, fall back to per-park naive subsets (~25h, weakens model)"
+        - "Other (out-of-list cut — needs explicit justification)"
+    validations: { required: true }
+  - type: textarea
+    id: trigger
+    attributes:
+      label: Why now
+      description: What's the slipping schedule signal? Which phase exit criterion is at risk?
+    validations: { required: true }
+  - type: textarea
+    id: cost
+    attributes:
+      label: Honest cost
+      description: What does the project lose if this cut goes through? Be specific — don't underplay it.
+    validations: { required: true }
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Faster delivery without cutting? Different cut that costs less?
+  - type: checkboxes
+    id: discipline
+    attributes:
+      label: Discipline checklist
+      options:
+        - label: "I am NOT cutting Phase 0 foundation, eval artifacts, the registry, or the Ops dashboard (CLAUDE.md rule 4)"
+          required: true
+        - label: "This cut order matches the priority list (or out-of-order is justified above)"
+          required: true
+        - label: "I will lock this decision via /decide before removing code"
+          required: true

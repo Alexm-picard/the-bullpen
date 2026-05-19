@@ -1,0 +1,539 @@
+{
+  "$schema": "./phase-status.schema.md",
+  "_doc": "Single source of truth for phase progress. Hand-edited as work completes. /status reads this. Bump fields honestly — surgical cuts come from honest tracking.",
+  "current_phase": "0",
+  "weekly_hours_target": 13,
+  "last_updated": "2026-05-19",
+  "phases": [
+    {
+      "id": "0",
+      "name": "Foundation",
+      "weeks": "1–3",
+      "estimated_hours": "40–50",
+      "status": "in_progress",
+      "started_on": "2026-05-19",
+      "completed_on": null,
+      "exit_criterion": "sudo reboot recovers everything in <5 min, all health checks green, frontend reachable at domain",
+      "exit_criteria_checklist": [
+        {
+          "label": "WSL2 setup (systemd, memory cap, CUDA passthrough verified)",
+          "done": false,
+          "details": "Host-specific. Deferred until repo is moved to the WSL2 box."
+        },
+        {
+          "label": "Domain + Cloudflare DNS + Cloudflare Tunnel pointed at hello-world",
+          "done": false,
+          "details": "Manual user task — see SETUP-NEXT-STEPS.md."
+        },
+        {
+          "label": "Spring Boot skeleton with api + worker profiles",
+          "done": true,
+          "details": "backend/ scaffolded 2026-05-19 — Gradle Kotlin DSL, Spring Boot 3.5.4, virtual threads on, both profiles compile and boot. application-api.yml binds 8080, application-worker.yml binds 8081."
+        },
+        {
+          "label": "Both as systemd services with /health endpoints",
+          "done": false,
+          "details": "Application-side /health endpoint exists (api profile, HealthController). systemd unit files are host-specific; written when the WSL2 host is provisioned."
+        },
+        {
+          "label": "ClickHouse via Docker, accessible from Spring",
+          "done": true,
+          "details": "infra/docker-compose.yml brings ClickHouse 24.12 up; verified reachable at localhost:8123 with default/thebullpen. Spring data-layer wiring lands in Phase 1 with the first ClickHouse repository."
+        },
+        {
+          "label": "SQLite + Flyway running",
+          "done": true,
+          "details": "Flyway runs V1__init_registry.sql on boot; verified registry.sqlite created on first run."
+        },
+        {
+          "label": "React + Vite skeleton, deployed to Vercel, calling Spring /health via CORS",
+          "done": true,
+          "details": "frontend/ scaffolded with Vite 8, React 19, Mantine 9, TanStack Query 5, Tailwind 4. CORS preflight from localhost:5173 to Spring localhost:8080 verified end-to-end. Vercel deploy is a one-time manual step still pending."
+        },
+        {
+          "label": "GitHub repo, Actions running tests on push, deploy.sh working",
+          "done": false,
+          "details": "Workflows pre-staged at .github/workflows/{backend,training,frontend}.yml. deploy.sh stub exists at repo root. GitHub repo creation + first push is a manual user step."
+        },
+        {
+          "label": "Prometheus + Grafana with one trivial dashboard",
+          "done": true,
+          "details": "infra/docker-compose.yml brings Prometheus 3.0 + Grafana 11.4 up with provisioned datasource and a JVM-overview dashboard. Prometheus scrapes the Spring actuator endpoint via host.docker.internal."
+        },
+        {
+          "label": "Better Stack monitoring /health",
+          "done": false,
+          "details": "Requires public hostname via Cloudflare Tunnel; deferred with the host work."
+        },
+        {
+          "label": "Backup of empty ClickHouse to USB + restore drill (with empty data)",
+          "done": false,
+          "details": "Backup scripts pre-staged at infra/backup/; restore drill is host-side work."
+        },
+        {
+          "label": "ADR system established (docs/adr/ + first 5 ADRs covering initial tech decisions from design.md §10)",
+          "done": true,
+          "details": "ADR-0001 through ADR-0005 written 2026-05-19. Corresponding decisions.md entries [121]–[125] reference them. Template at docs/adr/TEMPLATE.md."
+        },
+        {
+          "label": "Structured JSON logging baseline (logback-json Java side, structlog Python side, correlation IDs propagated through every request)",
+          "done": true,
+          "details": "Java side: logback-spring.xml with logstash-logback-encoder, profile-switched JSON appender, CorrelationIdFilter injects X-Correlation-Id into MDC and echoes the header. Python side: training/src/bullpen_training/logging_config.py with structlog + contextvars-based correlation_id."
+        },
+        {
+          "label": "Multi-stage Dockerfile for the JAR with non-root appuser (UID 1001) and HEALTHCHECK directive",
+          "done": true,
+          "details": "backend/Dockerfile: temurin:21-jdk-alpine builder + temurin:21-jre-alpine runtime, appuser UID 1001, tini PID 1, HEALTHCHECK against /actuator/health every 15s."
+        }
+      ],
+      "mvp_cuts": "NONE — foundation cannot be cut",
+      "notes": "If >3 weeks, diagnose the blocker. Most likely: WSL/CUDA setup or DNS confusion."
+    },
+    {
+      "id": "1",
+      "name": "Vertical Slice",
+      "weeks": "4–7",
+      "estimated_hours": "50–65",
+      "status": "not_started",
+      "started_on": null,
+      "completed_on": null,
+      "exit_criterion": "Visit thebullpen.net/parks, click a batted ball, see real prediction in <500ms end-to-end",
+      "exit_criteria_checklist": [
+        {
+          "label": "Historical Statcast pull (one season ~2024) → raw_statcast",
+          "done": false
+        },
+        {
+          "label": "Cleaning into pitches table with proper schema + dedup",
+          "done": false
+        },
+        {
+          "label": "Minimal batted-ball model: LightGBM, 5 features, single output",
+          "done": false
+        },
+        {
+          "label": "ONNX export + Java loading + parity test passing",
+          "done": false
+        },
+        { "label": "POST /predict/batted-ball endpoint", "done": false },
+        {
+          "label": "Park Explorer page with hardcoded historical BIPs",
+          "done": false
+        },
+        {
+          "label": "Click → real prediction renders in browser",
+          "done": false
+        },
+        { "label": "Primitive prediction logging to ClickHouse", "done": false }
+      ],
+      "mvp_cuts": "Cannot cut — this phase IS the credibility floor",
+      "notes": "Demoable spine. From here forward is the real project."
+    },
+    {
+      "id": "2",
+      "name": "The Real Models",
+      "weeks": "8–17",
+      "estimated_hours": "140–180",
+      "status": "not_started",
+      "started_on": null,
+      "completed_on": null,
+      "exit_criterion": "Three models registered, all with eval artifacts, all served via Spring, all with passing leakage tests in CI. ECE < 0.02 on test data per model.",
+      "sub_phases": [
+        {
+          "id": "2a",
+          "name": "Pitch outcome — pre-pitch head",
+          "weeks": "8–10",
+          "done": false
+        },
+        {
+          "id": "2b",
+          "name": "Pitch outcome — post-pitch head",
+          "weeks": "11–12",
+          "done": false
+        },
+        {
+          "id": "2c",
+          "name": "Batted-ball with physics retrodiction",
+          "weeks": "13–17",
+          "done": false
+        }
+      ],
+      "exit_criteria_checklist": [
+        {
+          "label": "Full feature pipeline with strict temporal cutoffs",
+          "done": false
+        },
+        {
+          "label": "Four leakage tests in CI (required-status, blocks merge)",
+          "done": false
+        },
+        {
+          "label": "Property tests for the leakage detector itself (Hypothesis-style)",
+          "done": false,
+          "details": "Generate random temporally-shuffled datasets, assert the 4 leakage tests fire correctly on known-leaky AND known-clean inputs. Proves the leakage tests aren't fooling themselves. Without this, the leakage tests are theater."
+        },
+        {
+          "label": "Coverage floor 75% enforced in CI for training/",
+          "done": false,
+          "details": "Matches StudyForesight's bar. ruff + pytest-cov in CI, fail build under 75%. Coverage report uploaded as Actions artifact."
+        },
+        {
+          "label": "Contract tests on the API via Schemathesis (against Spring's /v3/api-docs)",
+          "done": false,
+          "details": "Schemathesis is Python; it just needs the OpenAPI schema URL. Catches drift between the documented contract and the implementation. Runs as a separate CI job, required-to-merge."
+        },
+        {
+          "label": "Rolling-origin temporal CV harness (4 folds 2015–2025)",
+          "done": false
+        },
+        {
+          "label": "Pre-pitch head: trained, calibrated, registered, served at /predict/pitch",
+          "done": false
+        },
+        {
+          "label": "Post-pitch head: separate registry entry, served",
+          "done": false
+        },
+        {
+          "label": "Physics simulator (Nathan drag/Magnus ODE, RK4)",
+          "done": false
+        },
+        {
+          "label": "Physics validation: reproduce 100 known Statcast trajectories within tolerance",
+          "done": false
+        },
+        {
+          "label": "Multi-output MLP: shared backbone + 30 per-park heads + 30 isotonic calibrators",
+          "done": false
+        },
+        {
+          "label": "LR baseline registered for each role (no primary without baseline)",
+          "done": false
+        },
+        { "label": "ECE < 0.02 on test data per model", "done": false }
+      ],
+      "mvp_cuts": [
+        {
+          "when": "End of Wk 12 if behind",
+          "cut": "Drop post-pitch head, keep pre-pitch only",
+          "saves_hours": 20,
+          "cost": "Lose replay-analysis use case"
+        },
+        {
+          "when": "End of Wk 15 if 2c at risk",
+          "cut": "Drop physics retrodiction, fall back to per-park naive subsets",
+          "saves_hours": 25,
+          "cost": "PAINFUL — model weakened. Document honestly."
+        }
+      ],
+      "notes": "NEVER cut the eval artifact (rule 4)"
+    },
+    {
+      "id": "3",
+      "name": "ML Systems Wrapper",
+      "weeks": "18–22",
+      "estimated_hours": "80–100",
+      "status": "not_started",
+      "started_on": null,
+      "completed_on": null,
+      "exit_criterion": "Trigger retrain manually → new candidate registered with eval → promote through shadow → champion via API → traffic shifts visible in logs → old champion archived. Full lifecycle, end-to-end.",
+      "sub_phases": [
+        { "id": "3a", "name": "Registry", "weeks": "18–19", "done": false },
+        { "id": "3b", "name": "A/B Routing", "weeks": "19–20", "done": false },
+        {
+          "id": "3c",
+          "name": "Drift Detection",
+          "weeks": "20–21",
+          "done": false
+        },
+        {
+          "id": "3d",
+          "name": "Retraining Triggers",
+          "weeks": "21–22",
+          "done": false
+        }
+      ],
+      "exit_criteria_checklist": [
+        {
+          "label": "4-stage lifecycle (candidate / shadow / champion / archived)",
+          "done": false
+        },
+        {
+          "label": "Feature schema hashing enforced at registration (HARD FAIL on mismatch)",
+          "done": false
+        },
+        {
+          "label": "Shadow-mode default + real A/B via game_id Murmur3 bucketing",
+          "done": false
+        },
+        {
+          "label": "Async batched prediction logging to ClickHouse",
+          "done": false
+        },
+        {
+          "label": "Drift: PSI per feature, PSI on predictions, calibration on observed outcomes",
+          "done": false
+        },
+        {
+          "label": "Synthetic drift tests (inject known shifts, verify detection)",
+          "done": false
+        },
+        {
+          "label": "retraining_queue + three triggers (scheduled / drift / manual)",
+          "done": false
+        },
+        { "label": "End-to-end retrain test passing", "done": false },
+        {
+          "label": "JMH benchmark suite for the inference path + perf-regression CI gate (25% threshold)",
+          "done": false,
+          "details": "Benchmarks: ONNX session prediction p50/p99, A/B router decision time, calibrator apply time. ./gradlew benchmark in CI, scripts/check_benchmarks.py compares against the previous commit's numbers, fails on >25% regression."
+        },
+        {
+          "label": "Repository pattern formalized in data/ — 5 explicit aggregates",
+          "done": false,
+          "details": "ModelRegistryRepository, ExperimentResultsRepository, PredictionLogRepository, DriftMetricsRepository, RetrainingQueueRepository. Each owns its table(s) and exposes a typed API. No JdbcTemplate calls leak outside data/. Matches StudyForesight's pattern."
+        }
+      ],
+      "mvp_cuts": [
+        {
+          "when": "End of Wk 20 if behind",
+          "cut": "Cut real A/B path; keep shadow only",
+          "saves_hours": 10,
+          "cost": "Still demonstrates harder discipline (paired eval)"
+        },
+        {
+          "when": "End of Wk 22 if behind",
+          "cut": "Cut automated drift triggering; keep drift measurement, manual retrains",
+          "saves_hours": 5,
+          "cost": "Drift detector still demonstrates depth"
+        }
+      ],
+      "notes": "NEVER cut the registry — it's the spine"
+    },
+    {
+      "id": "4",
+      "name": "Frontend Build-Out",
+      "weeks": "23–30",
+      "estimated_hours": "70–90",
+      "status": "not_started",
+      "started_on": null,
+      "completed_on": null,
+      "exit_criterion": "All 5 pages exist, all have loading/error/empty states, Lighthouse > 80, bundle < 300KB gzipped initial",
+      "sub_phases": [
+        {
+          "id": "4a",
+          "name": "Design system tokens",
+          "weeks": "23",
+          "done": false
+        },
+        {
+          "id": "4b",
+          "name": "Player Lookup",
+          "weeks": "24–25",
+          "done": false
+        },
+        {
+          "id": "4c",
+          "name": "Park Explorer (MARQUEE)",
+          "weeks": "25–27",
+          "done": false
+        },
+        {
+          "id": "4d",
+          "name": "Game / Live view",
+          "weeks": "27–28",
+          "done": false
+        },
+        { "id": "4e", "name": "Ops Dashboard", "weeks": "29", "done": false },
+        {
+          "id": "4f",
+          "name": "About / Methodology",
+          "weeks": "30",
+          "done": false
+        }
+      ],
+      "exit_criteria_additions": [
+        {
+          "label": "TS strict flags enabled: noUnusedLocals + noUnusedParameters + noImplicitReturns + noUncheckedIndexedAccess",
+          "done": false,
+          "details": "Matches StudyForesight's tsconfig.app.json. Adds compile-time safety without runtime cost. Pay the migration cost early when the codebase is small."
+        },
+        {
+          "label": "Security headers on Vercel deployment: COOP, CORP, CSP frame-ancestors 'none'",
+          "done": false,
+          "details": "Configured in vercel.json. Trivial 1-hour addition that matches StudyForesight's API security_headers.py posture for the frontend side."
+        }
+      ],
+      "mvp_cuts": [
+        {
+          "when": "End of Wk 28 if behind",
+          "cut": "Drop Game / Live view",
+          "saves_hours": 12,
+          "cost": "Lose live-watching demo; Park Explorer 'today's BIPs' partially compensates"
+        },
+        {
+          "when": "End of Wk 30 if behind",
+          "cut": "Cut visual ambition on About page",
+          "saves_hours": 10,
+          "cost": "About becomes minimal-functional"
+        }
+      ],
+      "notes": "NEVER cut Ops Dashboard — it's the recruiter-clicked page"
+    },
+    {
+      "id": "5",
+      "name": "Polish + Operate",
+      "weeks": "31–38+",
+      "estimated_hours": "80–100",
+      "status": "not_started",
+      "started_on": null,
+      "completed_on": null,
+      "exit_criterion": "Project publicly accessible, README links to all artifacts, ≥1 drift event observed and documented in postmortem, system running ≥4 weeks with documented uptime",
+      "exit_criteria_checklist": [
+        {
+          "label": "Polish pass across all pages (typography, spacing, color, motion, a11y)",
+          "done": false
+        },
+        {
+          "label": "One specific Park Explorer heatmap iteration ('fine' → 'memorable')",
+          "done": false
+        },
+        {
+          "label": "Performance optimizations (bundle audit, image opt, lazy loading)",
+          "done": false
+        },
+        {
+          "label": "README rewrite, design decisions doc, methodology page final content",
+          "done": false
+        },
+        {
+          "label": "Public launch: post to r/baseball, r/sabermetrics, r/programming, HN",
+          "done": false
+        },
+        { "label": "Operate through rest of MLB season", "done": false },
+        {
+          "label": "Mid-season drift postmortem WRITTEN (the centerpiece artifact)",
+          "done": false
+        },
+        {
+          "label": "Nightly k6 load test gating on SLA (p99 prediction latency < 50ms, error rate < 0.1%)",
+          "done": false,
+          "details": "k6 against the deployed API, runs nightly via GitHub Actions cron, posts annotations to Grafana on each run. SLA matches design.md's stated latency target. Failure pings Discord."
+        },
+        {
+          "label": "docs/runbooks/ROLLBACK.md — top-level runbook covering deploy / migration / model promotion / drift retrain rollbacks",
+          "done": false,
+          "details": "Pulls together per-skill rollback procedures (deploy-safely, promote-model, schema-migration-author) into one document an on-call you reads at 2am. Each scenario: detection signal → decision criteria → exact commands → verification steps."
+        }
+      ],
+      "mvp_cuts": "Extend timeline rather than cut. Polish compounds.",
+      "notes": "Exception: if dragging into October, accept 'ships in winter, postmortem in 2027 spring training' as the actual plan rather than panic-cutting."
+    },
+    {
+      "id": "5.5",
+      "name": "Mid-Season Hardening Sweep",
+      "weeks": "concurrent with Phase 5, ~2 weeks of dedicated time mid- or end-of-season",
+      "estimated_hours": "10–20",
+      "status": "not_started",
+      "started_on": null,
+      "completed_on": null,
+      "exit_criterion": "A single docs/hardening/{date}_sweep.md exists with an Impact table of ≥8 items, each with before/after metrics and a file/PR reference. The table is referenced in the README and the Phase 6 hiring-readiness work.",
+      "_purpose": "This is the artifact that specifically maps to StudyForesight's Q2 2026 hardening sweep. It is what makes an L5 reviewer screenshot the README. Without this, the 'I operated this through a season' story is incomplete — operation without follow-through is just deployment.",
+      "exit_criteria_checklist": [
+        {
+          "label": "docs/hardening/observations.md kept up during operation — running list of anything that surprised you (slow queries, perf bottlenecks, observability gaps, security tightening opportunities, runbook friction, where discipline rules saved or failed you)",
+          "done": false,
+          "details": "Low-friction during operations: just append observations as they happen. The triage step at sweep time selects the top 8–15 by impact-to-effort."
+        },
+        {
+          "label": "Triage at sweep start: top 8–15 items by impact-to-effort selected from observations.md",
+          "done": false
+        },
+        {
+          "label": "Each selected item implemented with a measurable before/after",
+          "done": false,
+          "details": "Before/after must be a real metric or evidence, not 'feels better.' Examples: query latency p99, test count, RLS coverage count, false-positive rate on drift detector, time-to-rollback in drill."
+        },
+        {
+          "label": "Impact table written in docs/hardening/{date}_sweep.md",
+          "done": false,
+          "details": "Format: | Area | Before | After | Where |. Mirror StudyForesight's Q2 sweep table layout exactly — it's a known-good pattern that reads well."
+        },
+        {
+          "label": "ADRs updated where decisions were revised during the sweep",
+          "done": false
+        },
+        {
+          "label": "Sweep doc referenced from README and Phase 6 hiring-readiness work",
+          "done": false
+        }
+      ],
+      "mvp_cuts": "Do not cut. If energy limited, SHRINK the number of items in the table — but produce the document. Even 5 honest hardening items with before/after metrics is better than nothing.",
+      "notes": "Can run concurrent with Phase 5's operate-through-season work. The artifact is the deliverable, not the calendar week. Pair with the drift postmortem (Phase 5) and the README (Phase 6) — they are a matched set."
+    },
+    {
+      "id": "6",
+      "name": "Hiring Readiness",
+      "weeks": "post-Phase-5, ongoing",
+      "estimated_hours": "30–50",
+      "status": "not_started",
+      "started_on": null,
+      "completed_on": null,
+      "exit_criterion": "A hiring manager visiting the GitHub repo in 60 seconds gets the right impression and can find the postmortem, the Ops Dashboard, and proof of collaboration without scrolling. The project is interview-ready as a 90-second verbal walkthrough.",
+      "_purpose": "Phase 5 ships the engineering. Phase 6 makes the engineering legible to a hiring audience. Different work, separate time block. Do not skip these — they're the difference between a project an HM bookmarks and one they close the tab on.",
+      "exit_criteria_checklist": [
+        {
+          "label": "README is the interview opener — one-paragraph origin story, screenshot of Ops Dashboard, link to drift postmortem, tech decisions with rationale, live link to dashboard",
+          "done": false,
+          "details": "First 30 seconds of HM eyeball-time IS the README. Spend disproportionate time here. Lead with what-it-is + why-interesting in one sentence each. The Ops Dashboard screenshot should be above the fold. Tech-decisions section pulls highlights from docs/decisions.md with one-line rationales — do not link to the raw log, summarize."
+        },
+        {
+          "label": "At least one merged OSS PR in a project adjacent to The Bullpen's stack",
+          "done": false,
+          "details": "Goal: one defensible answer to 'tell me about working with a maintainer through code review.' Doesn't need to be big — a docs fix or a real bug you hit during Phase 2/3 counts. Targets in priority order: onnxruntime (Java bindings), clickhouse-java / clickhouse-jdbc, lightgbm, pybaseball, mantine, tanstack/query, taste-skill, frontend-design. Only file a PR if you genuinely hit something — manufactured contributions read worse than no contribution."
+        },
+        {
+          "label": "Drift postmortem written in real SRE format (Five Whys, timeline, threshold analysis, runbook updates), not blog format",
+          "done": false,
+          "details": "Steal the structure from real public postmortems — Cloudflare, GitHub, Stripe, Fly.io all publish theirs. Sections: TL;DR (3 lines), Timeline (detection → mitigation → resolution with timestamps), Root Cause (Five Whys), Impact (what was wrong with predictions for how long), What Went Well / What Went Poorly, Lessons Learned, Action Items (with owners and dates — even if owner is always 'me'), Runbook Updates. If the season is too quiet to produce a natural drift event, INDUCE one in a controlled way (inject a known shift, watch detection fire, write up the response) and document the synthetic nature honestly."
+        }
+      ],
+      "supplementary_artifacts": [
+        {
+          "label": "Lessons-learned doc separate from the postmortem — broader, covers the whole season",
+          "done": false,
+          "details": "What you'd architect differently. What surprised you. What discipline rules paid off vs. felt like overhead. What you'd tell yourself if starting again. Demonstrates reflection — the trait that separates 'junior who shipped' from 'junior who'll grow fast'."
+        },
+        {
+          "label": "60-second verbal pitch rehearsed",
+          "done": false,
+          "details": "The baseball-origin → ML-systems-framing → self-hosted-for-failure-modes → target-roles paragraph. Practice it spoken, not just written. If it feels stilted, rewrite. HMs can tell a memorized script from a story you actually believe."
+        },
+        {
+          "label": "Ops Dashboard kept accessible post-launch, populated with realistic data even after the season ends",
+          "done": false,
+          "details": "Recruiters will visit months later. A dead dashboard is a worse signal than no dashboard. Either keep ingest running on a low cadence in the off-season, or freeze the dashboard at a known-good state with a banner noting the snapshot date."
+        }
+      ],
+      "mvp_cuts": "Do not cut. This phase IS the resume work; cutting it wastes Phases 0–5.",
+      "notes": "Phase 6 is unusual in that it can run concurrent with or after Phase 5 — write the README during the season, file the OSS PR whenever you hit a real bug, draft the postmortem as drift events happen. The 30–50h estimate assumes deliberate dedicated time even if some of it overlaps with Phase 5 calendar weeks."
+    }
+  ],
+  "soft_cut_priority": [
+    "1. Drop post-pitch head, keep pre-pitch only (~20h)",
+    "2. Drop A/B real-routing, keep shadow only (~10h)",
+    "3. Drop automated drift retraining, keep manual (~5h)",
+    "4. Drop Game/Live view (~12h)",
+    "5. Drop physics retrodiction, fall back to per-park naive subsets (~25h, weakens model)"
+  ],
+  "never_cut": [
+    "Phase 0 foundation",
+    "Eval artifacts",
+    "Model registry",
+    "Ops dashboard"
+  ],
+  "drills": {
+    "restore_drill": { "last_run": null, "must_run_before_season": true },
+    "reboot_drill": { "last_run": null, "must_run_before_season": true }
+  }
+}
