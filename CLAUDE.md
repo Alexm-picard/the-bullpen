@@ -27,21 +27,21 @@ matters — see `design.md` §1.
 
 ## Locked technology choices (do not re-litigate without strong cause)
 
-| Layer | Choice |
-|---|---|
-| Backend | **Java 21 + Spring Boot 3.x**, virtual threads, Spring MVC (not WebFlux). Strict Java, no Kotlin. |
-| Deployment | One JAR, two profiles (`api`, `worker`), two systemd units |
-| Inference | **ONNX Runtime Java** in-process. No Python sidecar, no live RPC. |
-| Training | Python 3.11+, off the serving path. Python ↔ Java contract is file-based (ONNX + JSON metadata + `feature_pipeline.json` + Parquet snapshot). |
-| Analytical DB | **ClickHouse** (Docker) — pitches, drift metrics, prediction logs |
-| App state DB | **SQLite** + Flyway — model registry, A/B config, retraining queue |
-| Frontend | **React 18 + TypeScript + Vite**, pure SPA. **TanStack Query** for server state, plain React Context for client state. Polling, not WebSockets. |
-| UI | **Mantine + Tailwind**. Editorial-data identity (Inter / JetBrains Mono / Source Serif 4). |
-| Hosting | Self-hosted in WSL2 (Ubuntu 24.04 LTS) on personal desktop. Cloudflare Tunnel for public access. Frontend on Vercel. |
-| Process mgmt | systemd (bare-metal for app, Docker for stateful services) |
-| Observability | Prometheus + Grafana + Actuator (internal); Better Stack + Healthchecks.io + Discord webhook (external) |
-| Models | LightGBM (pitch outcome, multinomial); multi-output MLP with shared backbone + 30 per-park heads (batted-ball); LR baseline always co-registered |
-| Eval | Rolling-origin temporal CV, 4 folds 2015–2025. **Never** random splits. Within-fold split granularity is by date — never by game or pitch. |
+| Layer         | Choice                                                                                                                                           |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Backend       | **Java 21 + Spring Boot 3.x**, virtual threads, Spring MVC (not WebFlux). Strict Java, no Kotlin.                                                |
+| Deployment    | One JAR, two profiles (`api`, `worker`), two systemd units                                                                                       |
+| Inference     | **ONNX Runtime Java** in-process. No Python sidecar, no live RPC.                                                                                |
+| Training      | Python 3.11+, off the serving path. Python ↔ Java contract is file-based (ONNX + JSON metadata + `feature_pipeline.json` + Parquet snapshot).    |
+| Analytical DB | **ClickHouse** (Docker) — pitches, drift metrics, prediction logs                                                                                |
+| App state DB  | **SQLite** + Flyway — model registry, A/B config, retraining queue                                                                               |
+| Frontend      | **React 18 + TypeScript + Vite**, pure SPA. **TanStack Query** for server state, plain React Context for client state. Polling, not WebSockets.  |
+| UI            | **Mantine + Tailwind**. Editorial-data identity (Inter / JetBrains Mono / Source Serif 4).                                                       |
+| Hosting       | Self-hosted in WSL2 (Ubuntu 24.04 LTS) on personal desktop. Cloudflare Tunnel for public access. Frontend on Vercel.                             |
+| Process mgmt  | systemd (bare-metal for app, Docker for stateful services)                                                                                       |
+| Observability | Prometheus + Grafana + Actuator (internal); Better Stack + Healthchecks.io + Discord webhook (external)                                          |
+| Models        | LightGBM (pitch outcome, multinomial); multi-output MLP with shared backbone + 30 per-park heads (batted-ball); LR baseline always co-registered |
+| Eval          | Rolling-origin temporal CV, 4 folds 2015–2025. **Never** random splits. Within-fold split granularity is by date — never by game or pitch.       |
 
 Already-rejected alternatives (with reasoning in `design.md` §10): LLM for pitch outcome,
 PINN for ball-flight, MLflow, microservices, WebSockets, Next.js/SSR, Airflow, ESPN as
@@ -62,6 +62,8 @@ approval:
 8. **Restore drill and reboot drill must run before season starts.** Untested backups / untested recovery don't count.
 9. **Two heads = two separate models** in the registry (pre-pitch / post-pitch). Not one model with feature masking.
 10. **All rolling/form features computed via streaming temporal cutoff.** Leakage tests in CI are non-negotiable: future contamination, shuffled-target, calendar-date trace, ID consistency.
+11. **Local dev on macOS, prod on the self-hosted Linux desktop. No code edits on the prod box.** SSH / remote-control into prod is read-only (logs, Grafana, ClickHouse queries); writes happen via `git push` + `./deploy.sh` only. See ADR-0006.
+12. **All object storage via S3-compatible client with `S3_ENDPOINT_URL` as the only environment-specific knob.** Prod = Backblaze B2; offline dev = MinIO on the portable drive. No `file://` paths in storage code, no second abstraction. See ADR-0007.
 
 ## Decision logging discipline — two layers
 
@@ -69,13 +71,14 @@ Decisions live in two complementary places:
 
 1. **`docs/decisions.md`** — chronological append-only numbered log. Every locked decision lands here as a one-line entry: `[N] DATE — DECISION — RATIONALE`. Fast, low-ceremony. The `block-retro-decisions` git hook enforces append-only.
 
-2. **`docs/adr/NNNN-{kebab-case-title}.md`** — full Architecture Decision Records for substantial decisions that need depth. Sections: Context, Decision, Consequences, Alternatives Considered, Revision History. Template at `docs/adr/TEMPLATE.md`. Roughly the top ~15% of decisions warrant an ADR — locked tech choices, architecture splits, anything where future-you needs to remember *why* not just *what*.
+2. **`docs/adr/NNNN-{kebab-case-title}.md`** — full Architecture Decision Records for substantial decisions that need depth. Sections: Context, Decision, Consequences, Alternatives Considered, Revision History. Template at `docs/adr/TEMPLATE.md`. Roughly the top ~15% of decisions warrant an ADR — locked tech choices, architecture splits, anything where future-you needs to remember _why_ not just _what_.
 
 When you lock a substantial decision: write the ADR first, then the `decisions.md` entry references it. Example: `[12] 2026-09-14 — Use ONNX Runtime Java for in-process inference — see ADR-0007`.
 
 **Reversals**:
+
 - In `decisions.md`: add a new numbered entry referencing the original (`[N] DATE — Reverse decision [M] (...) — REASON`). Never delete the original.
-- In an ADR: update Status to `Superseded by ADR-NNNN`, add a Revision History entry explaining what changed. The new ADR should reference what it replaces. ADRs *can* be edited in place via Revision History (the git hook covers `decisions.md`, not `docs/adr/`).
+- In an ADR: update Status to `Superseded by ADR-NNNN`, add a Revision History entry explaining what changed. The new ADR should reference what it replaces. ADRs _can_ be edited in place via Revision History (the git hook covers `decisions.md`, not `docs/adr/`).
 
 When `docs/design.md` or `docs/plan.md` change in response to a decision, update them in the same commit as the `decisions.md` entry (and the ADR, if one).
 
@@ -139,6 +142,7 @@ boundary. Schema-hash check at registration (rule 7) reads from here.
 Most commands assume the working directory is the project root unless noted.
 
 ### Backend (Java)
+
 - Build: `./gradlew -p backend build`
 - Test: `./gradlew -p backend test`
 - Format: `./gradlew -p backend spotlessApply`
@@ -148,6 +152,7 @@ Most commands assume the working directory is the project root unless noted.
 - Migrate SQLite registry: `./gradlew -p backend flywayMigrate`
 
 ### Training (Python)
+
 - Install deps: `uv sync` (run inside `training/`)
 - Add a dep: `uv add <pkg>` (never edit `pyproject.toml` by hand)
 - Format + lint: `uv run ruff format training && uv run ruff check --fix training`
@@ -157,6 +162,7 @@ Most commands assume the working directory is the project root unless noted.
 - Run rolling-origin CV: `uv run python -m training.eval.rolling_cv --model <name> --run-id <id>`
 
 ### Frontend (React)
+
 - Install: `cd frontend && npm install`
 - Dev server: `cd frontend && npm run dev`
 - Type check: `cd frontend && npx tsc --noEmit`
@@ -166,10 +172,12 @@ Most commands assume the working directory is the project root unless noted.
 - Build for Vercel: `cd frontend && npm run build`
 
 ### Deploy
+
 - Deploy to WSL2 host: `./deploy.sh` (prefer the `deploy-safely` skill which adds the live-game-window check)
 - Frontend auto-deploys to Vercel on push to `main`
 
 ### Local services (Docker)
+
 - ClickHouse + Grafana + Prometheus: `docker compose -f infra/docker-compose.yml up -d`
 - Stop: `docker compose -f infra/docker-compose.yml down` (denied by default in settings.json — pass through manually if needed)
 
@@ -179,14 +187,17 @@ you do not need to run formatters manually for normal editing.)
 ## Conventions and tooling
 
 ### Languages and tools
+
 - **Java**: Gradle (Kotlin DSL), Spotless with google-java-format, Error Prone, SpotBugs
 - **Python**: uv for env/deps, ruff for lint+format, pyright for types
 - **Frontend**: ESLint + Prettier, Vitest for unit, Playwright for E2E
 - **Git**: trunk-based on `main`, Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:`, `chore:`), tag releases with `v{YYYY.MM.DD-HHMM}`
 
 ### Testing posture (important)
+
 **Prefer real dependencies over mocks.** ML systems are exactly where mock/prod
 divergence bites. Default:
+
 - ClickHouse: Testcontainers
 - SQLite: temp file or `:memory:`
 - ONNX: real ONNX Runtime Java session loading a small fixture model
@@ -195,6 +206,7 @@ Mocks are only acceptable at hard external boundaries (Discord webhook, MLB Stat
 HTTP client).
 
 ### Avoid in this project
+
 - **Lombok** — Java 21 records + sealed types + pattern matching cover Lombok's use cases without compile-time agents
 - **JPA / Hibernate** — wrong abstraction for ClickHouse; use `JdbcTemplate` (or jOOQ if introduced)
 - **WebFlux / Reactive** — virtual threads + Spring MVC handle concurrency
@@ -223,10 +235,10 @@ HTTP client).
 
 ## Glossary (project-specific terminology)
 
-- **Pre-pitch head** — the model that predicts pitch outcome from features available *before* the pitch is thrown (count, runners, batter/pitcher history, etc.). A separate registry entry from the post-pitch head (rule 9).
+- **Pre-pitch head** — the model that predicts pitch outcome from features available _before_ the pitch is thrown (count, runners, batter/pitcher history, etc.). A separate registry entry from the post-pitch head (rule 9).
 - **Post-pitch head** — the model that uses early-flight features (release-side data, initial trajectory) to refine the outcome prediction. Separate registry entry.
-- **Promotion criteria** — the *pre-declared* set of (primary metric, sample size, threshold, guardrails) that must be satisfied before a model moves from SHADOW to LIVE. Stored on the model's registry row (rule 5).
-- **Shadow routing** — predictions are made by the model and logged to ClickHouse `prediction_logs` but are *not* user-visible. Default state for any newly registered model.
+- **Promotion criteria** — the _pre-declared_ set of (primary metric, sample size, threshold, guardrails) that must be satisfied before a model moves from SHADOW to LIVE. Stored on the model's registry row (rule 5).
+- **Shadow routing** — predictions are made by the model and logged to ClickHouse `prediction_logs` but are _not_ user-visible. Default state for any newly registered model.
 - **Rolling-origin CV** — the temporal cross-validation pattern: each fold trains on all earlier dates and validates on a later contiguous window. No date overlap, no random splits. 4 folds 2015–2025.
 - **Streaming temporal cutoff** — feature computation that, for each row, only considers data with `ts <= row.game_event_ts`. Prevents future contamination.
 - **Feature schema hash** — deterministic hash of `/contracts/feature_pipeline.json` (column order, dtypes, transformations). Mismatch at model registration = HARD FAIL (rule 7).
@@ -240,11 +252,12 @@ HTTP client).
 - This is a portfolio project framed for FAANG ML/SD engineering hiring. Architecture choices that are "good enough" for production but exceptional as resume signal are the right call.
 - The user has done deep planning. When in doubt, the planning docs already address it — search them before asking.
 - Honest progress reviews every two weeks (see `docs/plan.md`). Cuts made early are surgical; cuts made late are amputations.
-- **Decisions are conversational.** No decision gets locked into `docs/decisions.md` until we've gone back-and-forth and explicitly agreed. Claude proposes options, the user pushes back, we converge, *then* the `decision-recorder` agent writes the numbered entry. No silent "I'll just pick X and tell you" — that pattern is how bad locked-in choices happen. Use the `/decide` slash command or the `lock-decision` skill to run this loop.
+- **Decisions are conversational.** No decision gets locked into `docs/decisions.md` until we've gone back-and-forth and explicitly agreed. Claude proposes options, the user pushes back, we converge, _then_ the `decision-recorder` agent writes the numbered entry. No silent "I'll just pick X and tell you" — that pattern is how bad locked-in choices happen. Use the `/decide` slash command or the `lock-decision` skill to run this loop.
 
 ## Available subagents and skills (project-specific)
 
 Subagents under `.claude/agents/`:
+
 - `ml-leakage-auditor` — audits feature/training code for temporal leakage
 - `registry-guard` — enforces registry/router/promotion discipline rules
 - `java-reviewer` — Java/Spring 3 review with project exclusions
@@ -256,6 +269,7 @@ Subagents under `.claude/agents/`:
 - `ui-design-loop` — multi-model UI synthesis (Claude + Stitch) → spec → React + Playwright verify
 
 Skills under `.claude/skills/`:
+
 - `register-model` — full model intake procedure
 - `promote-model` — SHADOW → LIVE promotion gate
 - `lock-decision` — conversational decision flow
@@ -264,6 +278,7 @@ Skills under `.claude/skills/`:
 - `deploy-safely` — `./deploy.sh` wrapper with safety checks
 
 Slash commands under `.claude/commands/`:
+
 - `/decide <description>` — kick off lock-decision
 - `/promote <model_id>` — kick off promote-model
 - `/drill restore|reboot` — kick off drill-runner
@@ -274,3 +289,16 @@ Slash commands under `.claude/commands/`:
 - `/ci-add <what to check>` — add a CI job or workflow following conventions
 
 Skill `ci-add` is also under `.claude/skills/` for richer invocations.
+
+## Imports
+
+These ADRs are auto-loaded into Claude Code's context whenever this `CLAUDE.md`
+is read. The two new operational-discipline ADRs (rules 11 and 12 above) are
+imported in full because their content is load-bearing on day-to-day decisions
+about _where_ code is edited and _how_ storage is accessed — both are easy to
+violate silently without the constant reminder. The other ADRs (0001–0005)
+remain linked but not imported; they document locked tech choices that rarely
+recur in conversation.
+
+@docs/adr/0006-dev-prod-boundary.md
+@docs/adr/0007-s3-compatible-storage.md

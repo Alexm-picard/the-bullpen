@@ -2,7 +2,7 @@
 # Air-gapped USB backup for The Bullpen.
 # Use case: hardware contingency. If the WSL2 desktop dies, you can restore from an external drive.
 #
-# Plug in the USB drive (labeled BULLPEN_BACKUP — see setup below), run this, unplug.
+# Plug in the USB drive (labeled BULLPEN_BAK — see setup below), run this, unplug.
 # No daemon, no schedule — you decide when to run it (recommended: weekly during build,
 # daily during season, and before any disruptive change like a Windows update / driver
 # install / WSL2 distro upgrade).
@@ -20,10 +20,10 @@
 #   - Anything in /tmp
 #
 # Setup once: format a USB drive with a single ext4 (or exFAT for cross-platform) partition.
-# Label it BULLPEN_BACKUP:
-#   sudo mkfs.ext4 -L BULLPEN_BACKUP /dev/sdX1
+# Label it BULLPEN_BAK (kept to 11 chars because exFAT volume labels are capped at 11):
+#   sudo mkfs.ext4  -L BULLPEN_BAK /dev/sdX1
 # or
-#   sudo mkfs.exfat -n BULLPEN_BACKUP /dev/sdX1
+#   sudo mkfs.exfat -L BULLPEN_BAK /dev/sdX1
 #
 # Then plug it in and run this script. With the sudoers.d/bullpen-backup rule installed
 # (see infra/backup/install-sudoers.sh), no password prompt.
@@ -39,9 +39,9 @@ fi
 
 # From here on, we're root. SUDO_USER tells us who invoked us (for the default REPO_ROOT path).
 INVOKER="${SUDO_USER:-$(whoami)}"
-REPO_ROOT="${REPO_ROOT:-/home/${INVOKER}/code/thebullpen}"
+REPO_ROOT="${REPO_ROOT:-/home/${INVOKER}/code/the-bullpen}"
 SNAPSHOT_DIR="${SNAPSHOT_DIR:-/var/lib/clickhouse-backup}"
-USB_LABEL="${USB_LABEL:-BULLPEN_BACKUP}"
+USB_LABEL="${USB_LABEL:-BULLPEN_BAK}"
 MOUNT_POINT="${MOUNT_POINT:-/mnt/bullpen-backup}"
 DEVICE="$(blkid -L "$USB_LABEL" 2>/dev/null || true)"
 
@@ -64,12 +64,21 @@ mkdir -p "$DEST"
 
 log "Destination: $DEST"
 
+# Detect filesystem on the mounted backup drive. exFAT (FUSE-mounted on WSL2) can't store
+# Unix owner/group/perms, so rsync -a fails on chown. Strip those flags when on exFAT.
+BACKUP_FSTYPE="$(findmnt -no FSTYPE "$MOUNT_POINT" || true)"
+RSYNC_OPTS=(-a --info=progress2)
+if [[ "$BACKUP_FSTYPE" == "exfat" || "$BACKUP_FSTYPE" == "fuseblk" ]]; then
+  RSYNC_OPTS+=(--no-owner --no-group --no-perms --modify-window=2)
+  log "Drive FS: $BACKUP_FSTYPE — skipping owner/group/perms preservation"
+fi
+
 # 1. Most recent ClickHouse snapshot only (don't bloat the USB with history)
 if [[ -d "$SNAPSHOT_DIR" ]]; then
   LATEST=$(find "$SNAPSHOT_DIR" -maxdepth 1 -name 'auto_*' -type d 2>/dev/null | sort -r | head -1)
   if [[ -n "$LATEST" ]]; then
     log "Copying ClickHouse snapshot: $(basename "$LATEST")"
-    rsync -a --info=progress2 "$LATEST/" "$DEST/clickhouse_snapshot/"
+    rsync "${RSYNC_OPTS[@]}" "$LATEST/" "$DEST/clickhouse_snapshot/"
   else
     log "WARN: no clickhouse snapshot found in $SNAPSHOT_DIR — run clickhouse-snapshot.sh first"
   fi
@@ -86,19 +95,19 @@ fi
 # 3. Training artifacts (the bytes — these are the part you can't easily regenerate)
 if [[ -d "${REPO_ROOT}/training/artifacts" ]]; then
   log "Training artifacts (ONNX + Parquet + metadata)"
-  rsync -a --info=progress2 "${REPO_ROOT}/training/artifacts/" "$DEST/training_artifacts/"
+  rsync "${RSYNC_OPTS[@]}" "${REPO_ROOT}/training/artifacts/" "$DEST/training_artifacts/"
 fi
 
 # 4. Contracts (small, critical, defines the Python↔Java boundary)
 if [[ -d "${REPO_ROOT}/contracts" ]]; then
   log "Contracts"
-  rsync -a "${REPO_ROOT}/contracts/" "$DEST/contracts/"
+  rsync "${RSYNC_OPTS[@]}" "${REPO_ROOT}/contracts/" "$DEST/contracts/"
 fi
 
 # 5. Docs (planning, drills, postmortems — irreplaceable narrative)
 if [[ -d "${REPO_ROOT}/docs" ]]; then
   log "Docs"
-  rsync -a "${REPO_ROOT}/docs/" "$DEST/docs/"
+  rsync "${RSYNC_OPTS[@]}" "${REPO_ROOT}/docs/" "$DEST/docs/"
 fi
 
 # 6. Manifest file at root

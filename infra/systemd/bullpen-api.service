@@ -1,0 +1,57 @@
+[Unit]
+Description=The Bullpen API server (Spring Boot, api profile)
+Documentation=https://github.com/Alexm-picard/the-bullpen
+After=network-online.target docker.service
+Wants=network-online.target
+# Soft-depends on docker; ClickHouse runs in compose, but if it's down the API
+# still boots and serves /actuator/health=DOWN. Operator decides whether to
+# bring docker up first.
+
+[Service]
+Type=simple
+User=alepic
+Group=alepic
+WorkingDirectory=/opt/thebullpen
+
+# /etc/default/bullpen carries secrets (Discord webhook, etc.) and tunable
+# knobs (ports, heap sizes). Leading `-` means "missing file is non-fatal".
+EnvironmentFile=-/etc/default/bullpen
+
+# Profile + sensible defaults; everything is overridable via the env file.
+Environment=SPRING_PROFILES_ACTIVE=api
+Environment=BULLPEN_PORT=8080
+Environment=BULLPEN_REGISTRY_DB=/opt/thebullpen/data/registry.sqlite
+Environment=LOG_FORMAT=json
+
+# Heap defaults err small (this WSL2 host has 15 Gi total and shares with
+# ClickHouse / Prometheus / Grafana). Bump via JAVA_OPTS_API in the env file
+# once real models load and you have a measured working set.
+Environment=JAVA_OPTS_API=-Xms256m -Xmx1g -XX:+UseG1GC -XX:MaxGCPauseMillis=200
+
+ExecStart=/usr/bin/java $JAVA_OPTS_API -jar /opt/thebullpen/app.jar
+
+# Spring's graceful-shutdown completes in-flight requests then exits 0.
+# 143 = 128 + SIGTERM (java's default response when systemd sends stop).
+SuccessExitStatus=143
+TimeoutStopSec=30
+
+# Restart policy: pause briefly between restarts; if it crash-loops 5x in 90s,
+# give up and let the operator look. systemctl status will surface it.
+Restart=on-failure
+RestartSec=10
+StartLimitIntervalSec=90
+StartLimitBurst=5
+
+# File descriptor cap — Spring + ClickHouse JDBC + JMX can chew through these.
+LimitNOFILE=65536
+
+# Soft hardening — full container-style hardening is overkill on a personal
+# WSL2 host but cheap defaults are worth keeping.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/opt/thebullpen /var/log/bullpen
+
+[Install]
+WantedBy=multi-user.target

@@ -11,9 +11,10 @@ Two layers of backup for The Bullpen. They serve different failure modes — bot
 **Runs**: daily at 03:00 local via `bullpen-snapshot.timer`.
 
 **Captures**:
+
 - ClickHouse snapshot (via `clickhouse-backup create` if installed, else `ALTER TABLE FREEZE` fallback)
 - SQLite registry (via `sqlite3 .backup`)
-- Training artifact *metadata* (paths, sha256 of large files — NOT the ONNX/Parquet bytes themselves)
+- Training artifact _metadata_ (paths, sha256 of large files — NOT the ONNX/Parquet bytes themselves)
 
 **Retention**: last 14 days. Older snapshots auto-deleted.
 
@@ -33,7 +34,7 @@ sudo cp infra/backup/bullpen-snapshot.timer   /etc/systemd/system/bullpen-snapsh
 # 3. Create the env file (KEEP THIS chmod 600 — contains the Discord webhook URL)
 sudo tee /etc/default/bullpen >/dev/null <<EOF
 BULLPEN_DISCORD_WEBHOOK="https://discord.com/api/webhooks/...your-webhook..."
-REPO_ROOT="/home/$(whoami)/code/thebullpen"
+REPO_ROOT="/home/$(whoami)/code/the-bullpen"
 RETAIN_DAYS="14"
 EOF
 sudo chmod 600 /etc/default/bullpen
@@ -54,15 +55,17 @@ ls -lh /var/lib/clickhouse-backup/
 
 **Protects against**: WSL2 corruption, SSD failure, ransomware (when drive is unplugged), Windows update wiping the WSL2 distro, the desktop dying entirely.
 
-**Lives on**: external USB drive labeled `BULLPEN_BACKUP`.
+**Lives on**: external USB drive labeled `BULLPEN_BAK` (11-char label keeps it valid on exFAT too).
 
-**Runs**: manually, when *you* decide. Recommended cadence:
+**Runs**: manually, when _you_ decide. Recommended cadence:
+
 - **Weekly** during build months (Phase 0–4)
 - **Before any disruptive change**: Windows feature update, WSL2 distro change, driver install, hardware swap
 - **Daily** during the live season (Phase 5)
 - **Before any destructive ClickHouse operation** (in addition to the daily snapshot — defense in depth)
 
 **Captures**:
+
 - Most-recent daily snapshot from Layer 1
 - Live SQLite registry
 - **Training artifacts (the bytes)** — ONNX + Parquet + metadata. These can't be regenerated quickly.
@@ -74,9 +77,18 @@ ls -lh /var/lib/clickhouse-backup/
 ### One-time setup
 
 ```bash
-# 1. Format the drive (ext4 if Linux-only; exFAT for cross-platform)
+# 1. Format the drive (ext4 if Linux-only; exFAT for cross-platform).
+#    NOTE: exFAT volume labels are capped at 11 chars — `BULLPEN_BAK` fits both.
 lsblk                                          # find the device, e.g. /dev/sdb
-sudo mkfs.ext4 -L BULLPEN_BACKUP /dev/sdb1     # or mkfs.exfat -n BULLPEN_BACKUP
+sudo mkfs.ext4  -L BULLPEN_BAK /dev/sdb1       # or:
+sudo mkfs.exfat -L BULLPEN_BAK /dev/sdb1
+
+# 1a. WSL2 only: the drive must be attached as a raw block device, not Windows-auto-mounted
+#     at /mnt/d. From PowerShell (Admin) on Windows:
+#       Get-Disk                                  # find the disk Number (USB, ~1 TB)
+#       Set-Disk -Number <N> -IsOffline $true     # release it from Windows
+#       wsl --mount \\.\PHYSICALDRIVE<N> --bare   # attach raw to WSL2
+#     Then from WSL2, lsblk shows the new device (e.g. /dev/sde) and you can mkfs.
 
 # 2. Install the narrow sudoers rule (NOPASSWD for this one script only)
 ./infra/backup/install-sudoers.sh
@@ -87,12 +99,33 @@ sudo mkfs.ext4 -L BULLPEN_BACKUP /dev/sdb1     # or mkfs.exfat -n BULLPEN_BACKUP
 # 4. Label the physical drive with a tape label so you can find it in a panic.
 ```
 
+### WSL2 + exFAT gotchas (read once, save tears)
+
+The stock WSL2 kernel (`CONFIG_EXFAT_FS is not set` as of kernel 6.6.x) **cannot mount
+exFAT natively** — the format step succeeds via `exfatprogs`, but `mount` then fails with
+"unknown filesystem type 'exfat'". Two extra steps if you go exFAT on WSL2:
+
+```bash
+# 1. Install the FUSE userspace driver
+sudo apt-get install -y exfat-fuse
+
+# 2. Make mount(8)'s auto-detect call the FUSE helper
+sudo ln -sf /usr/sbin/mount.exfat-fuse /usr/sbin/mount.exfat
+```
+
+Once those are in place, `mount /dev/sdX1 /mnt/...` (no `-t`) finds the helper and works.
+
+Other things `usb-backup.sh` handles for you when the target FS can't carry Unix metadata
+(exFAT, FUSE-mounted): rsync runs with `--no-owner --no-group --no-perms` so the script
+doesn't error on chown/chmod attempts. The `chown` at the end of the script also no-ops
+silently on exFAT — that's expected.
+
 ### About the sudoers rule
 
 The `install-sudoers.sh` helper writes a single-line rule to `/etc/sudoers.d/bullpen-backup`:
 
 ```
-<your-user> ALL=(root) NOPASSWD: /home/<you>/code/thebullpen/infra/backup/usb-backup.sh
+<your-user> ALL=(root) NOPASSWD: /home/<you>/code/the-bullpen/infra/backup/usb-backup.sh
 ```
 
 This is whitelist-based: it allows ONLY that exact script path to run without a password.
@@ -127,12 +160,12 @@ Then re-copy the system script whenever the in-repo version changes.
 
 ## Both layers, together
 
-| Scenario | Recovery path |
-|---|---|
-| Accidental `DROP TABLE` | Restore from yesterday's local snapshot (Layer 1) — ~5 min |
-| SQLite registry corrupted | Restore `registry.sqlite` from local snapshot (Layer 1) — ~1 min |
-| WSL2 distro broken | Reinstall WSL2, restore from USB (Layer 2) — ~30 min |
-| Desktop SSD dead | New desktop, install WSL2, restore from USB (Layer 2) — hours |
+| Scenario                                            | Recovery path                                                                                                                                       |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Accidental `DROP TABLE`                             | Restore from yesterday's local snapshot (Layer 1) — ~5 min                                                                                          |
+| SQLite registry corrupted                           | Restore `registry.sqlite` from local snapshot (Layer 1) — ~1 min                                                                                    |
+| WSL2 distro broken                                  | Reinstall WSL2, restore from USB (Layer 2) — ~30 min                                                                                                |
+| Desktop SSD dead                                    | New desktop, install WSL2, restore from USB (Layer 2) — hours                                                                                       |
 | Desktop physically destroyed + USB at same location | **You're cooked.** Layer 3 (offsite cloud) would be needed; you opted to skip it. Mitigate by storing the USB at a different location periodically. |
 
 ## Discord webhook setup

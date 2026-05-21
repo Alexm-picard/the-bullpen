@@ -8,7 +8,7 @@
 # Run via systemd timer (see bullpen-snapshot.timer). On failure, pings Discord webhook.
 #
 # Environment:
-#   REPO_ROOT                — defaults to /home/$(whoami)/code/thebullpen
+#   REPO_ROOT                — defaults to /home/$(whoami)/code/the-bullpen
 #   SNAPSHOT_DIR             — defaults to /var/lib/clickhouse-backup
 #   SQLITE_REGISTRY          — defaults to $REPO_ROOT/backend/data/registry.sqlite
 #   BULLPEN_DISCORD_WEBHOOK  — required; failures ping this URL
@@ -16,7 +16,7 @@
 
 set -uo pipefail
 
-REPO_ROOT="${REPO_ROOT:-/home/$(whoami)/code/thebullpen}"
+REPO_ROOT="${REPO_ROOT:-/home/$(whoami)/code/the-bullpen}"
 SNAPSHOT_DIR="${SNAPSHOT_DIR:-/var/lib/clickhouse-backup}"
 SQLITE_REGISTRY="${SQLITE_REGISTRY:-${REPO_ROOT}/backend/data/registry.sqlite}"
 RETAIN_DAYS="${RETAIN_DAYS:-14}"

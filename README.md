@@ -115,3 +115,5 @@ ADRs are the long-form record for the top ~15% of decisions.
 - [ADR-0003 — ClickHouse + SQLite, not Postgres-only](docs/adr/0003-clickhouse-plus-sqlite-not-postgres-only.md)
 - [ADR-0004 — Mantine + Tailwind, not pure Tailwind](docs/adr/0004-mantine-plus-tailwind-not-pure-tailwind.md)
 - [ADR-0005 — Polling, not WebSockets](docs/adr/0005-polling-not-websockets.md)
+- [ADR-0006 — Local dev on macOS, deployment to self-hosted Linux](docs/adr/0006-dev-prod-boundary.md)
+- [ADR-0007 — Object storage via S3-compatible endpoint](docs/adr/0007-s3-compatible-storage.md)

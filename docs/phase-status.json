@@ -3,7 +3,7 @@
   "_doc": "Single source of truth for phase progress. Hand-edited as work completes. /status reads this. Bump fields honestly — surgical cuts come from honest tracking.",
   "current_phase": "0",
   "weekly_hours_target": 13,
-  "last_updated": "2026-05-19T23:35Z",
+  "last_updated": "2026-05-21T23:55Z",
   "phases": [
     {
       "id": "0",
@@ -17,8 +17,8 @@
       "exit_criteria_checklist": [
         {
           "label": "WSL2 setup (systemd, memory cap, CUDA passthrough verified)",
-          "done": false,
-          "details": "Host-specific. Deferred until repo is moved to the WSL2 box."
+          "done": true,
+          "details": "Verified 2026-05-21 on DESKTOP-N30E7RA. kernel 6.6.114.1-microsoft-standard-WSL2; systemd 259 (259.5-0ubuntu3) running; 15 GiB RAM + 4 GiB swap (no /mnt/c/Users/*/.wslconfig — using WSL2 default, which on a ~32 GiB host gives WSL2 ~50%; tighten via .wslconfig if Windows starts swapping); CUDA passthrough OK (NVIDIA driver 591.86, CUDA 13.1, nvidia-smi sees GPU at /usr/lib/wsl/lib/nvidia-smi); Docker 29.1.3 with alepic in docker group; Java 21.0.11-ea at /usr/bin/java."
         },
         {
           "label": "Domain + Cloudflare DNS + Cloudflare Tunnel pointed at hello-world",
@@ -33,7 +33,7 @@
         {
           "label": "Both as systemd services with /health endpoints",
           "done": false,
-          "details": "Application-side /health endpoint exists (api profile, HealthController). systemd unit files are host-specific; written when the WSL2 host is provisioned."
+          "details": "Units written + installed 2026-05-21: infra/systemd/bullpen-api.service, infra/systemd/bullpen-worker.service, infra/systemd/install.sh (idempotent installer). Copied to /etc/systemd/system/; currently DISABLED pending first deploy (avoids fail-loop on reboot before a JAR is staged at /opt/thebullpen/app.jar). Re-enable + start happens via /deploy-safely (decision [21] gate) tomorrow morning outside the live-game window."
         },
         {
           "label": "ClickHouse via Docker, accessible from Spring",
@@ -53,7 +53,7 @@
         {
           "label": "GitHub repo, Actions running tests on push, deploy.sh working",
           "done": true,
-          "details": "Repo live at https://github.com/Alexm-picard/the-bullpen. All three workflows (backend / frontend / training) green on main as of commit 70a916c. deploy.sh stub at repo root; rsync+systemctl-restart path lands once WSL2 host exists. CI gotchas documented in docs/sessions/2026-05-19-wsl2-handoff.md."
+          "details": "Repo live at https://github.com/Alexm-picard/the-bullpen. All three workflows (backend / frontend / training) green on main as of commit 70a916c. deploy.sh rewritten 2026-05-21 from Phase-0 stub to a real local-WSL2 deploy: clean-tree guard, bootJar build, atomic symlink swap at /opt/thebullpen/app.jar, systemctl restart + 30s health-poll smoke, rollback on smoke failure, releases-dir retention (last 5), tag + docs/deploys/<TAG>.md record. First real run is gated on /deploy-safely + the live-game window (decision [21])."
         },
         {
           "label": "Prometheus + Grafana with one trivial dashboard",
@@ -68,12 +68,22 @@
         {
           "label": "Backup of empty ClickHouse to USB + restore drill (with empty data)",
           "done": false,
-          "details": "Backup scripts pre-staged at infra/backup/; restore drill is host-side work."
+          "details": "Layer 2 USB operational (2026-05-21): exFAT drive labeled BULLPEN_BAK attached via `wsl --mount --bare`, /etc/sudoers.d/bullpen-backup installed, first verification backup written (18 MB, manifest verified). usb-backup.sh patched for exFAT (--no-owner/--no-group/--no-perms rsync) + correct REPO_ROOT default. Layer 1 systemd timer installed + enabled (2026-05-21): bullpen-snapshot.timer fires daily 03:00 local (next: 2026-05-22 ~03:04 EDT), .last_snapshot_ok marker present, /etc/default/bullpen created (chmod 600). Manual snapshot test succeeded — clickhouse-backup 2.6.43 captured the empty bullpen db in 93ms, SQLite registry backed up via .backup, retention applied. Outstanding: restore drill itself (/drill restore) — requires the bullpen-api service to be up so we can prove a round-trip; deferred with the first deploy."
         },
         {
-          "label": "ADR system established (docs/adr/ + first 5 ADRs covering initial tech decisions from design.md §10)",
+          "label": "ADR system established (docs/adr/ + first 7 ADRs covering initial tech decisions from design.md §10 + operational-discipline decisions from 2026-05-21)",
           "done": true,
-          "details": "ADR-0001 through ADR-0005 written 2026-05-19. Corresponding decisions.md entries [121]–[125] reference them. Template at docs/adr/TEMPLATE.md."
+          "details": "ADR-0001–0005 written 2026-05-19 — Java not Kotlin, ONNX in-process not sidecar, ClickHouse + SQLite not Postgres-only, Mantine+Tailwind not pure Tailwind, polling not WebSockets; decisions.md entries [121]–[125] reference them. ADR-0006 (dev/prod boundary — macOS dev only, no edits on the prod box) and ADR-0007 (S3-compatible storage — B2 prod, MinIO offline) written 2026-05-21; decisions.md entries [126]–[127] reference them. ADR-0006 and ADR-0007 are auto-imported into Claude context via @docs/adr/... in CLAUDE.md because they're easiest to violate silently. Template at docs/adr/TEMPLATE.md."
+        },
+        {
+          "label": "Dev / prod boundary formalized (ADR-0006) — macOS is the only authoring machine; no editor on the WSL2 working copy; deploy.sh + CI are the only writers",
+          "done": false,
+          "details": "Discipline rule, not code: enforced by convention. Concrete deliverables: (a) make train-sample target on the MacBook for stratified-sample iteration, (b) make train-full target that ssh-triggers the desktop, (c) bootstrap docs verified by a Phase 0 restore drill from a clean WSL2 install. SSH into prod allowed for OBSERVATION (logs, Grafana, ClickHouse queries) only."
+        },
+        {
+          "label": "S3-compatible object storage online (ADR-0007) — B2 in prod, MinIO offline on the portable drive, S3_ENDPOINT_URL is the only environment-specific knob",
+          "done": false,
+          "details": "Concrete deliverables: (a) B2 bucket bullpen-prod with samples/dev/ + snapshots/v{N}/ + raw/ prefixes, (b) rclone remote configured against B2's S3-compatible endpoint, (c) boto3 (Python) and aws-sdk-s3 (Java) wired to read S3_ENDPOINT_URL, (d) MinIO launchable from /Volumes/MyDrive/bullpen-data via make minio-up, (e) make sync-mirror running rclone sync from B2 to the portable drive. Manifest validation enforces feature schema hash on load."
         },
         {
           "label": "Structured JSON logging baseline (logback-json Java side, structlog Python side, correlation IDs propagated through every request)",

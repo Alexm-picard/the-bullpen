@@ -322,3 +322,11 @@ When a decision is reversed, **don't delete the original**. Add a new entry refe
 > `[N]` 2026-XX-XX — **Reverse decision [M] (DESCRIPTION)** — RATIONALE FOR REVERSAL.
 
 This lets future-you (and recruiters reading the repo) see how thinking evolved. ADRs naturally fall out of this discipline.
+
+---
+
+## Phase 0 — operational discipline ADRs (dev environment + storage)
+
+`[126]` 2026-05-21 — **Local dev on macOS, prod on self-hosted Linux desktop; deploy crosses git** — no code edits on the prod box; `deploy.sh` (decision [20]) is the only authoring boundary; protects [11]'s 98 % uptime SLO and keeps the hiring-readiness deploy story honest; see ADR-0006.
+
+`[127]` 2026-05-21 — **All object storage via S3-compatible client; `S3_ENDPOINT_URL` is the only environment-specific knob** — B2 in prod, MinIO on the portable drive for offline dev; one code path for backups (decision [13]) and model artifacts (decisions [28] [68]); no `file://` storage code paths; see ADR-0007.

@@ -7,7 +7,7 @@ Wants=network-online.target
 Type=oneshot
 # Pull env from a file you keep at /etc/default/bullpen (chmod 600 — contains Discord webhook)
 EnvironmentFile=-/etc/default/bullpen
-ExecStart=/home/%i/code/thebullpen/infra/backup/clickhouse-snapshot.sh
+ExecStart=/home/%i/code/the-bullpen/infra/backup/clickhouse-snapshot.sh
 Nice=10
 IOSchedulingClass=best-effort
 IOSchedulingPriority=7

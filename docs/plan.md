@@ -1,9 +1,9 @@
 # Plan
 
 > **Project**: The Bullpen (`thebullpen.net`)
-> **Total estimate**: ~460–585 hours / ~8–10 months calendar at 12–15h/week
-> **Status**: Pre-implementation
-> **Last updated**: 2026-05-09
+> **Total estimate**: ~465–595 hours / ~8–10 months calendar at 12–15h/week
+> **Status**: Phase 0 in progress (Mac side complete; WSL2 host-side items remaining — see `docs/phase-status.json`)
+> **Last updated**: 2026-05-21
 
 This is the working plan. For full rationale on any decision, see
 `design.md`. For chronological decision history, see `decisions.md`.
@@ -31,6 +31,7 @@ piece improves in passes.
 **Goal**: All infrastructure exists, even if empty. Reboot recovers cleanly.
 
 ### Build
+
 - WSL2 setup: systemd enabled, memory cap (e.g., 32GB), CUDA passthrough verified
 - Domain registration, Cloudflare DNS, Cloudflare Tunnel pointed at hello-world
 - Spring Boot skeleton with `api` and `worker` profiles
@@ -41,16 +42,20 @@ piece improves in passes.
 - GitHub repo, Actions running tests on push, deploy.sh script working
 - Prometheus + Grafana with one trivial dashboard
 - Better Stack monitoring `/health`
-- Backup of empty ClickHouse to USB + restore drill (with empty data)
-- **ADR system established** under `docs/adr/`, first 5 ADRs written covering the locked decisions from `design.md` §10 (Java not Kotlin, ONNX in-process not sidecar, ClickHouse not Postgres-only, Mantine+Tailwind not pure Tailwind, polling not WebSockets). Template at `docs/adr/TEMPLATE.md`. `decisions.md` stays as the chronological flat log; ADRs are the depth layer for substantial decisions.
+- Backup of empty ClickHouse to USB + restore drill (with empty data). Layer 2 target is an exFAT-formatted external drive labeled `BULLPEN_BAK` (11-char cap for exFAT), attached to WSL2 via `wsl --mount --bare`. `infra/backup/usb-backup.sh` plus the narrow `/etc/sudoers.d/bullpen-backup` rule from `install-sudoers.sh` make the backup a one-command operation.
+- **Dev / prod boundary formalized** (per ADR-0006) — the **MacBook is the only authoring machine**; the WSL2 desktop is a deployment target only. No editor configured on the desktop's working copy. `deploy.sh` (and CI) are the only writers; remote-control / SSH into prod is read-only by convention (logs, Grafana, ClickHouse queries). Bootstrap script must reconstruct the desktop's state from `git clone` + restore-from-backup, so any "lives only on the desktop" config gets surfaced as friction and committed back.
+- **S3-compatible object storage online** (per ADR-0007) — Backblaze B2 bucket(s) provisioned (`bullpen-prod`, with `samples/dev/`, `snapshots/v{N}/`, `raw/` prefixes); `rclone` configured against the B2 S3-compatible endpoint; `S3_ENDPOINT_URL` env var wired through both the Spring app and the Python training code. On the MacBook, **MinIO** runs from `/Volumes/MyDrive/bullpen-data` for offline dev (read-only `localhost:9000`), launched via `make minio-up` / `make minio-down`. `make sync-mirror` runs `rclone sync` from B2 to the portable drive — the pre-travel ritual. No code anywhere reads `file://` storage paths; the only environment-specific knob is the endpoint URL.
+- **ADR system established** under `docs/adr/`, first 7 ADRs written: ADR-0001–0005 cover the locked tech choices from `design.md` §10 (Java not Kotlin, ONNX in-process not sidecar, ClickHouse not Postgres-only, Mantine+Tailwind not pure Tailwind, polling not WebSockets); ADR-0006 and ADR-0007 lock the operational-discipline decisions above (dev/prod boundary, S3-compatible storage). Template at `docs/adr/TEMPLATE.md`. `decisions.md` stays as the chronological flat log; ADRs are the depth layer for substantial decisions; the two operational-discipline ADRs are auto-imported into Claude's context via `@docs/adr/0006-...` / `@docs/adr/0007-...` in `CLAUDE.md` because they're the easiest to violate silently.
 - **Structured JSON logging baseline** — `logback-json` on the Java side, `structlog` on the Python side, correlation IDs propagated through every request via MDC (Java) and contextvars (Python). `LOG_FORMAT=json` env var.
 - **Multi-stage Dockerfile** for the Spring JAR: builder stage (Gradle) + slim runtime (`eclipse-temurin:21-jre-alpine`), non-root `appuser` (UID 1001), explicit `HEALTHCHECK` against `/actuator/health`.
 
 ### Exit criterion
+
 **`sudo reboot` recovers everything in <5 min, all health checks green,
 frontend reachable at domain.**
 
 ### MVP cuts
+
 **None.** Foundation cannot be cut. If it's taking >3 weeks, diagnose
 the blocker immediately. Most likely: WSL/CUDA setup (allocate one
 weekend specifically), or DNS confusion (use Cloudflare defaults).
@@ -62,6 +67,7 @@ weekend specifically), or DNS confusion (use Cloudflare defaults).
 **Goal**: ONE prediction visible end-to-end, in the browser, deployed.
 
 ### Build
+
 - Historical Statcast pull (one season, ~2024) → `raw_statcast`
 - Cleaning into `pitches` with proper schema and dedup
 - **Minimal** batted-ball model: LightGBM, 5 features, single output (not 30 parks). Not yet calibrated, not properly eval'd.
@@ -72,9 +78,11 @@ weekend specifically), or DNS confusion (use Cloudflare defaults).
 - Primitive prediction logging to ClickHouse
 
 ### Exit criterion
+
 **Visit `thebullpen.net/parks`, click a batted ball, see real prediction in <500ms end-to-end.**
 
 ### MVP cuts
+
 This phase IS the credibility floor. Anything from here forward is the
 real project.
 
@@ -85,6 +93,7 @@ real project.
 **Goal**: Three calibrated models with eval artifacts.
 
 ### Phase 2a: Pitch outcome — pre-pitch head (Weeks 8–10)
+
 - Full feature pipeline: all 4 tiers, target encoding with strict temporal cutoffs
 - Leakage tests in CI (4 categories: future contamination, shuffled-target, calendar-date, ID consistency)
 - **Property tests for the leakage detector itself** (Hypothesis) — generate random temporally-shuffled datasets, assert the 4 leakage tests fire correctly on both known-leaky and known-clean inputs. Proves the leakage tests aren't fooling themselves.
@@ -98,12 +107,14 @@ real project.
 - Forward simulator (analytical + Monte Carlo), wired up
 
 ### Phase 2b: Pitch outcome — post-pitch head (Weeks 11–12)
+
 - Reuses 2a infrastructure
 - Adds Tier 4 post-pitch features
 - Different model_name in registry
 - Eval artifact
 
 ### Phase 2c: Batted-ball with physics retrodiction (Weeks 13–17)
+
 - **Physics simulator (~200 lines Python)**: Nathan's drag/Magnus ODE, RK4 integration
 - **Validation**: reproduce 100 known Statcast trajectories within tolerance
 - **Park geometry data**: scrape + manual curation
@@ -115,15 +126,16 @@ real project.
 - Eval artifact with explicit MLP-vs-LGBM comparison
 
 ### Exit criterion
+
 **Three models registered, all with eval artifacts, all served via Spring,
 all with passing leakage tests in CI. ECE < 0.02 on test data per model.**
 
 ### MVP cuts (in priority order if behind)
 
-| When | Cut | Saves | Cost |
-|---|---|---|---|
-| End of Wk 12 if behind | Drop post-pitch head from v1, pre-pitch only | ~20h | Lose replay-analysis use case |
-| End of Wk 15 if 2c at risk | Drop physics retrodiction, fall back to per-park naive subsets | ~25h | **Painful — model weakened**. Document honestly. |
+| When                       | Cut                                                            | Saves | Cost                                             |
+| -------------------------- | -------------------------------------------------------------- | ----- | ------------------------------------------------ |
+| End of Wk 12 if behind     | Drop post-pitch head from v1, pre-pitch only                   | ~20h  | Lose replay-analysis use case                    |
+| End of Wk 15 if 2c at risk | Drop physics retrodiction, fall back to per-park naive subsets | ~25h  | **Painful — model weakened**. Document honestly. |
 
 **Hard rule: NEVER cut the eval artifact.** Models without eval are
 screenshots, not systems.
@@ -135,17 +147,20 @@ screenshots, not systems.
 **Goal**: registry, A/B, drift, retraining — the FAANG-grade signal.
 
 ### Phase 3a: Registry (Weeks 18–19)
+
 - 4-stage lifecycle (candidate / shadow / champion / archived)
 - Promotion API + admin endpoints
 - Feature schema hashing enforcement at registration
-- Training data snapshotting tied to model lifecycle
+- Training data snapshotting tied to model lifecycle — snapshot artifacts (ONNX + JSON metadata + `feature_pipeline.json` + Parquet) written to S3 via the S3-compatible client (ADR-0007), keyed under `snapshots/v{N}/`. Each snapshot ships a `manifest.json` with feature schema hash + per-file SHA-256s; loaders fail loud on schema mismatch (rule 7) and on stale local mirror.
 
 ### Phase 3b: A/B Routing (Weeks 19–20)
+
 - Shadow-mode default + real-A/B path (game_id Murmur3 bucketing)
 - Pre-declared promotion criteria + experiment_results table
 - Async batched logging to ClickHouse `prediction_log`
 
 ### Phase 3c: Drift Detection (Weeks 20–21)
+
 - Daily batch: PSI per feature, PSI on predictions, calibration on observed outcomes
 - Weekly batch: per-segment metrics, long-window comparisons
 - ClickHouse `drift_metrics` table
@@ -153,6 +168,7 @@ screenshots, not systems.
 - Alerting policy: page / notice / logged-only via Discord webhook
 
 ### Phase 3d: Retraining Triggers (Weeks 21–22)
+
 - `retraining_queue` table
 - Three triggers: scheduled (monthly floor) + drift-based (calibration > 1.5x for 7d) + manual
 - Python retraining job processes queue
@@ -160,20 +176,22 @@ screenshots, not systems.
 - End-to-end retrain test
 
 ### Phase 3 hardening additions (concurrent with 3a–3d)
+
 - **JMH benchmark suite** for the inference path (ONNX session prediction p50/p99, A/B router decision time, calibrator apply time). Wired into CI via `scripts/check_benchmarks.py` comparing against the previous commit's numbers; fails on >25% regression (matches StudyForesight's threshold).
 - **Repository pattern formalized in `data/`** — five explicit aggregates: `ModelRegistryRepository`, `ExperimentResultsRepository`, `PredictionLogRepository`, `DriftMetricsRepository`, `RetrainingQueueRepository`. Each owns its table(s) with a typed API; no `JdbcTemplate` calls leak outside `data/`.
 
 ### Exit criterion
+
 **Trigger retrain manually → new candidate registered with eval → promote
 through shadow → champion via API → traffic shifts visible in logs → old
 champion archived. Full lifecycle, end-to-end.**
 
 ### MVP cuts (in priority order if behind)
 
-| When | Cut | Saves | Cost |
-|---|---|---|---|
-| End of Wk 20 if behind | Cut real-A/B path; keep shadow only | ~10h | Still demonstrates harder discipline (paired eval) |
-| End of Wk 22 if behind | Cut automated drift triggering; keep drift measurement, manual retrains | ~5h | Drift detector still demonstrates depth |
+| When                   | Cut                                                                     | Saves | Cost                                               |
+| ---------------------- | ----------------------------------------------------------------------- | ----- | -------------------------------------------------- |
+| End of Wk 20 if behind | Cut real-A/B path; keep shadow only                                     | ~10h  | Still demonstrates harder discipline (paired eval) |
+| End of Wk 22 if behind | Cut automated drift triggering; keep drift measurement, manual retrains | ~5h   | Drift detector still demonstrates depth            |
 
 **Hard rule: NEVER cut the registry.** It's the spine; everything else attaches.
 
@@ -184,17 +202,21 @@ champion archived. Full lifecycle, end-to-end.**
 **Goal**: 5 pages exist and demonstrate the system meaningfully.
 
 ### Phase 4a: Design system tokens (Week 23)
+
 Mantine + Tailwind config with all design tokens:
+
 - Source Serif loaded
 - Color palette as CSS vars
 - Type scale as utility classes
 - Locked discipline rules: hex codes in components = defects
 
 ### Phase 4b: Player Lookup (Weeks 24–25)
+
 Search, profile, prediction history, calibration plot. Simplest analytical
 page — good warmup.
 
 ### Phase 4c: Park Explorer (Weeks 25–27) — MARQUEE
+
 - 30-stadium HR probability heatmap
 - Sliders for launch parameters (debounced)
 - **Largest single component, highest variance in visual quality**
@@ -202,11 +224,13 @@ page — good warmup.
 - Don't try to nail it on first attempt.
 
 ### Phase 4d: Game / Live view (Weeks 27–28)
+
 - Live polling (TanStack Query, 10–15s)
 - Pitch-by-pitch feed with model predictions
 - Real-time updates via cache invalidation
 
 ### Phase 4e: Ops Dashboard (Week 29)
+
 - Model registry browser
 - Drift charts
 - A/B status
@@ -215,22 +239,25 @@ page — good warmup.
 - **This is the recruiter-facing page**
 
 ### Phase 4f: About / Methodology (Week 30)
+
 Editorial visual treatment. Source Serif headlines. Long-form prose.
 
 ### Phase 4 hardening additions (do during 4a token work, before component build)
+
 - **TS strict flags enabled** in `tsconfig.app.json`: `noUnusedLocals`, `noUnusedParameters`, `noImplicitReturns`, `noUncheckedIndexedAccess`. Pay the migration cost early when the codebase is small.
 - **Security headers on the Vercel-served frontend**: COOP, CORP, CSP `frame-ancestors 'none'`. Configured in `vercel.json`.
 
 ### Exit criterion
+
 **All 5 pages exist, all have loading/error/empty states, Lighthouse > 80,
 bundle < 300KB gzipped initial.**
 
 ### MVP cuts (in priority order if behind)
 
-| When | Cut | Saves | Cost |
-|---|---|---|---|
-| End of Wk 28 if behind | Drop Game / Live view | ~12h | Lose live-watching demo (Park Explorer "today's BIPs" partially compensates) |
-| End of Wk 30 if behind | Cut visual ambition on About page | ~10h | About becomes minimal-functional |
+| When                   | Cut                               | Saves | Cost                                                                         |
+| ---------------------- | --------------------------------- | ----- | ---------------------------------------------------------------------------- |
+| End of Wk 28 if behind | Drop Game / Live view             | ~12h  | Lose live-watching demo (Park Explorer "today's BIPs" partially compensates) |
+| End of Wk 30 if behind | Cut visual ambition on About page | ~10h  | About becomes minimal-functional                                             |
 
 **Hard rule: NEVER cut the Ops dashboard.** It's the recruiter-clicked page.
 
@@ -241,6 +268,7 @@ bundle < 300KB gzipped initial.**
 **Goal**: Public launch. Operate through season. Write postmortems.
 
 ### Build
+
 - Polish phase across all pages: typography, spacing, color, motion, accessibility
 - One specific iteration on Park Explorer heatmap: "fine" → "memorable"
 - Performance optimizations (bundle audit, image optimization, lazy loading)
@@ -252,11 +280,13 @@ bundle < 300KB gzipped initial.**
 - **Top-level `docs/runbooks/ROLLBACK.md`** covering all rollback scenarios (deploy / migration / model promotion / drift retrain). Each scenario: detection signal → decision criteria → exact commands → verification steps. The doc on-call you reads at 2am.
 
 ### Exit criterion
+
 **Project publicly accessible, README links to all artifacts, ≥1 drift
 event observed and documented in postmortem, system running ≥4 weeks
 with documented uptime.**
 
 ### MVP cuts
+
 **Extend timeline rather than cut.** Polish compounds; cutting it produces
 a worse final artifact.
 
@@ -303,7 +333,7 @@ metrics and a file/PR reference. README and Phase 6 hiring work both link to it.
 
 ### MVP cuts
 
-**Do not cut the artifact.** If energy is limited, *shrink the number of items*
+**Do not cut the artifact.** If energy is limited, _shrink the number of items_
 in the table — but still produce the document. Even 5 honest hardening items
 with before/after metrics is better than nothing. A missing sweep doc undoes
 the work of Phases 0–5 from an L5-evaluation standpoint.
@@ -313,7 +343,7 @@ the work of Phases 0–5 from an L5-evaluation standpoint.
 ## Phase 6: Hiring Readiness (post-Phase-5, ongoing) | ~30–50 hours
 
 **Goal**: Make the engineering legible to a hiring audience. Phase 5
-ships the engineering; Phase 6 makes the engineering *land*.
+ships the engineering; Phase 6 makes the engineering _land_.
 
 This phase is unusual in that it can run concurrent with Phase 5 calendar-wise
 (write the README during the season, file the OSS PR whenever you hit a real
@@ -345,7 +375,7 @@ README and a blog-format postmortem, that investment doesn't compound.
 - **Lessons-learned doc** separate from the postmortem
   - Broader than a single incident; covers the whole season of operation
   - What you'd architect differently, what surprised you, which discipline rules paid off vs felt like overhead, what you'd tell yourself if starting again
-  - Demonstrates *reflection* — the trait that separates "junior who shipped" from "junior who'll grow fast"
+  - Demonstrates _reflection_ — the trait that separates "junior who shipped" from "junior who'll grow fast"
 - **60-second verbal pitch rehearsed**
   - Practice it spoken, not just written. If it feels stilted, rewrite. HMs can tell a memorized script from a story you actually believe.
 - **Keep the Ops Dashboard accessible post-launch with realistic data**
@@ -376,12 +406,12 @@ Every two weeks, sit down for 30 minutes. Ask:
 
 1. Am I on the exit criterion for this phase?
 2. If not, by how many days/hours behind?
-3. If behind by ≥1 week, which soft cut do I take *now*?
+3. If behind by ≥1 week, which soft cut do I take _now_?
 
 **Cuts made early are surgical. Cuts made late are amputations.**
 
 If you fall behind by 4 weeks total, escalate the review: re-scope the
-*project*, not just the phase. Better to ship a smaller version on time
+_project_, not just the phase. Better to ship a smaller version on time
 than a bigger version never.
 
 ---
@@ -428,6 +458,8 @@ Cherry-pick from this list rather than committing upfront:
 8. **No skipping the reboot drill.** Untested recovery means unreliable system.
 9. **No promotion without pre-declared criteria.** Discipline that distinguishes the project.
 10. **No auto-promotion of retrained models.** Human in the loop.
+11. **Local dev on macOS only; prod is the WSL2 desktop.** No code edits on the prod box. Writes happen via `git push` + `deploy.sh` (or CI) only; SSH / remote-control into prod is read-only by convention. (ADR-0006)
+12. **All object storage via S3-compatible client with `S3_ENDPOINT_URL` as the only environment-specific knob.** Backblaze B2 in prod; MinIO on the portable drive for offline dev. No `file://` paths in storage code, no second abstraction. (ADR-0007)
 
 ---
 

@@ -1,0 +1,43 @@
+[Unit]
+Description=The Bullpen worker (Spring Boot, worker profile — drift, ingest, retraining queue)
+Documentation=https://github.com/Alexm-picard/the-bullpen
+After=network-online.target docker.service bullpen-api.service
+Wants=network-online.target
+# Worker starts after api so the registry's first-boot Flyway migration runs
+# from a single process. Removing this dependency is fine once both processes
+# share a migrated DB; keep it as a Phase-0 safety belt.
+
+[Service]
+Type=simple
+User=alepic
+Group=alepic
+WorkingDirectory=/opt/thebullpen
+
+EnvironmentFile=-/etc/default/bullpen
+
+Environment=SPRING_PROFILES_ACTIVE=worker
+Environment=BULLPEN_PORT=8081
+Environment=BULLPEN_REGISTRY_DB=/opt/thebullpen/data/registry.sqlite
+Environment=LOG_FORMAT=json
+Environment=JAVA_OPTS_WORKER=-Xms128m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200
+
+ExecStart=/usr/bin/java $JAVA_OPTS_WORKER -jar /opt/thebullpen/app.jar
+
+SuccessExitStatus=143
+TimeoutStopSec=30
+
+Restart=on-failure
+RestartSec=10
+StartLimitIntervalSec=90
+StartLimitBurst=5
+
+LimitNOFILE=65536
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/opt/thebullpen /var/log/bullpen
+
+[Install]
+WantedBy=multi-user.target
