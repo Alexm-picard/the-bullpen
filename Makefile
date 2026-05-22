@@ -20,9 +20,10 @@ IS_MAC   := $(if $(filter Darwin,$(UNAME)),1,0)
 IS_LINUX := $(if $(filter Linux,$(UNAME)),1,0)
 
 # ADR-0007 knobs — keep defaults that work without any account so `make help`
-# stays useful on a fresh checkout.
-B2_REMOTE       ?= bullpen-b2
-B2_BUCKET       ?= bullpen-prod
+# stays useful on a fresh checkout. Prod target is Cloudflare R2 per decision
+# [128] (originally B2, reverted before any code was written against B2).
+R2_REMOTE       ?= bullpen-r2
+R2_BUCKET       ?= bullpen-prod
 MINIO_DATA_DIR  ?= /Volumes/MyDrive/bullpen-data
 MINIO_PORT      ?= 9000
 MINIO_CONSOLE   ?= 9001
@@ -79,7 +80,7 @@ train-full: ## Trigger a full training run (Mac side: ssh to desktop; desktop si
 minio-up: ## Start MinIO on the portable drive (Mac only)
 	@if [[ "$(IS_MAC)" != "1" ]]; then \
 	  echo "ERROR: minio-up is Mac-only (ADR-0007 — offline dev runs on MacBook + portable drive)." >&2; \
-	  echo "       Prod uses B2 directly; no local MinIO needed on the WSL2 host." >&2; \
+	  echo "       Prod uses R2 directly; no local MinIO needed on the WSL2 host." >&2; \
 	  exit 1; \
 	fi
 	@if ! command -v minio >/dev/null 2>&1; then \
@@ -113,7 +114,7 @@ minio-down: ## Stop the local MinIO instance
 	  rm -f "$(MINIO_PIDFILE)"
 
 .PHONY: sync-mirror
-sync-mirror: ## rclone sync B2 → portable drive (Mac only, pre-travel ritual)
+sync-mirror: ## rclone sync R2 → portable drive (Mac only, pre-travel ritual)
 	@if [[ "$(IS_MAC)" != "1" ]]; then \
 	  echo "ERROR: sync-mirror is Mac-only (the offline mirror lives on the portable drive)." >&2; \
 	  exit 1; \
@@ -121,18 +122,19 @@ sync-mirror: ## rclone sync B2 → portable drive (Mac only, pre-travel ritual)
 	@if ! command -v rclone >/dev/null 2>&1; then \
 	  echo "ERROR: rclone not installed. brew install rclone" >&2; exit 1; \
 	fi
-	@if ! rclone listremotes | grep -q "^$(B2_REMOTE):$$"; then \
-	  echo "ERROR: rclone remote '$(B2_REMOTE)' not configured." >&2; \
-	  echo "       Run: rclone config (choose 's3', provider 'Other', endpoint" >&2; \
-	  echo "       https://s3.us-west-002.backblazeb2.com, supply B2 application key)." >&2; \
+	@if ! rclone listremotes | grep -q "^$(R2_REMOTE):$$"; then \
+	  echo "ERROR: rclone remote '$(R2_REMOTE)' not configured." >&2; \
+	  echo "       Run: rclone config (choose 's3', provider 'Cloudflare R2'," >&2; \
+	  echo "       endpoint https://<account-id>.r2.cloudflarestorage.com," >&2; \
+	  echo "       supply R2 access key + secret)." >&2; \
 	  exit 1; \
 	fi
 	@if [[ ! -d "$(MINIO_DATA_DIR)" ]]; then \
 	  echo "ERROR: $(MINIO_DATA_DIR) not mounted. Plug in the portable drive." >&2; exit 1; \
 	fi
-	@echo "Syncing $(B2_REMOTE):$(B2_BUCKET)/samples/dev/ → $(MINIO_DATA_DIR)/samples/dev/"
+	@echo "Syncing $(R2_REMOTE):$(R2_BUCKET)/samples/dev/ → $(MINIO_DATA_DIR)/samples/dev/"
 	rclone sync --progress \
-	  "$(B2_REMOTE):$(B2_BUCKET)/samples/dev/" \
+	  "$(R2_REMOTE):$(R2_BUCKET)/samples/dev/" \
 	  "$(MINIO_DATA_DIR)/samples/dev/"
 	@echo "Mirror updated at $$(date -u +%FT%TZ). Snapshot is travel-ready."
 

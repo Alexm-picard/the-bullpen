@@ -10,25 +10,27 @@
 
 **Logback config** (Spring): `JsonEncoder` from `logstash-logback-encoder` or equivalent. Required fields per event:
 
-| Field | Source | Notes |
-|---|---|---|
-| `@timestamp` | auto | ISO-8601 UTC with milliseconds |
-| `level` | auto | `INFO` / `WARN` / `ERROR` etc. |
-| `logger` | auto | fully-qualified class name |
-| `thread` | auto | virtual-thread name when applicable |
-| `message` | call site | human-readable; no string interpolation of secrets |
-| `trace_id` | MDC | OpenTelemetry trace id; propagated to async logging |
-| `span_id` | MDC | OpenTelemetry span id |
-| `mdc.*` | MDC | request_id, model_name, model_version_id, role, game_id (if applicable) |
+| Field        | Source    | Notes                                                                   |
+| ------------ | --------- | ----------------------------------------------------------------------- |
+| `@timestamp` | auto      | ISO-8601 UTC with milliseconds                                          |
+| `level`      | auto      | `INFO` / `WARN` / `ERROR` etc.                                          |
+| `logger`     | auto      | fully-qualified class name                                              |
+| `thread`     | auto      | virtual-thread name when applicable                                     |
+| `message`    | call site | human-readable; no string interpolation of secrets                      |
+| `trace_id`   | MDC       | OpenTelemetry trace id; propagated to async logging                     |
+| `span_id`    | MDC       | OpenTelemetry span id                                                   |
+| `mdc.*`      | MDC       | request_id, model_name, model_version_id, role, game_id (if applicable) |
 
 **Python (`structlog`)**: emit identical schema. Add `trigger_id` field for retraining-job logs (Risk Register I8).
 
 **Filters**:
+
 - Logback `MaskingPatternLayout` redacts: `password`, `Authorization`, `Cookie`, `webhook_url`, `api_key`, `B2_*`, `CLICKHOUSE_PASSWORD`.
 - Never log full feature vectors at INFO. DEBUG only, behind a feature flag.
 - Never log raw stack-trace strings — use Logback's structured exception field.
 
 **Reading logs**:
+
 ```bash
 journalctl -u thebullpen-api -f                   # follow
 journalctl -u thebullpen-worker --since "1h ago"  # last hour
@@ -42,6 +44,7 @@ journalctl -u thebullpen-* | jq -c 'select(.level == "ERROR")'
 **Source**: Spring Boot Actuator + Micrometer → Prometheus.
 
 **Endpoints**:
+
 - `/actuator/health` — public liveness (used by Better Stack).
 - `/actuator/health/readiness` — gates "warm-up complete" (Risk Register G11).
 - `/actuator/prometheus` — Prometheus scrape target.
@@ -54,20 +57,20 @@ thebullpen_<subsystem>_<metric>_<unit>{<labels>}
 
 Required metrics by phase:
 
-| Subsystem | Metric | Type | Phase added |
-|---|---|---|---|
-| `inference` | `prediction_total{model_name, role}` | counter | Phase 1 |
-| `inference` | `prediction_latency_seconds{model_name}` | histogram | Phase 1 |
-| `inference` | `prediction_error_total{model_name, error_type}` | counter | Phase 1 |
-| `inference` | `model_version_active{model_name}` | gauge | Phase 3 |
-| `logger` | `prediction_log_queue_depth` | gauge | Phase 3 |
-| `logger` | `prediction_log_dropped_total` | counter | Phase 3 |
-| `ingest` | `live_poll_lag_seconds{game_id}` | gauge | Phase 4 |
-| `ingest` | `mlb_api_request_total{endpoint, status}` | counter | Phase 4 |
-| `drift` | `drift_metric_psi{model_name, feature}` | gauge | Phase 3c |
-| `drift` | `drift_metric_calibration_ratio{model_name}` | gauge | Phase 3c |
-| `retraining` | `retraining_queue_depth` | gauge | Phase 3d |
-| `retraining` | `retraining_job_duration_seconds{model_name, trigger}` | histogram | Phase 3d |
+| Subsystem    | Metric                                                 | Type      | Phase added |
+| ------------ | ------------------------------------------------------ | --------- | ----------- |
+| `inference`  | `prediction_total{model_name, role}`                   | counter   | Phase 1     |
+| `inference`  | `prediction_latency_seconds{model_name}`               | histogram | Phase 1     |
+| `inference`  | `prediction_error_total{model_name, error_type}`       | counter   | Phase 1     |
+| `inference`  | `model_version_active{model_name}`                     | gauge     | Phase 3     |
+| `logger`     | `prediction_log_queue_depth`                           | gauge     | Phase 3     |
+| `logger`     | `prediction_log_dropped_total`                         | counter   | Phase 3     |
+| `ingest`     | `live_poll_lag_seconds{game_id}`                       | gauge     | Phase 4     |
+| `ingest`     | `mlb_api_request_total{endpoint, status}`              | counter   | Phase 4     |
+| `drift`      | `drift_metric_psi{model_name, feature}`                | gauge     | Phase 3c    |
+| `drift`      | `drift_metric_calibration_ratio{model_name}`           | gauge     | Phase 3c    |
+| `retraining` | `retraining_queue_depth`                               | gauge     | Phase 3d    |
+| `retraining` | `retraining_job_duration_seconds{model_name, trigger}` | histogram | Phase 3d    |
 
 JVM, HTTP, and DB-pool metrics come free from Actuator — leave defaults on.
 
@@ -88,18 +91,21 @@ JVM, HTTP, and DB-pool metrics come free from Actuator — leave defaults on.
 Three dashboards. Provisioned via JSON files in `infra/grafana/dashboards/`.
 
 ### 1. Application
+
 - Request rate / latency / error rate per endpoint
 - Inference latency by model
 - Async logger queue depth + drop count
 - JVM heap, virtual-thread count, GC pauses
 
 ### 2. System
+
 - CPU / memory / disk / network on the host (node_exporter)
 - ClickHouse query latency, partition count, disk usage per partition
 - SQLite WAL size, last vacuum
-- B2 last-successful-backup timestamp
+- R2 last-successful-backup timestamp (was B2; switched per decision [128] / ADR-0007)
 
 ### 3. ML Ops
+
 - Active model versions per `model_name`
 - Champion vs. challenger traffic split
 - Drift metrics (PSI, calibration error) over rolling 30 days
@@ -123,6 +129,7 @@ Better Stack and Healthchecks.io are picked because they're free at our usage le
 Three severities. Templates stored in `ops/runbooks/alert-templates.md`. Format:
 
 **Page** (red):
+
 ```
 🔴 PAGE — <title>
 When: <ISO timestamp UTC>
@@ -133,6 +140,7 @@ trace_id / trigger_id: <ids>
 ```
 
 **Notice** (yellow):
+
 ```
 🟡 NOTICE — <title>
 When: <ISO timestamp UTC>
@@ -147,15 +155,15 @@ Runbook: <link>
 
 ## Alert thresholds (locked from design.md §3.3 / §9)
 
-| Trigger | Severity | Action |
-|---|---|---|
-| `/actuator/health` 5xx for 2 consecutive checks | Page | Investigate within 1 hour |
-| Champion calibration error > 1.5× training calibration for 3+ days | Page | Investigate within 24 hours; do NOT auto-promote anything |
-| Retraining job failed | Page | Investigate before next scheduled run |
-| Any feature PSI > 0.25 sustained 7+ days | Notice | Review at next weekly check |
-| Live polling lag > 60s for 5+ minutes during a game | Notice | Verify MLB API status |
-| Nightly job runtime anomaly (>2× p95) | Notice | Review at next weekly check |
-| Async logger drop count > 0 in last hour | Logged-only | Visible on dashboard |
+| Trigger                                                            | Severity    | Action                                                    |
+| ------------------------------------------------------------------ | ----------- | --------------------------------------------------------- |
+| `/actuator/health` 5xx for 2 consecutive checks                    | Page        | Investigate within 1 hour                                 |
+| Champion calibration error > 1.5× training calibration for 3+ days | Page        | Investigate within 24 hours; do NOT auto-promote anything |
+| Retraining job failed                                              | Page        | Investigate before next scheduled run                     |
+| Any feature PSI > 0.25 sustained 7+ days                           | Notice      | Review at next weekly check                               |
+| Live polling lag > 60s for 5+ minutes during a game                | Notice      | Verify MLB API status                                     |
+| Nightly job runtime anomaly (>2× p95)                              | Notice      | Review at next weekly check                               |
+| Async logger drop count > 0 in last hour                           | Logged-only | Visible on dashboard                                      |
 
 ---
 
@@ -180,6 +188,7 @@ Each runbook is short (1 page max), starts with "If you're paged, do these thing
 Decision [82]. Phase 5.7 templates the document.
 
 A drift postmortem includes:
+
 - Date range of the incident
 - Linked Grafana dashboard snapshot (export PNG)
 - Affected model_name + version_id

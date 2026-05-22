@@ -68,7 +68,7 @@ Cumulative Parquet snapshots ~60GB after 3 years on a personal-desktop SSD. No r
 
 - **Owning phase**: Phase 3a (registry).
 - **Status**: 🔵 open.
-- **Resolution proposal**: Local: keep last 5 versions per model_name; older snapshots offloaded to B2 only (delete local). Registry stores B2 URI for old versions. Restoring an archived model fetches from B2 on demand.
+- **Resolution proposal**: Local: keep last 5 versions per model_name; older snapshots offloaded to Cloudflare R2 only (delete local). Registry stores the R2 URI for old versions. Restoring an archived model fetches from R2 on demand. (Storage target switched B2 → R2 per decision [128] / ADR-0007.)
 
 ### G8 🟡 ClickHouse retention (TTL)
 
@@ -144,7 +144,7 @@ Vercel frontend → Cloudflare Tunnel backend; preflight, allowed origins undefi
 
 ### I4 🟡 Secrets management
 
-HTTP basic credential, ClickHouse password, Discord webhook URL, Cloudflare token, B2 keys — no defined home.
+HTTP basic credential, ClickHouse password, Discord webhook URL, Cloudflare token (Tunnel + R2 S3 credential pair — R2 replaces B2 per [128]/ADR-0007) — no defined home.
 
 - **Owning phase**: Phase 0.3.
 - **Status**: 🔵 open.
@@ -211,6 +211,7 @@ Tests must not load both `api` and `worker` profile beans simultaneously.
 ## How to use this register
 
 When implementing a leaf plan:
+
 1. Skim this register for entries owned by your phase.
 2. If a 🔴 entry is unresolved and your leaf depends on it, **stop and surface to the user** before coding.
 3. If a 🟡 or 🟢 entry is unresolved but a resolution proposal exists, follow the proposal — and if you discover the proposal is wrong, propose an alternative as a `decisions.md` ADR before changing course.

@@ -32,12 +32,15 @@ The old `.claude/settings.json` hook pointed at a `studyforesight` path — I al
 The `ui-design-loop` and `frontend-reviewer` agents reference three external skills. They degrade gracefully if missing, but you get the most out of them with all three installed.
 
 ### `ui-ux-pro-max` — already enabled
+
 You already have this via the `ui-ux-pro-max@ui-ux-pro-max-skill` plugin in `.claude/settings.json`. Nothing to do.
 
 ### `frontend-design` (Anthropic-official)
-> *"Create distinctive, production-grade frontend interfaces with high design quality."* Available in the `anthropic-agent-skills` marketplace (already on disk at `~/.claude/plugins/marketplaces/anthropic-agent-skills/skills/frontend-design/`).
+
+> _"Create distinctive, production-grade frontend interfaces with high design quality."_ Available in the `anthropic-agent-skills` marketplace (already on disk at `~/.claude/plugins/marketplaces/anthropic-agent-skills/skills/frontend-design/`).
 
 Enable via the plugin system:
+
 ```bash
 # In a Claude Code session:
 /plugin marketplace add anthropic-agent-skills    # if not already added
@@ -45,52 +48,61 @@ Enable via the plugin system:
 ```
 
 Or copy directly into project scope:
+
 ```bash
 mkdir -p .claude/skills
 cp -r ~/.claude/plugins/marketplaces/anthropic-agent-skills/skills/frontend-design .claude/skills/
 ```
 
 Verify:
+
 ```bash
 ls .claude/skills/ | grep frontend-design   # or check `/plugin list` for enabled status
 ```
 
 **Important — locks are challengeable, not gag orders:**
 
-The agents are **not** wired to suppress `frontend-design`'s dissent against project locks. The whole reason to stack four skills is to get varying opinions. If `frontend-design` (or `taste-skill`) makes a strong case against a locked choice — say, "Inter is generic, try Söhne or IBM Plex Sans" — the agent captures the dissent, generates 2–3 concrete alternatives, scores them through all four lenses, and surfaces a recommendation to you with: *"this would reverse decision [N] — run `/decide` to formally reconsider."*
+The agents are **not** wired to suppress `frontend-design`'s dissent against project locks. The whole reason to stack four skills is to get varying opinions. If `frontend-design` (or `taste-skill`) makes a strong case against a locked choice — say, "Inter is generic, try Söhne or IBM Plex Sans" — the agent captures the dissent, generates 2–3 concrete alternatives, scores them through all four lenses, and surfaces a recommendation to you with: _"this would reverse decision [N] — run `/decide` to formally reconsider."_
 
 Outcomes per locked choice in any given iteration:
-1. **Lock holds** — dissent is weak or already addressed by the lock's reasoning (the Inter+JetBrains+Serif pairing is *already* differentiated; weak generic anti-Inter objections lose). Documented in the output.
+
+1. **Lock holds** — dissent is weak or already addressed by the lock's reasoning (the Inter+JetBrains+Serif pairing is _already_ differentiated; weak generic anti-Inter objections lose). Documented in the output.
 2. **Lock surfaces for `/decide`** — two skills converging or one skill making a specific evidence-backed case. Alternatives proposed, user decides via `/decide`.
 3. **Lock holds with documented dissent** — partial agreement; user can revisit later.
 
 **Mechanical/safety rules stay non-negotiable** regardless of skill input: no hex codes, no `useEffect` for server state, no WebSockets, no `any` types, a11y basics. These aren't aesthetic — they're discipline rules.
 
 The known tensions to watch for:
+
 - `frontend-design`'s "avoid Inter" — likely to fire often; usually the three-font pairing answers the underlying concern, but stay open to a strong specific case (e.g., "Inter renders pitch-by-pitch numeric data poorly at 14px vs JetBrains Mono Variable")
-- `frontend-design`'s "bold maximalism" bias — usually wrong for data screens (the locked editorial+industrial direction is intentional), but may be *right* for marketing/onboarding/landing screens — challenge per-screen, not blanket
+- `frontend-design`'s "bold maximalism" bias — usually wrong for data screens (the locked editorial+industrial direction is intentional), but may be _right_ for marketing/onboarding/landing screens — challenge per-screen, not blanket
 
 ### `taste-skill` (Leonxlnx/taste-skill)
-> *"Gives your AI good taste. Stops the AI from generating boring, generic slop."*
+
+> _"Gives your AI good taste. Stops the AI from generating boring, generic slop."_
 
 Install (project scope recommended so it ships with the repo):
+
 ```bash
 # From the repo root
 npx skills add https://github.com/Leonxlnx/taste-skill --skill design-taste-frontend
 ```
 
 If you want all variants (frontend + image-gen + mobile + branding):
+
 ```bash
 npx skills add https://github.com/Leonxlnx/taste-skill
 ```
 
 The skill installs as a `SKILL.md` file in `.claude/skills/`. Verify with:
+
 ```bash
 ls .claude/skills/ | grep -i taste
 ```
 
 ### `impeccable` (pbakaus/impeccable)
-> *"The design language that makes your AI harness better at design."* 23 commands, 7 domain references, 27 anti-pattern rules.
+
+> _"The design language that makes your AI harness better at design."_ 23 commands, 7 domain references, 27 anti-pattern rules.
 
 No `claude plugin add` for this one — install by copying the bundle:
 
@@ -107,6 +119,7 @@ rm -rf /tmp/impeccable
 ```
 
 Verify with:
+
 ```bash
 ls .claude/commands/ | grep impeccable   # if project-scoped
 # or
@@ -116,6 +129,7 @@ ls ~/.claude/commands/ | grep impeccable # if global
 You should see `impeccable.md` and ~22 sub-commands. Test by running `/impeccable teach` in a fresh Claude Code session.
 
 ### How the agents use them
+
 - **ui-design-loop**:
   - Phase 1 (proposal): `ui-ux-pro-max` + `taste-skill` prime the generation
   - Phase 2 (synthesis): both score the Claude/Stitch candidates before cherry-pick
@@ -307,6 +321,7 @@ Each will land as a numbered entry in `docs/decisions.md` and update `docs/desig
 ## 8. Run the drills before the season
 
 Per discipline rule 8:
+
 - `/drill restore` — once the SQLite registry + ClickHouse have real data
 - `/drill reboot` — once systemd units exist for `api` and `worker`
 
@@ -318,7 +333,7 @@ Don't ship to the season without both reports under `docs/drills/`.
 - **Did not add Cloudflare MCP** — only useful if you'll manage the Tunnel/DNS through Claude. Skip unless you want it.
 - **Did not delete the studyforesight agents/skills** — destructive; flagged for you to clean up in step 2.
 - **Did not write any production code** — Phase 0 scaffolding is yours to drive.
-- **Did not set up cloud offsite backup** — you picked external USB. If the desktop *and* the USB are at the same physical location (apartment fire, theft), there's no recovery path. Mitigation: take the USB to a different location (work, friend's house) periodically. Cloud (B2 ~$1/month) remains an option if this concerns you later.
+- **Did not set up cloud offsite backup** at original-doc time — USB was Layer 2. Updated 2026-05-21: ADR-0007 + decisions [127][128] add Cloudflare R2 as an S3-compatible target for backups + model artifacts (free tier covers Phase-0 traffic, $0 egress, vendor-consolidated with Tunnel + DNS). USB remains Layer 2 for hardware-contingency; R2 becomes the offsite layer. Defense in depth.
 - **Did not generate Phase 0 docker-compose, deploy.sh, or any backend/training/frontend scaffolding** — that's Tier 2 deferred work. When you're ready, ask for `infra/docker-compose.yml` and the Phase 1 vertical-slice doc.
 
 ## 10. Files written during this setup

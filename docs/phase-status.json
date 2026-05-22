@@ -73,7 +73,7 @@
         {
           "label": "ADR system established (docs/adr/ + first 7 ADRs covering initial tech decisions from design.md §10 + operational-discipline decisions from 2026-05-21)",
           "done": true,
-          "details": "ADR-0001–0005 written 2026-05-19 — Java not Kotlin, ONNX in-process not sidecar, ClickHouse + SQLite not Postgres-only, Mantine+Tailwind not pure Tailwind, polling not WebSockets; decisions.md entries [121]–[125] reference them. ADR-0006 (dev/prod boundary — macOS dev only, no edits on the prod box) and ADR-0007 (S3-compatible storage — B2 prod, MinIO offline) written 2026-05-21; decisions.md entries [126]–[127] reference them. ADR-0006 and ADR-0007 are auto-imported into Claude context via @docs/adr/... in CLAUDE.md because they're easiest to violate silently. Template at docs/adr/TEMPLATE.md."
+          "details": "ADR-0001–0005 written 2026-05-19 — Java not Kotlin, ONNX in-process not sidecar, ClickHouse + SQLite not Postgres-only, Mantine+Tailwind not pure Tailwind, polling not WebSockets; decisions.md entries [121]–[125] reference them. ADR-0006 (dev/prod boundary — macOS dev only, no edits on the prod box) and ADR-0007 (S3-compatible storage — R2 prod, MinIO offline; revised same day from B2 to R2 per decision [128]) written 2026-05-21; decisions.md entries [126]–[128] reference them. ADR-0006 and ADR-0007 are auto-imported into Claude context via @docs/adr/... in CLAUDE.md because they're easiest to violate silently. Template at docs/adr/TEMPLATE.md."
         },
         {
           "label": "Dev / prod boundary formalized (ADR-0006) — macOS is the only authoring machine; no editor on the WSL2 working copy; deploy.sh + CI are the only writers",
@@ -81,9 +81,9 @@
           "details": "Discipline rule, not code: enforced by convention. Concrete deliverables: (a) make train-sample target on the MacBook for stratified-sample iteration, (b) make train-full target that ssh-triggers the desktop, (c) bootstrap docs verified by a Phase 0 restore drill from a clean WSL2 install. SSH into prod allowed for OBSERVATION (logs, Grafana, ClickHouse queries) only."
         },
         {
-          "label": "S3-compatible object storage online (ADR-0007) — B2 in prod, MinIO offline on the portable drive, S3_ENDPOINT_URL is the only environment-specific knob",
+          "label": "S3-compatible object storage online (ADR-0007) — Cloudflare R2 in prod (per decision [128]), MinIO offline on the portable drive, S3_ENDPOINT_URL is the only environment-specific knob",
           "done": false,
-          "details": "Concrete deliverables: (a) B2 bucket bullpen-prod with samples/dev/ + snapshots/v{N}/ + raw/ prefixes, (b) rclone remote configured against B2's S3-compatible endpoint, (c) boto3 (Python) and aws-sdk-s3 (Java) wired to read S3_ENDPOINT_URL, (d) MinIO launchable from /Volumes/MyDrive/bullpen-data via make minio-up, (e) make sync-mirror running rclone sync from B2 to the portable drive. Manifest validation enforces feature schema hash on load."
+          "details": "Concrete deliverables: (a) Cloudflare R2 bucket bullpen-prod with samples/dev/ + snapshots/v{N}/ + raw/ prefixes, (b) rclone remote 'bullpen-r2' configured against R2's S3-compatible endpoint (https://<account-id>.r2.cloudflarestorage.com), (c) boto3 (Python) and aws-sdk-s3 (Java) wired to read S3_ENDPOINT_URL, (d) MinIO launchable from /Volumes/MyDrive/bullpen-data via make minio-up, (e) make sync-mirror running rclone sync from R2 to the portable drive. Manifest validation enforces feature schema hash on load."
         },
         {
           "label": "Structured JSON logging baseline (logback-json Java side, structlog Python side, correlation IDs propagated through every request)",

@@ -5,9 +5,7 @@
 >
 > **Phase exit criterion**: Trigger retrain manually → new candidate registered with eval → promote through shadow → champion via API → traffic shifts visible in logs → old champion archived. Full lifecycle, end-to-end.
 >
-> **Soft cuts** (in priority order):
-> 3. End of Wk 20 if behind: cut real-A/B routing, keep shadow only (~10 h).
-> 4. End of Wk 22 if behind: cut automated drift retraining, keep drift measurement and manual retrains (~5 h).
+> **Soft cuts** (in priority order): 3. End of Wk 20 if behind: cut real-A/B routing, keep shadow only (~10 h). 4. End of Wk 22 if behind: cut automated drift retraining, keep drift measurement and manual retrains (~5 h).
 >
 > **Hard rule (Discipline 5)**: NEVER cut the registry. It's the spine; everything attaches.
 
@@ -30,17 +28,19 @@
 Weeks 18–19. The spine. Everything else attaches to it.
 
 Leaf plans:
+
 - `3a.1-registry-schema-and-flyway.md` — `model_versions`, `model_routing`, `experiment_results` tables
 - `3a.2-registry-service-crud.md` — Spring service + repository, no controllers yet
 - `3a.3-feature-schema-hash-enforcement.md` — bootstrap rule and ongoing enforcement (Risk Register G3)
 - `3a.4-promotion-api-admin-endpoints.md` — `/v1/admin/registry/{model_name}/promote/{version_id}` etc.
-- `3a.5-training-snapshot-storage.md` — Parquet location, retention (5 versions local + B2 archive), reconciliation job (Risk Register G2, G7)
+- `3a.5-training-snapshot-storage.md` — Parquet location, retention (5 versions local + R2 archive — was B2; switched per [128]/ADR-0007), reconciliation job (Risk Register G2, G7)
 
 ### Phase 3b — A/B Routing → [`3b-ab-routing/`](3b-ab-routing/)
 
 Weeks 19–20. Shadow mode is the default. Real A/B available but reserved.
 
 Leaf plans:
+
 - `3b.1-routing-config-schema.md` — leverages `model_routing` from 3a.1
 - `3b.2-murmur3-game-id-bucketing.md` — deterministic, sticky, no client state (decision [71])
 - `3b.3-shadow-mode-default.md` — both models run; only champion returned; both logged
@@ -54,6 +54,7 @@ This is the **third soft-cut candidate**. If by end of Wk 20 we're behind, drop 
 Weeks 20–21. Three drift types tracked separately (decision [74]).
 
 Leaf plans:
+
 - `3c.1-drift-metrics-schema-clickhouse.md` — `drift_metrics` table with TTL = 36 months (Risk Register G8)
 - `3c.2-psi-feature-batch.md` — daily; PSI per feature; chi-squared for categoricals (decision [75])
 - `3c.3-psi-prediction-batch.md` — daily; PSI on predictions vs. training holdout
@@ -67,6 +68,7 @@ Leaf plans:
 Weeks 21–22. Three triggers, one queue, one Python job (decision [79]).
 
 Leaf plans:
+
 - `3d.1-retraining-queue-schema.md` — `retraining_queue` SQLite table; idempotency via unique constraints
 - `3d.2-three-triggers-scheduled-drift-manual.md` — monthly floor + drift-based ceiling (calibration > 1.5× sustained 7d) + manual button
 - `3d.3-python-retrain-job.md` — services all three trigger types; `trigger_id` propagation (Risk Register I8); atomic registration (decision [44] — registers only, no promotion)
@@ -80,7 +82,7 @@ This is the **fourth soft-cut candidate**. If behind, keep manual retrains and s
 
 - **Async batched logger** (decision [30]) is finalized in 3b.5 with role enum, queue depth metric, drop counter.
 - **Reconciliation job** for cross-DB integrity (Risk Register G2) lands in 3a.5.
-- **Snapshot retention to B2** (Risk Register G7) lands in 3a.5.
+- **Snapshot retention to R2** (Risk Register G7) lands in 3a.5. (Was B2; switched per [128]/ADR-0007.)
 - **TTL on `prediction_log`** (Risk Register G8) lands in 3b.5; on `drift_metrics` in 3c.1.
 - **`trigger_id` propagation** (Risk Register I8) lands across 3d.1–3d.3.
 

@@ -63,7 +63,7 @@ approval:
 9. **Two heads = two separate models** in the registry (pre-pitch / post-pitch). Not one model with feature masking.
 10. **All rolling/form features computed via streaming temporal cutoff.** Leakage tests in CI are non-negotiable: future contamination, shuffled-target, calendar-date trace, ID consistency.
 11. **Local dev on macOS, prod on the self-hosted Linux desktop. No code edits on the prod box.** SSH / remote-control into prod is read-only (logs, Grafana, ClickHouse queries); writes happen via `git push` + `./deploy.sh` only. See ADR-0006.
-12. **All object storage via S3-compatible client with `S3_ENDPOINT_URL` as the only environment-specific knob.** Prod = Backblaze B2; offline dev = MinIO on the portable drive. No `file://` paths in storage code, no second abstraction. See ADR-0007.
+12. **All object storage via S3-compatible client with `S3_ENDPOINT_URL` as the only environment-specific knob.** Prod = Cloudflare R2 (vendor-consolidated with Tunnel + DNS, per decision [128]); offline dev = MinIO on the portable drive. No `file://` paths in storage code, no second abstraction. See ADR-0007.
 
 ## Decision logging discipline — two layers
 

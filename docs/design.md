@@ -61,7 +61,7 @@ production system through real time-series data.
 - **Solo developer.** All design choices favor maintainability over
   sophistication when the two conflict.
 - **Free to operate.** Self-hosted on personal hardware; cloud usage limited
-  to free tiers (Vercel, Cloudflare, Backblaze B2).
+  to free tiers (Vercel, Cloudflare incl. R2 for object storage).
 - **Time-bounded.** ~8–10 months calendar at 12–15 hours/week sustainable.
 
 ---
@@ -74,24 +74,24 @@ production system through real time-series data.
   Windows 11 host with WSL2 Ubuntu 24.04 LTS for all services)
 - **Edge**: Cloudflare (DNS, Tunnel, free tier)
 - **Frontend host**: Vercel (free tier)
-- **Backups**: Backblaze B2 (free tier, ~$1/month if exceeded)
+- **Backups + model artifacts**: Cloudflare R2 (free tier covers Phase-0 traffic; $0 egress; vendor-consolidated with Tunnel + DNS per decision [128] / ADR-0007)
 
 ### Software
 
-| Layer | Technology | Notes |
-|---|---|---|
-| Backend language | **Java 21** | Locked. Virtual threads enabled. |
-| Backend framework | **Spring Boot 3.x** | One JAR, two profiles (`api`, `worker`), two systemd units |
-| Training language | **Python 3.11+** | Off the serving path; ONNX export only |
-| Inference | **ONNX Runtime Java** | In-process, no Python sidecar |
-| Analytical DB | **ClickHouse** | Pitches, drift metrics, prediction logs |
-| App state DB | **SQLite** | Model registry, A/B config, retraining queue |
-| Frontend | **React + TypeScript + Vite** | Pure SPA |
-| Component library | **Mantine + Tailwind** | Editorial-data design system |
-| Process management | **systemd** | Inside WSL2 |
-| Observability | **Prometheus + Grafana + Actuator** | Local dashboards |
-| External monitoring | **Better Stack + Healthchecks.io** | Uptime + heartbeat |
-| Alerting | **Discord webhook** | Acts as durable incident log |
+| Layer               | Technology                          | Notes                                                      |
+| ------------------- | ----------------------------------- | ---------------------------------------------------------- |
+| Backend language    | **Java 21**                         | Locked. Virtual threads enabled.                           |
+| Backend framework   | **Spring Boot 3.x**                 | One JAR, two profiles (`api`, `worker`), two systemd units |
+| Training language   | **Python 3.11+**                    | Off the serving path; ONNX export only                     |
+| Inference           | **ONNX Runtime Java**               | In-process, no Python sidecar                              |
+| Analytical DB       | **ClickHouse**                      | Pitches, drift metrics, prediction logs                    |
+| App state DB        | **SQLite**                          | Model registry, A/B config, retraining queue               |
+| Frontend            | **React + TypeScript + Vite**       | Pure SPA                                                   |
+| Component library   | **Mantine + Tailwind**              | Editorial-data design system                               |
+| Process management  | **systemd**                         | Inside WSL2                                                |
+| Observability       | **Prometheus + Grafana + Actuator** | Local dashboards                                           |
+| External monitoring | **Better Stack + Healthchecks.io**  | Uptime + heartbeat                                         |
+| Alerting            | **Discord webhook**                 | Acts as durable incident log                               |
 
 ### Data sources (final, locked)
 
@@ -296,11 +296,11 @@ distribution, distinguishing types of drift and reacting appropriately.
 
 **Three drift types tracked separately** (most projects conflate; we don't):
 
-| Type | What it means | Detection |
-|---|---|---|
-| **Data drift** | Features change distribution | PSI per feature (continuous), chi-squared (categorical) |
-| **Prediction drift** | Output distribution changes | PSI on predictions vs. training holdout |
-| **Concept drift** | Input→output relationship changes | Calibration error / Brier on observed outcomes |
+| Type                 | What it means                     | Detection                                               |
+| -------------------- | --------------------------------- | ------------------------------------------------------- |
+| **Data drift**       | Features change distribution      | PSI per feature (continuous), chi-squared (categorical) |
+| **Prediction drift** | Output distribution changes       | PSI on predictions vs. training holdout                 |
+| **Concept drift**    | Input→output relationship changes | Calibration error / Brier on observed outcomes          |
 
 **Cadence**:
 
@@ -308,7 +308,7 @@ distribution, distinguishing types of drift and reacting appropriately.
   predictions, calibration on yesterday's known-outcome predictions.
 - **Weekly batch** (Sunday night): per-segment metrics (handedness, park,
   count state, pitch type) + long-window comparisons (7d / 28d / season-to-date)
-  + outcome rate vs. predicted rate by segment.
+  - outcome rate vs. predicted rate by segment.
 
 **Alerting policy** (tighter than the logging policy on purpose, to
 prevent alert fatigue):
@@ -360,9 +360,9 @@ signals.
 
 1. **Scheduled** (the floor): retrain monthly regardless of drift.
 2. **Drift-based** (the ceiling): if calibration error exceeds 1.5×
-   training calibration for 7+ days, queue retrain. *Note: tighter than
+   training calibration for 7+ days, queue retrain. _Note: tighter than
    the alerting threshold (3 days) — the 4-day gap is the human
-   investigation window.*
+   investigation window._
 3. **Manual**: button on Ops dashboard for human-in-the-loop retrains.
 
 All three write to the same `retraining_queue` table. One Python
@@ -467,9 +467,9 @@ Shared backbone learns common physics; per-park heads learn park geometry.
 Multi-task structure regularizes the backbone; small parks benefit from
 large parks' data through shared layers.
 
-**Training labels: physics-retrodiction (Path A)**, locked. *This was
+**Training labels: physics-retrodiction (Path A)**, locked. _This was
 originally deferred to v1.5 but escalated to v1 after the user pushed
-back on naive per-park training.*
+back on naive per-park training._
 
 Pipeline:
 
@@ -484,7 +484,7 @@ Pipeline:
 4. **MLP trains** on retrodicted labels — every output head sees every
    batted ball, ~3M effective samples per head vs. ~10K naive.
 
-The MLP learns the *residual* between physics prediction and observed
+The MLP learns the _residual_ between physics prediction and observed
 reality (wind gusts, bullpen door deflections, fielder positioning, etc.).
 Physics handles the deterministic part; ML handles the stochastic part.
 
@@ -538,12 +538,12 @@ but not v1.
 
 **Split strategy: rolling-origin temporal cross-validation, 4 folds**:
 
-| Fold | Train | Validation | Test |
-|---|---|---|---|
-| 1 | 2015–2020 | 2021 | 2022 |
-| 2 | 2015–2021 | 2022 | 2023 |
-| 3 | 2015–2022 | 2023 | 2024 |
-| 4 | 2015–2023 | 2024 | 2025 |
+| Fold | Train     | Validation | Test |
+| ---- | --------- | ---------- | ---- |
+| 1    | 2015–2020 | 2021       | 2022 |
+| 2    | 2015–2021 | 2022       | 2023 |
+| 3    | 2015–2022 | 2023       | 2024 |
+| 4    | 2015–2023 | 2024       | 2025 |
 
 Reported metrics: **mean ± std-dev across the 4 folds**. The variance
 itself is a metric — high variance signals model fragility to era changes.
@@ -553,11 +553,13 @@ Within-game pitch-level shuffling leaks game effects (umpire, weather,
 lineup specifics).
 
 **Primary metrics**:
+
 - Brier score (multi-class) — best single number for calibrated probabilistic models
 - Multi-class log loss (cross-entropy)
 - Expected Calibration Error (ECE)
 
 **Secondary / segment metrics**:
+
 - Per-class Brier and log loss
 - Confusion matrix at argmax
 - Per-segment metrics: handedness, park, count state, inning,
@@ -654,10 +656,10 @@ for everything else.
 
 Two distinct pulls, two distinct purposes:
 
-| Pull | When | Source | Stored in | Consumed by |
-|---|---|---|---|---|
-| Pre-game | ~30 min before first pitch | Open-Meteo forecast | `weather_forecast` | Live inference path |
-| Post-game | ~1 hour after game ends | Open-Meteo archive | `weather_observed` | Training pipeline only |
+| Pull      | When                       | Source              | Stored in          | Consumed by            |
+| --------- | -------------------------- | ------------------- | ------------------ | ---------------------- |
+| Pre-game  | ~30 min before first pitch | Open-Meteo forecast | `weather_forecast` | Live inference path    |
+| Post-game | ~1 hour after game ends    | Open-Meteo archive  | `weather_observed` | Training pipeline only |
 
 This split prevents serving-time/training-time skew. Forecast accuracy
 itself becomes a measurable signal. Honest two-eval reporting: "model
@@ -675,9 +677,10 @@ weather."
 - **Schema migration**: versioned SQL files + tiny Python tracker
   (~20 lines). Forward-only.
 - **Backups**: clickhouse-backup nightly to local, then rclone to
-  Backblaze B2. 7 daily / 4 weekly / 12 monthly retention. **Verified
-  restore drill before season starts** — backups not restored aren't
-  backups.
+  Cloudflare R2 (revised from Backblaze B2 by decision [128] / ADR-0007;
+  same S3-compatible abstraction, vendor consolidation on Cloudflare).
+  7 daily / 4 weekly / 12 monthly retention. **Verified restore drill
+  before season starts** — backups not restored aren't backups.
 
 ### Cut explicitly
 
@@ -759,10 +762,11 @@ best-effort by design.
 ### Spring configuration
 
 **Use**:
+
 - `@RestController` with explicit `ResponseEntity<>` for non-trivial responses
 - Constructor injection (no `@Autowired` on fields)
 - `@Validated` + Bean Validation on request DTOs
-- `spring-boot-starter-actuator` (free observability via /actuator/*)
+- `spring-boot-starter-actuator` (free observability via /actuator/\*)
 - Micrometer + Prometheus exporter (also via Actuator)
 - Flyway for SQLite migrations
 - **Virtual threads (Java 21)**: `spring.threads.virtual.enabled=true` —
@@ -770,6 +774,7 @@ best-effort by design.
 - Spring Security only on `/admin/*` with HTTP basic auth (single env-var credential)
 
 **Avoid**:
+
 - `@Async` for inference (virtual threads make blocking calls equivalent)
 - Spring Cloud, Eureka, Config Server (single-machine deployment)
 - Reactive Spring / WebFlux (virtual threads = MVC equivalent and simpler)
@@ -799,13 +804,13 @@ best-effort by design.
 
 ### Five pages (LOCKED)
 
-| Page | Pattern | Purpose |
-|---|---|---|
-| Game / Live view | Analytical + live | Single in-progress game, pitch-by-pitch with model predictions overlay |
-| Player Lookup | Analytical | Search any pitcher/batter; recent predictions vs. actuals; per-player calibration plot |
-| **Park Explorer** | **Marquee** | **30-stadium HR probability heatmap; sliders for launch parameters** |
-| **Ops Dashboard** | **Analytical (recruiter-facing)** | **Model versions, A/B traffic split, drift charts, retraining queue, reliability diagrams** |
-| About / Methodology | Editorial | What models do, training data, eval methodology, "v2 ideas" |
+| Page                | Pattern                           | Purpose                                                                                     |
+| ------------------- | --------------------------------- | ------------------------------------------------------------------------------------------- |
+| Game / Live view    | Analytical + live                 | Single in-progress game, pitch-by-pitch with model predictions overlay                      |
+| Player Lookup       | Analytical                        | Search any pitcher/batter; recent predictions vs. actuals; per-player calibration plot      |
+| **Park Explorer**   | **Marquee**                       | **30-stadium HR probability heatmap; sliders for launch parameters**                        |
+| **Ops Dashboard**   | **Analytical (recruiter-facing)** | **Model versions, A/B traffic split, drift charts, retraining queue, reliability diagrams** |
+| About / Methodology | Editorial                         | What models do, training data, eval methodology, "v2 ideas"                                 |
 
 Conspicuously not in scope: leaderboards, team pages, social features,
 comments, fantasy integration, betting, mobile app, dark mode toggle,
@@ -854,11 +859,11 @@ months of work, fights analytical content).
 
 ### Typography
 
-| Use | Font | Notes |
-|---|---|---|
-| Body, UI | **Inter** | Tabular figures always on (`font-feature-settings: 'tnum' 1`) |
-| Data, numbers | **JetBrains Mono** | Free, warm, friendly |
-| Display, editorial | **Source Serif 4** | Used boldly: 48–64px, weight 600+, `letter-spacing: -0.02em` |
+| Use                | Font               | Notes                                                         |
+| ------------------ | ------------------ | ------------------------------------------------------------- |
+| Body, UI           | **Inter**          | Tabular figures always on (`font-feature-settings: 'tnum' 1`) |
+| Data, numbers      | **JetBrains Mono** | Free, warm, friendly                                          |
+| Display, editorial | **Source Serif 4** | Used boldly: 48–64px, weight 600+, `letter-spacing: -0.02em`  |
 
 **Type scale**: 1.25 modular, 16px base → 12, 14, 16, 20, 24, 32, 48, 64.
 Line height 1.5 body, 1.2 display.
@@ -925,6 +930,7 @@ avoid the regression by being disciplined from day 1.
 ### Polish phase (LOCKED, ~30–50 hours, end of build)
 
 After all 5 pages exist, deliberate cohesion pass:
+
 - Typography refinement
 - Spacing audit
 - Color audit (catch hex-code defects)
@@ -959,6 +965,7 @@ no public IP exposure. Vercel hosts frontend at `thebullpen.net`.
 ### Process management
 
 **systemd patterns** (per service):
+
 - `Restart=on-failure`, `RestartSec=10s`
 - `StartLimitBurst=5` over `StartLimitIntervalSec=300s` (no thrash loops)
 - Memory caps: API 4G, worker 2G, ClickHouse 8G
@@ -972,10 +979,12 @@ back, fix what doesn't. Untested reboot recovery = unreliable system.
 ### Monitoring
 
 **Internal** (on desktop, for me):
+
 - Prometheus scrapes Spring `/actuator/prometheus` + node_exporter
 - Grafana with 3 dashboards: Application, System, ML Ops
 
 **External** (the uptime claim):
+
 - **Better Stack**: HTTP probe `/health` every 30s
 - **Healthchecks.io**: heartbeats from worker scheduled jobs
 - **Discord webhook** as the alert channel (durable incident log)
@@ -997,7 +1006,7 @@ back, fix what doesn't. Untested reboot recovery = unreliable system.
 
 ### Backups (LOCKED)
 
-- **Daily**: clickhouse-backup → rclone → B2, 5 AM ET
+- **Daily**: clickhouse-backup → rclone → R2 (originally B2; switched per [128]), 5 AM ET
 - **Weekly**: full snapshot + model artifacts + SQLite, Sunday 5:30 AM
 - **Monthly**: same as weekly with longer retention
 - **Retention**: 7-4-12 (daily-weekly-monthly)
@@ -1030,6 +1039,7 @@ Below are the major rejected paths from the planning session.
 ### Sports betting framing
 
 **Rejected** because:
+
 - Regulatory exposure (state-by-state, tout-service edge cases)
 - Polarizing resume signal (some FAANG teams discount it heavily)
 - The interesting engineering is in the analytics layer, not the betting
@@ -1104,8 +1114,9 @@ future, separate, creative project.
 ### Pre-frontend "design phase"
 
 **Rejected** in favor of locking design system + iterating during build
-+ deliberate polish phase at end. Design done in isolation from real
-components drifts on contact with implementation reality.
+
+- deliberate polish phase at end. Design done in isolation from real
+  components drifts on contact with implementation reality.
 
 ### Project 3 (Pi cluster) as failover for Project 2
 
@@ -1127,17 +1138,17 @@ After v1 ships, the deferred items become a clean "what's next" story
 that signals iteration intent without committing to additional work
 upfront.
 
-| Item | Origin | Estimated effort |
-|---|---|---|
-| Sequence transformer challenger | Architecture rejection of LLM | ~80h |
-| ABS challenge model | Earlier model option deferred | ~50h |
-| Half-inning extension to forward simulation | Forward-sim section | ~10h |
-| Pitcher/batter learned embeddings | "Use the GPU more" | ~30h |
-| Path A physics retrodiction (if Phase 2c fell back to Path B) | Soft cut #5 | ~25h |
-| Dark mode | Frontend cut | ~20h |
-| GPU job queue with locking | Ops Option B | ~6h |
-| Catcher framing / umpire features | Pitch model deferred | ~15h |
-| Sequence features (previous N pitches) | Pitch model deferred | ~30h |
+| Item                                                          | Origin                        | Estimated effort |
+| ------------------------------------------------------------- | ----------------------------- | ---------------- |
+| Sequence transformer challenger                               | Architecture rejection of LLM | ~80h             |
+| ABS challenge model                                           | Earlier model option deferred | ~50h             |
+| Half-inning extension to forward simulation                   | Forward-sim section           | ~10h             |
+| Pitcher/batter learned embeddings                             | "Use the GPU more"            | ~30h             |
+| Path A physics retrodiction (if Phase 2c fell back to Path B) | Soft cut #5                   | ~25h             |
+| Dark mode                                                     | Frontend cut                  | ~20h             |
+| GPU job queue with locking                                    | Ops Option B                  | ~6h              |
+| Catcher framing / umpire features                             | Pitch model deferred          | ~15h             |
+| Sequence features (previous N pitches)                        | Pitch model deferred          | ~30h             |
 
 These represent ~6 months of v1.5 work at the v1 pace; cherry-pick from
 this list rather than committing to all.
@@ -1148,7 +1159,7 @@ this list rather than committing to all.
 
 This document captures decisions made up to project kickoff. As the
 project evolves, decisions will be revised. Update this document
-when revisions happen — *and* update `docs/decisions.md` with a new
+when revisions happen — _and_ update `docs/decisions.md` with a new
 chronological entry. The act of writing the update produces ADRs naturally.
 
 If a decision is reversed, leave the original in place and add the

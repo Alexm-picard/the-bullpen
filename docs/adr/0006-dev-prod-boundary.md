@@ -97,7 +97,7 @@ train-sample` runs locally on a stratified sample for iteration;
 - "Untracked desktop state" — config or data that exists only on the
   desktop and never made it back to the repo. Mitigation: the restore
   drill (rule 8, decisions [14] [42]) is the periodic forcing function;
-  if a clean WSL2 + `git clone` + `deploy.sh` + restore from B2 backup
+  if a clean WSL2 + `git clone` + `deploy.sh` + restore from R2 backup
   doesn't produce a working system, the gap is whatever's only on the
   desktop.
 - "Forgot to push" — a fix made locally that wasn't pushed before

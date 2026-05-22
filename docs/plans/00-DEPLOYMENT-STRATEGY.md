@@ -6,17 +6,17 @@
 
 ## What gets deployed where
 
-| Component | Target | Mechanism | Trigger |
-|---|---|---|---|
-| Spring API (`api` profile) | systemd unit `thebullpen-api.service` on WSL2 | `deploy.sh` rebuilds JAR, `systemctl restart` | Manual; user runs `./deploy.sh` |
-| Spring Worker (`worker` profile) | systemd unit `thebullpen-worker.service` on WSL2 | Same JAR; restarted by `deploy.sh` | Manual |
-| ClickHouse | Docker container managed by systemd unit | Migrations applied on Spring startup via Flyway | Migration files in `db/migration/clickhouse/` |
-| SQLite | File at `/var/lib/thebullpen/registry.sqlite` | Flyway runs on Spring startup | Migration files in `db/migration/sqlite/` |
-| Cloudflared tunnel | systemd unit `cloudflared.service` | One-time setup; updates via apt | OS update cycle |
-| Prometheus + Grafana | Docker via systemd | Config in `infra/prometheus/`, `infra/grafana/` | Config-only changes redeployed via `deploy.sh --infra` |
-| Frontend SPA | Vercel | Auto-deploy on push to `main` | Push to `main` |
-| Backend artifacts (model.onnx, etc.) | `/var/lib/thebullpen/models/<name>/<version>/` | Python registry-client copies after training | Retraining job |
-| B2 backups | Backblaze B2 bucket | `backup.sh` via systemd timer | Daily 5 AM ET |
+| Component                                  | Target                                           | Mechanism                                                  | Trigger                                                              |
+| ------------------------------------------ | ------------------------------------------------ | ---------------------------------------------------------- | -------------------------------------------------------------------- |
+| Spring API (`api` profile)                 | systemd unit `thebullpen-api.service` on WSL2    | `deploy.sh` rebuilds JAR, `systemctl restart`              | Manual; user runs `./deploy.sh`                                      |
+| Spring Worker (`worker` profile)           | systemd unit `thebullpen-worker.service` on WSL2 | Same JAR; restarted by `deploy.sh`                         | Manual                                                               |
+| ClickHouse                                 | Docker container managed by systemd unit         | Migrations applied on Spring startup via Flyway            | Migration files in `db/migration/clickhouse/`                        |
+| SQLite                                     | File at `/var/lib/thebullpen/registry.sqlite`    | Flyway runs on Spring startup                              | Migration files in `db/migration/sqlite/`                            |
+| Cloudflared tunnel                         | systemd unit `cloudflared.service`               | One-time setup; updates via apt                            | OS update cycle                                                      |
+| Prometheus + Grafana                       | Docker via systemd                               | Config in `infra/prometheus/`, `infra/grafana/`            | Config-only changes redeployed via `deploy.sh --infra`               |
+| Frontend SPA                               | Vercel                                           | Auto-deploy on push to `main`                              | Push to `main`                                                       |
+| Backend artifacts (model.onnx, etc.)       | `/var/lib/thebullpen/models/<name>/<version>/`   | Python registry-client copies after training               | Retraining job                                                       |
+| Object storage (backups + model artifacts) | Cloudflare R2 bucket `bullpen-prod`              | `backup.sh` via systemd timer + registry on snapshot write | Daily 5 AM ET (was B2; switched to R2 per decision [128] / ADR-0007) |
 
 ---
 
@@ -148,7 +148,7 @@ Risk Register I4.
 
 1. **No deploys during live games.** Decision [21]. Evenings April–October ET. Enforced by `scripts/check-no-live-games.sh` reading the day's MLB schedule.
 2. **Reboot drill required before season.** Decision [15]. `sudo reboot` and verify all health checks green. Documented in `ops/runbooks/reboot-drill.md`.
-3. **Restore drill required before season.** Decision [14]. Pull latest B2 backup → restore to a fresh ClickHouse → run `SELECT count(*) FROM pitches` and verify count matches expected. Documented in `ops/runbooks/restore-drill.md`.
+3. **Restore drill required before season.** Decision [14]. Pull latest R2 backup → restore to a fresh ClickHouse → run `SELECT count(*) FROM pitches` and verify count matches expected. Documented in `ops/runbooks/restore-drill.md`.
 
 ---
 
