@@ -3,7 +3,7 @@
   "_doc": "Single source of truth for phase progress. Hand-edited as work completes. /status reads this. Bump fields honestly — surgical cuts come from honest tracking.",
   "current_phase": "0",
   "weekly_hours_target": 13,
-  "last_updated": "2026-05-22T01:25Z",
+  "last_updated": "2026-05-22T01:50Z",
   "phases": [
     {
       "id": "0",
@@ -62,13 +62,13 @@
         },
         {
           "label": "Better Stack monitoring /health",
-          "done": false,
-          "details": "Requires public hostname via Cloudflare Tunnel; deferred with the host work."
+          "done": true,
+          "details": "Better Stack uptime monitor pointed at https://api.thebullpen.net/health (the custom HealthController endpoint — returns 200 with body {\"profile\":\"api\",\"ts\":\"...\",\"status\":\"ok\"}). Currently green. Alert channel: Discord (via Better Stack's native Discord integration; separate from the BULLPEN_DISCORD_WEBHOOK that clickhouse-snapshot.sh uses for backup-failure pings). Set up 2026-05-21 (Phase-0 Group B). NOTE: /actuator/health is also live and returns the standard Spring Actuator body; deploy.sh smoke-checks against /actuator/health while Better Stack hits the lighter /health endpoint."
         },
         {
           "label": "Backup of empty ClickHouse to USB + restore drill (with empty data)",
           "done": false,
-          "details": "Layer 2 USB operational (2026-05-21): exFAT drive labeled BULLPEN_BAK attached via `wsl --mount --bare`, /etc/sudoers.d/bullpen-backup installed, first verification backup written (18 MB, manifest verified). usb-backup.sh patched for exFAT (--no-owner/--no-group/--no-perms rsync) + correct REPO_ROOT default. Layer 1 systemd timer installed + enabled (2026-05-21): bullpen-snapshot.timer fires daily 03:00 local (next: 2026-05-22 ~03:04 EDT), .last_snapshot_ok marker present, /etc/default/bullpen created (chmod 600). Manual snapshot test succeeded — clickhouse-backup 2.6.43 captured the empty bullpen db in 93ms, SQLite registry backed up via .backup, retention applied. Outstanding: restore drill itself (/drill restore) — requires the bullpen-api service to be up so we can prove a round-trip; deferred with the first deploy."
+          "details": "Backup half fully operational. Layer 2 USB (2026-05-21): exFAT BULLPEN_BAK attached via `wsl --mount --bare`, /etc/sudoers.d/bullpen-backup installed, first verification backup written (18 MB). Layer 1 systemd timer (2026-05-21): bullpen-snapshot.timer enabled, next fire 2026-05-22 ~03:04 EDT, .last_snapshot_ok marker touched, /etc/default/bullpen has BULLPEN_DISCORD_WEBHOOK (verified HTTP 204 against the channel). clickhouse-backup 2.6.43 lists 2 snapshots (both metadata-only: 390B/0B/390B — table data sits in memtables, not yet flushed). Restore half PARTIAL — recon only as of 2026-05-21 21:50 EDT, full drill deferred to 2026-05-22 morning paired with the reboot drill. See docs/drills/2026-05-21_restore.md for evidence + tomorrow's plan. Discipline-rule-8 already overdue (season started April); +24h doesn't change the overdue label, but it does buy us a properly-scripted ops/scripts/restore-drill.sh artifact."
         },
         {
           "label": "ADR system established (docs/adr/ + first 7 ADRs covering initial tech decisions from design.md §10 + operational-discipline decisions from 2026-05-21)",
