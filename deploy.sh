@@ -7,14 +7,14 @@
 #
 # Per ADR-0006, this script is the *only* writer of the prod working copy.
 # It's intended to run ON the WSL2 desktop, against the live install at
-# /opt/thebullpen. From the MacBook side, you ssh in and invoke this — or
+# /opt/bullpen. From the MacBook side, you ssh in and invoke this — or
 # better, push to main and run it here via /deploy-safely.
 #
 # What it does:
 #   1. Pre-flight: clean working tree (or --allow-dirty), systemd units present.
 #   2. Build the backend bootJar (no tests — CI is the test gate per [20]).
-#   3. Stage the JAR into /opt/thebullpen/releases/<TAG>/app.jar.
-#   4. Atomic symlink swap: /opt/thebullpen/app.jar -> releases/<TAG>/app.jar
+#   3. Stage the JAR into /opt/bullpen/releases/<TAG>/app.jar.
+#   4. Atomic symlink swap: /opt/bullpen/app.jar -> releases/<TAG>/app.jar
 #   5. systemctl restart bullpen-api bullpen-worker.
 #   6. Smoke: poll /actuator/health for up to 30s; both units must be active.
 #   7. On smoke failure: swap symlink back to previous release, restart, exit 1.
@@ -31,7 +31,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
-INSTALL_DIR="/opt/thebullpen"
+INSTALL_DIR="/opt/bullpen"
 RELEASES_DIR="${INSTALL_DIR}/releases"
 APP_SYMLINK="${INSTALL_DIR}/app.jar"
 
@@ -84,9 +84,9 @@ log "built $(basename "$JAR_SRC") ($(du -h "$JAR_SRC" | cut -f1))"
 # --- 3. Stage ----------------------------------------------------------------
 
 RELEASE_DIR="${RELEASES_DIR}/${TAG}"
-sudo install -d -o alepic -g alepic -m 0755 "$RELEASES_DIR"
-sudo install -d -o alepic -g alepic -m 0755 "$RELEASE_DIR"
-sudo install -o alepic -g alepic -m 0644 "$JAR_SRC" "${RELEASE_DIR}/app.jar"
+sudo install -d -o bullpen -g bullpen -m 0755 "$RELEASES_DIR"
+sudo install -d -o bullpen -g bullpen -m 0755 "$RELEASE_DIR"
+sudo install -o bullpen -g bullpen -m 0644 "$JAR_SRC" "${RELEASE_DIR}/app.jar"
 log "staged ${RELEASE_DIR}/app.jar"
 
 # --- 4. Atomic symlink swap --------------------------------------------------

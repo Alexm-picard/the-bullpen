@@ -3,7 +3,7 @@
   "_doc": "Single source of truth for phase progress. Hand-edited as work completes. /status reads this. Bump fields honestly — surgical cuts come from honest tracking.",
   "current_phase": "0",
   "weekly_hours_target": 13,
-  "last_updated": "2026-05-21T23:55Z",
+  "last_updated": "2026-05-22T01:25Z",
   "phases": [
     {
       "id": "0",
@@ -22,8 +22,8 @@
         },
         {
           "label": "Domain + Cloudflare DNS + Cloudflare Tunnel pointed at hello-world",
-          "done": false,
-          "details": "Manual user task — see SETUP-NEXT-STEPS.md."
+          "done": true,
+          "details": "Wired through end-to-end as of 2026-05-21 (Phase 0 Group B). Cloudflare DNS holds the thebullpen.net zone (apex on Vercel, api.thebullpen.net CNAME → tunnel). Tunnel 'bullpen-prod' (id e79da4e2-bda1-4c1d-91a8-6b5b146c1ced) installed as cloudflared.service via `cloudflared service install <TOKEN>`, 4 active edge connections (iad/bos), Public Hostname route api.thebullpen.net → http://localhost:8080. External probe: HTTP/2 200 from https://api.thebullpen.net/actuator/health with our x-correlation-id header proving end-to-end through the tunnel to the Spring backend. Note: tunnel token leaked once in this session's transcript via unmasked systemctl status output, then rotated 2026-05-21 21:05 EDT; old token revoked. Stale May-19 tunnel id 9264c69d-...json files removed from ~/.cloudflared/ + old tunnel deleted from Cloudflare dashboard."
         },
         {
           "label": "Spring Boot skeleton with api + worker profiles",
@@ -32,8 +32,8 @@
         },
         {
           "label": "Both as systemd services with /health endpoints",
-          "done": false,
-          "details": "Units written + installed 2026-05-21: infra/systemd/bullpen-api.service, infra/systemd/bullpen-worker.service, infra/systemd/install.sh (idempotent installer). Copied to /etc/systemd/system/; currently DISABLED pending first deploy (avoids fail-loop on reboot before a JAR is staged at /opt/thebullpen/app.jar). Re-enable + start happens via /deploy-safely (decision [21] gate) tomorrow morning outside the live-game window."
+          "done": true,
+          "details": "Units installed + enabled + actively serving as of 2026-05-21. bullpen-api (PID 1091, since 18:40 EDT) + bullpen-worker (PID 1092) running as the dedicated `bullpen` system user (uid 997) from /opt/bullpen/app.jar, per the 2026-05-19 phase-0 brief convention. Originally May-19 session brought up these services; my 19:49 session overwrote the unit files with a (mistakenly chosen) alepic-user + /opt/thebullpen variant — corrected at 21:18 EDT to align with the running reality (bullpen-user + /opt/bullpen), units re-enabled. External probe: HTTP/2 200 from https://api.thebullpen.net/actuator/health (via Cloudflare Tunnel — see B2 work). Local: localhost:8080/actuator/health returns {\"status\":\"UP\"}. Both units survive reboot (enabled symlinks present in multi-user.target.wants)."
         },
         {
           "label": "ClickHouse via Docker, accessible from Spring",
@@ -53,7 +53,7 @@
         {
           "label": "GitHub repo, Actions running tests on push, deploy.sh working",
           "done": true,
-          "details": "Repo live at https://github.com/Alexm-picard/the-bullpen. All three workflows (backend / frontend / training) green on main as of commit 70a916c. deploy.sh rewritten 2026-05-21 from Phase-0 stub to a real local-WSL2 deploy: clean-tree guard, bootJar build, atomic symlink swap at /opt/thebullpen/app.jar, systemctl restart + 30s health-poll smoke, rollback on smoke failure, releases-dir retention (last 5), tag + docs/deploys/<TAG>.md record. First real run is gated on /deploy-safely + the live-game window (decision [21])."
+          "details": "Repo live at https://github.com/Alexm-picard/the-bullpen. All three workflows (backend / frontend / training) green on main as of commit 70a916c. deploy.sh rewritten 2026-05-21 from Phase-0 stub to a real local-WSL2 deploy: clean-tree guard, bootJar build, atomic symlink swap at /opt/bullpen/app.jar, systemctl restart + 30s health-poll smoke, rollback on smoke failure, releases-dir retention (last 5), tag + docs/deploys/<TAG>.md record. First real run gated on /deploy-safely + the live-game window (decision [21]). NOTE: corrected install paths from /opt/thebullpen → /opt/bullpen and User=alepic → User=bullpen at 21:18 EDT to match the May-19 phase-0 brief's system-user convention; aligns with the JAR currently running at /opt/bullpen/app.jar."
         },
         {
           "label": "Prometheus + Grafana with one trivial dashboard",
@@ -83,7 +83,7 @@
         {
           "label": "S3-compatible object storage online (ADR-0007) — Cloudflare R2 in prod (per decision [128]), MinIO offline on the portable drive, S3_ENDPOINT_URL is the only environment-specific knob",
           "done": false,
-          "details": "Concrete deliverables: (a) Cloudflare R2 bucket bullpen-prod with samples/dev/ + snapshots/v{N}/ + raw/ prefixes, (b) rclone remote 'bullpen-r2' configured against R2's S3-compatible endpoint (https://<account-id>.r2.cloudflarestorage.com), (c) boto3 (Python) and aws-sdk-s3 (Java) wired to read S3_ENDPOINT_URL, (d) MinIO launchable from /Volumes/MyDrive/bullpen-data via make minio-up, (e) make sync-mirror running rclone sync from R2 to the portable drive. Manifest validation enforces feature schema hash on load."
+          "details": "Host-side complete 2026-05-22 (Phase-0 wrap, Group B): (a) ✓ Cloudflare R2 bucket bullpen-prod created with samples/dev/, snapshots/, raw/ prefixes (.keep markers), token bullpen-prod-rw scoped Object R+W to that single bucket; (b) ✓ rclone remote 'bullpen-r2' configured against the R2 S3-compatible endpoint with no_check_bucket=true (token can't CreateBucket — that's intentional least-privilege; the flag tells rclone not to pre-flight), write/read/delete round-trip verified. Outstanding (Phase 1+): (c) boto3 (Python) and aws-sdk-s3 (Java) clients wired to read S3_ENDPOINT_URL — lands when first code path needs object storage (model registration in Phase 3a, sample loading in Phase 2). (d) MinIO launchable from /Volumes/MyDrive/bullpen-data via make minio-up — Mac-side, next Mac session. (e) make sync-mirror running rclone sync from R2 to the portable drive — depends on (d). Manifest validation (feature schema hash) lands with the first snapshot-write path in Phase 3a."
         },
         {
           "label": "Structured JSON logging baseline (logback-json Java side, structlog Python side, correlation IDs propagated through every request)",

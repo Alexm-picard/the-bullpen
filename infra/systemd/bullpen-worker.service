@@ -9,19 +9,19 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=alepic
-Group=alepic
-WorkingDirectory=/opt/thebullpen
+User=bullpen
+Group=bullpen
+WorkingDirectory=/opt/bullpen
 
 EnvironmentFile=-/etc/default/bullpen
 
 Environment=SPRING_PROFILES_ACTIVE=worker
 Environment=BULLPEN_PORT=8081
-Environment=BULLPEN_REGISTRY_DB=/opt/thebullpen/data/registry.sqlite
+Environment=BULLPEN_REGISTRY_DB=/opt/bullpen/data/registry.sqlite
 Environment=LOG_FORMAT=json
 Environment=JAVA_OPTS_WORKER=-Xms128m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200
 
-ExecStart=/usr/bin/java $JAVA_OPTS_WORKER -jar /opt/thebullpen/app.jar
+ExecStart=/usr/bin/java $JAVA_OPTS_WORKER -jar /opt/bullpen/app.jar
 
 SuccessExitStatus=143
 TimeoutStopSec=30
@@ -33,11 +33,15 @@ StartLimitBurst=5
 
 LimitNOFILE=65536
 
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bullpen-worker
+
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
 ProtectHome=read-only
-ReadWritePaths=/opt/thebullpen /var/log/bullpen
+ReadWritePaths=/opt/bullpen
 
 [Install]
 WantedBy=multi-user.target

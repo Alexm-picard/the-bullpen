@@ -9,26 +9,31 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=alepic
-Group=alepic
-WorkingDirectory=/opt/thebullpen
+# Run as the dedicated `bullpen` system user (uid 997), not your dev user.
+# This is the convention the 2026-05-19 phase-0 brief locked in and that the
+# /opt/bullpen layout owns. Per ADR-0006 the prod box is operated separately
+# from the dev box; running services as a dedicated system user is part of
+# that boundary.
+User=bullpen
+Group=bullpen
+WorkingDirectory=/opt/bullpen
 
-# /etc/default/bullpen carries secrets (Discord webhook, etc.) and tunable
-# knobs (ports, heap sizes). Leading `-` means "missing file is non-fatal".
+# /etc/default/bullpen carries env knobs shared with the backup units (Discord
+# webhook + JAVA_OPTS_API + port overrides). Leading `-` = non-fatal if missing.
 EnvironmentFile=-/etc/default/bullpen
 
 # Profile + sensible defaults; everything is overridable via the env file.
 Environment=SPRING_PROFILES_ACTIVE=api
 Environment=BULLPEN_PORT=8080
-Environment=BULLPEN_REGISTRY_DB=/opt/thebullpen/data/registry.sqlite
+Environment=BULLPEN_REGISTRY_DB=/opt/bullpen/data/registry.sqlite
 Environment=LOG_FORMAT=json
 
-# Heap defaults err small (this WSL2 host has 15 Gi total and shares with
+# Heap defaults err small (this WSL2 host has 15 GiB total and shares with
 # ClickHouse / Prometheus / Grafana). Bump via JAVA_OPTS_API in the env file
 # once real models load and you have a measured working set.
 Environment=JAVA_OPTS_API=-Xms256m -Xmx1g -XX:+UseG1GC -XX:MaxGCPauseMillis=200
 
-ExecStart=/usr/bin/java $JAVA_OPTS_API -jar /opt/thebullpen/app.jar
+ExecStart=/usr/bin/java $JAVA_OPTS_API -jar /opt/bullpen/app.jar
 
 # Spring's graceful-shutdown completes in-flight requests then exits 0.
 # 143 = 128 + SIGTERM (java's default response when systemd sends stop).
@@ -45,13 +50,20 @@ StartLimitBurst=5
 # File descriptor cap — Spring + ClickHouse JDBC + JMX can chew through these.
 LimitNOFILE=65536
 
+# Logging goes to journald; query with `journalctl -u bullpen-api`. The 2026-05-19
+# brief mentioned append-to-/opt/bullpen/logs/*.log; journald is simpler and
+# gives you per-line metadata + structured filtering for free.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bullpen-api
+
 # Soft hardening — full container-style hardening is overkill on a personal
 # WSL2 host but cheap defaults are worth keeping.
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
 ProtectHome=read-only
-ReadWritePaths=/opt/thebullpen /var/log/bullpen
+ReadWritePaths=/opt/bullpen
 
 [Install]
 WantedBy=multi-user.target
