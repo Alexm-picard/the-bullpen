@@ -3,7 +3,7 @@
   "_doc": "Single source of truth for phase progress. Hand-edited as work completes. /status reads this. Bump fields honestly — surgical cuts come from honest tracking.",
   "current_phase": "2",
   "weekly_hours_target": 13,
-  "last_updated": "2026-05-23T22:05Z",
+  "last_updated": "2026-05-23T23:45Z",
   "phases": [
     {
       "id": "0",
@@ -160,10 +160,11 @@
       "name": "The Real Models",
       "weeks": "8–17",
       "estimated_hours": "140–180",
-      "status": "not_started",
-      "started_on": null,
+      "status": "in_progress",
+      "started_on": "2026-05-23",
       "completed_on": null,
       "exit_criterion": "Three models registered, all with eval artifacts, all served via Spring, all with passing leakage tests in CI. ECE < 0.02 on test data per model.",
+      "current_leaf": "2a.1 complete (training/src/bullpen_training/features/ + V005__features.sql + 2.85M features rows across 4 folds testing 2022-2025). 2015-2025 backfill done on Mac dev (11 seasons, ~8M raw_statcast rows). Next: 2a.2 (Tier 3 rolling form features via streaming temporal cutoff).",
       "sub_phases": [
         {
           "id": "2a",
