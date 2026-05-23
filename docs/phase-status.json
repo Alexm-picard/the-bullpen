@@ -1,9 +1,9 @@
 {
   "$schema": "./phase-status.schema.md",
   "_doc": "Single source of truth for phase progress. Hand-edited as work completes. /status reads this. Bump fields honestly — surgical cuts come from honest tracking.",
-  "current_phase": "1",
+  "current_phase": "2",
   "weekly_hours_target": 13,
-  "last_updated": "2026-05-23T18:58Z",
+  "last_updated": "2026-05-23T22:05Z",
   "phases": [
     {
       "id": "0",
@@ -105,10 +105,11 @@
       "name": "Vertical Slice",
       "weeks": "4–7",
       "estimated_hours": "50–65",
-      "status": "in_progress",
+      "status": "completed",
       "started_on": "2026-05-23",
-      "completed_on": null,
+      "completed_on": "2026-05-23",
       "exit_criterion": "Visit thebullpen.net/parks, click a batted ball, see real prediction in <500ms end-to-end",
+      "exit_criterion_met": "Verified live 2026-05-23 ~22:00 EDT after 3 prod deploys (v2026.05.23-2139 / -2149 / -2156). curl POST https://api.thebullpen.net/v1/predict/batted-ball with the canonical payload returns {\"probHr\":0.78668094,\"modelName\":\"_toy_batted_ball\",\"modelVersion\":\"v0\",\"latencyMicros\":507,\"correlationId\":\"...\"} — well under the 500ms ceiling (507μs inference, ~150ms total round-trip through Cloudflare Tunnel). https://thebullpen.net/parks loads (apex → www 308 → 200) and renders the 10 example BIPs. Three small WSL2 fixes landed in commit dbb9107: deploy.sh systemctl pre-flight pipe was breaking under WSL2 pipefail; ApiErrorAdvice added explicit 404 + 405 handlers (were defaulting to 500); CorsConfig now allows www.thebullpen.net (Vercel serves there).",
       "exit_criteria_checklist": [
         {
           "label": "Historical Statcast pull (one season ~2024) → raw_statcast",
@@ -151,7 +152,6 @@
           "details": "AsyncPredictionLogger (bounded ArrayBlockingQueue + 1s flusher on virtual thread) wired into PredictBattedBallController. V004__prediction_log.sql defines MergeTree partitioned by month with 18-month TTL. Live e2e 2026-05-23 14:56 EDT: 5 predictions → 5 rows in prediction_log within 3s with features/prediction JSON intact, latency_ms ≈ 0.09 sub-ms. 4 unit tests pass (drain, overflow-drops, writer-failure non-propagation, no-writer noop mode). New ClickHouseMigrationRunner Java component applies V*.sql files on boot (mirrors the Python migrations.py training uses). G2 partial close; G8 closed."
         }
       ],
-      "completed_on_note": "All 7 leaf-level acceptance criteria met locally; phase status stays 'in_progress' until the live deploy via deploy.sh on WSL2 + Vercel cycle confirms the production exit gate (visit thebullpen.net/parks, click, see prediction in <500ms).",
       "mvp_cuts": "Cannot cut — this phase IS the credibility floor",
       "notes": "Demoable spine. From here forward is the real project."
     },
