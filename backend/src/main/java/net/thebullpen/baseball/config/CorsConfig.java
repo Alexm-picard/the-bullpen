@@ -16,7 +16,8 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @Profile("api")
 public class CorsConfig {
 
-  @Value("${bullpen.cors.allowed-origins:http://localhost:5173,https://thebullpen.net}")
+  @Value(
+      "${bullpen.cors.allowed-origins:http://localhost:5173,https://thebullpen.net,https://www.thebullpen.net}")
   private String[] allowedOrigins;
 
   @Bean

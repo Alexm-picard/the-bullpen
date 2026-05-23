@@ -59,7 +59,7 @@ if [[ ! -d "$INSTALL_DIR" ]]; then
   die "$INSTALL_DIR does not exist — run infra/systemd/install.sh first"
 fi
 
-if ! systemctl list-unit-files 2>/dev/null | grep -q '^bullpen-api\.service'; then
+if [[ ! -f /etc/systemd/system/bullpen-api.service ]]; then
   die "bullpen-api.service not installed — run infra/systemd/install.sh first"
 fi
 

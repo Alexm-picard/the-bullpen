@@ -11,9 +11,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
  * Maps controller exceptions to the canonical {@link ApiError} envelope (Phase 1.5).
@@ -56,9 +58,25 @@ public class ApiErrorAdvice {
     return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).body(body);
   }
 
+  @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+  public ResponseEntity<ApiError> handleMethodNotAllowed(
+      HttpRequestMethodNotSupportedException ex) {
+    ApiError body =
+        ApiError.of(
+            "method_not_allowed",
+            "request method '" + ex.getMethod() + "' is not supported",
+            correlationId());
+    return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED).body(body);
+  }
+
+  @ExceptionHandler(NoResourceFoundException.class)
+  public ResponseEntity<ApiError> handleNotFound(NoResourceFoundException ex) {
+    ApiError body = ApiError.of("not_found", "no endpoint at this path", correlationId());
+    return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
+  }
+
   @ExceptionHandler(IllegalArgumentException.class)
   public ResponseEntity<ApiError> handleIllegalArgument(IllegalArgumentException ex) {
-    // FeaturePipeline throws this on unknown park / null required numeric.
     ApiError body = ApiError.of("invalid_input", ex.getMessage(), correlationId());
     return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
   }
