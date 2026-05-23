@@ -11,8 +11,8 @@ The desktop (Windows 11 + WSL2 Ubuntu 24.04 LTS, per decision [15]) is the
 production server for The Bullpen: bare-metal systemd services for the
 Spring Boot JAR (decisions [16] [25]), Docker for stateful services
 (ClickHouse, Prometheus, Grafana), Cloudflare Tunnel exposing
-`thebullpen.net` (decision [9]), external monitoring via Better Stack
-(decision [17]), scheduled GPU retrains in the 2–6 AM ET window (decision
+`thebullpen.net` (decision [9]), external monitoring via Uptime Robot
+(decision [17], revised by [129] from Better Stack), scheduled GPU retrains in the 2–6 AM ET window (decision
 [19]), and nightly k6 load tests against the live host. It carries a 98 %
 uptime target (decision [11]) and the "no deploys during live games" rule
 (decision [21]).
@@ -48,7 +48,7 @@ git push as the only authoring boundary between them:
 - **Read-only remote access to the desktop is allowed and encouraged**
   for OBSERVATION: tailing logs, querying ClickHouse, inspecting Grafana,
   poking a flapping service. Tools used for this purpose (SSH, Claude
-  Code Remote Control over SSH, Better Stack tail) are read-mostly by
+  Code Remote Control over SSH, Uptime Robot status page) are read-mostly by
   convention.
 - **No `git commit` from the desktop, no editor-driven file mutation in
   `/home/alepic/code/the-bullpen` on the desktop.** The desktop's working

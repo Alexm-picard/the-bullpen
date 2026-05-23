@@ -40,16 +40,16 @@ For full context: [`../design.md`](../design.md) §1.
                 Python training (off serving path, ONNX export)
 ```
 
-| Box | One-line role |
-|---|---|
-| Vercel | Static React SPA (`thebullpen.net`) |
-| Cloudflare | DNS + Tunnel; no port forwarding, no public IP |
-| Spring API | `@Profile("api")` — controllers, ONNX inference, async logger |
-| Spring Worker | `@Profile("worker")` — `@Scheduled` ingest, drift, retraining |
-| ClickHouse | `pitches`, `pitches_live`, `drift_metrics`, `prediction_log`, weather |
-| SQLite | `model_versions`, `model_routing`, `experiment_results`, `retraining_queue` |
-| ONNX Runtime Java | Loads model.onnx + applies isotonic calibration in-process |
-| Python | Training only; produces ONNX + metadata + Parquet snapshot |
+| Box               | One-line role                                                               |
+| ----------------- | --------------------------------------------------------------------------- |
+| Vercel            | Static React SPA (`thebullpen.net`)                                         |
+| Cloudflare        | DNS + Tunnel; no port forwarding, no public IP                              |
+| Spring API        | `@Profile("api")` — controllers, ONNX inference, async logger               |
+| Spring Worker     | `@Profile("worker")` — `@Scheduled` ingest, drift, retraining               |
+| ClickHouse        | `pitches`, `pitches_live`, `drift_metrics`, `prediction_log`, weather       |
+| SQLite            | `model_versions`, `model_routing`, `experiment_results`, `retraining_queue` |
+| ONNX Runtime Java | Loads model.onnx + applies isotonic calibration in-process                  |
+| Python            | Training only; produces ONNX + metadata + Parquet snapshot                  |
 
 Full design: [`../design.md`](../design.md) §2.
 
@@ -57,14 +57,14 @@ Full design: [`../design.md`](../design.md) §2.
 
 ## Phase exit criteria — running scoreboard
 
-| # | Phase | Weeks | Hours | Exit criterion | Status |
-|---|---|---|---|---|---|
-| 0 | Foundation | 1–3 | 40–50 | `sudo reboot` recovers everything in <5 min, all health checks green, frontend reachable at domain. | ⬜ not started |
-| 1 | Vertical slice | 4–7 | 50–65 | Visit `thebullpen.net/parks`, click a batted ball, see real prediction in <500 ms end-to-end. | ⬜ not started |
-| 2 | Real models | 8–17 | 140–180 | Three models registered with eval artifacts; CI leakage tests pass; ECE < 0.02 per model. | ⬜ not started |
-| 3 | ML wrapper | 18–22 | 80–100 | Manual retrain → candidate → shadow → champion via API; traffic shifts visible in logs; old champion archived. | ⬜ not started |
-| 4 | Frontend build-out | 23–30 | 70–90 | All 5 pages exist; loading/error/empty states; Lighthouse > 80; bundle < 300 KB gz. | ⬜ not started |
-| 5 | Polish + operate | 31–38+ | 80–100 | Public; ≥1 real drift event documented in postmortem; system running ≥4 weeks with documented uptime. | ⬜ not started |
+| #   | Phase              | Weeks  | Hours   | Exit criterion                                                                                                 | Status         |
+| --- | ------------------ | ------ | ------- | -------------------------------------------------------------------------------------------------------------- | -------------- |
+| 0   | Foundation         | 1–3    | 40–50   | `sudo reboot` recovers everything in <5 min, all health checks green, frontend reachable at domain.            | ⬜ not started |
+| 1   | Vertical slice     | 4–7    | 50–65   | Visit `thebullpen.net/parks`, click a batted ball, see real prediction in <500 ms end-to-end.                  | ⬜ not started |
+| 2   | Real models        | 8–17   | 140–180 | Three models registered with eval artifacts; CI leakage tests pass; ECE < 0.02 per model.                      | ⬜ not started |
+| 3   | ML wrapper         | 18–22  | 80–100  | Manual retrain → candidate → shadow → champion via API; traffic shifts visible in logs; old champion archived. | ⬜ not started |
+| 4   | Frontend build-out | 23–30  | 70–90   | All 5 pages exist; loading/error/empty states; Lighthouse > 80; bundle < 300 KB gz.                            | ⬜ not started |
+| 5   | Polish + operate   | 31–38+ | 80–100  | Public; ≥1 real drift event documented in postmortem; system running ≥4 weeks with documented uptime.          | ⬜ not started |
 
 Update the Status column when a phase completes. Append a one-line entry to the Status Log at the bottom.
 
@@ -75,6 +75,7 @@ Update the Status column when a phase completes. Append a one-line entry to the 
 Leaf plan files are authored **just-in-time** at the start of their phase, not all up-front. The phase `INDEX.md` lists every planned leaf with a one-line description; the leaf file is created when work on that leaf begins.
 
 ### Phase 0 — Foundation → [`phase-0-foundation/INDEX.md`](phase-0-foundation/INDEX.md)
+
 - 0.1 — WSL2 + systemd bootstrap
 - 0.2 — Cloudflare domain + tunnel
 - 0.3 — Spring skeleton (`api` + `worker` profiles)
@@ -83,10 +84,11 @@ Leaf plan files are authored **just-in-time** at the start of their phase, not a
 - 0.6 — React + Vite + Vercel
 - 0.7 — CI + `deploy.sh`
 - 0.8 — Prometheus + Grafana
-- 0.9 — External monitoring (Better Stack + Healthchecks.io + Discord)
+- 0.9 — External monitoring (Uptime Robot + Healthchecks.io + Discord)
 - 0.10 — Backup + restore drill (Phase 0 exit gate)
 
 ### Phase 1 — Vertical Slice → [`phase-1-vertical-slice/INDEX.md`](phase-1-vertical-slice/INDEX.md)
+
 - 1.1 — Statcast 2024 historical pull
 - 1.2 — `pitches` cleaning + dedup
 - 1.3 — Toy batted-ball model (LightGBM, 5 features, 1 output)
@@ -96,17 +98,20 @@ Leaf plan files are authored **just-in-time** at the start of their phase, not a
 - 1.7 — Primitive prediction logging
 
 ### Phase 2 — The Real Models → [`phase-2-models/INDEX.md`](phase-2-models/INDEX.md)
+
 - 2a Pitch pre-pitch head (9 leaves)
 - 2b Pitch post-pitch head (3 leaves)
 - 2c Batted-ball with physics retrodiction (9 leaves)
 
 ### Phase 3 — ML Systems Wrapper → [`phase-3-ml-wrapper/INDEX.md`](phase-3-ml-wrapper/INDEX.md)
+
 - 3a Registry (5 leaves)
 - 3b A/B routing (5 leaves)
 - 3c Drift detection (7 leaves)
 - 3d Retraining triggers (4 leaves)
 
 ### Phase 4 — Frontend Build-Out → [`phase-4-frontend/INDEX.md`](phase-4-frontend/INDEX.md)
+
 - 4a Design tokens
 - 4b Player Lookup (3 leaves)
 - 4c Park Explorer (4 leaves) — MARQUEE
@@ -115,6 +120,7 @@ Leaf plan files are authored **just-in-time** at the start of their phase, not a
 - 4f About / Methodology
 
 ### Phase 5 — Polish + Operate → [`phase-5-polish/INDEX.md`](phase-5-polish/INDEX.md)
+
 - 5.1 Typography pass
 - 5.2 Color audit (catch hex-code defects)
 - 5.3 Perf / bundle audit
@@ -190,7 +196,7 @@ When working on this project:
 
 > Append-only. One line per significant event: phase completion, soft cut taken, decision reversal, drift incident, postmortem published.
 
-| Date | Event |
-|---|---|
-| 2026-05-09 | Planning session complete; design.md / plan.md / decisions.md locked. |
+| Date       | Event                                                                  |
+| ---------- | ---------------------------------------------------------------------- |
+| 2026-05-09 | Planning session complete; design.md / plan.md / decisions.md locked.  |
 | 2026-05-10 | Execution-plan tree (this directory) bootstrapped. Pre-implementation. |

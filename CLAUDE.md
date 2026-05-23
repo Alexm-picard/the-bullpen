@@ -39,7 +39,7 @@ matters — see `design.md` §1.
 | UI            | **Mantine + Tailwind**. Editorial-data identity (Inter / JetBrains Mono / Source Serif 4).                                                       |
 | Hosting       | Self-hosted in WSL2 (Ubuntu 24.04 LTS) on personal desktop. Cloudflare Tunnel for public access. Frontend on Vercel.                             |
 | Process mgmt  | systemd (bare-metal for app, Docker for stateful services)                                                                                       |
-| Observability | Prometheus + Grafana + Actuator (internal); Better Stack + Healthchecks.io + Discord webhook (external)                                          |
+| Observability | Prometheus + Grafana + Actuator (internal); Uptime Robot + Healthchecks.io + Discord webhook (external)                                          |
 | Models        | LightGBM (pitch outcome, multinomial); multi-output MLP with shared backbone + 30 per-park heads (batted-ball); LR baseline always co-registered |
 | Eval          | Rolling-origin temporal CV, 4 folds 2015–2025. **Never** random splits. Within-fold split granularity is by date — never by game or pitch.       |
 

@@ -90,7 +90,7 @@ production system through real time-series data.
 | Component library   | **Mantine + Tailwind**              | Editorial-data design system                               |
 | Process management  | **systemd**                         | Inside WSL2                                                |
 | Observability       | **Prometheus + Grafana + Actuator** | Local dashboards                                           |
-| External monitoring | **Better Stack + Healthchecks.io**  | Uptime + heartbeat                                         |
+| External monitoring | **Uptime Robot + Healthchecks.io**  | Uptime + heartbeat                                         |
 | Alerting            | **Discord webhook**                 | Acts as durable incident log                               |
 
 ### Data sources (final, locked)
@@ -985,7 +985,7 @@ back, fix what doesn't. Untested reboot recovery = unreliable system.
 
 **External** (the uptime claim):
 
-- **Better Stack**: HTTP probe `/health` every 30s
+- **Uptime Robot**: HTTP probe `/health` every 5 min (free tier — paid tiers go to 1 min)
 - **Healthchecks.io**: heartbeats from worker scheduled jobs
 - **Discord webhook** as the alert channel (durable incident log)
 

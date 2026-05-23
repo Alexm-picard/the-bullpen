@@ -8,7 +8,7 @@ batted ball per-park HR probability) for the duration of an MLB season.
 **Status:** Phase 0 (foundation) — Mac-side complete (CI green, Vercel live
 at `thebullpen.net`, Discord webhook + Cloudflare DNS configured). Six
 host-side items left on WSL2: systemd autostart, Cloudflare Tunnel for
-`api.thebullpen.net`, Better Stack monitoring, USB backup + restore drill,
+`api.thebullpen.net`, Uptime Robot monitoring, USB backup + restore drill,
 reboot drill.
 
 See [`docs/phase-status.json`](docs/phase-status.json) and the WSL2

@@ -28,35 +28,49 @@ Cohesion compounds at the end. The polish pass is small, deliberate adjustments 
 ## Leaf plans
 
 ### 5.1 — `5.1-typography-pass.md`
+
 Sweep all five pages. Verify type scale obeyed. Verify monospace + serif don't co-occur on the same line. Verify tabular figures on for all numeric data. Verify Source Serif headlines on About + Park Explorer marquee. Adjust line-height, letter-spacing where regression-worthy.
+
 - **Decisions referenced**: [103], [104].
 
 ### 5.2 — `5.2-color-audit.md` ★ **DISCIPLINE GATE**
+
 `pnpm lint:hex-codes` must return zero hits in `src/` outside `src/design/`. If any are found, replace with tokens. This is the StudyForesight regression-prevention discipline (decision: design system tokens; CLAUDE.md rule 1).
+
 - **Decisions referenced**: [105]–[107].
 - **Acceptance**: zero inline hex codes in component files; documented audit in PR description.
 
 ### 5.3 — `5.3-perf-bundle-audit.md`
+
 Bundle budget per page. Lazy-load Park Explorer (the heaviest). Image optimization. Lighthouse > 80 across all 5 pages.
+
 - **Decisions referenced**: design.md §7 (perf constraints).
 - **Acceptance**: Lighthouse run captured per page; bundle budget < 300 KB gz initial; lazy-loaded Park Explorer measurable in network panel.
 
 ### 5.4 — `5.4-a11y-audit.md`
+
 Mantine handles primitives. Custom visualizations need the manual pass: alt text on visualizations, keyboard nav on interactive viz, color-blind-safe palettes (Viridis everywhere data viz appears), focus management.
+
 - **Decisions referenced**: [106], design.md §7.
 - **Acceptance**: axe-core run produces no critical/serious findings on any page.
 
 ### 5.5 — `5.5-park-explorer-polish-iteration.md`
+
 The "fine → memorable" pass on the marquee component. Iterate the heatmap visual: chart-junk reduction, legend placement, tooltip behavior, transition timing. Allocate 8–12 hours specifically here; do not cap at 4.
+
 - **Decisions referenced**: [98], [102].
 
 ### 5.6 — `5.6-readme-rewrite-and-public-launch.md`
+
 README at repo root: project framing, architecture diagram, links to design.md / decisions.md / eval artifacts / Ops dashboard, "what works / what's known to be limited", data sources + licensing, contact. Links validated.
+
 - **Closes / addresses**: I7 (data licensing) — final write-up.
 - **Acceptance**: public posts to r/baseball, r/sabermetrics, r/programming, HN. The README and the live site survive a recruiter clicking around for 5 minutes without finding a broken link or unstyled state.
 
 ### 5.7 — `5.7-drift-postmortem-template.md` ★ **CENTERPIECE ARTIFACT**
+
 A repeatable template for incident postmortems. Lives in `ops/runbooks/drift-postmortem-template.md` and is copy-pasted to `docs/postmortems/<date>-<slug>.md` when a drift event fires. See [`../00-OBSERVABILITY-STRATEGY.md`](../00-OBSERVABILITY-STRATEGY.md) §"Drift postmortem".
+
 - **Decisions referenced**: [82].
 - **Acceptance**: template exists; first real postmortem authored when first real drift event lands; postmortem is linked from README.
 
@@ -84,7 +98,7 @@ Once Phase 5 leaf plans 5.1–5.6 ship, the project is operating. Discipline rul
 ls docs/postmortems/*.md   # ≥ 1 file
 
 # Uptime evidence:
-# - Better Stack monthly report screenshot saved to docs/operating-reports/
+# - Uptime Robot monthly report screenshot saved to docs/operating-reports/
 # - Window: ≥ 4 consecutive weeks
 # - Availability ≥ 98% (SLO from Risk Register I1)
 ```

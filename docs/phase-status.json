@@ -62,9 +62,9 @@
           "details": "infra/docker-compose.yml brings Prometheus 3.0 + Grafana 11.4 up with provisioned datasource and a JVM-overview dashboard. Prometheus scrapes the Spring actuator endpoint via host.docker.internal."
         },
         {
-          "label": "Better Stack monitoring /health",
+          "label": "External uptime monitor /health (Uptime Robot)",
           "done": true,
-          "details": "Better Stack uptime monitor pointed at https://api.thebullpen.net/health (the custom HealthController endpoint — returns 200 with body {\"profile\":\"api\",\"ts\":\"...\",\"status\":\"ok\"}). Currently green. Alert channel: Discord (via Better Stack's native Discord integration; separate from the BULLPEN_DISCORD_WEBHOOK that clickhouse-snapshot.sh uses for backup-failure pings). Set up 2026-05-21 (Phase-0 Group B). NOTE: /actuator/health is also live and returns the standard Spring Actuator body; deploy.sh smoke-checks against /actuator/health while Better Stack hits the lighter /health endpoint."
+          "details": "External uptime monitor pointed at https://api.thebullpen.net/health (the custom HealthController endpoint — returns 200 with body {\"profile\":\"api\",\"ts\":\"...\",\"status\":\"ok\"}). Currently green. Alert channel: Discord (via the monitor's webhook alert contact; separate from the BULLPEN_DISCORD_WEBHOOK that clickhouse-snapshot.sh uses for backup-failure pings). Original setup 2026-05-21 used Better Stack (Phase-0 Group B); vendor switched to Uptime Robot 2026-05-23 per decision [129] — same endpoint, same Discord channel, check interval shifts from 30s (Better Stack free tier) to 5 min (Uptime Robot free tier). Better Stack monitor remains up until the Uptime Robot replacement is wired so external coverage is never dark. NOTE: /actuator/health is also live and returns the standard Spring Actuator body; deploy.sh smoke-checks against /actuator/health while the external monitor hits the lighter /health endpoint."
         },
         {
           "label": "Backup of empty ClickHouse to USB + restore drill (with empty data)",

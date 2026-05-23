@@ -167,7 +167,7 @@ training-on-old-data bug.
 - Rejected by decision [128] after considering vendor surface: the
   project already runs on Cloudflare for DNS (decision [9]'s Tunnel,
   decision [10]'s frontend on Vercel uses Cloudflare-fronted domains),
-  and a future Better Stack monitor will live alongside. Consolidating
+  and a future external uptime monitor will live alongside. Consolidating
   storage onto Cloudflare R2 frees one vendor account, one set of
   credentials, one billing surface, and one dashboard. R2's $0 egress
   policy and 10 GB free tier are at least as good as B2's at portfolio

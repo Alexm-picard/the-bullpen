@@ -1,6 +1,6 @@
 # 00-OBSERVABILITY-STRATEGY — Logs, metrics, traces, alerts
 
-> Internal observability is Prometheus + Grafana + journald. External is Better Stack + Healthchecks.io. Both flow page-worthy events to a Discord webhook so the alert stream itself becomes durable incident documentation. Decisions [16]–[18].
+> Internal observability is Prometheus + Grafana + journald. External is Uptime Robot + Healthchecks.io. Both flow page-worthy events to a Discord webhook so the alert stream itself becomes durable incident documentation. Decisions [16]–[18], with [17] revised by [129] (Better Stack → Uptime Robot).
 
 ---
 
@@ -45,7 +45,7 @@ journalctl -u thebullpen-* | jq -c 'select(.level == "ERROR")'
 
 **Endpoints**:
 
-- `/actuator/health` — public liveness (used by Better Stack).
+- `/actuator/health` — public liveness (used by Uptime Robot).
 - `/actuator/health/readiness` — gates "warm-up complete" (Risk Register G11).
 - `/actuator/prometheus` — Prometheus scrape target.
 
@@ -116,11 +116,11 @@ Three dashboards. Provisioned via JSON files in `infra/grafana/dashboards/`.
 
 ## External monitoring
 
-- **Better Stack**: HTTP probe `https://api.thebullpen.net/actuator/health` every 30s. Page if 2 consecutive failures.
+- **Uptime Robot**: HTTP(S) monitor against `https://api.thebullpen.net/actuator/health` every 5 min (free tier — paid tiers go to 1 min). Page if 2 consecutive failures. Discord alert contact wired via the Uptime Robot "Alert Contacts" → Webhook integration.
 - **Healthchecks.io**: heartbeat every 6 hours from each `@Scheduled` worker job. Page if missed window. URL stored in `secrets.env`.
 - **Discord webhook**: shared channel for all `page` and `notice` events.
 
-Better Stack and Healthchecks.io are picked because they're free at our usage level and they answer the question "is the host alive when Prometheus is also down?" (decision [17]).
+Uptime Robot and Healthchecks.io are picked because they're free at our usage level and they answer the question "is the host alive when Prometheus is also down?" (decision [17], revised by [129] from Better Stack to Uptime Robot for free-tier monitor count + simpler Discord wiring).
 
 ---
 

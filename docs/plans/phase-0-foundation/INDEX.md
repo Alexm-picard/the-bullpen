@@ -84,11 +84,11 @@ Prometheus container + node_exporter. Grafana with one trivial dashboard ("Appli
 
 ### 0.9 — `0.9-external-monitoring.md`
 
-Better Stack HTTP probe configured against `/actuator/health`. Healthchecks.io heartbeat URL added to `secrets.env`. Discord webhook integration test fires from a CLI script. Alert thresholds documented in [`../00-OBSERVABILITY-STRATEGY.md`](../00-OBSERVABILITY-STRATEGY.md) verified.
+Uptime Robot HTTP(S) monitor configured against `/actuator/health`. Healthchecks.io heartbeat URL added to `secrets.env`. Discord webhook integration test fires from a CLI script. Alert thresholds documented in [`../00-OBSERVABILITY-STRATEGY.md`](../00-OBSERVABILITY-STRATEGY.md) verified.
 
-- **Decisions referenced**: [17], [18].
+- **Decisions referenced**: [17] (revised by [129] from Better Stack to Uptime Robot), [18].
 - **Closes / addresses**: I4 (secrets management exercised end-to-end).
-- **Acceptance**: take API down, Better Stack pages within 1 min; Discord webhook fires manually.
+- **Acceptance**: take API down, Uptime Robot pages within ~6 min (one missed check + one confirmation); Discord webhook fires manually.
 
 ### 0.10 — `0.10-backup-restore-drill.md` ★ **Phase 0 exit gate**
 

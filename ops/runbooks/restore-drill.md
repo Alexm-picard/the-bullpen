@@ -22,7 +22,7 @@ This is the CLAUDE.md rule 8 forcing function — untested backups don't count.
    container's data, but it does INSERT + TRUNCATE on
    `bullpen._drill_marker` and creates + deletes a snapshot, so play it
    safe.
-3. Mute the Better Stack monitor if you're paranoid — the drill won't take
+3. Pause the Uptime Robot monitor if you're paranoid — the drill won't take
    the API down (it doesn't touch the API or the worker), but the alerting
    chain is set up around prod traffic, so silence reduces noise.
 
