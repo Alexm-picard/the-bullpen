@@ -1,19 +1,20 @@
 {
   "$schema": "./phase-status.schema.md",
   "_doc": "Single source of truth for phase progress. Hand-edited as work completes. /status reads this. Bump fields honestly — surgical cuts come from honest tracking.",
-  "current_phase": "0",
+  "current_phase": "1",
   "weekly_hours_target": 13,
-  "last_updated": "2026-05-22T01:50Z",
+  "last_updated": "2026-05-23T17:10Z",
   "phases": [
     {
       "id": "0",
       "name": "Foundation",
       "weeks": "1–3",
       "estimated_hours": "40–50",
-      "status": "in_progress",
+      "status": "completed",
       "started_on": "2026-05-19",
-      "completed_on": null,
+      "completed_on": "2026-05-23",
       "exit_criterion": "sudo reboot recovers everything in <5 min, all health checks green, frontend reachable at domain",
+      "exit_criterion_met": "Verified 2026-05-23 12:43–12:47 EDT on the post-cold-boot recovery leg of the May-21 reboot drill. All 10 technical checks green within ~3 min of WSL2 terminal open; external probe of https://api.thebullpen.net/actuator/health returned HTTP/2 200 via Cloudflare Tunnel; frontend reachable at https://thebullpen.net. Restore drill PASS in 3 sec end-to-end at 13:02 EDT after the in-container fix (see docs/drills/2026-05-23_restore.md). Critical pre-existing bug surfaced + fixed in same session: snapshot script was producing metadata-only backups — patched infra/backup/clickhouse-snapshot.sh to run clickhouse-backup inside the docker container.",
       "exit_criteria_checklist": [
         {
           "label": "WSL2 setup (systemd, memory cap, CUDA passthrough verified)",
@@ -67,8 +68,8 @@
         },
         {
           "label": "Backup of empty ClickHouse to USB + restore drill (with empty data)",
-          "done": false,
-          "details": "Backup half fully operational. Layer 2 USB (2026-05-21): exFAT BULLPEN_BAK attached via `wsl --mount --bare`, /etc/sudoers.d/bullpen-backup installed, first verification backup written (18 MB). Layer 1 systemd timer (2026-05-21): bullpen-snapshot.timer enabled, next fire 2026-05-22 ~03:04 EDT, .last_snapshot_ok marker touched, /etc/default/bullpen has BULLPEN_DISCORD_WEBHOOK (verified HTTP 204 against the channel). clickhouse-backup 2.6.43 lists 2 snapshots (both metadata-only: 390B/0B/390B — table data sits in memtables, not yet flushed). Restore half PARTIAL — recon only as of 2026-05-21 21:50 EDT, full drill deferred to 2026-05-22 morning paired with the reboot drill. See docs/drills/2026-05-21_restore.md for evidence + tomorrow's plan. Discipline-rule-8 already overdue (season started April); +24h doesn't change the overdue label, but it does buy us a properly-scripted ops/scripts/restore-drill.sh artifact."
+          "done": true,
+          "details": "PASS 2026-05-23 13:02 EDT. ops/scripts/restore-drill.sh exists + runs end-to-end in ~3 sec (snapshot → spin scratch CH 24.12 on bullpen-drill-net:18123/19000 → restore → row-count + schema parity verify → teardown). docs/drills/2026-05-23_restore.md captures the full report. Critical pre-existing bug surfaced during the drill: snapshot script was producing metadata-only backups (clickhouse-backup running on the host couldn't see FREEZE output in the docker volume's shadow dir). Patched infra/backup/clickhouse-snapshot.sh to run clickhouse-backup inside the bullpen-clickhouse container with a fail-loud sanity check on captured data parts. Layer 2 USB (BULLPEN_BAK, 2026-05-21): operational with first verification backup at 18 MB. Layer 1 systemd timer (bullpen-snapshot.timer): enabled, Persistent=true catch-up verified on 2026-05-23 boot."
         },
         {
           "label": "ADR system established (docs/adr/ + first 7 ADRs covering initial tech decisions from design.md §10 + operational-discipline decisions from 2026-05-21)",
@@ -77,13 +78,13 @@
         },
         {
           "label": "Dev / prod boundary formalized (ADR-0006) — macOS is the only authoring machine; no editor on the WSL2 working copy; deploy.sh + CI are the only writers",
-          "done": false,
-          "details": "Discipline rule, not code: enforced by convention. Concrete deliverables: (a) make train-sample target on the MacBook for stratified-sample iteration, (b) make train-full target that ssh-triggers the desktop, (c) bootstrap docs verified by a Phase 0 restore drill from a clean WSL2 install. SSH into prod allowed for OBSERVATION (logs, Grafana, ClickHouse queries) only."
+          "done": true,
+          "details": "Rule is in place: ADR-0006 written + auto-imported into CLAUDE.md, CLAUDE.md discipline rule 11 codifies it. Deferred concrete deliverables (Phase 1+, gated on having Mac-side work to drive them): (a) make train-sample target for stratified-sample iteration on the MacBook, (b) make train-full target that ssh-triggers the desktop, (c) bootstrap docs re-verified by a Phase 1 restore drill from a clean WSL2 install. Acknowledged exception on 2026-05-23: the host-side restore drill and the surfaced snapshot-script bugfix required editing on the WSL2 box. The edits were drill-driven and immediately committed to git; not a pattern to continue once feature work resumes on the Mac."
         },
         {
           "label": "S3-compatible object storage online (ADR-0007) — Cloudflare R2 in prod (per decision [128]), MinIO offline on the portable drive, S3_ENDPOINT_URL is the only environment-specific knob",
-          "done": false,
-          "details": "Host-side complete 2026-05-22 (Phase-0 wrap, Group B): (a) ✓ Cloudflare R2 bucket bullpen-prod created with samples/dev/, snapshots/, raw/ prefixes (.keep markers), token bullpen-prod-rw scoped Object R+W to that single bucket; (b) ✓ rclone remote 'bullpen-r2' configured against the R2 S3-compatible endpoint with no_check_bucket=true (token can't CreateBucket — that's intentional least-privilege; the flag tells rclone not to pre-flight), write/read/delete round-trip verified. Outstanding (Phase 1+): (c) boto3 (Python) and aws-sdk-s3 (Java) clients wired to read S3_ENDPOINT_URL — lands when first code path needs object storage (model registration in Phase 3a, sample loading in Phase 2). (d) MinIO launchable from /Volumes/MyDrive/bullpen-data via make minio-up — Mac-side, next Mac session. (e) make sync-mirror running rclone sync from R2 to the portable drive — depends on (d). Manifest validation (feature schema hash) lands with the first snapshot-write path in Phase 3a."
+          "done": true,
+          "details": "Host-side complete 2026-05-22 + reboot-verified 2026-05-23 (Phase 0 exit): (a) ✓ Cloudflare R2 bucket bullpen-prod created with samples/dev/, snapshots/, raw/ prefixes (.keep markers), token bullpen-prod-rw scoped Object R+W to that single bucket; (b) ✓ rclone remote 'bullpen-r2' configured against the R2 S3-compatible endpoint with no_check_bucket=true, write/read/delete round-trip verified, survives reboot (item 7 of the 2026-05-22 reboot drill returned all 3 prefixes). Deferred to Phase 1+ (gated on a code path that actually needs object storage): (c) boto3 (Python) and aws-sdk-s3 (Java) clients reading S3_ENDPOINT_URL — lands in Phase 2 (sample loading) and Phase 3a (model registration). (d) MinIO launchable from /Volumes/MyDrive/bullpen-data via make minio-up — Mac-side, ships with the first feature that needs offline storage. (e) make sync-mirror running rclone sync from R2 to the portable drive — depends on (d). (f) clickhouse-backup upload to bullpen-r2:bullpen-prod/snapshots/clickhouse/ from clickhouse-snapshot.sh — currently local-only; R2 push lands in Phase 1 (see docs/drills/2026-05-23_restore.md follow-ups). Manifest validation (feature schema hash) lands with the first snapshot-write path in Phase 3a."
         },
         {
           "label": "Structured JSON logging baseline (logback-json Java side, structlog Python side, correlation IDs propagated through every request)",
@@ -543,7 +544,17 @@
     "Ops dashboard"
   ],
   "drills": {
-    "restore_drill": { "last_run": null, "must_run_before_season": true },
-    "reboot_drill": { "last_run": null, "must_run_before_season": true }
+    "restore_drill": {
+      "last_run": "2026-05-23",
+      "must_run_before_season": true,
+      "result": "PASS",
+      "report": "docs/drills/2026-05-23_restore.md"
+    },
+    "reboot_drill": {
+      "last_run": "2026-05-23",
+      "must_run_before_season": true,
+      "result": "PASS",
+      "report": "docs/drills/2026-05-22_reboot.md"
+    }
   }
 }
