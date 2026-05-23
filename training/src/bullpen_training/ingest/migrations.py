@@ -23,9 +23,10 @@ from bullpen_training.logging_config import get_logger
 log = get_logger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-DEFAULT_MIGRATIONS_DIR = (
-    REPO_ROOT / "backend" / "src" / "main" / "resources" / "db" / "migration" / "clickhouse"
-)
+# Note: deliberately a sibling of `db/migration/` (Spring Flyway scans the
+# `migration` subtree recursively and would try to apply CH SQL against
+# SQLite if these landed under it).
+DEFAULT_MIGRATIONS_DIR = REPO_ROOT / "backend" / "src" / "main" / "resources" / "db" / "clickhouse"
 
 
 def _ensure_tracking_table(client: Client) -> None:

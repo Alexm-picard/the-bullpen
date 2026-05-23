@@ -16,6 +16,7 @@ dependencies = [
     "pybaseball>=2.2.7",
     "clickhouse-driver>=0.2.10",
     "click>=8.4.1",
+    "onnxmltools>=1.16.0",
 ]
 
 [dependency-groups]
