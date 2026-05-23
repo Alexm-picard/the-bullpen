@@ -3,22 +3,27 @@
 Boundary discipline (Risk Register G4):
     Numeric features pass through ONNX unchanged. The categorical lookups
     (target-encoded park_id, boolean stand_is_left) are **not** baked into
-    the ONNX graph — they live in `feature_pipeline.json` so the Java
-    `FeaturePipeline` can apply them identically. This keeps the ONNX
+    the ONNX graph — they live in `/contracts/feature_pipeline.json` so the
+    Java `FeaturePipeline` can apply them identically. This keeps the ONNX
     surface trivial and the Python↔Java parity test exercises the lookup
     path explicitly.
 
+Source of truth: `/contracts/feature_pipeline.json` (CLAUDE.md rule 7).
+This export READS the canonical pipeline + validates the model matches it.
+Drift between this script's view of the schema and `/contracts` is a
+HARD FAIL — registration of the resulting model would refuse anyway.
+
 Outputs alongside `model.lgb`:
-    model.onnx              — ONNX-format booster
-    feature_pipeline.json   — column order + preprocess spec + schema hash
-    park_hr_rate.json       — target-encoding lookup table (keyed by park_id)
+    model.onnx           — ONNX-format booster
+    park_hr_rate.json    — target-encoding lookup table (data, not spec)
 
 Determinism: re-running on the same model.lgb + same training frame is
-byte-stable for both the ONNX bytes and the lookup JSON.
+byte-stable for the ONNX bytes and the lookup JSON.
 """
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import logging
@@ -40,16 +45,49 @@ from bullpen_training.logging_config import configure_logging, get_logger
 
 log = get_logger(__name__)
 
-ONNX_OPSET = 15  # cap of onnxmltools' LightGBM converter as of v1.16
+REPO_ROOT = Path(__file__).resolve().parents[4]
+CONTRACT_PATH = REPO_ROOT / "contracts" / "feature_pipeline.json"
+
+
+def load_canonical_pipeline() -> dict[str, Any]:
+    """Read /contracts/feature_pipeline.json — the single source of truth.
+
+    Verifies the declared schema_hash matches the hook's recompute algorithm
+    (so any drift in the JSON itself is caught at export time, not at registry
+    registration time).
+    """
+    spec = cast(dict[str, Any], json.loads(CONTRACT_PATH.read_text()))
+    declared = spec["schema_hash"]
+    canonical = copy.deepcopy(spec)
+    canonical["schema_hash"] = ""
+    recomputed = hashlib.sha256(
+        json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    if declared != recomputed:
+        raise RuntimeError(
+            f"/contracts/feature_pipeline.json schema_hash is stale "
+            f"(declared={declared} computed={recomputed}); "
+            "re-run the recompute snippet in .githooks/pre-commit and re-stage."
+        )
+    return spec
+
+
+def _validate_model_matches_contract(spec: dict[str, Any]) -> None:
+    """Hard-fail if this code's view of the toy pipeline diverges from /contracts."""
+    if spec["model_name"] != "_toy_batted_ball":
+        raise RuntimeError(
+            f"contract model_name is {spec['model_name']!r}; "
+            "export_toy_onnx only knows how to handle '_toy_batted_ball'"
+        )
+    if tuple(spec["feature_order"]) != FEATURES:
+        raise RuntimeError(
+            f"contract feature_order {spec['feature_order']} != "
+            f"code FEATURES {list(FEATURES)} — code + contract drifted"
+        )
 
 
 def _compute_park_hr_rate(client: Any, year: int) -> dict[str, float]:
-    """Recompute the same target-encoding the training frame used.
-
-    Recomputed (not extracted from model) because the encoding is a property
-    of the data, not the model — and the Java side needs the dict, not the
-    booster's internal split state.
-    """
+    """Recompute the same target-encoding the training frame used."""
     raw = pd.DataFrame(
         client.execute(
             f"""
@@ -66,53 +104,7 @@ def _compute_park_hr_rate(client: Any, year: int) -> dict[str, float]:
         columns=["park_id", TARGET],
     )
     rate = cast(pd.Series, raw.groupby("park_id")[TARGET].mean())
-    # JSON-friendly ordering: sort by park_id for deterministic file bytes.
     return {str(k): float(v) for k, v in sorted(rate.items())}
-
-
-def _sha256_of_canonical_json(obj: dict[str, Any]) -> str:
-    canon = json.dumps(obj, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(canon.encode("utf-8")).hexdigest()
-
-
-def _build_feature_pipeline_doc(park_hr_rate_path: str) -> dict[str, Any]:
-    """Build the feature_pipeline.json contract — the Java side reads this
-    to know column order + preprocessing rules."""
-    spec: dict[str, Any] = {
-        "model_name": "_toy_batted_ball",
-        "version": "v0",
-        "phase": "1.4",
-        "feature_order": list(FEATURES),
-        "input_dtype": "float32",
-        "preprocess": {
-            "launch_speed_mph": {"type": "passthrough"},
-            "launch_angle_deg": {"type": "passthrough"},
-            "release_speed_mph": {"type": "passthrough"},
-            "park_id_encoded": {
-                "type": "target_encoding",
-                "source_column": "park_id",
-                "lookup_path": park_hr_rate_path,
-                "missing_strategy": "global_mean",
-            },
-            "stand_is_left": {
-                "type": "boolean_eq",
-                "source_column": "stand",
-                "match_value": "L",
-                "true_value": 1.0,
-                "false_value": 0.0,
-            },
-        },
-        "output": {
-            "kind": "binary_probability",
-            "label": "is_hr",
-            "onnx_output_index": 0,
-            "extract": "class_one_probability",
-        },
-        "onnx_opset": ONNX_OPSET,
-    }
-    # schema_hash zeroed during canonicalization so the field is self-stable.
-    spec["schema_hash"] = _sha256_of_canonical_json({**spec, "schema_hash": "0" * 64})
-    return spec
 
 
 def export(
@@ -120,7 +112,12 @@ def export(
     output_dir: Path | None = None,
     year: int = 2024,
     settings: ClickHouseSettings | None = None,
+    park_hr_rate: dict[str, float] | None = None,
 ) -> dict[str, Any]:
+    spec = load_canonical_pipeline()
+    _validate_model_matches_contract(spec)
+    opset = int(spec["onnx_opset"])
+
     outdir = output_dir or DEFAULT_OUTPUT_DIR
     model_path = outdir / "model.lgb"
     if not model_path.exists():
@@ -128,40 +125,37 @@ def export(
 
     booster = lgb.Booster(model_file=str(model_path))
     initial_types = [("input", FloatTensorType([None, len(FEATURES)]))]
-    log.info("converting LightGBM → ONNX", n_features=len(FEATURES), opset=ONNX_OPSET)
+    log.info("converting LightGBM → ONNX", n_features=len(FEATURES), opset=opset)
     onnx_model = onnxmltools.convert.convert_lightgbm(
         booster,
         initial_types=initial_types,
-        target_opset=ONNX_OPSET,
+        target_opset=opset,
         zipmap=False,
     )
     onnx.checker.check_model(onnx_model)
     onnx_path = outdir / "model.onnx"
     onnxmltools.utils.save_model(onnx_model, str(onnx_path))
 
-    log.info("computing park HR-rate lookup", year=year)
-    park_lookup = _compute_park_hr_rate(make_client(settings), year)
+    if park_hr_rate is None:
+        log.info("computing park HR-rate lookup", year=year)
+        park_hr_rate = _compute_park_hr_rate(make_client(settings), year)
     park_lookup_path = outdir / "park_hr_rate.json"
-    park_lookup_path.write_text(json.dumps(park_lookup, indent=2) + "\n")
-
-    pipeline_spec = _build_feature_pipeline_doc(park_lookup_path.name)
-    pipeline_path = outdir / "feature_pipeline.json"
-    pipeline_path.write_text(json.dumps(pipeline_spec, indent=2) + "\n")
+    park_lookup_path.write_text(json.dumps(park_hr_rate, indent=2) + "\n")
 
     onnx_sha = hashlib.sha256(onnx_path.read_bytes()).hexdigest()
     log.info(
         "export complete",
         onnx_path=str(onnx_path),
         onnx_sha256=onnx_sha,
-        pipeline_path=str(pipeline_path),
-        park_lookup_entries=len(park_lookup),
+        schema_hash=spec["schema_hash"],
+        park_lookup_entries=len(park_hr_rate),
     )
     return {
         "onnx_path": str(onnx_path),
         "onnx_sha256": onnx_sha,
-        "feature_pipeline_path": str(pipeline_path),
+        "schema_hash": spec["schema_hash"],
         "park_lookup_path": str(park_lookup_path),
-        "park_lookup_entries": len(park_lookup),
+        "park_lookup_entries": len(park_hr_rate),
     }
 
 

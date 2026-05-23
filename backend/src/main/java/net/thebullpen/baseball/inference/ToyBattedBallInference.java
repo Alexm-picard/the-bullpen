@@ -30,19 +30,22 @@ public class ToyBattedBallInference {
   public static final String MODEL_VERSION = "v0";
 
   private final Path artifactsDir;
+  private final Path contractPath;
   private OnnxModel model;
   private FeaturePipeline pipeline;
 
   public ToyBattedBallInference(
       @Value("${bullpen.inference.toy.artifacts-dir:../training/artifacts/_toy/v0}")
-          String artifactsDir) {
+          String artifactsDir,
+      @Value("${bullpen.inference.contract-path:../contracts/feature_pipeline.json}")
+          String contractPath) {
     this.artifactsDir = Path.of(artifactsDir).toAbsolutePath().normalize();
+    this.contractPath = Path.of(contractPath).toAbsolutePath().normalize();
   }
 
   @PostConstruct
   public void init() throws IOException, OrtException {
     Path onnxPath = artifactsDir.resolve("model.onnx");
-    Path pipelinePath = artifactsDir.resolve("feature_pipeline.json");
     Path parkPath = artifactsDir.resolve("park_hr_rate.json");
     if (!onnxPath.toFile().exists()) {
       throw new IOException(
@@ -50,13 +53,17 @@ public class ToyBattedBallInference {
               + onnxPath
               + " — run `uv run python -m bullpen_training.battedball.export_toy_onnx` first");
     }
-    this.pipeline = FeaturePipeline.load(pipelinePath, parkPath);
+    if (!contractPath.toFile().exists()) {
+      throw new IOException("feature pipeline contract not found at " + contractPath);
+    }
+    this.pipeline = FeaturePipeline.load(contractPath, parkPath);
     this.model = new OnnxModel(onnxPath);
     log.info(
-        "ToyBattedBallInference ready model={} version={} features={}",
+        "ToyBattedBallInference ready model={} version={} features={} schema_hash={}",
         MODEL_NAME,
         MODEL_VERSION,
-        pipeline.spec().featureOrder());
+        pipeline.spec().featureOrder(),
+        pipeline.spec().schemaHash());
   }
 
   @PreDestroy

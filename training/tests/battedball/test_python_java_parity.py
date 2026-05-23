@@ -32,6 +32,7 @@ import pytest
 from bullpen_training.battedball.parity_fixture import _preprocess
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+CONTRACT_PATH = REPO_ROOT.parent / "contracts" / "feature_pipeline.json"
 FIXTURE_DIR = REPO_ROOT / "tests" / "fixtures"
 INPUT_PATH = FIXTURE_DIR / "parity_toy_001.json"
 EXPECTED_PATH = FIXTURE_DIR / "parity_toy_001_expected.json"
@@ -39,7 +40,7 @@ ARTIFACT_DIR = REPO_ROOT / "artifacts" / "_toy" / "v0"
 ONNX_PATH = ARTIFACT_DIR / "model.onnx"
 PARK_LOOKUP_PATH = ARTIFACT_DIR / "park_hr_rate.json"
 
-_REQUIRED_PATHS = (INPUT_PATH, EXPECTED_PATH, ONNX_PATH, PARK_LOOKUP_PATH)
+_REQUIRED_PATHS = (INPUT_PATH, EXPECTED_PATH, ONNX_PATH, PARK_LOOKUP_PATH, CONTRACT_PATH)
 
 
 pytestmark = pytest.mark.skipif(
@@ -62,6 +63,18 @@ def test_input_and_expected_share_schema_hash() -> None:
     assert inp["schema_hash"] == exp["schema_hash"], (
         "input + expected fixtures came from different schema versions; "
         "regenerate both with parity_fixture.py"
+    )
+
+
+def test_fixture_schema_hash_matches_contract() -> None:
+    """The whole point of /contracts/feature_pipeline.json is to be the single
+    source of truth — any committed fixture must reference its current hash."""
+    contract = _load_json(CONTRACT_PATH)
+    inp = _load_json(INPUT_PATH)
+    assert inp["schema_hash"] == contract["schema_hash"], (
+        f"fixture schema_hash {inp['schema_hash']!r} != "
+        f"contract schema_hash {contract['schema_hash']!r}; "
+        "regenerate the fixture (uv run python -m bullpen_training.battedball.parity_fixture)"
     )
 
 

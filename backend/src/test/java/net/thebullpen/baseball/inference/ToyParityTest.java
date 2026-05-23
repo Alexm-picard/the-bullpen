@@ -35,7 +35,7 @@ class ToyParityTest {
   private static final Path EXPECTED_PATH = FIXTURE_DIR.resolve("parity_toy_001_expected.json");
   private static final Path ARTIFACT_DIR = REPO_ROOT.resolve("training/artifacts/_toy/v0");
   private static final Path ONNX_PATH = ARTIFACT_DIR.resolve("model.onnx");
-  private static final Path PIPELINE_PATH = ARTIFACT_DIR.resolve("feature_pipeline.json");
+  private static final Path CONTRACT_PATH = REPO_ROOT.resolve("contracts/feature_pipeline.json");
   private static final Path PARK_PATH = ARTIFACT_DIR.resolve("park_hr_rate.json");
 
   @SuppressWarnings("unused")
@@ -43,7 +43,7 @@ class ToyParityTest {
     return Files.exists(INPUT_PATH)
         && Files.exists(EXPECTED_PATH)
         && Files.exists(ONNX_PATH)
-        && Files.exists(PIPELINE_PATH)
+        && Files.exists(CONTRACT_PATH)
         && Files.exists(PARK_PATH);
   }
 
@@ -67,7 +67,7 @@ class ToyParityTest {
     JsonNode expected = mapper.readTree(Files.readAllBytes(EXPECTED_PATH));
     double tolerance = expected.get("tolerance").asDouble();
 
-    FeaturePipeline pipeline = FeaturePipeline.load(PIPELINE_PATH, PARK_PATH);
+    FeaturePipeline pipeline = FeaturePipeline.load(CONTRACT_PATH, PARK_PATH);
     try (OnnxModel model = new OnnxModel(ONNX_PATH)) {
       JsonNode rows = input.get("rows");
       JsonNode expectedRows = expected.get("rows");

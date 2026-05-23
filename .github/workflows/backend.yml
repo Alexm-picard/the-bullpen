@@ -3,9 +3,9 @@ name: backend
 on:
   push:
     branches: [main]
-    paths: ['backend/**', '.github/workflows/backend.yml']
+    paths: ['backend/**', 'contracts/**', 'training/**', '.github/workflows/backend.yml']
   pull_request:
-    paths: ['backend/**']
+    paths: ['backend/**', 'contracts/**', 'training/**']
 
 # ClickHouse is intentionally NOT a service container here:
 #   - clickhouse/clickhouse-server:*-alpine fails in Actions service runtime
@@ -22,6 +22,21 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
       - uses: gradle/actions/setup-gradle@v4
+
+      # The parity test (ToyParityTest) needs real model.onnx + park_hr_rate.json
+      # + parity fixture JSON. Without these the test self-disables on a fresh
+      # clone. CI synthesizes them deterministically below; no ClickHouse or
+      # pybaseball involvement.
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - name: Sync training deps
+        working-directory: training
+        run: uv sync --frozen
+      - name: Generate CI parity artifacts
+        working-directory: training
+        run: uv run python -m bullpen_training.battedball.generate_ci_artifacts --write-fixture
+
       - name: Build + unit tests
         working-directory: backend
         run: ./gradlew build test --no-daemon

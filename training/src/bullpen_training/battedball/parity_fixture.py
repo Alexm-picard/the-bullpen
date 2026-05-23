@@ -115,18 +115,19 @@ def generate(
     n: int = 16,
     settings: ClickHouseSettings | None = None,
 ) -> dict[str, Any]:
+    from bullpen_training.battedball.export_toy_onnx import load_canonical_pipeline
+
     artifacts = artifacts_dir or DEFAULT_OUTPUT_DIR
     onnx_path = artifacts / "model.onnx"
     lgb_path = artifacts / "model.lgb"
     park_path = artifacts / "park_hr_rate.json"
-    pipeline_path = artifacts / "feature_pipeline.json"
 
-    for p in (onnx_path, lgb_path, park_path, pipeline_path):
+    for p in (onnx_path, lgb_path, park_path):
         if not p.exists():
             raise FileNotFoundError(f"missing artifact: {p}")
 
     park_hr_rate: dict[str, float] = json.loads(park_path.read_text())
-    pipeline_spec = json.loads(pipeline_path.read_text())
+    pipeline_spec = load_canonical_pipeline()
 
     session = ort.InferenceSession(str(onnx_path))
     booster = lgb.Booster(model_file=str(lgb_path))

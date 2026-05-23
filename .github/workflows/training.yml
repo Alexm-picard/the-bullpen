@@ -38,7 +38,13 @@ jobs:
           enable-cache: true
       - working-directory: training
         run: uv sync --frozen
-      - name: Unit tests
+      # Synthesize toy artifacts + parity fixture from a fixed seed so the
+      # parity tests actually run (rather than self-disabling). No ClickHouse
+      # or pybaseball involvement; see generate_ci_artifacts.py docstring.
+      - name: Generate CI parity artifacts
+        working-directory: training
+        run: uv run python -m bullpen_training.battedball.generate_ci_artifacts --write-fixture
+      - name: Unit tests (incl. parity)
         working-directory: training
         run: uv run pytest -x --ignore=tests/leakage
 
