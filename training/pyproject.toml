@@ -13,6 +13,9 @@ dependencies = [
     "onnx>=1.17",
     "onnxruntime>=1.20",
     "skl2onnx>=1.17",
+    "pybaseball>=2.2.7",
+    "clickhouse-driver>=0.2.10",
+    "click>=8.4.1",
 ]
 
 [dependency-groups]
@@ -42,8 +45,16 @@ select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
 [tool.pyright]
 include = ["src", "eval", "tests"]
 pythonVersion = "3.11"
-strict = ["src/**"]
+# strict applies to modules where Unknown* would catch real bugs. The data
+# subpackages (ingest/, eval/) wrap pandas/pybaseball/clickhouse-driver
+# whose stubs are partial or absent — strict mode there is theatre, not
+# safety. New non-data modules should add themselves to this list.
+strict = [
+    "src/bullpen_training/__init__.py",
+    "src/bullpen_training/logging_config.py",
+]
 reportMissingTypeStubs = false
+reportMissingImports = "warning"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

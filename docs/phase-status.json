@@ -3,7 +3,7 @@
   "_doc": "Single source of truth for phase progress. Hand-edited as work completes. /status reads this. Bump fields honestly — surgical cuts come from honest tracking.",
   "current_phase": "1",
   "weekly_hours_target": 13,
-  "last_updated": "2026-05-23T17:10Z",
+  "last_updated": "2026-05-23T18:06Z",
   "phases": [
     {
       "id": "0",
@@ -105,14 +105,15 @@
       "name": "Vertical Slice",
       "weeks": "4–7",
       "estimated_hours": "50–65",
-      "status": "not_started",
-      "started_on": null,
+      "status": "in_progress",
+      "started_on": "2026-05-23",
       "completed_on": null,
       "exit_criterion": "Visit thebullpen.net/parks, click a batted ball, see real prediction in <500ms end-to-end",
       "exit_criteria_checklist": [
         {
           "label": "Historical Statcast pull (one season ~2024) → raw_statcast",
-          "done": false
+          "done": true,
+          "details": "Implemented under training/src/bullpen_training/ingest/ (statcast_pull.py + clickhouse_client.py + assertions.py + migrations.py). 2024 full season pulled on Mac dev ClickHouse 2026-05-23 18:04 EDT: 760,248 raw rows total / 711,898 regular-season (game_type='R') in 26.5s wall time across 8 monthly chunks. Idempotency verified: re-pull leaves count unchanged via ALTER TABLE DROP PARTITION + re-INSERT. V002__raw_statcast.sql applied via lightweight Python migrations helper (proper Flyway-CH lands in Phase 3). 14 unit tests pass (normalize_columns, month_window, NaN→None coercion, alias mapping). ruff format/lint clean, pyright 0 errors with strict mode on logging_config.py + __init__.py and relaxed for data-handling subpackage."
         },
         {
           "label": "Cleaning into pitches table with proper schema + dedup",

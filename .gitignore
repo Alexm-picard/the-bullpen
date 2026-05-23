@@ -48,6 +48,9 @@ infra/clickhouse-data/
 infra/grafana-data/
 infra/prometheus-data/
 
+# --- Local snapshots (created by the destructive-CH hook gate on dev boxes) ---
+snapshots/
+
 # --- Local logs ---
 *.log
 logs/
