@@ -3,7 +3,7 @@
   "_doc": "Single source of truth for phase progress. Hand-edited as work completes. /status reads this. Bump fields honestly — surgical cuts come from honest tracking.",
   "current_phase": "1",
   "weekly_hours_target": 13,
-  "last_updated": "2026-05-23T18:43Z",
+  "last_updated": "2026-05-23T18:50Z",
   "phases": [
     {
       "id": "0",
@@ -137,11 +137,13 @@
         },
         {
           "label": "Park Explorer page with hardcoded historical BIPs",
-          "done": false
+          "done": true,
+          "details": "frontend/src/pages/parks-page.tsx grids 10 hand-picked 2024 BIPs from frontend/src/data/example-bbips.json. Click a card → TanStack Query mutation calls POST /v1/predict/batted-ball, renders p(HR) + model version + latency. React Router with /, /parks routes; AppShell layout with nav. Vercel SPA rewrite added for deep-link. Vite build clean (358KB / 111KB gz)."
         },
         {
           "label": "Click → real prediction renders in browser",
-          "done": false
+          "done": true,
+          "details": "Verified end-to-end on Mac dev 2026-05-23: backend on 18080 serves /v1/predict/batted-ball, frontend at 5173 wires the mutation. 4 Vitest tests pass (smoke + 3 predict-API contract: happy 200, 4xx PredictError, non-JSON 5xx fallback). Production reachability via Cloudflare Tunnel + Vercel is operational from Phase 0; first deploy ships with the commit."
         },
         { "label": "Primitive prediction logging to ClickHouse", "done": false }
       ],
