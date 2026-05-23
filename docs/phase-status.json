@@ -3,7 +3,7 @@
   "_doc": "Single source of truth for phase progress. Hand-edited as work completes. /status reads this. Bump fields honestly — surgical cuts come from honest tracking.",
   "current_phase": "1",
   "weekly_hours_target": 13,
-  "last_updated": "2026-05-23T18:31Z",
+  "last_updated": "2026-05-23T18:43Z",
   "phases": [
     {
       "id": "0",
@@ -130,7 +130,11 @@
           "done": true,
           "details": "Python export at training/src/bullpen_training/battedball/{export_toy_onnx,parity_fixture}.py — generates model.onnx + feature_pipeline.json + park_hr_rate.json at opset 15 (onnxmltools cap). Java side at backend/src/main/java/net/thebullpen/baseball/inference/{OnnxModel,FeaturePipeline}.java reads the same JSON contract. Parity tests on both sides pass against the committed 16-row fixture (training/tests/fixtures/parity_toy_001*.json) with max ONNX-vs-LightGBM drift = 5.66e-8 (tolerance 1e-6). Tests self-disable on missing artifacts so a fresh clone has green builds; CI integration to regenerate artifacts before parity-test runs lands in 1.5+ work. Boundary discipline (G4 closed): numerics pass through ONNX; lookups stay in Java/Python preprocessors. One regression caught: Spring Flyway recurses into db/migration/ and tried to apply CH SQL against SQLite — moved CH migrations to db/clickhouse/."
         },
-        { "label": "POST /predict/batted-ball endpoint", "done": false },
+        {
+          "label": "POST /predict/batted-ball endpoint",
+          "done": true,
+          "details": "POST /v1/predict/batted-ball live. backend/.../api/PredictBattedBallController + DTOs + ApiErrorAdvice + InferenceMetrics + WarmupReadiness. Live local boot 2026-05-23 14:42 EDT: model ready 8s after JVM start, warm-up 3ms, happy-path curl returns probHr=0.787 in 5ms wall time, validation error returns canonical envelope. 5 MockMvc tests pass (happy path + missing field + bad content-type + switch-hitter rejection + launch-speed out-of-range). Latency histogram + prediction counter wired via Micrometer. G11 closed (warm-up gates readiness probe). Added spring-boot-starter-validation to backend deps. Renamed ApiError.Error → ApiError.Body to avoid java.lang.Error clash (Error Prone caught it)."
+        },
         {
           "label": "Park Explorer page with hardcoded historical BIPs",
           "done": false

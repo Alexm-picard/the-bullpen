@@ -26,6 +26,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.springframework.boot:spring-boot-starter-jdbc")
+    implementation("org.springframework.boot:spring-boot-starter-validation")
     implementation("org.flywaydb:flyway-core:11.3.2")
     runtimeOnly("org.xerial:sqlite-jdbc:3.49.1.0")
     runtimeOnly("io.micrometer:micrometer-registry-prometheus")
