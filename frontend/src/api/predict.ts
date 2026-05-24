@@ -129,3 +129,94 @@ export function usePredictPitch() {
     mutationFn: predictPitch,
   });
 }
+
+// ---------------------------------------------------------------------------
+// Forward simulator (Phase 2a.9) — analytical (production) + Monte Carlo
+// ---------------------------------------------------------------------------
+
+export type SimulateRequest = {
+  startBalls: number;
+  startStrikes: number;
+  outs: number;
+  inning: number;
+  baseState: number;
+  scoreDiff: number;
+  dow: number;
+  pitcherThrows: "L" | "R";
+  batterStand: "L" | "R";
+  parkId: string;
+  pitcherId: number;
+  batterId: number;
+  pitcherPitchesLast28d?: number | null;
+  pitcherPitchesInGame?: number | null;
+  daysSinceLastAppearance?: number | null;
+  pitcherStrikeRate28d?: number | null;
+  pitcherSwstrikeRate28d?: number | null;
+  pitcherInplayRate28d?: number | null;
+  pitcherStrikeRateStd?: number | null;
+  batterStrikeRate28d?: number | null;
+  batterInplayRate28d?: number | null;
+  batterBallRate28d?: number | null;
+  batterInplayRateStd?: number | null;
+  // Monte-Carlo only:
+  mcTrials?: number | null;
+  mcSeed?: number | null;
+};
+
+export type SimulateMethod = "analytical" | "monte_carlo";
+
+export type SimulateResponse = {
+  method: SimulateMethod;
+  startBalls: number;
+  startStrikes: number;
+  expectedPitches: number;
+  pWalk: number;
+  pStrikeout: number;
+  pInPlay: number;
+  mcTrials: number | null;
+  modelName: string;
+  modelVersion: string;
+  latencyMicros: number;
+  correlationId: string;
+};
+
+async function postSimulate(
+  path: string,
+  req: SimulateRequest,
+): Promise<SimulateResponse> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as ApiErrorBody | null;
+    if (body && "error" in body) throw new PredictError(body);
+    throw new Error(`simulate failed: HTTP ${res.status}`);
+  }
+  return (await res.json()) as SimulateResponse;
+}
+
+export function simulatePlateAppearance(
+  req: SimulateRequest,
+): Promise<SimulateResponse> {
+  return postSimulate("/v1/simulate/plate-appearance", req);
+}
+
+export function simulatePlateAppearanceMonteCarlo(
+  req: SimulateRequest,
+): Promise<SimulateResponse> {
+  return postSimulate("/v1/simulate/plate-appearance/monte-carlo", req);
+}
+
+export function useSimulatePlateAppearance() {
+  return useMutation<SimulateResponse, Error, SimulateRequest>({
+    mutationFn: simulatePlateAppearance,
+  });
+}
+
+export function useSimulatePlateAppearanceMonteCarlo() {
+  return useMutation<SimulateResponse, Error, SimulateRequest>({
+    mutationFn: simulatePlateAppearanceMonteCarlo,
+  });
+}

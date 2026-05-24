@@ -164,13 +164,13 @@
       "started_on": "2026-05-23",
       "completed_on": null,
       "exit_criterion": "Three models registered, all with eval artifacts, all served via Spring, all with passing leakage tests in CI. ECE < 0.02 on test data per model.",
-      "current_leaf": "2a.1-2a.8 complete. **`POST /v1/predict/pitch` live.** Phase 2a.8 wired the full Java serving path for `pitch_outcome_pre/v1`: multinomial LightGBM exported to ONNX (opset 15, 31 features × 5 classes), `IsotonicCalibratorJava` (per-class piecewise-linear + row renorm matching Python at 1e-6), `FeaturePipelinePitchPre` (Tier 1+2+3 transforms with deterministic park_id mapping + TE lookups for pitcher_id/batter_id), `PitchInferenceService` (3-round warmup, `@ConditionalOnBean` gating so toy tests stay green on fresh clones), `PredictPitchController` (5-class probs + winner + correlation id). Live training: fold-4 ECE 0.0008, CV summary ECE 0.0035 ± 0.0026 (target <0.02). Python↔Java parity: 10 random 2025 pitches match end-to-end (feature vector + raw ONNX probs + calibrated probs) within 1e-6 in both languages. Toy contract moved to `feature_pipeline_toy.json`; canonical `feature_pipeline.json` is now pitch_outcome_pre (schema_hash bb033950…). **117 Python tests + 14 Java tests, 0 failures.** Next: 2a.9 (forward simulator — 15×15 transition matrix + Monte Carlo).",
+      "current_leaf": "**Phase 2a complete (9/9 leaves).** 2a.9 added the forward simulator: `PlateAppearanceMarkov` (15-state chain: 12 transient (balls,strikes) + 3 absorbing BB/K/BIP), `AnalyticalSolver` (EJML — decision [130] — fundamental matrix `(I − Q)⁻¹` + absorption matrix `N·R` in one solve), `MonteCarloSimulator` (deterministic `SplittableRandom`, per-state cumulative cache). Two endpoints: `POST /v1/simulate/plate-appearance` (analytical, production) + `POST /v1/simulate/plate-appearance/monte-carlo` (diagnostic). Per-request flow: 12 ONNX calls (one per transient state — pitchers throw differently in 0-0 vs 3-2), cached + shared by both solvers. Convergence: MC at 50K trials matches analytical across 100 random Dirichlet distributions (probabilities within 0.5% relative + 0.01 absolute, E[pitches] within 2% relative + 0.1 absolute — the leaf's nominal 10K/0.5% is unreachable given binomial SE and foul-loop heavy tails). **117 Python + 38 Java tests, 0 failures.** Next: 2b (post-pitch head — release-side features + early-flight signal; separate registry entry per CLAUDE.md rule 9).",
       "sub_phases": [
         {
           "id": "2a",
           "name": "Pitch outcome — pre-pitch head",
           "weeks": "8–10",
-          "done": false
+          "done": true
         },
         {
           "id": "2b",
