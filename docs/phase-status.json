@@ -3,7 +3,7 @@
   "_doc": "Single source of truth for phase progress. Hand-edited as work completes. /status reads this. Bump fields honestly — surgical cuts come from honest tracking.",
   "current_phase": "2",
   "weekly_hours_target": 13,
-  "last_updated": "2026-05-24T01:48Z",
+  "last_updated": "2026-05-24T01:55Z",
   "phases": [
     {
       "id": "0",
@@ -164,7 +164,7 @@
       "started_on": "2026-05-23",
       "completed_on": null,
       "exit_criterion": "Three models registered, all with eval artifacts, all served via Spring, all with passing leakage tests in CI. ECE < 0.02 on test data per model.",
-      "current_leaf": "2a.1-2a.6 complete. LightGBM (Brier 0.1478, ECE 0.0036) and LR baseline (Brier 0.1487 fold 1, ECE 0.0061) both trained via the same harness on the 25.4M-row features table. LightGBM beats LR on Brier + log loss as required (decision [37]); ECE comfortably under the <0.02 Phase 2 exit gate. 117 Python tests, 0 ruff/pyright errors. Next: 2a.7 (eval artifact generator — adds the production-v1 CLI + 5-file persistence for both models alongside reliability diagrams + segment metrics).",
+      "current_leaf": "2a.1-2a.7 complete. Eval artifact generator (reliability diagrams + confusion matrix + segment_metrics + temporal_cv_results + feature_importance + commit_sha + data_hash) + production CLI (`bullpen_training.pitch.production --model {lightgbm,lr} --version v1`) that writes 5 canonical files + eval/ per model version. Live LR smoke produced all 12 files in 53s. **114 Python tests, 0 ruff/pyright errors**. Next: 2a.8 (ONNX export via onnxmltools/skl2onnx + Spring /v1/predict/pitch endpoint mirroring the Phase 1.4/1.5 path).",
       "sub_phases": [
         {
           "id": "2a",
