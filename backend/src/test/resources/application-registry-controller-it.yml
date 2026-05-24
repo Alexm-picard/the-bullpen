@@ -1,0 +1,11 @@
+# Test profile for RegistryControllerIT — same SQLite-isolation pattern as
+# application-registry-it.yml, but keeps the web context up so MockMvc can
+# drive the admin + ops controllers through the real Spring Security filter
+# chain. Datasource URL + admin basic auth credentials are injected via
+# @DynamicPropertySource inside the test class so each JVM gets a fresh DB.
+
+spring:
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true

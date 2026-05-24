@@ -38,10 +38,15 @@ public class RegistryService {
 
   private final RegistryRepository repo;
   private final FeatureSchemaHasher hasher;
+  private final ExperimentResultsRepository experimentRepo;
 
-  public RegistryService(RegistryRepository repo, FeatureSchemaHasher hasher) {
+  public RegistryService(
+      RegistryRepository repo,
+      FeatureSchemaHasher hasher,
+      ExperimentResultsRepository experimentRepo) {
     this.repo = repo;
     this.hasher = hasher;
+    this.experimentRepo = experimentRepo;
   }
 
   // --- register -----------------------------------------------------------
@@ -224,6 +229,7 @@ public class RegistryService {
       throw new RegistryException.IllegalTransition(current.stage(), newStage);
     }
     if (newStage == Stage.CHAMPION) {
+      assertPromotionCriteriaMet(current);
       promoteToChampionAtomically(current);
     } else {
       repo.updateStage(id, newStage);
@@ -231,6 +237,33 @@ public class RegistryService {
     return repo.findById(id)
         .orElseThrow(
             () -> new IllegalStateException("registry: id=" + id + " vanished after updateStage"));
+  }
+
+  /**
+   * Rule 5 / decision [72]: every promotion to {@link Stage#CHAMPION} needs a recorded {@code
+   * experiment_results.status='passed'} row for {@code (modelName, challengerVersionId)}.
+   *
+   * <p>Bootstrap exemption (leaf 3a.4 "Known edge cases"): when a model has exactly one
+   * ever-registered version (i.e., this is the first version of a brand-new model), the gate is
+   * skipped — there's no prior baseline to evaluate against, so an experiment row is impossible by
+   * construction. Once a second version exists (even if the first was later archived), the gate
+   * fires for every {@code -> CHAMPION} transition.
+   */
+  private void assertPromotionCriteriaMet(ModelVersion incoming) {
+    int totalVersions = repo.findByName(incoming.modelName()).size();
+    if (totalVersions <= 1) {
+      log.info(
+          "registry: bootstrap promotion of {}/{} (id={}) — only version ever registered, gate"
+              + " skipped",
+          incoming.modelName(),
+          incoming.version(),
+          incoming.id());
+      return;
+    }
+    if (experimentRepo.findLatestPassing(incoming.modelName(), incoming.id()).isEmpty()) {
+      throw new RegistryException.PromotionCriteriaMissing(
+          incoming.modelName(), incoming.id(), incoming.version());
+    }
   }
 
   /**

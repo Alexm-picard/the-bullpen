@@ -12,3 +12,10 @@ spring:
     baseline-on-migrate: true
   main:
     web-application-type: none
+
+# Tests-only credential for /v1/admin/** HTTP-Basic (SecurityConfig).
+# Prod sources this from THEBULLPEN_ADMIN_BASIC_AUTH; tests assert auth using
+# these exact credentials so they're shared by RegistryAdminControllerIT.
+bullpen:
+  admin:
+    basicauth: it-admin:it-password

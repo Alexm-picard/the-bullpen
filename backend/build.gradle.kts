@@ -27,6 +27,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.springframework.boot:spring-boot-starter-jdbc")
     implementation("org.springframework.boot:spring-boot-starter-validation")
+    implementation("org.springframework.boot:spring-boot-starter-security")
     implementation("org.flywaydb:flyway-core:11.3.2")
     runtimeOnly("org.xerial:sqlite-jdbc:3.49.1.0")
     runtimeOnly("io.micrometer:micrometer-registry-prometheus")
@@ -42,6 +43,7 @@ dependencies {
     implementation("org.apache.httpcomponents.client5:httpclient5:5.4.1")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
+    testImplementation("org.springframework.security:spring-security-test")
     testImplementation("org.testcontainers:junit-jupiter:1.20.4")
     testImplementation("org.testcontainers:clickhouse:1.20.4")
 
@@ -66,4 +68,10 @@ spotbugs {
 
 tasks.named<Test>("test") {
     useJUnitPlatform()
+    // Test-only default for the prod-required admin Basic-Auth credential.
+    // Individual IT classes still override this via @DynamicPropertySource (the registry-it
+    // suite uses 'it-admin:it-password'); this just keeps generic context-load tests
+    // (ApplicationTests + the predict-controller suites) from hitting SecurityConfig's
+    // blank-value IllegalStateException during context bring-up.
+    systemProperty("THEBULLPEN_ADMIN_BASIC_AUTH", "test-admin:test-password")
 }

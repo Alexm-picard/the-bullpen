@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.UUID;
 import net.thebullpen.baseball.registry.dto.ModelVersion;
@@ -51,9 +52,27 @@ class RegistryServiceIT {
 
   @BeforeEach
   void resetRegistry() {
-    // Each test starts with an empty model_versions; tmp SQLite is fresh per JVM, but tests share
-    // the JVM through the SpringBootTest context.
+    // Each test starts with an empty model_versions + experiment_results; tmp SQLite is fresh per
+    // JVM, but tests share the JVM through the SpringBootTest context.
+    jdbc.update("DELETE FROM experiment_results");
     jdbc.update("DELETE FROM model_versions");
+  }
+
+  /** Seed a passing experiment_results row for the rule-5 promotion gate. */
+  private void seedPassingExperiment(
+      String modelName, long championVersionId, long challengerVersionId) {
+    jdbc.update(
+        "INSERT INTO experiment_results (model_name, champion_version_id, challenger_version_id,"
+            + " started_at, ended_at, primary_metric, primary_threshold, guardrails,"
+            + " sample_size_target, sample_size_observed, champion_metric, challenger_metric,"
+            + " guardrails_observed, status, notes)"
+            + " VALUES (?, ?, ?, ?, ?, 'brier', 0.20, '{}', 10000, 12345, 0.185, 0.172, '{}',"
+            + " 'passed', 'seeded by RegistryServiceIT')",
+        modelName,
+        championVersionId,
+        challengerVersionId,
+        Timestamp.from(Instant.now().minusSeconds(7200)),
+        Timestamp.from(Instant.now().minusSeconds(60)));
   }
 
   // --- register -----------------------------------------------------------
@@ -226,6 +245,8 @@ class RegistryServiceIT {
     service.transitionStage(priorChamp.id(), Stage.CHAMPION);
     ModelVersion newChall = service.register(sampleRequest("pitch_outcome", "v-new"));
     service.transitionStage(newChall.id(), Stage.SHADOW);
+    // rule-5 gate: 2nd-ever promotion needs a passing experiment row for the challenger.
+    seedPassingExperiment("pitch_outcome", priorChamp.id(), newChall.id());
 
     ModelVersion promoted = service.transitionStage(newChall.id(), Stage.CHAMPION);
     assertThat(promoted.stage()).isEqualTo(Stage.CHAMPION);
@@ -332,6 +353,81 @@ class RegistryServiceIT {
     assertThatThrownBy(
             () -> service.registerWithBootstrap(sampleRequest("intended_model", "v1"), typo))
         .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  // --- promotion gate (3a.4, rule 5 / decision [72]) ---------------------
+
+  @Test
+  void promote_to_champion_without_passing_experiment_throws_PromotionCriteriaMissing()
+      throws Exception {
+    ModelVersion priorChamp = service.register(sampleRequest("gated_model", "v1"));
+    service.transitionStage(priorChamp.id(), Stage.CHAMPION);
+    ModelVersion challenger = service.register(sampleRequest("gated_model", "v2"));
+    service.transitionStage(challenger.id(), Stage.SHADOW);
+    // no experiment_results row seeded — gate must block.
+
+    assertThatThrownBy(() -> service.transitionStage(challenger.id(), Stage.CHAMPION))
+        .isInstanceOf(RegistryException.PromotionCriteriaMissing.class)
+        .hasMessageContaining("gated_model/v2")
+        .hasMessageContaining("rule 5");
+
+    assertThat(service.getById(challenger.id()))
+        .map(ModelVersion::stage)
+        .contains(Stage.SHADOW)
+        .as("rejected promotion must leave the challenger at SHADOW");
+    assertThat(service.findChampion("gated_model"))
+        .map(ModelVersion::id)
+        .contains(priorChamp.id())
+        .as("rejected promotion must leave prior champion in place");
+  }
+
+  @Test
+  void promote_to_champion_with_passing_experiment_succeeds() throws Exception {
+    ModelVersion priorChamp = service.register(sampleRequest("gated_model", "v1"));
+    service.transitionStage(priorChamp.id(), Stage.CHAMPION);
+    ModelVersion challenger = service.register(sampleRequest("gated_model", "v2"));
+    service.transitionStage(challenger.id(), Stage.SHADOW);
+    seedPassingExperiment("gated_model", priorChamp.id(), challenger.id());
+
+    ModelVersion promoted = service.transitionStage(challenger.id(), Stage.CHAMPION);
+    assertThat(promoted.stage()).isEqualTo(Stage.CHAMPION);
+  }
+
+  @Test
+  void bootstrap_promotion_skips_experiment_gate_for_first_ever_version() throws Exception {
+    // Only one ever-registered version → bootstrap exemption kicks in, no experiment needed.
+    ModelVersion v1 = service.register(sampleRequest("brand_new_for_bootstrap", "v1"));
+    ModelVersion champion = service.transitionStage(v1.id(), Stage.CHAMPION);
+    assertThat(champion.stage()).isEqualTo(Stage.CHAMPION);
+  }
+
+  @Test
+  void gate_fires_even_when_no_current_champion_if_prior_versions_exist() throws Exception {
+    // v1 promoted then archived; v2 registered as a fresh challenger with no current champion.
+    // Bootstrap exemption must NOT apply — once a 2nd version exists, promotion is non-trivial
+    // regardless of whether the prior was demoted/archived.
+    ModelVersion v1 = service.register(sampleRequest("multi_version_model", "v1"));
+    service.transitionStage(v1.id(), Stage.CHAMPION);
+    service.transitionStage(v1.id(), Stage.ARCHIVED);
+    ModelVersion v2 = service.register(sampleRequest("multi_version_model", "v2"));
+    service.transitionStage(v2.id(), Stage.SHADOW);
+
+    assertThatThrownBy(() -> service.transitionStage(v2.id(), Stage.CHAMPION))
+        .isInstanceOf(RegistryException.PromotionCriteriaMissing.class);
+  }
+
+  @Test
+  void experiment_for_a_different_challenger_does_not_unlock_promotion() throws Exception {
+    ModelVersion v1 = service.register(sampleRequest("isolation_model", "v1"));
+    service.transitionStage(v1.id(), Stage.CHAMPION);
+    ModelVersion v2 = service.register(sampleRequest("isolation_model", "v2"));
+    ModelVersion v3 = service.register(sampleRequest("isolation_model", "v3"));
+    service.transitionStage(v3.id(), Stage.SHADOW);
+    // The passing experiment is for v2, not v3 → v3's promotion must still fail.
+    seedPassingExperiment("isolation_model", v1.id(), v2.id());
+
+    assertThatThrownBy(() -> service.transitionStage(v3.id(), Stage.CHAMPION))
+        .isInstanceOf(RegistryException.PromotionCriteriaMissing.class);
   }
 
   // --- helpers -----------------------------------------------------------

@@ -31,3 +31,10 @@ logging:
   level:
     root: INFO
     net.thebullpen: DEBUG
+
+bullpen:
+  admin:
+    # HTTP-Basic credentials for /v1/admin/** in the form "user:password".
+    # Required in prod (sourced from secrets.env / systemd EnvironmentFile);
+    # tests override via @DynamicPropertySource. Decision [29], leaf 3a.4.
+    basicauth: ${THEBULLPEN_ADMIN_BASIC_AUTH:}
