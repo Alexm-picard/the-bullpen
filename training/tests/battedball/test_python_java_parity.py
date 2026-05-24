@@ -32,7 +32,7 @@ import pytest
 from bullpen_training.battedball.parity_fixture import _preprocess
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-CONTRACT_PATH = REPO_ROOT.parent / "contracts" / "feature_pipeline.json"
+CONTRACT_PATH = REPO_ROOT.parent / "contracts" / "feature_pipeline_toy.json"
 FIXTURE_DIR = REPO_ROOT / "tests" / "fixtures"
 INPUT_PATH = FIXTURE_DIR / "parity_toy_001.json"
 EXPECTED_PATH = FIXTURE_DIR / "parity_toy_001_expected.json"
@@ -102,6 +102,6 @@ def test_python_onnx_matches_expected_for_every_row() -> None:
         probs = cast(np.ndarray, out[1] if len(out) > 1 else out[0])
         got = float(probs[0][1])
         wanted = float(want["onnx_probability"])  # type: ignore[arg-type]
-        assert abs(got - wanted) < tolerance, (
-            f"prob drift > {tolerance} on game_id={want['game_id']}: got {got} wanted {wanted}"
-        )
+        assert (
+            abs(got - wanted) < tolerance
+        ), f"prob drift > {tolerance} on game_id={want['game_id']}: got {got} wanted {wanted}"

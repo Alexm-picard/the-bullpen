@@ -37,7 +37,7 @@ public class ToyBattedBallInference {
   public ToyBattedBallInference(
       @Value("${bullpen.inference.toy.artifacts-dir:../training/artifacts/_toy/v0}")
           String artifactsDir,
-      @Value("${bullpen.inference.contract-path:../contracts/feature_pipeline.json}")
+      @Value("${bullpen.inference.contract-path:../contracts/feature_pipeline_toy.json}")
           String contractPath) {
     this.artifactsDir = Path.of(artifactsDir).toAbsolutePath().normalize();
     this.contractPath = Path.of(contractPath).toAbsolutePath().normalize();

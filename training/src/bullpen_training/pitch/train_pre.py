@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import date
-from typing import cast
+from typing import Any, cast
 
 import lightgbm as lgb
 import numpy as np
@@ -36,22 +36,35 @@ DEFAULT_SEED = 42
 
 _LABEL_TO_INT: dict[str, int] = {cls: i for i, cls in enumerate(LABEL_CLASSES)}
 
+STAND_TO_INT: dict[str, int] = {"L": 0, "R": 1}
+THROWS_TO_INT: dict[str, int] = {"L": 0, "R": 1}
+UNKNOWN_PARK_CODE: int = -1
+
 
 def _label_to_int(series: pd.Series) -> pd.Series:
     return cast(pd.Series, series.map(_LABEL_TO_INT).astype("int8"))
 
 
 def _stand_to_int(s: pd.Series) -> pd.Series:
-    return cast(pd.Series, s.fillna("R").map({"L": 0, "R": 1}).astype("int8"))
+    return cast(pd.Series, s.fillna("R").map(STAND_TO_INT).astype("int8"))
 
 
 def _throws_to_int(s: pd.Series) -> pd.Series:
-    return cast(pd.Series, s.fillna("R").map({"L": 0, "R": 1}).astype("int8"))
+    return cast(pd.Series, s.fillna("R").map(THROWS_TO_INT).astype("int8"))
 
 
-def _park_to_int(s: pd.Series) -> pd.Series:
-    # LightGBM categorical handler wants ints. Use category codes.
-    return cast(pd.Series, s.astype("category").cat.codes.astype("int16"))
+def _park_to_int(s: pd.Series, mapping: dict[str, int]) -> pd.Series:
+    """Deterministic park_id → int via an externally-supplied mapping.
+
+    Unknown parks (not seen in the loader's universe) get
+    ``UNKNOWN_PARK_CODE`` so the model treats them as a real but
+    out-of-distribution code. LightGBM doesn't crash on a value it
+    didn't see in training — it routes via the catch-all branch.
+    """
+    return cast(
+        pd.Series,
+        s.fillna("").map(mapping).fillna(UNKNOWN_PARK_CODE).astype("int16"),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -74,8 +87,31 @@ def make_feature_loader(
 @dataclass
 class FeatureLoaderClosure:
     client: Client
+    # Built lazily on first __call__; shared across train/val/test calls so
+    # park_id_int is bit-identical regardless of which year is being loaded.
+    park_id_mapping: dict[str, int] | None = None
+
+    def _ensure_park_mapping(self, fold_id: int) -> None:
+        """Build a deterministic alphabetical park_id → int mapping once per loader.
+
+        The mapping must be shared across train/val/test calls — otherwise the
+        model's view of `park_id_int` diverges between training and calibration,
+        and Java serving can't possibly match Python (different code per park).
+        Idempotent.
+        """
+        if self.park_id_mapping is not None:
+            return
+        rows = cast(
+            list[tuple[Any, ...]],
+            self.client.execute(
+                f"SELECT DISTINCT park_id FROM features WHERE fold = {fold_id} ORDER BY park_id"
+            ),
+        )
+        self.park_id_mapping = {str(row[0]): i for i, row in enumerate(rows)}
+        log.info("park_id mapping built for fold %d: %d parks", fold_id, len(self.park_id_mapping))
 
     def __call__(self, start_year: int, end_year: int, fold_id: int) -> pd.DataFrame:
+        self._ensure_park_mapping(fold_id)
         start = date(start_year, 1, 1)
         end = date(end_year, 12, 31)
         # Select Tier 1+2+3 columns + label
@@ -157,7 +193,9 @@ class FeatureLoaderClosure:
         # Encode categoricals as ints (LightGBM-ready)
         df["pitcher_throws_int"] = _throws_to_int(cast(pd.Series, df["pitcher_throws"]))
         df["batter_stand_int"] = _stand_to_int(cast(pd.Series, df["batter_stand"]))
-        df["park_id_int"] = _park_to_int(cast(pd.Series, df["park_id"]))
+        # park_id_mapping is set by _ensure_park_mapping at the top of __call__
+        assert self.park_id_mapping is not None
+        df["park_id_int"] = _park_to_int(cast(pd.Series, df["park_id"]), self.park_id_mapping)
         df["label"] = _label_to_int(cast(pd.Series, df["label"]))
         # Project to canonical columns
         keep = [*PITCH_FEATURE_COLUMNS, "label"]

@@ -1,47 +1,228 @@
 {
-  "model_name": "_toy_batted_ball",
-  "phase": "1",
+  "model_name": "pitch_outcome_pre",
+  "phase": "2a",
   "feature_order": [
-    "launch_speed_mph",
-    "launch_angle_deg",
-    "release_speed_mph",
-    "park_id_encoded",
-    "stand_is_left"
+    "count_balls",
+    "count_strikes",
+    "outs",
+    "inning",
+    "base_state",
+    "score_diff",
+    "dow",
+    "pitcher_throws_int",
+    "batter_stand_int",
+    "park_id_int",
+    "pitcher_te_ball",
+    "pitcher_te_called_strike",
+    "pitcher_te_swinging_strike",
+    "pitcher_te_foul",
+    "pitcher_te_in_play",
+    "batter_te_ball",
+    "batter_te_called_strike",
+    "batter_te_swinging_strike",
+    "batter_te_foul",
+    "batter_te_in_play",
+    "pitcher_pitches_last_28d",
+    "pitcher_pitches_in_game",
+    "days_since_last_appearance",
+    "pitcher_strike_rate_28d",
+    "pitcher_swstrike_rate_28d",
+    "pitcher_inplay_rate_28d",
+    "pitcher_strike_rate_std",
+    "batter_strike_rate_28d",
+    "batter_inplay_rate_28d",
+    "batter_ball_rate_28d",
+    "batter_inplay_rate_std"
   ],
   "input_dtype": "float32",
   "preprocess": {
-    "launch_speed_mph": {
-      "type": "passthrough"
+    "count_balls": {
+      "type": "passthrough",
+      "source_column": "count_balls"
     },
-    "launch_angle_deg": {
-      "type": "passthrough"
+    "count_strikes": {
+      "type": "passthrough",
+      "source_column": "count_strikes"
     },
-    "release_speed_mph": {
-      "type": "passthrough"
+    "outs": {
+      "type": "passthrough",
+      "source_column": "outs"
     },
-    "park_id_encoded": {
-      "type": "target_encoding",
+    "inning": {
+      "type": "passthrough",
+      "source_column": "inning"
+    },
+    "base_state": {
+      "type": "passthrough",
+      "source_column": "base_state"
+    },
+    "score_diff": {
+      "type": "passthrough",
+      "source_column": "score_diff"
+    },
+    "dow": {
+      "type": "passthrough",
+      "source_column": "dow"
+    },
+    "pitcher_throws_int": {
+      "type": "categorical_map",
+      "source_column": "pitcher_throws",
+      "mapping": {
+        "L": 0,
+        "R": 1
+      },
+      "missing_value": 1
+    },
+    "batter_stand_int": {
+      "type": "categorical_map",
+      "source_column": "batter_stand",
+      "mapping": {
+        "L": 0,
+        "R": 1
+      },
+      "missing_value": 1
+    },
+    "park_id_int": {
+      "type": "categorical_lookup",
       "source_column": "park_id",
-      "lookup_path": "park_hr_rate.json",
-      "missing_strategy": "global_mean"
+      "lookup_path": "park_id_mapping.json",
+      "missing_value": -1
     },
-    "stand_is_left": {
-      "type": "boolean_eq",
-      "source_column": "stand",
-      "match_value": "L",
-      "true_value": 1.0,
-      "false_value": 0.0
+    "pitcher_te_ball": {
+      "type": "te_lookup",
+      "source_column": "pitcher_id",
+      "lookup_path": "pitcher_te.json",
+      "te_class": "ball",
+      "missing_strategy": "prior"
+    },
+    "pitcher_te_called_strike": {
+      "type": "te_lookup",
+      "source_column": "pitcher_id",
+      "lookup_path": "pitcher_te.json",
+      "te_class": "called_strike",
+      "missing_strategy": "prior"
+    },
+    "pitcher_te_swinging_strike": {
+      "type": "te_lookup",
+      "source_column": "pitcher_id",
+      "lookup_path": "pitcher_te.json",
+      "te_class": "swinging_strike",
+      "missing_strategy": "prior"
+    },
+    "pitcher_te_foul": {
+      "type": "te_lookup",
+      "source_column": "pitcher_id",
+      "lookup_path": "pitcher_te.json",
+      "te_class": "foul",
+      "missing_strategy": "prior"
+    },
+    "pitcher_te_in_play": {
+      "type": "te_lookup",
+      "source_column": "pitcher_id",
+      "lookup_path": "pitcher_te.json",
+      "te_class": "in_play",
+      "missing_strategy": "prior"
+    },
+    "batter_te_ball": {
+      "type": "te_lookup",
+      "source_column": "batter_id",
+      "lookup_path": "batter_te.json",
+      "te_class": "ball",
+      "missing_strategy": "prior"
+    },
+    "batter_te_called_strike": {
+      "type": "te_lookup",
+      "source_column": "batter_id",
+      "lookup_path": "batter_te.json",
+      "te_class": "called_strike",
+      "missing_strategy": "prior"
+    },
+    "batter_te_swinging_strike": {
+      "type": "te_lookup",
+      "source_column": "batter_id",
+      "lookup_path": "batter_te.json",
+      "te_class": "swinging_strike",
+      "missing_strategy": "prior"
+    },
+    "batter_te_foul": {
+      "type": "te_lookup",
+      "source_column": "batter_id",
+      "lookup_path": "batter_te.json",
+      "te_class": "foul",
+      "missing_strategy": "prior"
+    },
+    "batter_te_in_play": {
+      "type": "te_lookup",
+      "source_column": "batter_id",
+      "lookup_path": "batter_te.json",
+      "te_class": "in_play",
+      "missing_strategy": "prior"
+    },
+    "pitcher_pitches_last_28d": {
+      "type": "passthrough_nullable",
+      "source_column": "pitcher_pitches_last_28d"
+    },
+    "pitcher_pitches_in_game": {
+      "type": "passthrough_nullable",
+      "source_column": "pitcher_pitches_in_game"
+    },
+    "days_since_last_appearance": {
+      "type": "passthrough_nullable",
+      "source_column": "days_since_last_appearance"
+    },
+    "pitcher_strike_rate_28d": {
+      "type": "passthrough_nullable",
+      "source_column": "pitcher_strike_rate_28d"
+    },
+    "pitcher_swstrike_rate_28d": {
+      "type": "passthrough_nullable",
+      "source_column": "pitcher_swstrike_rate_28d"
+    },
+    "pitcher_inplay_rate_28d": {
+      "type": "passthrough_nullable",
+      "source_column": "pitcher_inplay_rate_28d"
+    },
+    "pitcher_strike_rate_std": {
+      "type": "passthrough_nullable",
+      "source_column": "pitcher_strike_rate_std"
+    },
+    "batter_strike_rate_28d": {
+      "type": "passthrough_nullable",
+      "source_column": "batter_strike_rate_28d"
+    },
+    "batter_inplay_rate_28d": {
+      "type": "passthrough_nullable",
+      "source_column": "batter_inplay_rate_28d"
+    },
+    "batter_ball_rate_28d": {
+      "type": "passthrough_nullable",
+      "source_column": "batter_ball_rate_28d"
+    },
+    "batter_inplay_rate_std": {
+      "type": "passthrough_nullable",
+      "source_column": "batter_inplay_rate_std"
     }
   },
   "output": {
-    "kind": "binary_probability",
-    "label": "is_hr",
-    "onnx_output_index": 0,
-    "extract": "class_one_probability"
+    "kind": "multiclass_probability",
+    "labels": [
+      "ball",
+      "called_strike",
+      "swinging_strike",
+      "foul",
+      "in_play"
+    ],
+    "onnx_output_index": 1,
+    "extract": "row_distribution",
+    "post_calibration": "isotonic_per_class"
+  },
+  "calibrator": {
+    "kind": "isotonic_per_class",
+    "lookup_path": "calibrator.json"
   },
   "onnx_opset": 15,
-  "pipeline_version": "1.0.0",
-  "description": "Canonical Python<->Java feature contract for the Phase 1 toy batted-ball model. Phase 2a replaces this entirely with the real pre-pitch feature pipeline.",
-  "notes": "Both /backend (registry schema-hash check at registration) and /training (ONNX export validation) read from this file. See docs/design.md §5 for rationale. The pre-commit hook (.githooks/pre-commit) recomputes schema_hash with the field set to empty string.",
-  "schema_hash": "91a093867595736dd7a82e4ce93d960a7d8880b7a616f5d50f6ae08596213ec1"
+  "pipeline_version": "2.0.0",
+  "description": "Canonical Python<->Java feature contract for the Phase 2a pitch_outcome_pre model. 31 features across Tier 1 (cheap context), Tier 2 (pitcher_id + batter_id target encodings), and Tier 3 (rolling form). Per-class isotonic calibration is applied post-ONNX (Java) using calibrator.json. Replaces the toy contract (now at feature_pipeline_toy.json) per decision-recorder entry for 2a.8.",
+  "notes": "Both /backend (registry schema-hash check at registration) and /training (ONNX export validation) read from this file. See docs/design.md \u00a75. The pre-commit hook (.githooks/pre-commit) recomputes schema_hash with the field set to empty string and rejects mismatches.",
+  "schema_hash": "bb033950d12bd9ad35a6bea5347f77978ed5dfae3e8a9aad1336548b14e00cf1"
 }

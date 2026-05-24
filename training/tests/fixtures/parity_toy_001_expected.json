@@ -12,12 +12,12 @@
         77.9000015258789,
         -13.0,
         91.0999984741211,
-        0.049699879951980795,
+        0.09154929577464789,
         1.0
       ],
-      "onnx_probability": 5.125999450683594e-06,
-      "lightgbm_probability": 5.079954307065779e-06,
-      "abs_difference_onnx_lightgbm": 4.604514361781485e-08
+      "onnx_probability": 0.16732358932495117,
+      "lightgbm_probability": 0.1673235830909532,
+      "abs_difference_onnx_lightgbm": 6.233997984494977e-09
     },
     {
       "game_id": 745444,
@@ -27,12 +27,12 @@
         86.5999984741211,
         33.0,
         94.5,
-        0.049699879951980795,
+        0.09154929577464789,
         0.0
       ],
-      "onnx_probability": 0.0007368922233581543,
-      "lightgbm_probability": 0.0007368865926899355,
-      "abs_difference_onnx_lightgbm": 5.630668218790588e-09
+      "onnx_probability": 0.36578625440597534,
+      "lightgbm_probability": 0.3657862457691303,
+      "abs_difference_onnx_lightgbm": 8.636845016951611e-09
     },
     {
       "game_id": 745444,
@@ -42,12 +42,12 @@
         90.9000015258789,
         60.0,
         96.9000015258789,
-        0.049699879951980795,
+        0.09154929577464789,
         0.0
       ],
-      "onnx_probability": 4.9233436584472656e-05,
-      "lightgbm_probability": 4.9247192826310994e-05,
-      "abs_difference_onnx_lightgbm": 1.3756241838337898e-08
+      "onnx_probability": 0.02573341131210327,
+      "lightgbm_probability": 0.02573340018712039,
+      "abs_difference_onnx_lightgbm": 1.1124982882831924e-08
     },
     {
       "game_id": 745444,
@@ -57,12 +57,12 @@
         59.20000076293945,
         -31.0,
         96.5999984741211,
-        0.049699879951980795,
+        0.09154929577464789,
         0.0
       ],
-      "onnx_probability": 5.602836608886719e-06,
-      "lightgbm_probability": 5.572579133040534e-06,
-      "abs_difference_onnx_lightgbm": 3.02574758461846e-08
+      "onnx_probability": 0.007890045642852783,
+      "lightgbm_probability": 0.007890044638456885,
+      "abs_difference_onnx_lightgbm": 1.0043958980493484e-09
     },
     {
       "game_id": 745444,
@@ -72,12 +72,12 @@
         76.5999984741211,
         19.0,
         93.9000015258789,
-        0.049699879951980795,
+        0.09154929577464789,
         1.0
       ],
-      "onnx_probability": 2.384185791015625e-05,
-      "lightgbm_probability": 2.386036744168863e-05,
-      "abs_difference_onnx_lightgbm": 1.8509531532379548e-08
+      "onnx_probability": 0.1815750002861023,
+      "lightgbm_probability": 0.18157504697248933,
+      "abs_difference_onnx_lightgbm": 4.668638703408945e-08
     },
     {
       "game_id": 745444,
@@ -87,12 +87,12 @@
         100.5999984741211,
         53.0,
         94.0,
-        0.049699879951980795,
+        0.09154929577464789,
         1.0
       ],
-      "onnx_probability": 0.0002320408821105957,
-      "lightgbm_probability": 0.00023202604845833416,
-      "abs_difference_onnx_lightgbm": 1.4833652261538304e-08
+      "onnx_probability": 0.05525141954421997,
+      "lightgbm_probability": 0.05525139929735525,
+      "abs_difference_onnx_lightgbm": 2.0246864719519753e-08
     },
     {
       "game_id": 745444,
@@ -102,12 +102,12 @@
         77.69999694824219,
         69.0,
         94.5999984741211,
-        0.049699879951980795,
+        0.09154929577464789,
         1.0
       ],
-      "onnx_probability": 1.1444091796875e-05,
-      "lightgbm_probability": 1.145229021594363e-05,
-      "abs_difference_onnx_lightgbm": 8.198419068629643e-09
+      "onnx_probability": 0.1839866042137146,
+      "lightgbm_probability": 0.18398675185019214,
+      "abs_difference_onnx_lightgbm": 1.4763647754323372e-07
     },
     {
       "game_id": 745444,
@@ -117,12 +117,12 @@
         86.30000305175781,
         -38.0,
         96.69999694824219,
-        0.049699879951980795,
+        0.09154929577464789,
         0.0
       ],
-      "onnx_probability": 5.602836608886719e-06,
-      "lightgbm_probability": 5.572579133040534e-06,
-      "abs_difference_onnx_lightgbm": 3.02574758461846e-08
+      "onnx_probability": 0.01339709758758545,
+      "lightgbm_probability": 0.01339714434840805,
+      "abs_difference_onnx_lightgbm": 4.6760822601174534e-08
     },
     {
       "game_id": 745444,
@@ -132,12 +132,12 @@
         80.9000015258789,
         24.0,
         91.80000305175781,
-        0.049699879951980795,
+        0.09154929577464789,
         0.0
       ],
-      "onnx_probability": 3.159046173095703e-05,
-      "lightgbm_probability": 3.164292847168907e-05,
-      "abs_difference_onnx_lightgbm": 5.2466740732040574e-08
+      "onnx_probability": 0.0647737979888916,
+      "lightgbm_probability": 0.06477379881488783,
+      "abs_difference_onnx_lightgbm": 8.259962297474388e-10
     },
     {
       "game_id": 745444,
@@ -147,12 +147,12 @@
         110.0999984741211,
         5.0,
         96.80000305175781,
-        0.049699879951980795,
+        0.09154929577464789,
         0.0
       ],
-      "onnx_probability": 1.5139579772949219e-05,
-      "lightgbm_probability": 1.5148701911461947e-05,
-      "abs_difference_onnx_lightgbm": 9.122138512727775e-09
+      "onnx_probability": 0.031920552253723145,
+      "lightgbm_probability": 0.03192054898691769,
+      "abs_difference_onnx_lightgbm": 3.2668054511519884e-09
     },
     {
       "game_id": 745444,
@@ -162,12 +162,12 @@
         82.9000015258789,
         -21.0,
         86.4000015258789,
-        0.049699879951980795,
+        0.09154929577464789,
         1.0
       ],
-      "onnx_probability": 5.841255187988281e-06,
-      "lightgbm_probability": 5.806213967931714e-06,
-      "abs_difference_onnx_lightgbm": 3.504122005656709e-08
+      "onnx_probability": 0.0622214674949646,
+      "lightgbm_probability": 0.06222154007874147,
+      "abs_difference_onnx_lightgbm": 7.258377687086037e-08
     },
     {
       "game_id": 745444,
@@ -177,12 +177,12 @@
         85.4000015258789,
         46.0,
         82.69999694824219,
-        0.049699879951980795,
+        0.09154929577464789,
         0.0
       ],
-      "onnx_probability": 2.8133392333984375e-05,
-      "lightgbm_probability": 2.817862333728948e-05,
-      "abs_difference_onnx_lightgbm": 4.523100330510458e-08
+      "onnx_probability": 0.01734018325805664,
+      "lightgbm_probability": 0.017340198327279722,
+      "abs_difference_onnx_lightgbm": 1.506922308117109e-08
     },
     {
       "game_id": 745444,
@@ -192,12 +192,12 @@
         112.30000305175781,
         11.0,
         94.69999694824219,
-        0.049699879951980795,
+        0.09154929577464789,
         1.0
       ],
-      "onnx_probability": 1.633167266845703e-05,
-      "lightgbm_probability": 1.6275038830572417e-05,
-      "abs_difference_onnx_lightgbm": 5.6633837884614364e-08
+      "onnx_probability": 0.01900637149810791,
+      "lightgbm_probability": 0.01900635530910599,
+      "abs_difference_onnx_lightgbm": 1.6189001920269286e-08
     },
     {
       "game_id": 745444,
@@ -207,12 +207,12 @@
         105.69999694824219,
         18.0,
         96.0999984741211,
-        0.049699879951980795,
+        0.09154929577464789,
         1.0
       ],
-      "onnx_probability": 0.016266286373138428,
-      "lightgbm_probability": 0.01626630396429135,
-      "abs_difference_onnx_lightgbm": 1.7591152923213116e-08
+      "onnx_probability": 0.05959397554397583,
+      "lightgbm_probability": 0.059593916114998376,
+      "abs_difference_onnx_lightgbm": 5.9428977454423215e-08
     },
     {
       "game_id": 745444,
@@ -222,12 +222,12 @@
         71.5,
         20.0,
         91.69999694824219,
-        0.049699879951980795,
+        0.09154929577464789,
         0.0
       ],
-      "onnx_probability": 3.3020973205566406e-05,
-      "lightgbm_probability": 3.30344172673427e-05,
-      "abs_difference_onnx_lightgbm": 1.3444061776290669e-08
+      "onnx_probability": 0.03996962308883667,
+      "lightgbm_probability": 0.03996963661368776,
+      "abs_difference_onnx_lightgbm": 1.3524851093238421e-08
     },
     {
       "game_id": 745444,
@@ -237,12 +237,12 @@
         56.599998474121094,
         -3.0,
         97.80000305175781,
-        0.049699879951980795,
+        0.09154929577464789,
         1.0
       ],
-      "onnx_probability": 5.364418029785156e-06,
-      "lightgbm_probability": 5.336589163030672e-06,
-      "abs_difference_onnx_lightgbm": 2.7828866754483872e-08
+      "onnx_probability": 0.019288063049316406,
+      "lightgbm_probability": 0.019288073925801,
+      "abs_difference_onnx_lightgbm": 1.087648459491275e-08
     }
   ]
 }

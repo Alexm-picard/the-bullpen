@@ -10,7 +10,7 @@ This script produces a byte-stable equivalent from pure synthetic data:
     1. Generate a small synthetic in-play DataFrame (no CH, no pybaseball)
     2. Train a tiny LightGBM model on it
     3. Export to ONNX through the same `export()` we use in dev (which
-       validates against /contracts/feature_pipeline.json)
+       validates against /contracts/feature_pipeline_toy.json)
     4. Write a small parity fixture (input rows + expected probs)
 
 Re-runs are byte-identical so cache-hit reuse is safe. The committed

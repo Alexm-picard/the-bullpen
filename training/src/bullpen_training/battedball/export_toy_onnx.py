@@ -46,11 +46,15 @@ from bullpen_training.logging_config import configure_logging, get_logger
 log = get_logger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-CONTRACT_PATH = REPO_ROOT / "contracts" / "feature_pipeline.json"
+CONTRACT_PATH = REPO_ROOT / "contracts" / "feature_pipeline_toy.json"
 
 
 def load_canonical_pipeline() -> dict[str, Any]:
-    """Read /contracts/feature_pipeline.json — the single source of truth.
+    """Read /contracts/feature_pipeline_toy.json — the phase-1 toy contract.
+
+    Phase 2a.8 moved the production contract to ``/contracts/feature_pipeline.json``
+    (now ``pitch_outcome_pre``). The toy keeps its own file so the toy
+    deploy keeps working without churning the canonical contract.
 
     Verifies the declared schema_hash matches the hook's recompute algorithm
     (so any drift in the JSON itself is caught at export time, not at registry
@@ -65,7 +69,7 @@ def load_canonical_pipeline() -> dict[str, Any]:
     ).hexdigest()
     if declared != recomputed:
         raise RuntimeError(
-            f"/contracts/feature_pipeline.json schema_hash is stale "
+            f"/contracts/feature_pipeline_toy.json schema_hash is stale "
             f"(declared={declared} computed={recomputed}); "
             "re-run the recompute snippet in .githooks/pre-commit and re-stage."
         )

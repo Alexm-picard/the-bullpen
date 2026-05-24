@@ -1,0 +1,47 @@
+{
+  "model_name": "_toy_batted_ball",
+  "phase": "1",
+  "feature_order": [
+    "launch_speed_mph",
+    "launch_angle_deg",
+    "release_speed_mph",
+    "park_id_encoded",
+    "stand_is_left"
+  ],
+  "input_dtype": "float32",
+  "preprocess": {
+    "launch_speed_mph": {
+      "type": "passthrough"
+    },
+    "launch_angle_deg": {
+      "type": "passthrough"
+    },
+    "release_speed_mph": {
+      "type": "passthrough"
+    },
+    "park_id_encoded": {
+      "type": "target_encoding",
+      "source_column": "park_id",
+      "lookup_path": "park_hr_rate.json",
+      "missing_strategy": "global_mean"
+    },
+    "stand_is_left": {
+      "type": "boolean_eq",
+      "source_column": "stand",
+      "match_value": "L",
+      "true_value": 1.0,
+      "false_value": 0.0
+    }
+  },
+  "output": {
+    "kind": "binary_probability",
+    "label": "is_hr",
+    "onnx_output_index": 0,
+    "extract": "class_one_probability"
+  },
+  "onnx_opset": 15,
+  "pipeline_version": "1.0.0",
+  "description": "Canonical Python<->Java feature contract for the Phase 1 toy batted-ball model. Phase 2a replaces this entirely with the real pre-pitch feature pipeline.",
+  "notes": "Both /backend (registry schema-hash check at registration) and /training (ONNX export validation) read from this file. See docs/design.md §5 for rationale. The pre-commit hook (.githooks/pre-commit) recomputes schema_hash with the field set to empty string.",
+  "schema_hash": "91a093867595736dd7a82e4ce93d960a7d8880b7a616f5d50f6ae08596213ec1"
+}

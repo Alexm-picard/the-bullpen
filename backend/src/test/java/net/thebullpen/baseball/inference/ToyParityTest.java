@@ -35,7 +35,8 @@ class ToyParityTest {
   private static final Path EXPECTED_PATH = FIXTURE_DIR.resolve("parity_toy_001_expected.json");
   private static final Path ARTIFACT_DIR = REPO_ROOT.resolve("training/artifacts/_toy/v0");
   private static final Path ONNX_PATH = ARTIFACT_DIR.resolve("model.onnx");
-  private static final Path CONTRACT_PATH = REPO_ROOT.resolve("contracts/feature_pipeline.json");
+  private static final Path CONTRACT_PATH =
+      REPO_ROOT.resolve("contracts/feature_pipeline_toy.json");
   private static final Path PARK_PATH = ARTIFACT_DIR.resolve("park_hr_rate.json");
 
   @SuppressWarnings("unused")

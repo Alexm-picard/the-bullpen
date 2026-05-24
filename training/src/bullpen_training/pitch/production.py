@@ -167,6 +167,8 @@ def main(
         test_predictions=test_preds,
         cv_result=cv_result,
         hyperparams=hyperparams,
+        fold_id=prod_fold.fold_id,
+        park_id_mapping=loader.park_id_mapping,
     )
 
     if model == "lightgbm":
