@@ -45,3 +45,30 @@ PITCH_FEATURE_COLUMNS: tuple[str, ...] = (
 (pitcher_throws, batter_stand, park_id) are converted to ints in the
 loader (Phase 2a.5 step 2). Tier 3 columns may be NULL on the first
 ~28 days of a season — LightGBM handles missing natively."""
+
+
+PITCH_FEATURE_COLUMNS_POST: tuple[str, ...] = (
+    *PITCH_FEATURE_COLUMNS,
+    # Tier 4 — post-pitch (release / movement / spin / pitch type). Several
+    # are sparse before 2024 (pfx_x/z, spin_rate, spin_axis live behind the
+    # V008 raw-schema gate — see decisions.md and the 2b.1 status log).
+    "pitch_type_int",
+    "release_speed_mph",
+    "plate_x_in",
+    "plate_z_in",
+    "pfx_x_in",
+    "pfx_z_in",
+    "spin_rate_rpm",
+    "spin_axis_deg",
+    "release_pos_x_in",
+    "release_pos_z_in",
+)
+"""41 features the post-pitch model consumes. Tier 4 columns are deliberately
+Nullable on the wire — LightGBM handles NaN natively and the post-head model
+treats their absence as part of the input distribution. The pre-pitch
+canonical contract MUST NOT list any of these columns; enforced at CI time
+by `tests/features/test_tier_4_postpitch.py::test_pre_pipeline_contract_lists_no_tier4_columns`.
+
+`pitch_type_int` is the integer encoding of the LowCardinality(String)
+pitch_type column produced by the loader; the mapping is alphabetical
++ deterministic, shared across train/val/test calls like `park_id_int`."""

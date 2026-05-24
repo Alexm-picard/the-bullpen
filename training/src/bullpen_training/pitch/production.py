@@ -1,14 +1,18 @@
-"""Production-v1 training CLI for the pre-pitch head (Phase 2a.7).
+"""Production-v1 training CLI for the pre-pitch + post-pitch heads
+(Phases 2a.7 and 2b.2).
 
-Two flows, one per `--model`:
+Three flows, one per `--model`:
 
-  lightgbm  → run 4-fold rolling-origin CV, then train final production
-               bundle on fold 4's train+val window (LightGBM ModelBundle),
-               persist via persist_lightgbm_v1 + eval/
-  lr        → same flow against the LR baseline factory
+  lightgbm  → pre-pitch head. 4-fold rolling-origin CV on Tier 1+2+3
+               features, then train final production bundle on fold 4
+               (train 2015-2023, val 2024, test 2025). Persists to
+               `training/artifacts/pitch_outcome_pre/v1/`.
+  lr        → pre-pitch LR baseline (Tier 1+2+3). Persists to
+               `training/artifacts/pitch_outcome_lr_baseline/v1/`.
+  post      → post-pitch head. Same flow but with Tier 1+2+3+4 features.
+               Persists to `training/artifacts/pitch_outcome_post/v1/`.
 
-Both write to `training/artifacts/<model_name>/v<N>/` with the 5 canonical
-files + an `eval/` directory.
+All three write the 5 canonical files + an `eval/` directory.
 
 For the strict "train on 2015-2024 + val on 2025" production model the
 leaf plan calls out, see the `--use-extended-fold` flag which builds an
@@ -46,6 +50,13 @@ from bullpen_training.pitch.train_lr_baseline import (
 from bullpen_training.pitch.train_lr_baseline import (
     model_factory as lr_factory,
 )
+from bullpen_training.pitch.train_post import ModelBundle as PostModelBundle
+from bullpen_training.pitch.train_post import (
+    make_feature_loader as make_feature_loader_post,
+)
+from bullpen_training.pitch.train_post import (
+    model_factory as post_factory,
+)
 from bullpen_training.pitch.train_pre import (
     ModelBundle,
     make_feature_loader,
@@ -55,6 +66,9 @@ from bullpen_training.pitch.train_pre import (
 )
 
 log = get_logger(__name__)
+
+# Re-export silencer for the unused-but-needed PostModelBundle alias.
+_ = (PostModelBundle,)
 
 _LGBM_HYPERPARAMS: dict[str, Any] = {
     "objective": "multiclass",
@@ -76,6 +90,10 @@ _LR_HYPERPARAMS: dict[str, Any] = {
     "imputer_strategy": "median",
     "scaler": "standard",
 }
+
+# Post head uses the same hyperparameters as the pre head (decision [35]:
+# the heads differ only in feature set, not in modelling family).
+_LGBM_POST_HYPERPARAMS: dict[str, Any] = dict(_LGBM_HYPERPARAMS)
 
 
 def _train_production_lightgbm(
@@ -102,8 +120,21 @@ def _train_production_lr(
     return bundle, test_df, test_predictions
 
 
+def _train_production_post(
+    loader: Any, prod_fold: FoldSpec
+) -> tuple[PostModelBundle, pd.DataFrame, np.ndarray]:
+    """Post head — same flow as pre, different feature set + different
+    `model_name` at persistence time."""
+    train_df = loader(prod_fold.train_start_year, prod_fold.train_end_year, prod_fold.fold_id)
+    val_df = loader(prod_fold.val_year, prod_fold.val_year, prod_fold.fold_id)
+    test_df = loader(prod_fold.test_year, prod_fold.test_year, prod_fold.fold_id)
+    bundle = post_factory(train_df, val_df, num_boost_round=2000, early_stopping_rounds=50)
+    test_predictions = cast(np.ndarray, bundle.predict_proba(test_df))
+    return bundle, test_df, test_predictions
+
+
 @click.command()
-@click.option("--model", type=click.Choice(["lightgbm", "lr"]), required=True)
+@click.option("--model", type=click.Choice(["lightgbm", "lr", "post"]), required=True)
 @click.option("--version", default="v1", show_default=True)
 @click.option(
     "--artifacts-dir",
@@ -129,10 +160,20 @@ def main(
         os.environ["LOG_FORMAT"] = "json"
     configure_logging(level=logging.INFO)
 
-    loader = make_feature_loader()
-    prod_fold = FOLDS[-1]  # fold 4: train 2015-2023, val 2024, test 2025
+    # The post head needs the Tier-4-aware loader (extra columns + pitch_type
+    # categorical mapping). Pre + LR share the Tier 1+2+3 loader.
+    loader: Any
+    if model == "post":
+        loader = make_feature_loader_post()
+        factory: Any = post_factory
+    elif model == "lightgbm":
+        loader = make_feature_loader()
+        factory = lgb_factory
+    else:  # lr
+        loader = make_feature_loader()
+        factory = lr_factory
 
-    factory = lgb_factory if model == "lightgbm" else lr_factory
+    prod_fold = FOLDS[-1]  # fold 4: train 2015-2023, val 2024, test 2025
     log.info("starting production training", model=model, version=version)
     cv_result = (
         _empty_cv_result()
@@ -153,7 +194,11 @@ def main(
         bundle, test_df, test_preds = _train_production_lightgbm(loader, prod_fold)
         model_name = "pitch_outcome_pre"
         hyperparams = _LGBM_HYPERPARAMS
-    else:
+    elif model == "post":
+        bundle, test_df, test_preds = _train_production_post(loader, prod_fold)
+        model_name = "pitch_outcome_post"
+        hyperparams = _LGBM_POST_HYPERPARAMS
+    else:  # lr
         bundle, test_df, test_preds = _train_production_lr(loader, prod_fold)
         model_name = "pitch_outcome_lr_baseline"
         hyperparams = _LR_HYPERPARAMS
@@ -171,7 +216,14 @@ def main(
         park_id_mapping=loader.park_id_mapping,
     )
 
-    if model == "lightgbm":
+    if model in ("lightgbm", "post"):
+        # The post head reuses persist_lightgbm_v1 — same on-disk layout
+        # (model.lgb + calibrator.json + metadata + eval/); only the
+        # model_name + feature_pipeline.json contract differ. The contract
+        # for `pitch_outcome_post` lands in 2b.3 alongside the Spring serve;
+        # for now `_copy_feature_pipeline` will copy the pre contract — the
+        # post bundle's metadata.json carries the actual feature list. 2b.3
+        # introduces a per-model contract dispatch.
         out_dir = persist_lightgbm_v1(
             cast(ModelBundle, bundle), inputs, artifacts_dir=artifacts_dir
         )
