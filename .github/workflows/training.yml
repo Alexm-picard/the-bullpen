@@ -48,11 +48,11 @@ jobs:
         working-directory: training
         run: uv run pytest -x --ignore=tests/leakage
 
-  # Required — CLAUDE.md rule 10. The four real tests (future contamination,
-  # shuffled target, calendar date trace, ID consistency) land in Phase 2a.
-  # Until then the placeholder runs so this job stays green; once the real
-  # tests are written the placeholder is removed and each test gets its own
-  # step in this job.
+  # Required — CLAUDE.md rule 10. The four leakage categories
+  # (future contamination, shuffled target, calendar date trace, ID
+  # consistency) are real tests as of Phase 2a.3. Any skip without an
+  # `# ADR: decisions.md#NN` marker fails the build before the suite even
+  # runs, so silent disabling is not an option.
   leakage-tests:
     runs-on: ubuntu-latest
     needs: lint-and-type
@@ -64,6 +64,19 @@ jobs:
           enable-cache: true
       - working-directory: training
         run: uv sync --frozen
+      - name: No skips without ADR marker
+        working-directory: training
+        run: |
+          set -e
+          offenders="$(grep -rnE '^\s*@pytest\.mark\.skip' tests/leakage/ || true)"
+          if [ -n "$offenders" ]; then
+            unsanctioned="$(echo "$offenders" | grep -v '# ADR:' || true)"
+            if [ -n "$unsanctioned" ]; then
+              echo "ERROR: leakage tests with @pytest.mark.skip lack '# ADR: decisions.md#NN' marker:"
+              echo "$unsanctioned"
+              exit 1
+            fi
+          fi
       - name: Leakage suite
         working-directory: training
         run: uv run pytest tests/leakage -v

@@ -181,7 +181,7 @@ def build_fold_full(
     # T1+2 filter). LEFT JOIN drops the extras correctly; we only warn if the
     # OPPOSITE happens (T1+2 rows missing a T3 match — that would mean the
     # windowed SQL skipped pitches we expected to see).
-    unmatched = int(merged["pitcher_pitches_in_game"].isna().sum())
+    unmatched = int(cast(Any, merged["pitcher_pitches_in_game"].isna().sum()))
     if unmatched:
         log.warning(
             "Tier 1+2 rows without Tier 3 match",
