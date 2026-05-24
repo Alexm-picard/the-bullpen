@@ -160,6 +160,18 @@ def main(
         os.environ["LOG_FORMAT"] = "json"
     configure_logging(level=logging.INFO)
 
+    # LightGBM's default Python logger uses bare `print(msg)`. When stdout is
+    # piped (e.g. `... 2>&1 | tee log`), Python defaults to block-buffered
+    # stdout, so `log_evaluation` iteration lines sit in an 8KB buffer for the
+    # entire 2000-round run — looks identical to a hang. Route LightGBM's
+    # output through Python's logging module, which is line-buffered on
+    # stderr by default (configured in `configure_logging`). This is the
+    # actual fix for the fold-3+4 "hang" reported in the 2b.2 status log —
+    # training was completing fine, the progress just wasn't visible.
+    import lightgbm as _lgb
+
+    _lgb.register_logger(logging.getLogger("lightgbm"))
+
     # The post head needs the Tier-4-aware loader (extra columns + pitch_type
     # categorical mapping). Pre + LR share the Tier 1+2+3 loader.
     loader: Any

@@ -46,7 +46,6 @@ from bullpen_training.eval.artifact import (
 )
 from bullpen_training.eval.cv_harness import CVResult
 from bullpen_training.features import LABEL_CLASSES
-from bullpen_training.pitch import PITCH_FEATURE_COLUMNS
 from bullpen_training.pitch.train_lr_baseline import LRModelBundle
 from bullpen_training.pitch.train_pre import ModelBundle
 
@@ -226,7 +225,11 @@ def persist_lightgbm_v1(
         calibrator_path=cal_path,
     )
 
-    fi = lightgbm_feature_importance(bundle.booster, list(PITCH_FEATURE_COLUMNS))
+    # bundle.feature_cols carries the actual training feature order — pre uses
+    # PITCH_FEATURE_COLUMNS (31), post uses PITCH_FEATURE_COLUMNS_POST (41).
+    # Hardcoding PITCH_FEATURE_COLUMNS would crash persist on the post head
+    # (booster.feature_importance() returns 41 values, names list has 31).
+    fi = lightgbm_feature_importance(bundle.booster, list(bundle.feature_cols))
     generate_eval(
         ArtifactInputs(
             model_name=inputs.model_name,
