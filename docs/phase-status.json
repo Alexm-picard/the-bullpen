@@ -3,7 +3,7 @@
   "_doc": "Single source of truth for phase progress. Hand-edited as work completes. /status reads this. Bump fields honestly — surgical cuts come from honest tracking.",
   "current_phase": "2",
   "weekly_hours_target": 13,
-  "last_updated": "2026-05-24T01:40Z",
+  "last_updated": "2026-05-24T01:48Z",
   "phases": [
     {
       "id": "0",
@@ -164,7 +164,7 @@
       "started_on": "2026-05-23",
       "completed_on": null,
       "exit_criterion": "Three models registered, all with eval artifacts, all served via Spring, all with passing leakage tests in CI. ECE < 0.02 on test data per model.",
-      "current_leaf": "2a.1-2a.5 complete. Features rebuilt with val held out + full encode window (25.4M rows across 4 folds). LightGBM 5-class + isotonic calibrate trained via CV harness on 11-season corpus (2015-2025). **ECE 0.0036 ± 0.0025 — well under the Phase 2 exit gate of <0.02 per model** (per-fold: 0.0062 / 0.0022 / 0.0051 / 0.0009). Brier 0.1478 ± 0.0002 = 54% improvement over uniform baseline. 102 Python tests, 0 ruff/pyright errors. CH container memory bumped 4g→8g on Mac dev so the larger encode windows don't OOM. Next: 2a.6 (LR baseline) for the no-model-without-baseline rule.",
+      "current_leaf": "2a.1-2a.6 complete. LightGBM (Brier 0.1478, ECE 0.0036) and LR baseline (Brier 0.1487 fold 1, ECE 0.0061) both trained via the same harness on the 25.4M-row features table. LightGBM beats LR on Brier + log loss as required (decision [37]); ECE comfortably under the <0.02 Phase 2 exit gate. 117 Python tests, 0 ruff/pyright errors. Next: 2a.7 (eval artifact generator — adds the production-v1 CLI + 5-file persistence for both models alongside reliability diagrams + segment metrics).",
       "sub_phases": [
         {
           "id": "2a",
