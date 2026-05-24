@@ -1,0 +1,13 @@
+{
+  "model_name": "numeric_edge_cases",
+  "pipeline_version": "v0",
+  "schema_hash": "",
+  "ints": [0, 1, -7, 2147483648],
+  "floats": [0.0, 1.5, -2.25, 3.125],
+  "nested": {
+    "weights": [0.1, 0.2, 0.7],
+    "labels": ["a", "b", "c"]
+  },
+  "empty_array": [],
+  "empty_object": {}
+}

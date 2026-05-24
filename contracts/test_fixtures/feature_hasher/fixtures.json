@@ -1,0 +1,27 @@
+[
+  {
+    "name": "minimal",
+    "input_file": "minimal.json",
+    "expected_hash": "3a33bcd1dcd73a2254e19e8370fff0a2a4753164833de210062dff01e770bc4a"
+  },
+  {
+    "name": "key_order",
+    "input_file": "key_order.json",
+    "expected_hash": "eabe23755077c4724b06773dd74b40ca92e0973916168ee5e28e0a155c83240a"
+  },
+  {
+    "name": "numbers_and_arrays",
+    "input_file": "numbers_and_arrays.json",
+    "expected_hash": "a5d70162dda216cea7e81138758e8427340ae0025da99aedbd4921da3397162f"
+  },
+  {
+    "name": "string_escapes",
+    "input_file": "string_escapes.json",
+    "expected_hash": "d202ecf245ece486d8646baf3ba87ae1c25431660ccdcd5f4936996d4689a797"
+  },
+  {
+    "name": "production_pre",
+    "input_file": "production_pre.json",
+    "expected_hash": "bb033950d12bd9ad35a6bea5347f77978ed5dfae3e8a9aad1336548b14e00cf1"
+  }
+]

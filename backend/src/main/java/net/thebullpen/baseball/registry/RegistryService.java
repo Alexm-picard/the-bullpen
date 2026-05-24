@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Optional;
 import net.thebullpen.baseball.registry.dto.ModelVersion;
 import net.thebullpen.baseball.registry.dto.RegisterRequest;
+import net.thebullpen.baseball.registry.dto.ResetFeatureSchemaConfirmation;
 import net.thebullpen.baseball.registry.dto.Stage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,9 +37,11 @@ public class RegistryService {
   private static final Logger log = LoggerFactory.getLogger(RegistryService.class);
 
   private final RegistryRepository repo;
+  private final FeatureSchemaHasher hasher;
 
-  public RegistryService(RegistryRepository repo) {
+  public RegistryService(RegistryRepository repo, FeatureSchemaHasher hasher) {
     this.repo = repo;
+    this.hasher = hasher;
   }
 
   // --- register -----------------------------------------------------------
@@ -47,11 +50,20 @@ public class RegistryService {
    * Insert a new {@link Stage#CANDIDATE} row, or return the existing row if {@code (modelName,
    * version)} is already registered (idempotent).
    *
-   * <p>Verifies that both the artifact path and metadata path point at files that exist on disk.
-   * Throws {@link RegistryException.ArtifactMissing} otherwise.
+   * <p>Side checks run in order before insert:
    *
-   * <p>Local-filesystem-only for v1; 3a.5 swaps the validator for an S3-compatible existence check
-   * once snapshot storage lands.
+   * <ol>
+   *   <li>{@code artifactPath} + {@code metadataPath} + {@code featurePipelinePath} all exist on
+   *       disk (throws {@link RegistryException.ArtifactMissing} otherwise).
+   *   <li>The {@code feature_pipeline.json} is hashed via {@link FeatureSchemaHasher} and compared
+   *       to the bootstrap-pinned hash for this {@code modelName}. First-ever registration sets the
+   *       pin; subsequent registrations must match (decision [67], rule 7, closes G3). A mismatch
+   *       throws {@link RegistryException.FeatureSchemaMismatch}; the {@link
+   *       #registerWithBootstrap} escape hatch is the only way to reset.
+   * </ol>
+   *
+   * <p>Local-filesystem-only artifact check for v1; 3a.5 swaps for an S3 HEAD once snapshot storage
+   * lands.
    */
   @Transactional
   public ModelVersion register(RegisterRequest req) {
@@ -66,6 +78,64 @@ public class RegistryService {
     }
     assertArtifactExists(req.artifactPath());
     assertArtifactExists(req.metadataPath());
+    assertArtifactExists(req.featurePipelinePath());
+
+    String candidateHash = hasher.compute(Path.of(req.featurePipelinePath()));
+    Optional<String> bootstrapHash = repo.findBootstrapFeatureHash(req.modelName());
+    if (bootstrapHash.isEmpty()) {
+      log.info(
+          "registry: bootstrap feature schema hash for {} = {}", req.modelName(), candidateHash);
+    } else if (!bootstrapHash.get().equals(candidateHash)) {
+      throw new RegistryException.FeatureSchemaMismatch(
+          req.modelName(), bootstrapHash.get(), candidateHash);
+    }
+
+    return doInsert(req, candidateHash);
+  }
+
+  /**
+   * Escape hatch: archive every prior version of {@code modelName} (in the same transaction) and
+   * register {@code req} as a fresh bootstrap whose feature schema hash becomes the new pinned
+   * value. Requires an explicit {@link ResetFeatureSchemaConfirmation} whose {@code modelName}
+   * matches the request, plus a written justification (logged + appended to the new version's
+   * {@code notes}).
+   *
+   * <p>This is the only path that can replace a model's pinned feature schema. The friction is
+   * deliberate per the leaf's "reset escape hatch" requirement + the existing {@link
+   * RegistryException.ResetConfirmationMissing} guard against typo'd boolean flags.
+   */
+  @Transactional
+  public ModelVersion registerWithBootstrap(
+      RegisterRequest req, ResetFeatureSchemaConfirmation confirmation) {
+    if (confirmation == null) {
+      throw new RegistryException.ResetConfirmationMissing(req.modelName());
+    }
+    if (!confirmation.modelName().equals(req.modelName())) {
+      throw new IllegalArgumentException(
+          "registry: ResetFeatureSchemaConfirmation modelName="
+              + confirmation.modelName()
+              + " doesn't match request modelName="
+              + req.modelName());
+    }
+    assertArtifactExists(req.artifactPath());
+    assertArtifactExists(req.metadataPath());
+    assertArtifactExists(req.featurePipelinePath());
+
+    String candidateHash = hasher.compute(Path.of(req.featurePipelinePath()));
+    int archived = repo.archiveAllForModel(req.modelName());
+    log.warn(
+        "registry: bootstrap reset for {} — archived {} prior version(s); new pinned hash={};"
+            + " reason: {}",
+        req.modelName(),
+        archived,
+        candidateHash,
+        confirmation.reason());
+
+    RegisterRequest reqWithReason = appendNotesReason(req, confirmation);
+    return doInsert(reqWithReason, candidateHash);
+  }
+
+  private ModelVersion doInsert(RegisterRequest req, String featureSchemaHash) {
     ModelVersion inserted =
         repo.insert(
             req.modelName(),
@@ -74,7 +144,7 @@ public class RegistryService {
             req.metadataPath(),
             req.trainingDataHash(),
             req.trainingDataWindow(),
-            req.featureSchemaHash(),
+            featureSchemaHash,
             req.evalMetricsJson(),
             req.trainedAt(),
             Stage.CANDIDATE,
@@ -86,6 +156,24 @@ public class RegistryService {
         inserted.version(),
         inserted.id());
     return inserted;
+  }
+
+  private static RegisterRequest appendNotesReason(
+      RegisterRequest req, ResetFeatureSchemaConfirmation confirmation) {
+    String prefix = req.notes() == null ? "" : req.notes() + " | ";
+    String notesWithReason = prefix + "BOOTSTRAP RESET: " + confirmation.reason();
+    return new RegisterRequest(
+        req.modelName(),
+        req.version(),
+        req.artifactPath(),
+        req.metadataPath(),
+        req.featurePipelinePath(),
+        req.trainingDataHash(),
+        req.trainingDataWindow(),
+        req.evalMetricsJson(),
+        req.trainedAt(),
+        req.createdBy(),
+        notesWithReason);
   }
 
   // --- reads --------------------------------------------------------------

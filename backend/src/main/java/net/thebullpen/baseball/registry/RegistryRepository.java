@@ -109,6 +109,21 @@ public class RegistryRepository {
     return jdbc.update(sql, newStage.dbValue(), id);
   }
 
+  /**
+   * Archive every non-archived row for {@code modelName}. Used by {@code
+   * RegistryService.registerWithBootstrap} as the prelude to a feature-schema reset — caller wraps
+   * this in the same transaction as the new bootstrap insert.
+   *
+   * <p>Returns the number of rows updated (i.e., how many prior versions were archived). 0 is
+   * legitimate (no prior versions); callers should not treat it as an error.
+   */
+  public int archiveAllForModel(String modelName) {
+    return jdbc.update(
+        "UPDATE model_versions SET stage = 'archived', updated_at = CURRENT_TIMESTAMP"
+            + " WHERE model_name = ? AND stage != 'archived'",
+        modelName);
+  }
+
   // --- reads --------------------------------------------------------------
 
   public Optional<ModelVersion> findById(long id) {
@@ -147,6 +162,23 @@ public class RegistryRepository {
         SELECT_ALL_COLUMNS + " WHERE model_name = ? ORDER BY created_at DESC, id DESC",
         MODEL_VERSION_MAPPER,
         modelName);
+  }
+
+  /**
+   * Return the {@code feature_schema_hash} of the earliest non-archived row for {@code modelName} —
+   * the bootstrap hash every later registration must match (decision [67] + rule 7). Empty if no
+   * live (i.e., non-archived) version has been registered yet — caller treats that as a fresh
+   * bootstrap.
+   */
+  public Optional<String> findBootstrapFeatureHash(String modelName) {
+    List<String> hashes =
+        jdbc.query(
+            "SELECT feature_schema_hash FROM model_versions"
+                + " WHERE model_name = ? AND stage != 'archived'"
+                + " ORDER BY created_at ASC, id ASC LIMIT 1",
+            (rs, rowNum) -> rs.getString(1),
+            modelName);
+    return hashes.isEmpty() ? Optional.empty() : Optional.of(hashes.get(0));
   }
 
   public Optional<ModelVersion> findChampion(String modelName) {

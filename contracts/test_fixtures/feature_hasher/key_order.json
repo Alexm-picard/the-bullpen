@@ -1,0 +1,11 @@
+{
+  "zebra": 1,
+  "alpha": 2,
+  "mango": {
+    "ripe": true,
+    "color": "yellow",
+    "weight_g": 312
+  },
+  "schema_hash": "anything-here-must-be-ignored",
+  "_underscore_first": null
+}

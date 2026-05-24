@@ -1,0 +1,9 @@
+{
+  "model_name": "string_escapes",
+  "schema_hash": "",
+  "tab_then_newline": "first\tsecond\nthird",
+  "quotes_and_backslash": "she said \"hi\" \\ done",
+  "control_char": "x\u0001y",
+  "unicode_basic": "caf\u00e9",
+  "unicode_label_two": "alpha-beta-gamma"
+}
