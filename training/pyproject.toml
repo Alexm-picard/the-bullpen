@@ -22,6 +22,7 @@ dependencies = [
     "torch>=2.12.0",
     "onnxscript>=0.7.0",
     "matplotlib>=3.10.9",
+    "scipy>=1.17.1",
 ]
 
 [dependency-groups]
@@ -69,8 +70,13 @@ reportPrivateImportUsage = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra --strict-markers"
+# Skip @pytest.mark.production by default — those gates only pass against
+# the full-data trained model; opt in with `pytest -m production`.
+addopts = "-ra --strict-markers -m 'not production'"
 pythonpath = ["src"]
+markers = [
+    "production: cross-park sanity gates that only run against the full-data trained model (decision [52])",
+]
 
 [tool.coverage.run]
 source = ["src/bullpen_training"]

@@ -1,0 +1,353 @@
+{
+  "schema_version": 1,
+  "park_order": [
+    "ATH",
+    "ATL",
+    "AZ",
+    "BAL",
+    "BOS",
+    "CHC",
+    "CIN",
+    "CLE",
+    "COL",
+    "CWS",
+    "DET",
+    "HOU",
+    "KC",
+    "LAA",
+    "LAD",
+    "MIA",
+    "MIL",
+    "MIN",
+    "NYM",
+    "NYY",
+    "PHI",
+    "PIT",
+    "SD",
+    "SEA",
+    "SF",
+    "STL",
+    "TB",
+    "TEX",
+    "TOR",
+    "WSH"
+  ],
+  "predicted_p_hr": {
+    "ATH": 0.052049919962882996,
+    "ATL": 0.04353706166148186,
+    "AZ": 0.05480128526687622,
+    "BAL": 0.048798613250255585,
+    "BOS": 0.04325459524989128,
+    "CHC": 0.036866553127765656,
+    "CIN": 0.04042539745569229,
+    "CLE": 0.039914511144161224,
+    "COL": 0.09332238137722015,
+    "CWS": 0.049287114292383194,
+    "DET": 0.04638412967324257,
+    "HOU": 0.05020366236567497,
+    "KC": 0.04782458022236824,
+    "LAA": 0.04973435774445534,
+    "LAD": 0.055683478713035583,
+    "MIA": 0.03749353811144829,
+    "MIL": 0.04836902394890785,
+    "MIN": 0.040335699915885925,
+    "NYM": 0.0295378640294075,
+    "NYY": 0.037309564650058746,
+    "PHI": 0.04134204238653183,
+    "PIT": 0.03800790384411812,
+    "SD": 0.029898760840296745,
+    "SEA": 0.05436237156391144,
+    "SF": 0.03070947341620922,
+    "STL": 0.03698289766907692,
+    "TB": 0.04349406436085701,
+    "TEX": 0.049635179340839386,
+    "TOR": 0.0427573025226593,
+    "WSH": 0.041617006063461304
+  },
+  "published_hr_factor": {
+    "AZ": 1.04,
+    "ATH": 0.92,
+    "ATL": 1.06,
+    "BAL": 0.99,
+    "BOS": 0.95,
+    "CHC": 0.99,
+    "CIN": 1.18,
+    "CLE": 0.98,
+    "COL": 1.36,
+    "CWS": 1.03,
+    "DET": 0.93,
+    "HOU": 1.02,
+    "KC": 0.95,
+    "LAA": 1.04,
+    "LAD": 0.97,
+    "MIA": 0.79,
+    "MIL": 1.07,
+    "MIN": 1.02,
+    "NYM": 0.91,
+    "NYY": 1.09,
+    "PHI": 1.04,
+    "PIT": 0.93,
+    "SD": 0.93,
+    "SEA": 0.91,
+    "SF": 0.76,
+    "STL": 0.99,
+    "TB": 0.96,
+    "TEX": 1.05,
+    "TOR": 1.02,
+    "WSH": 1.04
+  },
+  "spearman_rho": 0.28820089866358956,
+  "spearman_pvalue": 0.12248030145093759,
+  "spearman_gate": 0.8,
+  "coors_p_hr": 0.09332238137722015,
+  "oakland_p_hr": 0.052049919962882996,
+  "coors_oakland_gap": 0.04127246141433716,
+  "coors_oakland_gap_gate": 0.05,
+  "gate_passes": false,
+  "failure_reasons": [
+    "Spearman rho 0.288 <= gate 0.80",
+    "COL - ATH P(HR) gap +0.041 < gate +0.05"
+  ],
+  "per_park_gaps": [
+    {
+      "park_id": "ATH",
+      "pred_p_hr": 0.052049919962882996,
+      "published_factor": 0.92,
+      "pred_rank": 5,
+      "published_rank": 26,
+      "rank_delta": -21
+    },
+    {
+      "park_id": "ATL",
+      "pred_p_hr": 0.04353706166148186,
+      "published_factor": 1.06,
+      "pred_rank": 14,
+      "published_rank": 5,
+      "rank_delta": 9
+    },
+    {
+      "park_id": "AZ",
+      "pred_p_hr": 0.05480128526687622,
+      "published_factor": 1.04,
+      "pred_rank": 3,
+      "published_rank": 7,
+      "rank_delta": -4
+    },
+    {
+      "park_id": "BAL",
+      "pred_p_hr": 0.048798613250255585,
+      "published_factor": 0.99,
+      "pred_rank": 10,
+      "published_rank": 15,
+      "rank_delta": -5
+    },
+    {
+      "park_id": "BOS",
+      "pred_p_hr": 0.04325459524989128,
+      "published_factor": 0.95,
+      "pred_rank": 16,
+      "published_rank": 21,
+      "rank_delta": -5
+    },
+    {
+      "park_id": "CHC",
+      "pred_p_hr": 0.036866553127765656,
+      "published_factor": 0.99,
+      "pred_rank": 27,
+      "published_rank": 16,
+      "rank_delta": 11
+    },
+    {
+      "park_id": "CIN",
+      "pred_p_hr": 0.04042539745569229,
+      "published_factor": 1.18,
+      "pred_rank": 20,
+      "published_rank": 2,
+      "rank_delta": 18
+    },
+    {
+      "park_id": "CLE",
+      "pred_p_hr": 0.039914511144161224,
+      "published_factor": 0.98,
+      "pred_rank": 22,
+      "published_rank": 18,
+      "rank_delta": 4
+    },
+    {
+      "park_id": "COL",
+      "pred_p_hr": 0.09332238137722015,
+      "published_factor": 1.36,
+      "pred_rank": 1,
+      "published_rank": 1,
+      "rank_delta": 0
+    },
+    {
+      "park_id": "CWS",
+      "pred_p_hr": 0.049287114292383194,
+      "published_factor": 1.03,
+      "pred_rank": 9,
+      "published_rank": 11,
+      "rank_delta": -2
+    },
+    {
+      "park_id": "DET",
+      "pred_p_hr": 0.04638412967324257,
+      "published_factor": 0.93,
+      "pred_rank": 13,
+      "published_rank": 23,
+      "rank_delta": -10
+    },
+    {
+      "park_id": "HOU",
+      "pred_p_hr": 0.05020366236567497,
+      "published_factor": 1.02,
+      "pred_rank": 6,
+      "published_rank": 12,
+      "rank_delta": -6
+    },
+    {
+      "park_id": "KC",
+      "pred_p_hr": 0.04782458022236824,
+      "published_factor": 0.95,
+      "pred_rank": 12,
+      "published_rank": 22,
+      "rank_delta": -10
+    },
+    {
+      "park_id": "LAA",
+      "pred_p_hr": 0.04973435774445534,
+      "published_factor": 1.04,
+      "pred_rank": 7,
+      "published_rank": 8,
+      "rank_delta": -1
+    },
+    {
+      "park_id": "LAD",
+      "pred_p_hr": 0.055683478713035583,
+      "published_factor": 0.97,
+      "pred_rank": 2,
+      "published_rank": 19,
+      "rank_delta": -17
+    },
+    {
+      "park_id": "MIA",
+      "pred_p_hr": 0.03749353811144829,
+      "published_factor": 0.79,
+      "pred_rank": 24,
+      "published_rank": 29,
+      "rank_delta": -5
+    },
+    {
+      "park_id": "MIL",
+      "pred_p_hr": 0.04836902394890785,
+      "published_factor": 1.07,
+      "pred_rank": 11,
+      "published_rank": 4,
+      "rank_delta": 7
+    },
+    {
+      "park_id": "MIN",
+      "pred_p_hr": 0.040335699915885925,
+      "published_factor": 1.02,
+      "pred_rank": 21,
+      "published_rank": 13,
+      "rank_delta": 8
+    },
+    {
+      "park_id": "NYM",
+      "pred_p_hr": 0.0295378640294075,
+      "published_factor": 0.91,
+      "pred_rank": 30,
+      "published_rank": 27,
+      "rank_delta": 3
+    },
+    {
+      "park_id": "NYY",
+      "pred_p_hr": 0.037309564650058746,
+      "published_factor": 1.09,
+      "pred_rank": 25,
+      "published_rank": 3,
+      "rank_delta": 22
+    },
+    {
+      "park_id": "PHI",
+      "pred_p_hr": 0.04134204238653183,
+      "published_factor": 1.04,
+      "pred_rank": 19,
+      "published_rank": 9,
+      "rank_delta": 10
+    },
+    {
+      "park_id": "PIT",
+      "pred_p_hr": 0.03800790384411812,
+      "published_factor": 0.93,
+      "pred_rank": 23,
+      "published_rank": 24,
+      "rank_delta": -1
+    },
+    {
+      "park_id": "SD",
+      "pred_p_hr": 0.029898760840296745,
+      "published_factor": 0.93,
+      "pred_rank": 29,
+      "published_rank": 25,
+      "rank_delta": 4
+    },
+    {
+      "park_id": "SEA",
+      "pred_p_hr": 0.05436237156391144,
+      "published_factor": 0.91,
+      "pred_rank": 4,
+      "published_rank": 28,
+      "rank_delta": -24
+    },
+    {
+      "park_id": "SF",
+      "pred_p_hr": 0.03070947341620922,
+      "published_factor": 0.76,
+      "pred_rank": 28,
+      "published_rank": 30,
+      "rank_delta": -2
+    },
+    {
+      "park_id": "STL",
+      "pred_p_hr": 0.03698289766907692,
+      "published_factor": 0.99,
+      "pred_rank": 26,
+      "published_rank": 17,
+      "rank_delta": 9
+    },
+    {
+      "park_id": "TB",
+      "pred_p_hr": 0.04349406436085701,
+      "published_factor": 0.96,
+      "pred_rank": 15,
+      "published_rank": 20,
+      "rank_delta": -5
+    },
+    {
+      "park_id": "TEX",
+      "pred_p_hr": 0.049635179340839386,
+      "published_factor": 1.05,
+      "pred_rank": 8,
+      "published_rank": 6,
+      "rank_delta": 2
+    },
+    {
+      "park_id": "TOR",
+      "pred_p_hr": 0.0427573025226593,
+      "published_factor": 1.02,
+      "pred_rank": 17,
+      "published_rank": 14,
+      "rank_delta": 3
+    },
+    {
+      "park_id": "WSH",
+      "pred_p_hr": 0.041617006063461304,
+      "published_factor": 1.04,
+      "pred_rank": 18,
+      "published_rank": 10,
+      "rank_delta": 8
+    }
+  ]
+}

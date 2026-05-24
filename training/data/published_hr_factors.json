@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "source": "Baseball Savant Statcast park factors (savant.mlb.com/leaderboard/statcast-park-factors), 2024 single-season HR factor — 100 = league average; we store as normalized 1.00 = average.",
+  "_notes": [
+    "Park factors normalised so 1.00 = league average HR rate for that season.",
+    "Park-relocation history: Oakland Athletics played at the Coliseum (ATH) in 2024; future seasons may need a Sutter Health Park entry. Single park per park_id for v1 (consistent with park geometry).",
+    "Domes / retractable roofs (TB, MIA, MIL, TOR, TEX, ARI/AZ, HOU, SEA) include weather effects we exclude from the canonical sanity input — expect some rank-correlation slack for those parks.",
+    "Use the year that matches the model's validation year (default: 2024)."
+  ],
+  "year": 2024,
+  "park_hr_factors": {
+    "AZ": 1.04,
+    "ATH": 0.92,
+    "ATL": 1.06,
+    "BAL": 0.99,
+    "BOS": 0.95,
+    "CHC": 0.99,
+    "CIN": 1.18,
+    "CLE": 0.98,
+    "COL": 1.36,
+    "CWS": 1.03,
+    "DET": 0.93,
+    "HOU": 1.02,
+    "KC": 0.95,
+    "LAA": 1.04,
+    "LAD": 0.97,
+    "MIA": 0.79,
+    "MIL": 1.07,
+    "MIN": 1.02,
+    "NYM": 0.91,
+    "NYY": 1.09,
+    "PHI": 1.04,
+    "PIT": 0.93,
+    "SD": 0.93,
+    "SEA": 0.91,
+    "SF": 0.76,
+    "STL": 0.99,
+    "TB": 0.96,
+    "TEX": 1.05,
+    "TOR": 1.02,
+    "WSH": 1.04
+  }
+}
