@@ -19,6 +19,8 @@ dependencies = [
     "onnxmltools>=1.16.0",
     "numba>=0.65.1",
     "jsonschema>=4.26.0",
+    "torch>=2.12.0",
+    "onnxscript>=0.7.0",
 ]
 
 [dependency-groups]
@@ -58,6 +60,11 @@ strict = [
 ]
 reportMissingTypeStubs = false
 reportMissingImports = "warning"
+# PyTorch's top-level stubs lazily expose torch.{device, from_numpy, allclose, ...}
+# so pyright flags every legitimate use as `reportPrivateImportUsage`. The fix
+# upstream is "use torch.* as published in the PyTorch docs"; ours is to silence
+# the rule. Genuinely-missing attributes still trip reportAttributeAccessIssue.
+reportPrivateImportUsage = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

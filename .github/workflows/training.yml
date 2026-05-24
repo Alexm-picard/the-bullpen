@@ -44,9 +44,28 @@ jobs:
       - name: Generate CI parity artifacts
         working-directory: training
         run: uv run python -m bullpen_training.battedball.generate_ci_artifacts --write-fixture
-      - name: Unit tests (incl. parity)
+      # PyTorch (added in 2c.5) and LightGBM both bundle their own OpenMP
+      # runtime; on macOS dev they fight when co-loaded in a single pytest
+      # session, segfaulting LightGBM's `_lazy_init`. Linux CI seems
+      # tolerant today but the failure mode is order-dependent — splitting
+      # the two suites into separate pytest processes is the future-proof
+      # discipline.
+      - name: Unit tests — torch path (mlp/parks/retrodict/physics)
         working-directory: training
-        run: uv run pytest -x --ignore=tests/leakage
+        run: |
+          uv run pytest -x --ignore=tests/leakage \
+            tests/battedball/mlp tests/battedball/parks \
+            tests/battedball/retrodict tests/battedball/physics \
+            tests/ingest tests/features \
+            tests/eval/test_metrics.py tests/eval/test_cv_harness.py
+      - name: Unit tests — lightgbm path (pitch parity, toy training)
+        working-directory: training
+        run: |
+          uv run pytest -x --ignore=tests/leakage \
+            tests/pitch tests/eval/test_artifact.py \
+            tests/battedball/test_train_toy.py \
+            tests/battedball/test_python_java_parity.py \
+            tests/test_smoke.py
 
   # Required — Phase 2c.2 physics-validation gate (decision [131]).
   # Re-runs the 100-fixture HR validation against the committed fixture
