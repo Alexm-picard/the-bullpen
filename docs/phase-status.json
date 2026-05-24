@@ -3,7 +3,7 @@
   "_doc": "Single source of truth for phase progress. Hand-edited as work completes. /status reads this. Bump fields honestly — surgical cuts come from honest tracking.",
   "current_phase": "2",
   "weekly_hours_target": 13,
-  "last_updated": "2026-05-24T00:30Z",
+  "last_updated": "2026-05-24T00:50Z",
   "phases": [
     {
       "id": "0",
@@ -164,7 +164,7 @@
       "started_on": "2026-05-23",
       "completed_on": null,
       "exit_criterion": "Three models registered, all with eval artifacts, all served via Spring, all with passing leakage tests in CI. ECE < 0.02 on test data per model.",
-      "current_leaf": "2a.1 + 2a.2 + 2a.3 complete. Tier 1+2+3 features built for all 4 folds (708K/719K/710K/711K). 13 leakage tests pass in 0.26s as the CI REQUIRED gate (CLAUDE.md rule 10). Mutation discipline verified non-vacuity: widening train window → 72K TE divergence; encoder using pre-shuffle data → MAD 0.23 vs 0.02 threshold. Next: 2a.4 (rolling-origin CV harness — fold definitions already exist; the harness is the train/val/test split + iteration scaffolding).",
+      "current_leaf": "2a.1 + 2a.2 + 2a.3 + 2a.4 complete. Tier 1+2+3 features (2.85M rows, 4 folds). 13 leakage tests + 20 eval/harness tests as CI gates (91 total Python tests, 0 ruff/pyright errors). Rolling-origin CV harness pins decision [56] (4 folds 2015-2025) + decision [59] (within-fold splits by date) with LeakageError sentinels. Known prereq for 2a.5: features table needs rebuild with train_end = test_year - 2 (val year reserved as holdout); current 2a.1 build used val year in TE training window. Next: 2a.5 (LightGBM train + isotonic calibrate, 5-class multinomial).",
       "sub_phases": [
         {
           "id": "2a",
