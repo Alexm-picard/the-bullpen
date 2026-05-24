@@ -58,13 +58,14 @@ jobs:
             tests/battedball/retrodict tests/battedball/physics \
             tests/ingest tests/features \
             tests/eval/test_metrics.py tests/eval/test_cv_harness.py
-      - name: Unit tests — lightgbm path (pitch parity, toy training)
+      - name: Unit tests — lightgbm path (pitch parity, toy training, lgbm baseline)
         working-directory: training
         run: |
           uv run pytest -x --ignore=tests/leakage \
             tests/pitch tests/eval/test_artifact.py \
             tests/battedball/test_train_toy.py \
             tests/battedball/test_python_java_parity.py \
+            tests/battedball/lgbm_baseline \
             tests/test_smoke.py
 
   # Required — Phase 2c.2 physics-validation gate (decision [131]).

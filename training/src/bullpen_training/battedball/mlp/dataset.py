@@ -19,60 +19,23 @@ from __future__ import annotations
 
 import subprocess
 from dataclasses import dataclass
-from typing import Final
 
 import numpy as np
 from torch.utils.data import Dataset
 
-# Stable feature order — emitted into metadata.json so the Java
-# inference side can mirror it via FeaturePipeline.
-FEATURE_NAMES: Final[tuple[str, ...]] = (
-    "launch_speed_mph",
-    "launch_angle_deg",
-    "spray_angle_deg",
-    "hit_distance_ft",
-    "stand_R",
-    "stand_L",
-    "base_state_0",
-    "base_state_1",
-    "base_state_2",
-    "base_state_3",
-    "base_state_4",
-    "base_state_5",
-    "base_state_6",
-    "base_state_7",
-    "outs",
+# Feature / outcome ordering + one-hot helpers live in a torch-free
+# sibling module so the LightGBM baseline (2c.8) and any other consumer
+# can pick them up without dragging torch in transitively (co-loading
+# torch + lightgbm on macOS triggers a double-libomp segfault).
+from bullpen_training.battedball.features_shared import (
+    FEATURE_NAMES,
+    OUTCOME_NAMES,
+    base_state_one_hot,
+    stand_one_hot,
 )
-
-# Outcome ordering (matches V011's Enum8 + the retrodict label order).
-OUTCOME_NAMES: Final[tuple[str, ...]] = ("out", "1b", "2b", "3b", "hr")
-
-
-def stand_one_hot(stand: str) -> np.ndarray:
-    """One-hot the batter handedness ('R' or 'L'). Unknowns -> R fallback."""
-    out = np.zeros(2, dtype=np.float32)
-    out[0 if stand != "L" else 1] = 1.0
-    return out
-
-
-def base_state_one_hot(base_state: int) -> np.ndarray:
-    """One-hot the 0-7 baserunner state (3-bit: 1B, 2B, 3B occupancy)."""
-    out = np.zeros(8, dtype=np.float32)
-    if 0 <= base_state <= 7:
-        out[base_state] = 1.0
-    return out
-
-
-def _hc_to_spray_deg(hc_x: float, hc_y: float) -> float:
-    """Statcast hc_x/hc_y -> spray angle in our sim convention (+ to 3B/LF).
-
-    Identical formula to retrodict.run_pipeline._spray_deg_from_hc but
-    inlined here to keep the dataset module standalone. The two are
-    pinned by tests in test_dataset.py and test_run_pipeline.py.
-    """
-    import math
-
-    return math.degrees(math.atan2(125.42 - hc_x, 198.27 - hc_y))
+from bullpen_training.battedball.features_shared import (
+    hc_to_spray_deg as _hc_to_spray_deg,
+)
 
 
 @dataclass(frozen=True)
