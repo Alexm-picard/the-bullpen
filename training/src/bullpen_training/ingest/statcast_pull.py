@@ -82,6 +82,12 @@ RAW_STATCAST_COLUMNS: tuple[str, ...] = (
     "hit_distance_sc",
     "hc_x",
     "hc_y",
+    # 2b.1 — Tier 4 (post-pitch) movement + spin. Populated for 2024+ only;
+    # pre-2024 pulls predate V008 so these stay NULL and LightGBM handles them.
+    "pfx_x",
+    "pfx_z",
+    "release_spin_rate",
+    "spin_axis",
 )
 
 PK_COLUMNS: tuple[str, ...] = ("game_pk", "at_bat_index", "pitch_number")
@@ -123,6 +129,11 @@ _FLOAT_NULLABLE_COLUMNS: tuple[str, ...] = (
     "hit_distance_sc",
     "hc_x",
     "hc_y",
+    # 2b.1 — Tier 4 (post-pitch).
+    "pfx_x",
+    "pfx_z",
+    "release_spin_rate",
+    "spin_axis",
 )
 
 # Pybaseball's column names differ from the V002 schema in a few places.

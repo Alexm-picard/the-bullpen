@@ -44,6 +44,11 @@ from bullpen_training.features.tier_1_2 import (
     _read,
     load_labeled_pitches,
 )
+from bullpen_training.features.tier_4_postpitch import (
+    TIER4_COLUMNS,
+    load_tier4_for_window,
+    merge_tier4,
+)
 from bullpen_training.ingest.clickhouse_client import (
     ClickHouseSettings,
     insert_dataframe,
@@ -102,6 +107,7 @@ FEATURES_COLUMNS_FULL: tuple[str, ...] = (
     "batter_te_in_play",
     "label",
     *TIER3_COLUMNS,
+    *TIER4_COLUMNS,
 )
 
 PK_JOIN: tuple[str, ...] = ("game_id", "at_bat_index", "pitch_number")
@@ -197,6 +203,10 @@ def build_fold_full(
     tier3 = load_tier3_for_window(client, test_start=encode_start, test_end=encode_end)
     log.info("Tier 3 rows loaded", fold=fold.fold_id, rows=len(tier3))
 
+    log.info("loading Tier 4 (post-pitch) attributes", fold=fold.fold_id)
+    tier4 = load_tier4_for_window(client, test_start=encode_start, test_end=encode_end)
+    log.info("Tier 4 rows loaded", fold=fold.fold_id, rows=len(tier4))
+
     merged = encoded.merge(tier3, on=list(PK_JOIN), how="left")
     # T3 has more rows than T1+2 (HBP is in T3 but excluded from the 5-class
     # T1+2 filter). LEFT JOIN drops the extras correctly; we only warn if the
@@ -218,6 +228,11 @@ def build_fold_full(
     for col in ("pitcher_pitches_last_28d", "days_since_last_appearance"):
         merged[col] = merged[col].astype("Int64")
     merged["pitcher_pitches_in_game"] = merged["pitcher_pitches_in_game"].fillna(0).astype("uint32")
+
+    # Tier 4 join — merge_tier4 fills NaN pitch_type with "" so the LowCardinality
+    # serializer is happy. Float Tier 4 columns stay Nullable; clickhouse-driver
+    # encodes NaN → NULL for Nullable(Float32) without help.
+    merged = merge_tier4(merged, tier4)
 
     final = cast(pd.DataFrame, merged[list(FEATURES_COLUMNS_FULL)])
     rows_written = insert_dataframe(client, "features", final, columns=FEATURES_COLUMNS_FULL)

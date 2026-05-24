@@ -49,7 +49,16 @@ SELECT
       + if(on_2b IS NULL OR on_2b = 0, 0, 2)
       + if(on_3b IS NULL OR on_3b = 0, 0, 4)
     )                                          AS base_state,
-    now()                                      AS ingested_at
+    now()                                      AS ingested_at,
+    -- 2b.1 — Tier 4 (post-pitch) movement / spin / release position. NULL for
+    -- rows ingested before V008 added these columns to raw_statcast (i.e. the
+    -- 2015-2023 partitions); LightGBM handles the NULLs natively.
+    pfx_x                                      AS pfx_x_in,
+    pfx_z                                      AS pfx_z_in,
+    release_spin_rate                          AS spin_rate_rpm,
+    spin_axis                                  AS spin_axis_deg,
+    release_pos_x                              AS release_pos_x_in,
+    release_pos_z                              AS release_pos_z_in
 FROM raw_statcast
 WHERE toYear(game_date) = :year
   AND game_type = 'R';
