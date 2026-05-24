@@ -27,7 +27,7 @@ SELECT
     toUInt8(toDayOfWeek(game_date)) AS dow,
 
     toString(description)         AS label
-FROM pitches FINAL
+FROM pitches
 WHERE game_date BETWEEN :start_date AND :end_date
   AND description IN ('ball', 'called_strike', 'swinging_strike', 'foul', 'in_play')
-ORDER BY game_date, game_id, at_bat_index, pitch_number
+SETTINGS max_memory_usage = 0

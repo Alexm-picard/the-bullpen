@@ -55,25 +55,33 @@ def test_bind_respects_word_boundary() -> None:
     assert out == "SELECT '2024-01-01', 'noon'"
 
 
-def test_default_folds_for_full_corpus() -> None:
-    folds = _default_folds_for(2015, 2024)
+def test_default_folds_for_full_corpus_with_val_held_out() -> None:
+    """Per decision [56] + Phase 2a.5 prereq: train_end = test_year - 2 so
+    the val year (test_year - 1) is reserved as the calibration / early-
+    stopping holdout. The encoded `features` table covers val + test rows
+    per fold; the harness in 2a.4 partitions them by calendar year."""
+    folds = _default_folds_for(2015, 2025)
     assert len(folds) == 4
     assert [f.fold_id for f in folds] == [1, 2, 3, 4]
-    # Fold k tests calendar year max_year - (4 - k)
-    assert folds[0].test_start == date(2021, 1, 1)
-    assert folds[-1].test_end == date(2024, 12, 31)
-    # Every fold trains on data that strictly precedes its test window
+    # Fold 1 tests 2022, vals 2021, train ends 2020
+    assert folds[0].train_end == date(2020, 12, 31)
+    assert folds[0].test_start == date(2021, 1, 1)  # encoded window covers val year
+    assert folds[0].test_end == date(2022, 12, 31)
+    # Fold 4 tests 2025, vals 2024, train ends 2023
+    assert folds[-1].train_end == date(2023, 12, 31)
+    assert folds[-1].test_start == date(2024, 1, 1)
+    assert folds[-1].test_end == date(2025, 12, 31)
     for fold in folds:
         assert fold.train_end < fold.test_start
 
 
 def test_default_folds_rejects_too_short_corpus() -> None:
-    with pytest.raises(ValueError, match="at least 5 seasons"):
-        _default_folds_for(2022, 2024)
+    with pytest.raises(ValueError, match="at least 6 seasons"):
+        _default_folds_for(2022, 2025)
 
 
-def test_default_folds_each_fold_has_complete_year() -> None:
-    folds = _default_folds_for(2015, 2024)
+def test_default_folds_each_fold_covers_complete_calendar_years() -> None:
+    folds = _default_folds_for(2015, 2025)
     for fold in folds:
         assert fold.test_start.month == 1 and fold.test_start.day == 1
         assert fold.test_end.month == 12 and fold.test_end.day == 31

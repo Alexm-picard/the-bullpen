@@ -22,7 +22,10 @@ services:
     deploy:
       resources:
         limits:
-          memory: 4g
+          # 8 GiB on dev so the 11-season Phase 2a feature build's
+          # windowed CTEs don't OOM on fold 3-4 (10-11 year encode
+          # windows). Prod WSL2 may want to keep this at 4g.
+          memory: 8g
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
       interval: 10s

@@ -112,12 +112,11 @@ def _read(path: Path) -> str:
 
 
 def load_labeled_pitches(client: Client, *, start_date: date, end_date: date) -> pd.DataFrame:
-    """Window-scoped pull of labeled pitches with Tier 1 columns + label."""
-    sql = _bind(
-        _read(SQL_DIR / "select_labeled_pitches.sql"),
-        {"start_date": start_date, "end_date": end_date},
-    )
-    rows = cast(list[tuple[Any, ...]], client.execute(sql))
+    """Window-scoped pull of labeled pitches with Tier 1 columns + label.
+
+    Chunked by calendar year — a single SELECT with `ORDER BY` over 5M+
+    rows OOMs CH (container 4g cap). Per-year scans stay ~700K rows.
+    """
     columns = [
         "game_id",
         "at_bat_index",
@@ -137,8 +136,20 @@ def load_labeled_pitches(client: Client, *, start_date: date, end_date: date) ->
         "dow",
         "label",
     ]
-    df = pd.DataFrame(rows, columns=columns)
-    return df
+    chunks: list[pd.DataFrame] = []
+    for year in range(start_date.year, end_date.year + 1):
+        chunk_start = max(date(year, 1, 1), start_date)
+        chunk_end = min(date(year, 12, 31), end_date)
+        sql = _bind(
+            _read(SQL_DIR / "select_labeled_pitches.sql"),
+            {"start_date": chunk_start, "end_date": chunk_end},
+        )
+        rows = cast(list[tuple[Any, ...]], client.execute(sql))
+        if rows:
+            chunks.append(pd.DataFrame(rows, columns=columns))
+    if not chunks:
+        return pd.DataFrame(columns=columns)
+    return pd.concat(chunks, ignore_index=True)
 
 
 def build_fold_features(
@@ -223,16 +234,24 @@ def build_fold_features(
 def _default_folds_for(min_year: int, max_year: int) -> list[FoldWindow]:
     """Generate 4 rolling-origin folds across [min_year, max_year].
 
-    Spec from decision [56]: each fold trains on all earlier dates and
-    validates on a later contiguous window. For Phase 2a.1 the test
-    window is the last calendar year inside the fold's range; the eval
-    harness (2a.4) refines into train/val/test triplets.
+    Decision [56] locks: train through year N, val N+1, test N+2.
+    Tier 2 target encoding is built from the TRAIN window only — the val
+    year is held out as a hyperparameter / early-stopping signal in
+    2a.5, so it must NOT contaminate the TE.
+
+    To accommodate the harness's iteration, each fold's `test_window`
+    here spans both the val and test years (val_year .. test_year), and
+    the harness in 2a.4 partitions them by calendar year. This keeps the
+    encoded `features` table compact (one set of TE columns per fold,
+    valid for both val and test rows).
     """
     span = max_year - min_year + 1
-    if span < 5:
+    if span < 6:
         raise ValueError(
-            f"need at least 5 seasons for 4 folds; have {span} ({min_year}-{max_year})"
+            f"need at least 6 seasons for 4 folds with val held out; "
+            f"have {span} ({min_year}-{max_year})"
         )
+    # Fold k tests year (max_year - (4 - k)); val = test - 1; train end = test - 2.
     test_years = [max_year - 3, max_year - 2, max_year - 1, max_year]
     folds: list[FoldWindow] = []
     for i, ty in enumerate(test_years):
@@ -240,8 +259,8 @@ def _default_folds_for(min_year: int, max_year: int) -> list[FoldWindow]:
             FoldWindow(
                 fold_id=i + 1,
                 train_start=date(min_year, 1, 1),
-                train_end=date(ty - 1, 12, 31),
-                test_start=date(ty, 1, 1),
+                train_end=date(ty - 2, 12, 31),  # val year reserved as holdout
+                test_start=date(ty - 1, 1, 1),  # encode rows from val + test years
                 test_end=date(ty, 12, 31),
             )
         )

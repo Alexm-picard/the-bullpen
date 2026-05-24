@@ -108,14 +108,28 @@ PK_JOIN: tuple[str, ...] = ("game_id", "at_bat_index", "pitch_number")
 
 
 def load_tier3_for_window(client: Client, *, test_start: date, test_end: date) -> pd.DataFrame:
-    """Pull Tier 3 columns for one test window via the windowed SQL."""
-    sql = _bind(
-        _read(SQL_DIR / "compute_tier3.sql"),
-        {"test_start": test_start, "test_end": test_end},
-    )
-    rows = cast(list[tuple[Any, ...]], client.execute(sql))
+    """Pull Tier 3 columns for the window via the windowed SQL.
+
+    The single-shot query OOMs ClickHouse (4 GiB container cap) once the
+    encode window crosses ~6M rows. Chunk by calendar year — each query
+    independently scans (year - 90 days, year-end) and we concat the
+    results. Per-year scan stays around ~1M rows, comfortable.
+    """
     cols = list(PK_JOIN) + list(TIER3_COLUMNS)
-    return pd.DataFrame(rows, columns=cols)
+    chunks: list[pd.DataFrame] = []
+    for year in range(test_start.year, test_end.year + 1):
+        chunk_start = max(date(year, 1, 1), test_start)
+        chunk_end = min(date(year, 12, 31), test_end)
+        sql = _bind(
+            _read(SQL_DIR / "compute_tier3.sql"),
+            {"test_start": chunk_start, "test_end": chunk_end},
+        )
+        rows = cast(list[tuple[Any, ...]], client.execute(sql))
+        if rows:
+            chunks.append(pd.DataFrame(rows, columns=cols))
+    if not chunks:
+        return pd.DataFrame(columns=cols)
+    return pd.concat(chunks, ignore_index=True)
 
 
 def build_fold_full(
@@ -156,13 +170,20 @@ def build_fold_full(
         batter_entities=len(batter_te),
     )
 
+    # Encode the FULL fold span [train_start, test_end] so the harness can
+    # pull train/val/test from `features` without recomputing TE on the fly.
+    # The TE itself was built only from train_start..train_end (above), so
+    # encoding the train years with that TE is a benign self-reference —
+    # rows in the train years see the same fold-wide TE every other row uses.
+    encode_start = fold.train_start
+    encode_end = fold.test_end
     log.info(
-        "loading test window (Tier 1+2)",
+        "loading encode window (Tier 1+2)",
         fold=fold.fold_id,
-        test_start=str(fold.test_start),
-        test_end=str(fold.test_end),
+        encode_start=str(encode_start),
+        encode_end=str(encode_end),
     )
-    test_df = load_labeled_pitches(client, start_date=fold.test_start, end_date=fold.test_end)
+    test_df = load_labeled_pitches(client, start_date=encode_start, end_date=encode_end)
     test_df["as_of_date"] = fold.train_end
     test_df["fold"] = fold.fold_id
     encoded = apply_te(
@@ -173,7 +194,7 @@ def build_fold_full(
     )
 
     log.info("computing Tier 3 windows", fold=fold.fold_id)
-    tier3 = load_tier3_for_window(client, test_start=fold.test_start, test_end=fold.test_end)
+    tier3 = load_tier3_for_window(client, test_start=encode_start, test_end=encode_end)
     log.info("Tier 3 rows loaded", fold=fold.fold_id, rows=len(tier3))
 
     merged = encoded.merge(tier3, on=list(PK_JOIN), how="left")
