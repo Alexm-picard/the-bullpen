@@ -50,12 +50,13 @@ jobs:
       # tolerant today but the failure mode is order-dependent — splitting
       # the two suites into separate pytest processes is the future-proof
       # discipline.
-      - name: Unit tests — torch path (mlp/parks/retrodict/physics)
+      - name: Unit tests — torch path (mlp/parks/retrodict/physics/eval)
         working-directory: training
         run: |
           uv run pytest -x --ignore=tests/leakage \
             tests/battedball/mlp tests/battedball/parks \
             tests/battedball/retrodict tests/battedball/physics \
+            tests/battedball/eval \
             tests/ingest tests/features \
             tests/eval/test_metrics.py tests/eval/test_cv_harness.py
       - name: Unit tests — lightgbm path (pitch parity, toy training, lgbm baseline)
