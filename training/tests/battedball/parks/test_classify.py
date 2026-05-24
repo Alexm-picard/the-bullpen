@@ -109,12 +109,15 @@ def _make_traj(
 
 
 def test_dead_pull_hr_at_yankee_short_porch() -> None:
-    """A ball that lands at 360 ft, -42 deg (deep RF) with 40 ft of
-    height when it crosses NYY's 314 ft RF foul-pole fence is a HR."""
+    """A ball that lands at 380 ft, -45 deg (RF foul pole) with 40 ft
+    of height when it crosses NYY's 314 ft RF foul-pole fence is a HR.
+    Margins set well past the decision-[132] HR thresholds
+    (45 ft past fence + 25 ft above wall) so the test pins HR semantics
+    rather than the exact threshold values."""
     park = load_park_geometry("NYY")
     traj = _make_traj(
-        landing_dist_ft=360.0,
-        spray_deg=-42.0,
+        landing_dist_ft=380.0,
+        spray_deg=-45.0,  # RF foul pole — matches polyline endpoint exactly
         apex_ft=100.0,
         hang_time_s=4.8,
         height_at_fence_ft=40.0,
@@ -124,29 +127,31 @@ def test_dead_pull_hr_at_yankee_short_porch() -> None:
 
 
 def test_moon_shot_to_cf_at_coors() -> None:
-    """430 ft to dead CF at Coors clears the 415 ft CF wall easily."""
+    """A 475 ft shot to dead CF clears Coors' 415 ft CF wall by enough
+    margin to defeat the fielder-model HR thresholds."""
     park = load_park_geometry("COL")
     traj = _make_traj(
-        landing_dist_ft=430.0,
+        landing_dist_ft=475.0,
         spray_deg=0.0,
-        apex_ft=110.0,
+        apex_ft=120.0,
         hang_time_s=5.5,
-        height_at_fence_ft=30.0,
+        height_at_fence_ft=40.0,
         fence_dist_ft=415.0,
     )
     assert classify_outcome(traj, park) == Outcome.HOME_RUN
 
 
 def test_borderline_shot_clears_nyy_but_not_comerica() -> None:
-    """A 410 ft shot to CF clears Yankee Stadium (CF 408) but NOT
-    Comerica (CF 420). Same trajectory, different parks — the headline
-    geometry case from the leaf."""
+    """A 460 ft shot to CF clears Yankee Stadium (CF 408, 460-408=52 >
+    45 ft HR margin) but NOT Comerica (CF 420, 460-420=40 < 45). Same
+    trajectory, different parks — the headline geometry case from the
+    leaf, retuned for the decision [132] thresholds."""
     traj = _make_traj(
-        landing_dist_ft=410.0,
+        landing_dist_ft=460.0,
         spray_deg=0.0,
-        apex_ft=100.0,
+        apex_ft=110.0,
         hang_time_s=5.0,
-        height_at_fence_ft=20.0,
+        height_at_fence_ft=40.0,
         fence_dist_ft=408.0,
     )
     nyy = load_park_geometry("NYY")
@@ -178,16 +183,16 @@ def test_high_fly_off_the_monster_is_not_hr() -> None:
 
 
 def test_same_fly_to_lf_at_yankee_is_hr() -> None:
-    """The same trajectory that died on the Monster clears Yankee
-    Stadium's 318 ft LF wall (only 8 ft tall). spray=+45 -> LF foul
-    pole, no polyline interpolation."""
+    """The same trajectory archetype that died on the Monster but
+    lands 370 ft (52 ft past NYY's 318 LF wall) and clears it by
+    enough height to defeat the fielder-model thresholds is a HR."""
     park = load_park_geometry("NYY")
     traj = _make_traj(
-        landing_dist_ft=330.0,
+        landing_dist_ft=370.0,
         spray_deg=+45.0,
-        apex_ft=90.0,
+        apex_ft=100.0,
         hang_time_s=4.6,
-        height_at_fence_ft=30.0,
+        height_at_fence_ft=45.0,
         fence_dist_ft=318.0,
     )
     assert classify_outcome(traj, park) == Outcome.HOME_RUN
@@ -251,22 +256,55 @@ def test_weak_grounder_classifies_as_out() -> None:
 
 
 def test_borderline_hr_clears_coors_but_not_oracle() -> None:
-    """A 395 ft shot to CF doesn't clear Coors' 415 ft CF — but it DOES
-    clear Oracle's 391 ft CF. Same trajectory, different parks."""
+    """A 450 ft shot to CF clears Oracle's 391 ft CF (450-391=59 > 45
+    decision [132] HR margin) but NOT Coors' 415 ft CF (450-415=35 <
+    45). Same trajectory, different parks; the contrast pins the
+    park-geometry distinction even with the fielder model on."""
     traj = _make_traj(
-        landing_dist_ft=395.0,
+        landing_dist_ft=450.0,
         spray_deg=0.0,
-        apex_ft=100.0,
+        apex_ft=115.0,
         hang_time_s=5.0,
-        height_at_fence_ft=20.0,
+        height_at_fence_ft=40.0,
         fence_dist_ft=391.0,
     )
     col = load_park_geometry("COL")
     sf = load_park_geometry("SF")
-    # Coors CF (415) > 395 ft landing -> ball doesn't reach the wall.
     assert classify_outcome(traj, col) != Outcome.HOME_RUN
-    # Oracle CF (391) <= 395 ft landing AND ball is 20 ft up at the wall -> HR.
     assert classify_outcome(traj, sf) == Outcome.HOME_RUN
+
+
+def test_low_liner_off_the_wall_is_double() -> None:
+    """A 100 mph liner with 3.0 s hang that lands at the LF foul pole
+    of NYY (318 ft), clearing the 8 ft wall by 10 ft, falls short of
+    the HR distance threshold (decision [132]) and gets called a
+    DOUBLE — the wall-banger branch (short hang at the wall)."""
+    park = load_park_geometry("NYY")
+    traj = _make_traj(
+        landing_dist_ft=325.0,  # only 7 ft past 318 ft fence
+        spray_deg=+45.0,
+        apex_ft=40.0,
+        hang_time_s=3.0,
+        height_at_fence_ft=18.0,  # 10 ft above 8 ft wall but inside HR margin
+        fence_dist_ft=318.0,
+    )
+    assert classify_outcome(traj, park) == Outcome.DOUBLE
+
+
+def test_high_fly_caught_at_wall_is_out() -> None:
+    """A 95 mph high fly with 5.0 s hang that lands at the wall (10 ft
+    past the fence, just above wall height) is a warning-track OUT —
+    long hang means the CF catches it before it reaches the seats."""
+    park = load_park_geometry("NYY")
+    traj = _make_traj(
+        landing_dist_ft=328.0,
+        spray_deg=+45.0,
+        apex_ft=80.0,
+        hang_time_s=5.0,
+        height_at_fence_ft=12.0,  # 4 ft above wall but inside HR margin
+        fence_dist_ft=318.0,
+    )
+    assert classify_outcome(traj, park) == Outcome.OUT
 
 
 def test_ball_clears_fence_distance_but_below_wall_height_is_not_hr() -> None:

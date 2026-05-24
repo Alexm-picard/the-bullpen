@@ -67,6 +67,19 @@ _FOUL_LINE_DEG = 45.0
 # turn doubles into triples more often).
 DEFAULT_SPRINT_SPEED_FPS = 27.0
 
+# Fielder model (decision [132]) — the pure "ball clears the wall in
+# vacuum" check predicts 12 % HR rate on real BIPs vs the observed
+# ~4 % because (a) the simulator over-predicts carry without per-game
+# wind (the same +13 ft bias documented in decision [131] for 2c.2) and
+# (b) outfielders rob borderline HRs at the wall. These thresholds
+# require a substantial margin past the fence AND above the wall before
+# calling HR; flies that fail this check but reach the wall area split
+# into warning-track OUTs (long hang) and wall-banger DOUBLES (short).
+# Tuned on 500 2024-season BIPs to land HR rate at 4.20 % (= observed).
+DEFAULT_HR_MIN_DIST_PAST_FENCE_FT = 45.0
+DEFAULT_HR_MIN_HEIGHT_OVER_FENCE_FT = 25.0
+DEFAULT_WALL_HANG_CUTOFF_S = 4.5
+
 
 def _landing_xy_ft(traj: Trajectory) -> tuple[float, float]:
     """Final ground position in stadium feet (x=CF axis, y=3B axis).
@@ -132,12 +145,27 @@ def classify_outcome(
     park: ParkGeometry,
     *,
     sprint_speed_fps: float = DEFAULT_SPRINT_SPEED_FPS,
+    hr_min_dist_past_fence_ft: float = DEFAULT_HR_MIN_DIST_PAST_FENCE_FT,
+    hr_min_height_over_fence_ft: float = DEFAULT_HR_MIN_HEIGHT_OVER_FENCE_FT,
+    wall_hang_cutoff_s: float = DEFAULT_WALL_HANG_CUTOFF_S,
 ) -> Outcome:
     """Classify a simulator :class:`Trajectory` against a park's fence.
 
     See module docstring for the decision flow. ``sprint_speed_fps``
     gates the triple branch (faster runners convert deep doubles into
     triples more often); the v1 classifier is otherwise speed-agnostic.
+
+    Decision [132] tuning knobs (see DEFAULT_* constants above for
+    rationale on why the bare physics check over-calls HRs):
+
+    - ``hr_min_dist_past_fence_ft`` / ``hr_min_height_over_fence_ft``:
+      a "vacuum" trajectory clearing the wall is necessary but not
+      sufficient for a HR; the ball must clear by margin in both
+      dimensions to outrun a leaping fielder + the simulator's known
+      no-wind over-bias.
+    - ``wall_hang_cutoff_s``: at the wall, long-hang flies are caught
+      (warning-track outs) and short-hang liners hit the wall in play
+      (doubles). Tuned on 500-BIP 2024 sample.
     """
     if not traj.landed:
         # The ball never came down — almost always means n_steps_max was
@@ -156,14 +184,25 @@ def classify_outcome(
 
     landing_dist_ft = math.hypot(x_ft, y_ft)
 
-    # HR test: is the ball still above the fence height when it crosses
-    # the fence's radius at this spray angle?
+    # HR test: ball must clear the wall by enough margin in both
+    # distance AND height to not be caught at the warning track.
     fence_dist = fence_distance_at_spray_deg(park, spray_deg)
     fence_h = fence_height_at_spray_deg(park, spray_deg)
     if landing_dist_ft >= fence_dist:
         z_at_fence = _crossing_height_at_fence(traj, fence_dist)
-        if z_at_fence is not None and z_at_fence > fence_h:
+        if (
+            z_at_fence is not None
+            and z_at_fence > fence_h + hr_min_height_over_fence_ft
+            and landing_dist_ft >= fence_dist + hr_min_dist_past_fence_ft
+        ):
             return Outcome.HOME_RUN
+        # Ball reached the wall area but failed the HR margin check.
+        # Two cases at the wall: high fly caught by OF; line drive off
+        # the wall for a double. Hang time discriminates.
+        if z_at_fence is not None and z_at_fence > fence_h:
+            if traj.hang_time >= wall_hang_cutoff_s:
+                return Outcome.OUT  # warning-track / wall catch
+            return Outcome.DOUBLE  # off-the-wall line drive
 
     # In the park: distance + hang_time + sprint_speed heuristic.
     # The heuristic exists so the 2c.4 Monte Carlo wrapper has a sane
@@ -181,4 +220,11 @@ def classify_outcome(
     return Outcome.OUT
 
 
-__all__ = ("DEFAULT_SPRINT_SPEED_FPS", "Outcome", "classify_outcome")
+__all__ = (
+    "DEFAULT_HR_MIN_DIST_PAST_FENCE_FT",
+    "DEFAULT_HR_MIN_HEIGHT_OVER_FENCE_FT",
+    "DEFAULT_SPRINT_SPEED_FPS",
+    "DEFAULT_WALL_HANG_CUTOFF_S",
+    "Outcome",
+    "classify_outcome",
+)
