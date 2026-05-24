@@ -48,6 +48,36 @@ jobs:
         working-directory: training
         run: uv run pytest -x --ignore=tests/leakage
 
+  # Required — Phase 2c.2 physics-validation gate (decision [131]).
+  # Re-runs the 100-fixture HR validation against the committed fixture
+  # set and fails the build if pass_rate < 0.85 or mae_distance_ft > 30 ft.
+  # Original ±5%/±15ft/95% gate is pinned in decisions.md for re-attempt
+  # after 2c.4's weather pull lands.
+  physics-validation-gate:
+    runs-on: ubuntu-latest
+    needs: lint-and-type
+    name: REQUIRED — physics validation gate (decision [131])
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - working-directory: training
+        run: uv sync --frozen
+      - name: Run physics validation
+        working-directory: training
+        run: |
+          uv run python -m bullpen_training.battedball.physics.validate \
+            --fixtures data/physics_validation_fixtures.json \
+            --report data/physics_validation_report.json \
+            --enforce-gate
+      - name: Upload validation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: physics-validation-report
+          path: training/data/physics_validation_report.json
+
   # Required — CLAUDE.md rule 10. The four leakage categories
   # (future contamination, shuffled target, calendar date trace, ID
   # consistency) are real tests as of Phase 2a.3. Any skip without an

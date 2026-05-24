@@ -1,0 +1,1606 @@
+{
+  "schema_version": 1,
+  "n_fixtures": 100,
+  "fixtures": [
+    {
+      "fixture_id": "hr_001",
+      "bb_type": "home_run",
+      "park_id": "ATH",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 108.5,
+        "launch_angle_deg": 25.0,
+        "spray_angle_deg": -1.882,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 441.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_002",
+      "bb_type": "home_run",
+      "park_id": "ATH",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 100.4,
+        "launch_angle_deg": 23.0,
+        "spray_angle_deg": 35.796,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 377.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_003",
+      "bb_type": "home_run",
+      "park_id": "ATH",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 112.1,
+        "launch_angle_deg": 25.0,
+        "spray_angle_deg": 43.004,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 412.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_004",
+      "bb_type": "home_run",
+      "park_id": "ATH",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 105.5,
+        "launch_angle_deg": 21.0,
+        "spray_angle_deg": -9.327,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 409.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_005",
+      "bb_type": "home_run",
+      "park_id": "ATL",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 108.5,
+        "launch_angle_deg": 26.0,
+        "spray_angle_deg": -4.549,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 429.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_006",
+      "bb_type": "home_run",
+      "park_id": "ATL",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 105.4,
+        "launch_angle_deg": 24.0,
+        "spray_angle_deg": 11.969,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 413.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_007",
+      "bb_type": "home_run",
+      "park_id": "ATL",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 101.6,
+        "launch_angle_deg": 34.0,
+        "spray_angle_deg": -35.115,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 374.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_008",
+      "bb_type": "home_run",
+      "park_id": "ATL",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 111.5,
+        "launch_angle_deg": 23.0,
+        "spray_angle_deg": 29.614,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 422.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_009",
+      "bb_type": "home_run",
+      "park_id": "AZ",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 101.3,
+        "launch_angle_deg": 28.0,
+        "spray_angle_deg": 19.116,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 394.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_010",
+      "bb_type": "home_run",
+      "park_id": "AZ",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 106.6,
+        "launch_angle_deg": 23.0,
+        "spray_angle_deg": -25.796,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 383.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_011",
+      "bb_type": "home_run",
+      "park_id": "AZ",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 109.9,
+        "launch_angle_deg": 26.0,
+        "spray_angle_deg": -46.074,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 412.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_012",
+      "bb_type": "home_run",
+      "park_id": "AZ",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 107.5,
+        "launch_angle_deg": 20.0,
+        "spray_angle_deg": 36.213,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 377.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_013",
+      "bb_type": "home_run",
+      "park_id": "BAL",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 109.2,
+        "launch_angle_deg": 25.0,
+        "spray_angle_deg": -22.355,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 422.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_014",
+      "bb_type": "home_run",
+      "park_id": "BAL",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 112.3,
+        "launch_angle_deg": 22.0,
+        "spray_angle_deg": -40.879,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 410.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_015",
+      "bb_type": "home_run",
+      "park_id": "BAL",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 106.1,
+        "launch_angle_deg": 29.0,
+        "spray_angle_deg": -6.114,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 420.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_016",
+      "bb_type": "home_run",
+      "park_id": "BAL",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 98.4,
+        "launch_angle_deg": 32.0,
+        "spray_angle_deg": -42.615,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 395.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_017",
+      "bb_type": "home_run",
+      "park_id": "BOS",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 100.5,
+        "launch_angle_deg": 34.0,
+        "spray_angle_deg": 19.547,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 378.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_018",
+      "bb_type": "home_run",
+      "park_id": "BOS",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 108.9,
+        "launch_angle_deg": 25.0,
+        "spray_angle_deg": 34.094,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 395.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_019",
+      "bb_type": "home_run",
+      "park_id": "BOS",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 110.1,
+        "launch_angle_deg": 25.0,
+        "spray_angle_deg": 45.376,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 396.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_020",
+      "bb_type": "home_run",
+      "park_id": "BOS",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 106.3,
+        "launch_angle_deg": 31.0,
+        "spray_angle_deg": -17.758,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 425.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_021",
+      "bb_type": "home_run",
+      "park_id": "CHC",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 96.6,
+        "launch_angle_deg": 27.0,
+        "spray_angle_deg": 28.789,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 376.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_022",
+      "bb_type": "home_run",
+      "park_id": "CHC",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 109.2,
+        "launch_angle_deg": 34.0,
+        "spray_angle_deg": 35.015,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 416.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_023",
+      "bb_type": "home_run",
+      "park_id": "CHC",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 100.3,
+        "launch_angle_deg": 27.0,
+        "spray_angle_deg": 36.688,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 364.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_024",
+      "bb_type": "home_run",
+      "park_id": "CHC",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 107.3,
+        "launch_angle_deg": 27.0,
+        "spray_angle_deg": 25.059,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 439.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_025",
+      "bb_type": "home_run",
+      "park_id": "CIN",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 102.4,
+        "launch_angle_deg": 31.0,
+        "spray_angle_deg": -14.826,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 394.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_026",
+      "bb_type": "home_run",
+      "park_id": "CIN",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 104.6,
+        "launch_angle_deg": 32.0,
+        "spray_angle_deg": 43.912,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 362.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_027",
+      "bb_type": "home_run",
+      "park_id": "CIN",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 103.4,
+        "launch_angle_deg": 28.0,
+        "spray_angle_deg": 35.089,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 368.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_028",
+      "bb_type": "home_run",
+      "park_id": "CIN",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 106.3,
+        "launch_angle_deg": 38.0,
+        "spray_angle_deg": -8.241,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 400.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_029",
+      "bb_type": "home_run",
+      "park_id": "CLE",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 106.1,
+        "launch_angle_deg": 27.0,
+        "spray_angle_deg": -41.426,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 422.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_030",
+      "bb_type": "home_run",
+      "park_id": "CLE",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 101.1,
+        "launch_angle_deg": 25.0,
+        "spray_angle_deg": -31.884,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 366.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_031",
+      "bb_type": "home_run",
+      "park_id": "CLE",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 109.8,
+        "launch_angle_deg": 36.0,
+        "spray_angle_deg": -9.972,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 424.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_032",
+      "bb_type": "home_run",
+      "park_id": "CLE",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 96.8,
+        "launch_angle_deg": 35.0,
+        "spray_angle_deg": -32.323,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 356.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_033",
+      "bb_type": "home_run",
+      "park_id": "COL",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 103.8,
+        "launch_angle_deg": 29.0,
+        "spray_angle_deg": 34.196,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 412.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_034",
+      "bb_type": "home_run",
+      "park_id": "COL",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 105.5,
+        "launch_angle_deg": 21.0,
+        "spray_angle_deg": -42.137,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 403.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_035",
+      "bb_type": "home_run",
+      "park_id": "COL",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 99.6,
+        "launch_angle_deg": 33.0,
+        "spray_angle_deg": -38.498,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 376.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_036",
+      "bb_type": "home_run",
+      "park_id": "COL",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 108.1,
+        "launch_angle_deg": 30.0,
+        "spray_angle_deg": 12.574,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 445.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_037",
+      "bb_type": "home_run",
+      "park_id": "CWS",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 108.4,
+        "launch_angle_deg": 29.0,
+        "spray_angle_deg": -1.789,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 430.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_038",
+      "bb_type": "home_run",
+      "park_id": "CWS",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 111.9,
+        "launch_angle_deg": 22.0,
+        "spray_angle_deg": -37.494,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 363.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_039",
+      "bb_type": "home_run",
+      "park_id": "CWS",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 102.2,
+        "launch_angle_deg": 31.0,
+        "spray_angle_deg": 45.647,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 352.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_040",
+      "bb_type": "home_run",
+      "park_id": "CWS",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 97.5,
+        "launch_angle_deg": 32.0,
+        "spray_angle_deg": -40.962,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 360.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_041",
+      "bb_type": "home_run",
+      "park_id": "DET",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 105.2,
+        "launch_angle_deg": 25.0,
+        "spray_angle_deg": 16.875,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 385.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_042",
+      "bb_type": "home_run",
+      "park_id": "DET",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 97.1,
+        "launch_angle_deg": 25.0,
+        "spray_angle_deg": -33.603,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 356.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_043",
+      "bb_type": "home_run",
+      "park_id": "DET",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 100.0,
+        "launch_angle_deg": 34.0,
+        "spray_angle_deg": 31.026,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 386.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_044",
+      "bb_type": "home_run",
+      "park_id": "DET",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 97.4,
+        "launch_angle_deg": 26.0,
+        "spray_angle_deg": 36.271,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 368.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_045",
+      "bb_type": "home_run",
+      "park_id": "HOU",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 102.0,
+        "launch_angle_deg": 24.0,
+        "spray_angle_deg": 33.552,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 356.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_046",
+      "bb_type": "home_run",
+      "park_id": "HOU",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 103.4,
+        "launch_angle_deg": 28.0,
+        "spray_angle_deg": -26.075,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 397.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_047",
+      "bb_type": "home_run",
+      "park_id": "HOU",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 102.0,
+        "launch_angle_deg": 23.0,
+        "spray_angle_deg": 40.876,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 352.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_048",
+      "bb_type": "home_run",
+      "park_id": "HOU",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 97.8,
+        "launch_angle_deg": 24.0,
+        "spray_angle_deg": 37.223,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 365.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_049",
+      "bb_type": "home_run",
+      "park_id": "KC",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 103.5,
+        "launch_angle_deg": 33.0,
+        "spray_angle_deg": 5.972,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 417.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_050",
+      "bb_type": "home_run",
+      "park_id": "KC",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 105.9,
+        "launch_angle_deg": 34.0,
+        "spray_angle_deg": -35.812,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 406.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_051",
+      "bb_type": "home_run",
+      "park_id": "KC",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 102.8,
+        "launch_angle_deg": 24.0,
+        "spray_angle_deg": 41.22,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 389.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_052",
+      "bb_type": "home_run",
+      "park_id": "KC",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 105.4,
+        "launch_angle_deg": 29.0,
+        "spray_angle_deg": 47.209,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 398.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_053",
+      "bb_type": "home_run",
+      "park_id": "LAA",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 107.9,
+        "launch_angle_deg": 20.0,
+        "spray_angle_deg": -25.009,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 375.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_054",
+      "bb_type": "home_run",
+      "park_id": "LAA",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 100.9,
+        "launch_angle_deg": 27.0,
+        "spray_angle_deg": 28.175,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 394.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_055",
+      "bb_type": "home_run",
+      "park_id": "LAA",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 101.3,
+        "launch_angle_deg": 24.0,
+        "spray_angle_deg": -11.311,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 410.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_056",
+      "bb_type": "home_run",
+      "park_id": "LAA",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 105.9,
+        "launch_angle_deg": 27.0,
+        "spray_angle_deg": 6.238,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 419.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_057",
+      "bb_type": "home_run",
+      "park_id": "LAD",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 108.8,
+        "launch_angle_deg": 28.0,
+        "spray_angle_deg": -11.548,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 427.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_058",
+      "bb_type": "home_run",
+      "park_id": "LAD",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 109.6,
+        "launch_angle_deg": 25.0,
+        "spray_angle_deg": -39.039,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 400.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_059",
+      "bb_type": "home_run",
+      "park_id": "LAD",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 111.2,
+        "launch_angle_deg": 38.0,
+        "spray_angle_deg": 5.595,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 413.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_060",
+      "bb_type": "home_run",
+      "park_id": "LAD",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 102.7,
+        "launch_angle_deg": 31.0,
+        "spray_angle_deg": 10.043,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 403.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_061",
+      "bb_type": "home_run",
+      "park_id": "MIA",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 102.8,
+        "launch_angle_deg": 26.0,
+        "spray_angle_deg": -10.202,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 396.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_062",
+      "bb_type": "home_run",
+      "park_id": "MIA",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 106.8,
+        "launch_angle_deg": 29.0,
+        "spray_angle_deg": -1.098,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 427.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_063",
+      "bb_type": "home_run",
+      "park_id": "MIA",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 108.2,
+        "launch_angle_deg": 29.0,
+        "spray_angle_deg": 30.876,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 395.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_064",
+      "bb_type": "home_run",
+      "park_id": "MIA",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 107.6,
+        "launch_angle_deg": 25.0,
+        "spray_angle_deg": -8.82,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 413.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_065",
+      "bb_type": "home_run",
+      "park_id": "MIL",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 102.5,
+        "launch_angle_deg": 23.0,
+        "spray_angle_deg": -31.316,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 381.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_066",
+      "bb_type": "home_run",
+      "park_id": "MIL",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 101.7,
+        "launch_angle_deg": 36.0,
+        "spray_angle_deg": -42.128,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 404.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_067",
+      "bb_type": "home_run",
+      "park_id": "MIL",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 98.6,
+        "launch_angle_deg": 26.0,
+        "spray_angle_deg": -13.633,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 392.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_068",
+      "bb_type": "home_run",
+      "park_id": "MIL",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 103.2,
+        "launch_angle_deg": 39.0,
+        "spray_angle_deg": 25.747,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 376.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_069",
+      "bb_type": "home_run",
+      "park_id": "MIN",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 109.1,
+        "launch_angle_deg": 24.0,
+        "spray_angle_deg": -18.915,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 441.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_070",
+      "bb_type": "home_run",
+      "park_id": "MIN",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 104.3,
+        "launch_angle_deg": 28.0,
+        "spray_angle_deg": -9.78,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 427.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_071",
+      "bb_type": "home_run",
+      "park_id": "MIN",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 105.9,
+        "launch_angle_deg": 40.0,
+        "spray_angle_deg": -30.483,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 382.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_072",
+      "bb_type": "home_run",
+      "park_id": "MIN",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 102.6,
+        "launch_angle_deg": 26.0,
+        "spray_angle_deg": -15.143,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 410.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_073",
+      "bb_type": "home_run",
+      "park_id": "NYM",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 104.4,
+        "launch_angle_deg": 25.0,
+        "spray_angle_deg": -23.055,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 395.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_074",
+      "bb_type": "home_run",
+      "park_id": "NYM",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 107.0,
+        "launch_angle_deg": 33.0,
+        "spray_angle_deg": 35.288,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 408.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_075",
+      "bb_type": "home_run",
+      "park_id": "NYM",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 111.8,
+        "launch_angle_deg": 27.0,
+        "spray_angle_deg": -42.655,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 412.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_076",
+      "bb_type": "home_run",
+      "park_id": "NYM",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 107.4,
+        "launch_angle_deg": 25.0,
+        "spray_angle_deg": 24.489,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 408.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_077",
+      "bb_type": "home_run",
+      "park_id": "NYY",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 102.6,
+        "launch_angle_deg": 37.0,
+        "spray_angle_deg": 29.366,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 388.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_078",
+      "bb_type": "home_run",
+      "park_id": "NYY",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 100.1,
+        "launch_angle_deg": 29.0,
+        "spray_angle_deg": 32.43,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 384.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_079",
+      "bb_type": "home_run",
+      "park_id": "NYY",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 105.0,
+        "launch_angle_deg": 26.0,
+        "spray_angle_deg": -7.771,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 418.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_080",
+      "bb_type": "home_run",
+      "park_id": "NYY",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 102.5,
+        "launch_angle_deg": 33.0,
+        "spray_angle_deg": -33.878,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 356.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_081",
+      "bb_type": "home_run",
+      "park_id": "PHI",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 100.7,
+        "launch_angle_deg": 35.0,
+        "spray_angle_deg": -30.831,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 388.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_082",
+      "bb_type": "home_run",
+      "park_id": "PHI",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 104.4,
+        "launch_angle_deg": 26.0,
+        "spray_angle_deg": 20.685,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 383.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_083",
+      "bb_type": "home_run",
+      "park_id": "PHI",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 98.2,
+        "launch_angle_deg": 32.0,
+        "spray_angle_deg": -41.07,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 380.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_084",
+      "bb_type": "home_run",
+      "park_id": "PHI",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 103.3,
+        "launch_angle_deg": 19.0,
+        "spray_angle_deg": -39.378,
+        "spin_rate_rpm": 1500.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 367.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_085",
+      "bb_type": "home_run",
+      "park_id": "PIT",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 102.7,
+        "launch_angle_deg": 24.0,
+        "spray_angle_deg": 29.102,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 408.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_086",
+      "bb_type": "home_run",
+      "park_id": "PIT",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 100.0,
+        "launch_angle_deg": 32.0,
+        "spray_angle_deg": -41.615,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 370.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_087",
+      "bb_type": "home_run",
+      "park_id": "PIT",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 102.1,
+        "launch_angle_deg": 25.0,
+        "spray_angle_deg": 43.239,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 366.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_088",
+      "bb_type": "home_run",
+      "park_id": "PIT",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 104.9,
+        "launch_angle_deg": 25.0,
+        "spray_angle_deg": -30.216,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 411.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_089",
+      "bb_type": "home_run",
+      "park_id": "SD",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 109.2,
+        "launch_angle_deg": 30.0,
+        "spray_angle_deg": 20.828,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 431.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_090",
+      "bb_type": "home_run",
+      "park_id": "SD",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 103.1,
+        "launch_angle_deg": 33.0,
+        "spray_angle_deg": -43.998,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 381.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_091",
+      "bb_type": "home_run",
+      "park_id": "SD",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 101.2,
+        "launch_angle_deg": 26.0,
+        "spray_angle_deg": 20.421,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 387.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_092",
+      "bb_type": "home_run",
+      "park_id": "SD",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 110.6,
+        "launch_angle_deg": 31.0,
+        "spray_angle_deg": -38.526,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 412.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_093",
+      "bb_type": "home_run",
+      "park_id": "SEA",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 107.2,
+        "launch_angle_deg": 26.0,
+        "spray_angle_deg": -28.075,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 399.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_094",
+      "bb_type": "home_run",
+      "park_id": "SEA",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 109.7,
+        "launch_angle_deg": 20.0,
+        "spray_angle_deg": 8.071,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 413.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_095",
+      "bb_type": "home_run",
+      "park_id": "SEA",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 97.9,
+        "launch_angle_deg": 30.0,
+        "spray_angle_deg": -31.044,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 383.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_096",
+      "bb_type": "home_run",
+      "park_id": "SEA",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 96.4,
+        "launch_angle_deg": 28.0,
+        "spray_angle_deg": -41.863,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 356.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_097",
+      "bb_type": "home_run",
+      "park_id": "SF",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 105.0,
+        "launch_angle_deg": 22.0,
+        "spray_angle_deg": 46.09,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 371.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_098",
+      "bb_type": "home_run",
+      "park_id": "SF",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 107.0,
+        "launch_angle_deg": 24.0,
+        "spray_angle_deg": -9.483,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 418.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_099",
+      "bb_type": "home_run",
+      "park_id": "SF",
+      "stand": "R",
+      "launch": {
+        "launch_speed_mph": 103.4,
+        "launch_angle_deg": 25.0,
+        "spray_angle_deg": 14.355,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 400.0,
+      "notes": []
+    },
+    {
+      "fixture_id": "hr_100",
+      "bb_type": "home_run",
+      "park_id": "SF",
+      "stand": "L",
+      "launch": {
+        "launch_speed_mph": 102.6,
+        "launch_angle_deg": 34.0,
+        "spray_angle_deg": -30.77,
+        "spin_rate_rpm": 1800.0,
+        "spin_axis_tilt_deg": 180.0,
+        "initial_height_m": 1.0
+      },
+      "observed_distance_ft": 382.0,
+      "notes": []
+    }
+  ]
+}

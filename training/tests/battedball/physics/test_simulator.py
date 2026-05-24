@@ -74,9 +74,9 @@ def test_typical_hr_lands_in_realistic_range() -> None:
     )
     traj = simulate(launch)
     assert traj.landed
-    assert (
-        330.0 <= traj.distance_ft <= 430.0
-    ), f"unrealistic distance for typical HR launch: {traj.distance_ft:.1f} ft"
+    assert 330.0 <= traj.distance_ft <= 430.0, (
+        f"unrealistic distance for typical HR launch: {traj.distance_ft:.1f} ft"
+    )
     # Hang time for a fly should be in the 4-6 s window
     assert 3.5 <= traj.hang_time <= 7.0
 
