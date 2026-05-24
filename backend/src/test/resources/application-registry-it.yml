@@ -1,0 +1,14 @@
+# Test profile placeholder for RegistrySchemaIT.
+#
+# The actual datasource URL is set per-test-class via @DynamicPropertySource
+# in RegistrySchemaIT — using ${random.uuid} from YAML would re-resolve
+# on every property lookup (Flyway and the datasource would point at
+# different temp files). The dynamic-source path resolves the UUID once.
+
+spring:
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+  main:
+    web-application-type: none
