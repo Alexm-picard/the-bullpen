@@ -1,0 +1,90 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://thebullpen.net/schemas/park_geometry/1.json",
+  "title": "Park geometry (Phase 2c.3)",
+  "description": "Per-park ballpark geometry — fence polyline, default atmosphere, centerline bearing. One file per MLB park under infra/park_geometry/<park_id>.json. Loaded by bullpen_training.battedball.parks.loader.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "park_id",
+    "name",
+    "altitude_m",
+    "default_atmosphere",
+    "centerline_bearing_deg",
+    "fence_polyline",
+    "behind_fence_stand_height_ft",
+    "foul_territory_sqft"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Bumps if the polyline encoding or units change. Loader refuses unknown versions."
+    },
+    "park_id": {
+      "type": "string",
+      "pattern": "^[A-Z]{2,3}$",
+      "description": "MLB team abbreviation as used in pitches.park_id (V003__pitches.sql). 2-3 chars, uppercase."
+    },
+    "name": { "type": "string", "minLength": 3 },
+    "altitude_m": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 2000,
+      "description": "Field-level elevation above sea level. Drives air density; should match parks.py altitude entry."
+    },
+    "default_atmosphere": {
+      "type": "object",
+      "required": ["temp_c", "pressure_hpa", "humidity_pct"],
+      "additionalProperties": false,
+      "properties": {
+        "temp_c": { "type": "number", "minimum": -10, "maximum": 45 },
+        "pressure_hpa": {
+          "type": ["number", "null"],
+          "description": "Sea-level-equivalent pressure in hPa; null means 'let the ISA model derive from altitude_m' (the usual case for an annual default)."
+        },
+        "humidity_pct": { "type": "number", "minimum": 0, "maximum": 100 }
+      },
+      "description": "Defaults used when weather_observed has no row for the game. Per-game weather is wired in 2c.4."
+    },
+    "centerline_bearing_deg": {
+      "type": "number",
+      "minimum": 0,
+      "exclusiveMaximum": 360,
+      "description": "Bearing of the field's CF axis from true north. 0 = home-plate-to-CF points due north; 90 = east. Used to project wind into the stadium's xyz frame."
+    },
+    "fence_polyline": {
+      "type": "array",
+      "minItems": 3,
+      "description": "Fence definition as (angle, distance, height) points from LF foul pole (-45) toward RF foul pole (+45). Angles in the simulator's convention: + = toward 3B (LF), - = toward 1B (RF). Distances + heights in feet (the published park-dimensions standard).",
+      "items": {
+        "type": "object",
+        "required": ["angle_from_centerline_deg", "distance_ft", "height_ft"],
+        "additionalProperties": false,
+        "properties": {
+          "angle_from_centerline_deg": {
+            "type": "number",
+            "minimum": -50,
+            "maximum": 50,
+            "description": "Spray angle vs CF axis. + = toward 3B (LF), - = toward 1B (RF). MLB foul lines are at +/- 45."
+          },
+          "distance_ft": { "type": "number", "minimum": 250, "maximum": 510 },
+          "height_ft": { "type": "number", "minimum": 0, "maximum": 60 }
+        }
+      }
+    },
+    "behind_fence_stand_height_ft": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 200,
+      "description": "Average stand/structure height immediately behind the fence; reserved for v1.5 deflection modelling, unused by the v1 classifier."
+    },
+    "foul_territory_sqft": {
+      "type": "number",
+      "minimum": 10000,
+      "maximum": 50000,
+      "description": "Total foul-territory square footage (publicly reported per park). Reserved for v1.5 foul-out modelling."
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "park_id": "SD",
+  "name": "Petco Park",
+  "altitude_m": 17.0,
+  "default_atmosphere": {
+    "temp_c": 20.0,
+    "pressure_hpa": null,
+    "humidity_pct": 50.0
+  },
+  "centerline_bearing_deg": 25.0,
+  "fence_polyline": [
+    {
+      "angle_from_centerline_deg": -45.0,
+      "distance_ft": 322,
+      "height_ft": 11
+    },
+    {
+      "angle_from_centerline_deg": -22.5,
+      "distance_ft": 391,
+      "height_ft": 11
+    },
+    {
+      "angle_from_centerline_deg": 0.0,
+      "distance_ft": 396,
+      "height_ft": 11
+    },
+    {
+      "angle_from_centerline_deg": 22.5,
+      "distance_ft": 391,
+      "height_ft": 11
+    },
+    {
+      "angle_from_centerline_deg": 45.0,
+      "distance_ft": 336,
+      "height_ft": 11
+    }
+  ],
+  "behind_fence_stand_height_ft": 25.0,
+  "foul_territory_sqft": 24000
+}

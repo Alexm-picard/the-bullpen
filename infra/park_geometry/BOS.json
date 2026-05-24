@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "park_id": "BOS",
+  "name": "Fenway Park",
+  "altitude_m": 6.0,
+  "default_atmosphere": {
+    "temp_c": 20.0,
+    "pressure_hpa": null,
+    "humidity_pct": 50.0
+  },
+  "centerline_bearing_deg": 45.0,
+  "fence_polyline": [
+    {
+      "angle_from_centerline_deg": -45.0,
+      "distance_ft": 302,
+      "height_ft": 5
+    },
+    {
+      "angle_from_centerline_deg": -22.5,
+      "distance_ft": 380,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 0.0,
+      "distance_ft": 390,
+      "height_ft": 17
+    },
+    {
+      "angle_from_centerline_deg": 10.0,
+      "distance_ft": 420.0,
+      "height_ft": 17.0
+    },
+    {
+      "angle_from_centerline_deg": 22.5,
+      "distance_ft": 379,
+      "height_ft": 37
+    },
+    {
+      "angle_from_centerline_deg": 45.0,
+      "distance_ft": 310,
+      "height_ft": 37
+    }
+  ],
+  "behind_fence_stand_height_ft": 25.0,
+  "foul_territory_sqft": 20000
+}

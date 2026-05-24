@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "park_id": "COL",
+  "name": "Coors Field",
+  "altitude_m": 1580.0,
+  "default_atmosphere": {
+    "temp_c": 20.0,
+    "pressure_hpa": null,
+    "humidity_pct": 50.0
+  },
+  "centerline_bearing_deg": 0.0,
+  "fence_polyline": [
+    {
+      "angle_from_centerline_deg": -45.0,
+      "distance_ft": 350,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": -22.5,
+      "distance_ft": 375,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 0.0,
+      "distance_ft": 415,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 22.5,
+      "distance_ft": 390,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 45.0,
+      "distance_ft": 347,
+      "height_ft": 8.0
+    }
+  ],
+  "behind_fence_stand_height_ft": 25.0,
+  "foul_territory_sqft": 24000
+}

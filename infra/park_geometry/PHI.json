@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "park_id": "PHI",
+  "name": "Citizens Bank Park",
+  "altitude_m": 5.0,
+  "default_atmosphere": {
+    "temp_c": 20.0,
+    "pressure_hpa": null,
+    "humidity_pct": 50.0
+  },
+  "centerline_bearing_deg": 15.0,
+  "fence_polyline": [
+    {
+      "angle_from_centerline_deg": -45.0,
+      "distance_ft": 330,
+      "height_ft": 12.5
+    },
+    {
+      "angle_from_centerline_deg": -22.5,
+      "distance_ft": 369,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 0.0,
+      "distance_ft": 401,
+      "height_ft": 6
+    },
+    {
+      "angle_from_centerline_deg": 22.5,
+      "distance_ft": 374,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 45.0,
+      "distance_ft": 329,
+      "height_ft": 12.5
+    }
+  ],
+  "behind_fence_stand_height_ft": 25.0,
+  "foul_territory_sqft": 23000
+}
