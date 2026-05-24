@@ -17,6 +17,7 @@ dependencies = [
     "clickhouse-driver>=0.2.10",
     "click>=8.4.1",
     "onnxmltools>=1.16.0",
+    "numba>=0.65.1",
 ]
 
 [dependency-groups]

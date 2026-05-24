@@ -3,7 +3,7 @@
   "_doc": "Single source of truth for phase progress. Hand-edited as work completes. /status reads this. Bump fields honestly — surgical cuts come from honest tracking.",
   "current_phase": "2",
   "weekly_hours_target": 13,
-  "last_updated": "2026-05-24T01:55Z",
+  "last_updated": "2026-05-24T18:00Z",
   "phases": [
     {
       "id": "0",
@@ -164,7 +164,7 @@
       "started_on": "2026-05-23",
       "completed_on": null,
       "exit_criterion": "Three models registered, all with eval artifacts, all served via Spring, all with passing leakage tests in CI. ECE < 0.02 on test data per model.",
-      "current_leaf": "**Phase 2b complete (3/3 leaves).** 2b.1 added Tier 4 features (V008/V009/V010 cascade; folds 3+4 rebuilt with all 4 tiers). 2b.2 trained `pitch_outcome_post/v1` end-to-end in 49:23 wall on Mac dev — per-fold Brier vs pre-head: fold 1 0.14788 / fold 2 0.14778 (match — no Tier 4 pre-2024), **fold 3 0.10386 (−29.8 %) / fold 4 0.10384 (−29.7 %)**. CV summary ECE 0.0037 ± 0.0022 (target <0.02 on every fold). The earlier `fold 3+4 hang` was just LightGBM's bare `print()` block-buffering under `tee` — one-line fix `lgb.register_logger(...)` routes through stderr's per-record-flush StreamHandler. 2b.3 wired both heads behind a single `POST /v1/predict/pitch?head=pre|post` endpoint: new `contracts/feature_pipeline_post.json` (schema_hash fb2e6604…), Java `FeaturePipelinePitchPost` mirror, dual-head `PitchInferenceService` (post head optional at startup so toy/pre-only tests stay green), `Head` enum + cross-field Tier 4 validation in the controller, `ResponseStatusException` handler so 400/503 use the canonical error envelope, frontend `predictPitch(req, { head })`. **Risk Register G1 closed end-to-end for both heads** (10 parity fixtures pass at 1e-6 in both Java and Python). **132 Python + 45 Java tests, 0 failures, 0 ruff/pyright errors, Spotless clean.** Next: Phase 2c (batted-ball with physics retrodiction — Nathan drag/Magnus ODE + multi-output MLP with shared backbone + 30 per-park heads).",
+      "current_leaf": "**Phase 2c.1 complete — physics simulator landed.** Built `bullpen_training.battedball.physics` (5 source files): `_constants.py` (Nathan 2008 5-point CD table + lift coefficient + ISA + ball params), `atmosphere.py` (moist-air ideal-gas density via Buck 1981 + ISA pressure model), `equations.py` (vectorised pure-NumPy reference for drag + Magnus + total accel — the readable, fully-tested implementation), `integrator.py` (RK4 stepper agnostic to forces), `simulator.py` (public `LaunchParams` / `Trajectory` / `simulate` / `simulate_batch` API, mph/deg/rpm-native at the boundary, SI internally, landing detected by z sign-change + linearly back-interpolated for exact distance/hang_time). Pure-NumPy hit ~53 ms/traj single / ~3K traj/s batch — far below the leaf targets (<1 ms / >=10K). Added `numba` dep and `_jit.py` with `_accel_scalar` (scalar inline of total_acceleration), `_cd_interp` (hardcoded branches over the 5-point CD table — much faster than `np.interp` inside the JIT), `_integrate_into` (RK4 written into a pre-allocated buffer — no per-trajectory allocation), `integrate_single` (wraps it with fresh buffer alloc), `integrate_batch` (parallel `prange` over the shared `(N, n_steps_max+1, 6)` buffer). Steady-state on Mac M-series: **0.32 ms/traj single, >10K traj/s batch (best-of-5, N=2000)** — both leaf targets met. `test_jit_parity.py` pins the JIT scalar accel to the Python `total_acceleration` reference at 1e-9 across 6 hand-curated launches + 200 random parameter draws, plus `_cd_interp` vs `np.interp` on the full 5-65 m/s speed sweep. **All 33 physics tests pass; 165 training tests pass; pyright + ruff clean.** Next: 2c.2 physics validation (reproduce 100 known Statcast trajectories within tolerance — the leaf that determines whether the simulator is accurate enough for retrodiction labels in 2c.4).",
       "sub_phases": [
         {
           "id": "2a",
@@ -223,7 +223,8 @@
         },
         {
           "label": "Physics simulator (Nathan drag/Magnus ODE, RK4)",
-          "done": false
+          "done": true,
+          "details": "Leaf 2c.1 complete 2026-05-24. `bullpen_training.battedball.physics` — pure-NumPy reference (`equations.py` + `integrator.py`) for readability + tests; Numba JIT (`_jit.py`) for the hot loop (single-trajectory 0.32 ms, batch >10K/sec on Mac M-series via `prange`). 33 tests pass including vacuum within 1e-3 of analytical projectile, HR sanity range, Coors-vs-sea-level carry delta, single↔batch equivalence within 0.5 m, and Python↔JIT scalar parity at 1e-9 (200 random + 6 curated launches). pyright + ruff clean."
         },
         {
           "label": "Physics validation: reproduce 100 known Statcast trajectories within tolerance",
