@@ -7,8 +7,10 @@ import ai.onnxruntime.OrtSession;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,15 +20,24 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 /**
- * Production pre-pitch inference bean (Phase 2a.8).
+ * Production pitch-outcome inference bean (Phase 2a.8 + 2b.3).
  *
- * <p>Wires the multinomial LightGBM ONNX session, the per-class isotonic calibrator, and the
- * production feature pipeline (Tier 1+2+3). One instance per JVM — the ONNX session is reused
- * across requests. Profile-gated to {@code api} so the worker JVM doesn't pay the model-load cost.
+ * <p>Wires both heads of the pitch model behind a single Spring component (decision [35]: two
+ * registered models, one endpoint that dispatches by {@code ?head=}):
+ *
+ * <ul>
+ *   <li>{@link Head#PRE} — pre-pitch, 31 features (Tier 1+2+3); always loaded.
+ *   <li>{@link Head#POST} — post-pitch, 41 features (Tier 1+2+3+4); loaded only if its artifact
+ *       directory exists, otherwise {@code head=post} requests get a clear runtime error and
+ *       toy-only test runs stay green.
+ * </ul>
+ *
+ * <p>One instance per JVM, ONNX sessions reused across requests. Profile-gated to {@code api} so
+ * the worker JVM doesn't pay the model-load cost.
  *
  * <p>Calibration happens in Java post-ONNX (decision [38]) — Python writes the breakpoints to
- * {@code calibrator.json}; Java applies them with double-precision arithmetic so the parity test
- * passes at 1e-6.
+ * {@code calibrator.json}; Java applies them with double-precision arithmetic so the parity tests
+ * pass at 1e-6 against each head's fixture.
  */
 @Component
 @Profile("api")
@@ -38,96 +49,164 @@ public class PitchInferenceService {
 
   public static final String MODEL_NAME = "pitch_outcome_pre";
   public static final String MODEL_VERSION = "v1";
+  public static final String POST_MODEL_NAME = "pitch_outcome_post";
+  public static final String POST_MODEL_VERSION = "v1";
+
   private static final String ONNX_INPUT_NAME = "input";
   private static final int WARMUP_ROUNDS = 3;
 
-  private final Path artifactsDir;
-  private final Path contractPath;
+  private final Path preArtifactsDir;
+  private final Path prePipelineContractPath;
+  private final Path postArtifactsDir;
+  private final Path postPipelineContractPath;
+
   private OrtEnvironment env;
-  private OrtSession session;
-  private FeaturePipelinePitchPre pipeline;
-  private IsotonicCalibratorJava calibrator;
+  // Pre head — always loaded (the bean's @ConditionalOnExpression guarantees the artifact exists).
+  private OrtSession preSession;
+  private FeaturePipelinePitchPre prePipeline;
+  private IsotonicCalibratorJava preCalibrator;
+  // Post head — loaded iff the artifact dir exists at startup. Null otherwise.
+  private OrtSession postSession;
+  private FeaturePipelinePitchPost postPipeline;
+  private IsotonicCalibratorJava postCalibrator;
 
   public PitchInferenceService(
       @Value("${bullpen.inference.pitch.artifacts-dir:../training/artifacts/pitch_outcome_pre/v1}")
-          String artifactsDir,
+          String preArtifactsDir,
       @Value("${bullpen.inference.contract-path:../contracts/feature_pipeline.json}")
-          String contractPath) {
-    this.artifactsDir = Path.of(artifactsDir).toAbsolutePath().normalize();
-    this.contractPath = Path.of(contractPath).toAbsolutePath().normalize();
+          String prePipelineContractPath,
+      @Value(
+              "${bullpen.inference.pitch-post.artifacts-dir:../training/artifacts/pitch_outcome_post/v1}")
+          String postArtifactsDir,
+      @Value(
+              "${bullpen.inference.pitch-post.contract-path:../contracts/feature_pipeline_post.json}")
+          String postPipelineContractPath) {
+    this.preArtifactsDir = Path.of(preArtifactsDir).toAbsolutePath().normalize();
+    this.prePipelineContractPath = Path.of(prePipelineContractPath).toAbsolutePath().normalize();
+    this.postArtifactsDir = Path.of(postArtifactsDir).toAbsolutePath().normalize();
+    this.postPipelineContractPath = Path.of(postPipelineContractPath).toAbsolutePath().normalize();
   }
 
   @PostConstruct
   public void init() throws IOException, OrtException {
-    Path onnxPath = artifactsDir.resolve("model.onnx");
-    Path calibratorPath = artifactsDir.resolve("calibrator.json");
-    if (!onnxPath.toFile().exists()) {
-      throw new IOException(
-          "pitch ONNX model not found at "
-              + onnxPath
-              + " — run `uv run python -m bullpen_training.pitch.production "
-              + "--model lightgbm --version v1` then "
-              + "`uv run python -m bullpen_training.pitch.export_pre_onnx` first");
-    }
-    if (!contractPath.toFile().exists()) {
-      throw new IOException("feature pipeline contract not found at " + contractPath);
-    }
-
-    this.pipeline = FeaturePipelinePitchPre.load(contractPath, artifactsDir);
-    this.calibrator = IsotonicCalibratorJava.load(calibratorPath);
     this.env = OrtEnvironment.getEnvironment();
-    this.session = env.createSession(onnxPath.toString(), new OrtSession.SessionOptions());
 
-    warmup();
+    // Pre head — required (bean condition already proved model.onnx exists).
+    Path preOnnxPath = preArtifactsDir.resolve("model.onnx");
+    Path preCalibratorPath = preArtifactsDir.resolve("calibrator.json");
+    if (!prePipelineContractPath.toFile().exists()) {
+      throw new IOException("pre pipeline contract not found at " + prePipelineContractPath);
+    }
+    this.prePipeline = FeaturePipelinePitchPre.load(prePipelineContractPath, preArtifactsDir);
+    this.preCalibrator = IsotonicCalibratorJava.load(preCalibratorPath);
+    this.preSession = env.createSession(preOnnxPath.toString(), new OrtSession.SessionOptions());
+    warmupPre();
     log.info(
-        "PitchInferenceService ready model={} version={} features={} classes={} schema_hash={}",
+        "PitchInferenceService pre head ready model={} version={} features={} classes={} schema_hash={}",
         MODEL_NAME,
         MODEL_VERSION,
-        pipeline.spec().featureOrder().size(),
-        pipeline.spec().classLabels(),
-        pipeline.spec().schemaHash());
+        prePipeline.spec().featureOrder().size(),
+        prePipeline.spec().classLabels(),
+        prePipeline.spec().schemaHash());
+
+    // Post head — optional. Load iff the artifact + contract both exist. Don't fail startup if
+    // the post bundle hasn't been trained yet — that's a Phase-2b.2 deliverable that can lag the
+    // Spring rollout, and toy + pre-only tests still need to boot.
+    Path postOnnxPath = postArtifactsDir.resolve("model.onnx");
+    Path postCalibratorPath = postArtifactsDir.resolve("calibrator.json");
+    if (Files.exists(postOnnxPath) && Files.exists(postPipelineContractPath)) {
+      this.postPipeline = FeaturePipelinePitchPost.load(postPipelineContractPath, postArtifactsDir);
+      this.postCalibrator = IsotonicCalibratorJava.load(postCalibratorPath);
+      this.postSession =
+          env.createSession(postOnnxPath.toString(), new OrtSession.SessionOptions());
+      warmupPost();
+      log.info(
+          "PitchInferenceService post head ready model={} version={} features={} classes={} schema_hash={}",
+          POST_MODEL_NAME,
+          POST_MODEL_VERSION,
+          postPipeline.spec().featureOrder().size(),
+          postPipeline.spec().classLabels(),
+          postPipeline.spec().schemaHash());
+    } else {
+      log.info(
+          "PitchInferenceService post head not loaded (model.onnx or contract missing) — "
+              + "post requests will fail until {} is populated",
+          postArtifactsDir);
+    }
   }
 
-  /**
-   * Run a handful of trivial requests through the full pipeline so the JIT, the ONNX session, and
-   * the calibrator are hot before the first user request. Documented in Phase 1.5 — paid for once
-   * at startup so the 100ms p95 SLO holds from request #1.
-   */
-  private void warmup() throws OrtException {
+  private void warmupPre() throws OrtException {
     FeaturePipelinePitchPre.Request dummy =
         new FeaturePipelinePitchPre.Request(
             0, 0, 0, 1, 0, 0, 0, "R", "R", "UNK", 0L, 0L, null, null, null, null, null, null, null,
             null, null, null, null);
     for (int i = 0; i < WARMUP_ROUNDS; i++) {
-      predict(dummy);
+      predictPre(dummy);
+    }
+  }
+
+  private void warmupPost() throws OrtException {
+    FeaturePipelinePitchPost.Request dummy =
+        new FeaturePipelinePitchPost.Request(
+            0, 0, 0, 1, 0, 0, 0, "R", "R", "UNK", 0L, 0L, null, null, null, null, null, null, null,
+            null, null, null, null, "FF", 92.0, 0.0, 2.5, 0.0, 0.0, 2200.0, 180.0, -1.5, 5.8);
+    for (int i = 0; i < WARMUP_ROUNDS; i++) {
+      predictPost(dummy);
     }
   }
 
   @PreDestroy
   public void close() throws OrtException {
-    if (session != null) {
-      session.close();
-    }
+    if (preSession != null) preSession.close();
+    if (postSession != null) postSession.close();
     // Do NOT close env — it's a process-wide singleton owned by ORT.
   }
 
-  /** Predict calibrated 5-class distribution for one request. Thread-safe. */
+  /** True iff the post head was loaded at startup. Lets the controller short-circuit cleanly. */
+  public boolean isPostHeadAvailable() {
+    return postSession != null;
+  }
+
+  /** Predict calibrated 5-class distribution for the pre head. Thread-safe. */
+  public Map<String, Double> predictPre(FeaturePipelinePitchPre.Request req) throws OrtException {
+    float[] vector = prePipeline.transform(req);
+    float[] rawProbs = runOnnx(preSession, vector);
+    return calibrateAndPack(rawProbs, preCalibrator, prePipeline.spec().classLabels());
+  }
+
+  /** Predict calibrated 5-class distribution for the post head. Thread-safe. */
+  public Map<String, Double> predictPost(FeaturePipelinePitchPost.Request req) throws OrtException {
+    if (postSession == null) {
+      throw new IllegalStateException(
+          "post head not loaded — train + persist pitch_outcome_post/v1 first "
+              + "(`uv run python -m bullpen_training.pitch.production --model post --version v1`)");
+    }
+    float[] vector = postPipeline.transform(req);
+    float[] rawProbs = runOnnx(postSession, vector);
+    return calibrateAndPack(rawProbs, postCalibrator, postPipeline.spec().classLabels());
+  }
+
+  /**
+   * Back-compat shim for the 2a.8-era call signature: defaults to the pre head. New code should
+   * call {@link #predictPre(FeaturePipelinePitchPre.Request)} explicitly.
+   */
   public Map<String, Double> predict(FeaturePipelinePitchPre.Request req) throws OrtException {
-    float[] vector = pipeline.transform(req);
-    float[] rawProbs = runOnnx(vector);
+    return predictPre(req);
+  }
+
+  private Map<String, Double> calibrateAndPack(
+      float[] rawProbs, IsotonicCalibratorJava calibrator, List<String> labels) {
     double[] asDouble = new double[rawProbs.length];
     for (int i = 0; i < rawProbs.length; i++) asDouble[i] = rawProbs[i];
     double[][] calibrated = calibrator.transform(new double[][] {asDouble});
-
     Map<String, Double> out = new LinkedHashMap<>();
-    java.util.List<String> labels = pipeline.spec().classLabels();
     for (int c = 0; c < labels.size(); c++) {
       out.put(labels.get(c), calibrated[0][c]);
     }
     return out;
   }
 
-  private float[] runOnnx(float[] features) throws OrtException {
+  private float[] runOnnx(OrtSession session, float[] features) throws OrtException {
     try (OnnxTensor tensor = OnnxTensor.createTensor(env, new float[][] {features});
         OrtSession.Result result = session.run(Map.of(ONNX_INPUT_NAME, tensor))) {
       int size = result.size();
@@ -135,7 +214,6 @@ public class PitchInferenceService {
         throw new IllegalStateException("ONNX session returned no outputs");
       }
       // zipmap=False multi-class outputs: [label tensor, probability tensor (N, K)].
-      // Single-output graphs (defensive fallback for older converters) use index 0.
       Object probObj = (size == 1 ? result.get(0) : result.get(1)).getValue();
       float[][] probs = (float[][]) probObj;
       return probs[0];
@@ -143,10 +221,17 @@ public class PitchInferenceService {
   }
 
   public FeaturePipelinePitchPre.Spec pipelineSpec() {
-    return pipeline.spec();
+    return prePipeline.spec();
   }
 
-  public java.util.List<String> classLabels() {
-    return pipeline.spec().classLabels();
+  public FeaturePipelinePitchPost.Spec postPipelineSpec() {
+    if (postPipeline == null) {
+      throw new IllegalStateException("post head not loaded");
+    }
+    return postPipeline.spec();
+  }
+
+  public List<String> classLabels() {
+    return prePipeline.spec().classLabels();
   }
 }

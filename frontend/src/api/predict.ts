@@ -72,6 +72,8 @@ export const PITCH_OUTCOME_CLASSES = [
 ] as const;
 export type PitchOutcomeClass = (typeof PITCH_OUTCOME_CLASSES)[number];
 
+export type PitchHead = "pre" | "post";
+
 export type PitchRequest = {
   countBalls: number;
   countStrikes: number;
@@ -97,6 +99,18 @@ export type PitchRequest = {
   batterInplayRate28d?: number | null;
   batterBallRate28d?: number | null;
   batterInplayRateStd?: number | null;
+  // Tier 4 (post-pitch) — required when head='post'; ignored when head='pre'.
+  // The server enforces the cross-field rule and returns 400 if any are missing for head=post.
+  pitchType?: string | null;
+  releaseSpeedMph?: number | null;
+  plateXIn?: number | null;
+  plateZIn?: number | null;
+  pfxXIn?: number | null;
+  pfxZIn?: number | null;
+  spinRateRpm?: number | null;
+  spinAxisDeg?: number | null;
+  releasePosXIn?: number | null;
+  releasePosZIn?: number | null;
 };
 
 export type PitchPredictionResponse = {
@@ -110,8 +124,10 @@ export type PitchPredictionResponse = {
 
 export async function predictPitch(
   req: PitchRequest,
+  opts: { head?: PitchHead } = {},
 ): Promise<PitchPredictionResponse> {
-  const res = await fetch(`${API_BASE}/v1/predict/pitch`, {
+  const head = opts.head ?? "pre";
+  const res = await fetch(`${API_BASE}/v1/predict/pitch?head=${head}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
@@ -124,9 +140,9 @@ export async function predictPitch(
   return (await res.json()) as PitchPredictionResponse;
 }
 
-export function usePredictPitch() {
+export function usePredictPitch(opts: { head?: PitchHead } = {}) {
   return useMutation<PitchPredictionResponse, Error, PitchRequest>({
-    mutationFn: predictPitch,
+    mutationFn: (req) => predictPitch(req, opts),
   });
 }
 

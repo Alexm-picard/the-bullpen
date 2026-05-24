@@ -226,6 +226,9 @@ def main(
         hyperparams=hyperparams,
         fold_id=prod_fold.fold_id,
         park_id_mapping=loader.park_id_mapping,
+        # Post head has a second lookup (pitch_type_int); pre + LR loaders don't
+        # expose this attribute, so getattr-with-None keeps the call uniform.
+        pitch_type_mapping=getattr(loader, "pitch_type_mapping", None),
     )
 
     if model in ("lightgbm", "post"):

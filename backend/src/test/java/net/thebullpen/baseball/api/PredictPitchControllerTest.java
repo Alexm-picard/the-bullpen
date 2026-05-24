@@ -175,4 +175,86 @@ class PredictPitchControllerTest {
         .andExpect(status().isUnsupportedMediaType())
         .andExpect(jsonPath("$.error.code").value("unsupported_media_type"));
   }
+
+  // -- Phase 2b.3: ?head=post dispatch paths ----------------------------------
+
+  /** Adds the 10 Tier 4 fields to a base request so it can dispatch to the post head. */
+  private static Map<String, Object> validRequestWithTier4() {
+    Map<String, Object> body = validRequest();
+    body.put("pitchType", "FF");
+    body.put("releaseSpeedMph", 94.5);
+    body.put("plateXIn", 0.05);
+    body.put("plateZIn", 2.45);
+    body.put("pfxXIn", -0.55);
+    body.put("pfxZIn", 1.45);
+    body.put("spinRateRpm", 2380.0);
+    body.put("spinAxisDeg", 220.0);
+    body.put("releasePosXIn", -1.85);
+    body.put("releasePosZIn", 5.85);
+    return body;
+  }
+
+  @Test
+  void postHeadWithoutTier4_returns400() throws Exception {
+    // Base request (Tier 1+2+3 only) is valid for head=pre but missing all 10 Tier 4 fields.
+    String body = MAPPER.writeValueAsString(validRequest());
+    mvc()
+        .perform(
+            post("/v1/predict/pitch?head=post")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value(equalTo("bad_request")))
+        .andExpect(jsonPath("$.error.message").value(notNullValue()));
+  }
+
+  @Test
+  void unknownHeadValue_returns400() throws Exception {
+    String body = MAPPER.writeValueAsString(validRequest());
+    mvc()
+        .perform(
+            post("/v1/predict/pitch?head=middle")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value(equalTo("bad_request")));
+  }
+
+  @Test
+  void postHeadHappyPath_returnsCalibratedDistributionOrServiceUnavailable() throws Exception {
+    // Two valid end states depending on whether pitch_outcome_post/v1 has been trained on this
+    // dev box: 200 (post model loaded) or 503 (post artifact missing —
+    // error.code=service_unavailable).
+    // Both are correct behaviour; the test asserts at least one of them.
+    String body = MAPPER.writeValueAsString(validRequestWithTier4());
+    var result =
+        mvc()
+            .perform(
+                post("/v1/predict/pitch?head=post")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(body))
+            .andReturn();
+    int status = result.getResponse().getStatus();
+    String json = result.getResponse().getContentAsString();
+    if (status == 200) {
+      com.fasterxml.jackson.databind.JsonNode root = MAPPER.readTree(json);
+      org.junit.jupiter.api.Assertions.assertEquals(
+          "pitch_outcome_post", root.get("modelName").asText());
+      org.junit.jupiter.api.Assertions.assertEquals("v1", root.get("modelVersion").asText());
+      double sum = 0.0;
+      for (String cls :
+          new String[] {"ball", "called_strike", "swinging_strike", "foul", "in_play"}) {
+        sum += root.get("probabilities").get(cls).asDouble();
+      }
+      org.junit.jupiter.api.Assertions.assertEquals(
+          1.0, sum, 1e-5, "post calibrated probs must sum to 1");
+    } else if (status == 503) {
+      com.fasterxml.jackson.databind.JsonNode root = MAPPER.readTree(json);
+      org.junit.jupiter.api.Assertions.assertEquals(
+          "service_unavailable", root.get("error").get("code").asText());
+    } else {
+      org.junit.jupiter.api.Assertions.fail(
+          "post head returned unexpected status " + status + " body=" + json);
+    }
+  }
 }

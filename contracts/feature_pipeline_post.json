@@ -1,0 +1,280 @@
+{
+  "model_name": "pitch_outcome_post",
+  "phase": "2b",
+  "feature_order": [
+    "count_balls",
+    "count_strikes",
+    "outs",
+    "inning",
+    "base_state",
+    "score_diff",
+    "dow",
+    "pitcher_throws_int",
+    "batter_stand_int",
+    "park_id_int",
+    "pitcher_te_ball",
+    "pitcher_te_called_strike",
+    "pitcher_te_swinging_strike",
+    "pitcher_te_foul",
+    "pitcher_te_in_play",
+    "batter_te_ball",
+    "batter_te_called_strike",
+    "batter_te_swinging_strike",
+    "batter_te_foul",
+    "batter_te_in_play",
+    "pitcher_pitches_last_28d",
+    "pitcher_pitches_in_game",
+    "days_since_last_appearance",
+    "pitcher_strike_rate_28d",
+    "pitcher_swstrike_rate_28d",
+    "pitcher_inplay_rate_28d",
+    "pitcher_strike_rate_std",
+    "batter_strike_rate_28d",
+    "batter_inplay_rate_28d",
+    "batter_ball_rate_28d",
+    "batter_inplay_rate_std",
+    "pitch_type_int",
+    "release_speed_mph",
+    "plate_x_in",
+    "plate_z_in",
+    "pfx_x_in",
+    "pfx_z_in",
+    "spin_rate_rpm",
+    "spin_axis_deg",
+    "release_pos_x_in",
+    "release_pos_z_in"
+  ],
+  "input_dtype": "float32",
+  "preprocess": {
+    "count_balls": {
+      "type": "passthrough",
+      "source_column": "count_balls"
+    },
+    "count_strikes": {
+      "type": "passthrough",
+      "source_column": "count_strikes"
+    },
+    "outs": {
+      "type": "passthrough",
+      "source_column": "outs"
+    },
+    "inning": {
+      "type": "passthrough",
+      "source_column": "inning"
+    },
+    "base_state": {
+      "type": "passthrough",
+      "source_column": "base_state"
+    },
+    "score_diff": {
+      "type": "passthrough",
+      "source_column": "score_diff"
+    },
+    "dow": {
+      "type": "passthrough",
+      "source_column": "dow"
+    },
+    "pitcher_throws_int": {
+      "type": "categorical_map",
+      "source_column": "pitcher_throws",
+      "mapping": {
+        "L": 0,
+        "R": 1
+      },
+      "missing_value": 1
+    },
+    "batter_stand_int": {
+      "type": "categorical_map",
+      "source_column": "batter_stand",
+      "mapping": {
+        "L": 0,
+        "R": 1
+      },
+      "missing_value": 1
+    },
+    "park_id_int": {
+      "type": "categorical_lookup",
+      "source_column": "park_id",
+      "lookup_path": "park_id_mapping.json",
+      "missing_value": -1
+    },
+    "pitcher_te_ball": {
+      "type": "te_lookup",
+      "source_column": "pitcher_id",
+      "lookup_path": "pitcher_te.json",
+      "te_class": "ball",
+      "missing_strategy": "prior"
+    },
+    "pitcher_te_called_strike": {
+      "type": "te_lookup",
+      "source_column": "pitcher_id",
+      "lookup_path": "pitcher_te.json",
+      "te_class": "called_strike",
+      "missing_strategy": "prior"
+    },
+    "pitcher_te_swinging_strike": {
+      "type": "te_lookup",
+      "source_column": "pitcher_id",
+      "lookup_path": "pitcher_te.json",
+      "te_class": "swinging_strike",
+      "missing_strategy": "prior"
+    },
+    "pitcher_te_foul": {
+      "type": "te_lookup",
+      "source_column": "pitcher_id",
+      "lookup_path": "pitcher_te.json",
+      "te_class": "foul",
+      "missing_strategy": "prior"
+    },
+    "pitcher_te_in_play": {
+      "type": "te_lookup",
+      "source_column": "pitcher_id",
+      "lookup_path": "pitcher_te.json",
+      "te_class": "in_play",
+      "missing_strategy": "prior"
+    },
+    "batter_te_ball": {
+      "type": "te_lookup",
+      "source_column": "batter_id",
+      "lookup_path": "batter_te.json",
+      "te_class": "ball",
+      "missing_strategy": "prior"
+    },
+    "batter_te_called_strike": {
+      "type": "te_lookup",
+      "source_column": "batter_id",
+      "lookup_path": "batter_te.json",
+      "te_class": "called_strike",
+      "missing_strategy": "prior"
+    },
+    "batter_te_swinging_strike": {
+      "type": "te_lookup",
+      "source_column": "batter_id",
+      "lookup_path": "batter_te.json",
+      "te_class": "swinging_strike",
+      "missing_strategy": "prior"
+    },
+    "batter_te_foul": {
+      "type": "te_lookup",
+      "source_column": "batter_id",
+      "lookup_path": "batter_te.json",
+      "te_class": "foul",
+      "missing_strategy": "prior"
+    },
+    "batter_te_in_play": {
+      "type": "te_lookup",
+      "source_column": "batter_id",
+      "lookup_path": "batter_te.json",
+      "te_class": "in_play",
+      "missing_strategy": "prior"
+    },
+    "pitcher_pitches_last_28d": {
+      "type": "passthrough_nullable",
+      "source_column": "pitcher_pitches_last_28d"
+    },
+    "pitcher_pitches_in_game": {
+      "type": "passthrough_nullable",
+      "source_column": "pitcher_pitches_in_game"
+    },
+    "days_since_last_appearance": {
+      "type": "passthrough_nullable",
+      "source_column": "days_since_last_appearance"
+    },
+    "pitcher_strike_rate_28d": {
+      "type": "passthrough_nullable",
+      "source_column": "pitcher_strike_rate_28d"
+    },
+    "pitcher_swstrike_rate_28d": {
+      "type": "passthrough_nullable",
+      "source_column": "pitcher_swstrike_rate_28d"
+    },
+    "pitcher_inplay_rate_28d": {
+      "type": "passthrough_nullable",
+      "source_column": "pitcher_inplay_rate_28d"
+    },
+    "pitcher_strike_rate_std": {
+      "type": "passthrough_nullable",
+      "source_column": "pitcher_strike_rate_std"
+    },
+    "batter_strike_rate_28d": {
+      "type": "passthrough_nullable",
+      "source_column": "batter_strike_rate_28d"
+    },
+    "batter_inplay_rate_28d": {
+      "type": "passthrough_nullable",
+      "source_column": "batter_inplay_rate_28d"
+    },
+    "batter_ball_rate_28d": {
+      "type": "passthrough_nullable",
+      "source_column": "batter_ball_rate_28d"
+    },
+    "batter_inplay_rate_std": {
+      "type": "passthrough_nullable",
+      "source_column": "batter_inplay_rate_std"
+    },
+    "pitch_type_int": {
+      "type": "categorical_lookup",
+      "source_column": "pitch_type",
+      "lookup_path": "pitch_type_mapping.json",
+      "missing_value": -1
+    },
+    "release_speed_mph": {
+      "type": "passthrough_nullable",
+      "source_column": "release_speed_mph"
+    },
+    "plate_x_in": {
+      "type": "passthrough_nullable",
+      "source_column": "plate_x_in"
+    },
+    "plate_z_in": {
+      "type": "passthrough_nullable",
+      "source_column": "plate_z_in"
+    },
+    "pfx_x_in": {
+      "type": "passthrough_nullable",
+      "source_column": "pfx_x_in"
+    },
+    "pfx_z_in": {
+      "type": "passthrough_nullable",
+      "source_column": "pfx_z_in"
+    },
+    "spin_rate_rpm": {
+      "type": "passthrough_nullable",
+      "source_column": "spin_rate_rpm"
+    },
+    "spin_axis_deg": {
+      "type": "passthrough_nullable",
+      "source_column": "spin_axis_deg"
+    },
+    "release_pos_x_in": {
+      "type": "passthrough_nullable",
+      "source_column": "release_pos_x_in"
+    },
+    "release_pos_z_in": {
+      "type": "passthrough_nullable",
+      "source_column": "release_pos_z_in"
+    }
+  },
+  "output": {
+    "kind": "multiclass_probability",
+    "labels": [
+      "ball",
+      "called_strike",
+      "swinging_strike",
+      "foul",
+      "in_play"
+    ],
+    "onnx_output_index": 1,
+    "extract": "row_distribution",
+    "post_calibration": "isotonic_per_class"
+  },
+  "calibrator": {
+    "kind": "isotonic_per_class",
+    "lookup_path": "calibrator.json"
+  },
+  "onnx_opset": 15,
+  "pipeline_version": "1.0.0",
+  "description": "Canonical Python<->Java feature contract for the Phase 2b pitch_outcome_post model. 41 features: pre-pitch Tier 1+2+3 (31) + post-pitch Tier 4 (10: pitch_type_int, release_speed_mph, plate_x_in, plate_z_in, pfx_x_in, pfx_z_in, spin_rate_rpm, spin_axis_deg, release_pos_x_in, release_pos_z_in). Per-class isotonic calibration applied post-ONNX (Java) using calibrator.json. Tier 4 columns pre-2024 are NULL (pybaseball pre-V008 schema didn't capture them) \u2014 LightGBM handles NaN natively. Sister contract to feature_pipeline.json (pitch_outcome_pre).",
+  "notes": "The pre-commit hook protects feature_pipeline.json only; this sibling contract's schema_hash is verified at Java startup (FeaturePipelinePitchPost.load) and at registry registration (rule 7). Hand-edits must re-run the pre-commit hook's recompute snippet against this path.",
+  "schema_hash": "fb2e6604f716f6964c821df2594693ca1dbb7d4bd0ba950457dfd80d83645c24"
+}

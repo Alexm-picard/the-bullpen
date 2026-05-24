@@ -15,6 +15,7 @@ import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
@@ -79,6 +80,22 @@ public class ApiErrorAdvice {
   public ResponseEntity<ApiError> handleIllegalArgument(IllegalArgumentException ex) {
     ApiError body = ApiError.of("invalid_input", ex.getMessage(), correlationId());
     return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+  }
+
+  /**
+   * Map {@link ResponseStatusException} (thrown by controllers for non-validation client errors
+   * like "missing required field for this dispatch path" or "post head not loaded") through our
+   * envelope instead of Spring's default ProblemDetail. Status code is preserved; {@code
+   * error.code} is derived from the status reason. Added in 2b.3 for the {@code ?head=post}
+   * dispatch path.
+   */
+  @ExceptionHandler(ResponseStatusException.class)
+  public ResponseEntity<ApiError> handleResponseStatus(ResponseStatusException ex) {
+    HttpStatus status = HttpStatus.valueOf(ex.getStatusCode().value());
+    String code = status.name().toLowerCase().replace(' ', '_');
+    String message = ex.getReason() != null ? ex.getReason() : status.getReasonPhrase();
+    ApiError body = ApiError.of(code, message, correlationId());
+    return ResponseEntity.status(status).body(body);
   }
 
   @ExceptionHandler(Exception.class)

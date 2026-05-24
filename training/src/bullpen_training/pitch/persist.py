@@ -53,8 +53,22 @@ log = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 DEFAULT_ARTIFACTS_DIR = REPO_ROOT / "training" / "artifacts"
-CONTRACT_PATH = REPO_ROOT / "contracts" / "feature_pipeline.json"
+CONTRACTS_DIR = REPO_ROOT / "contracts"
+CONTRACT_PATH = CONTRACTS_DIR / "feature_pipeline.json"
 ENCODINGS_DIR = DEFAULT_ARTIFACTS_DIR / "encodings"
+
+# Per-model contract dispatch (2b.3). Models not listed here fall back to
+# the canonical pre-pitch contract — that covers pitch_outcome_pre and the
+# LR baseline (which shares Tier 1+2+3 with pre).
+_CONTRACT_BY_MODEL: dict[str, Path] = {
+    "pitch_outcome_pre": CONTRACTS_DIR / "feature_pipeline.json",
+    "pitch_outcome_lr_baseline": CONTRACTS_DIR / "feature_pipeline.json",
+    "pitch_outcome_post": CONTRACTS_DIR / "feature_pipeline_post.json",
+}
+
+
+def _contract_path_for(model_name: str) -> Path:
+    return _CONTRACT_BY_MODEL.get(model_name, CONTRACT_PATH)
 
 
 @dataclass(frozen=True)
@@ -72,6 +86,9 @@ class PersistInputs:
     park_id_mapping: dict[str, int] | None = None
     pitcher_te_path: Path | None = None
     batter_te_path: Path | None = None
+    # 2b.3 addition — post head also needs a pitch_type → int mapping. Only
+    # populated when model_name == 'pitch_outcome_post'.
+    pitch_type_mapping: dict[str, int] | None = None
 
 
 def _git_commit_sha() -> str:
@@ -115,7 +132,9 @@ def _write_metadata(
             "path": calibrator_path.name,
             "sha256": _sha256_of_path(calibrator_path),
         },
-        "feature_pipeline_hash": json.loads(CONTRACT_PATH.read_text())["schema_hash"],
+        "feature_pipeline_hash": json.loads(_contract_path_for(inputs.model_name).read_text())[
+            "schema_hash"
+        ],
         "git_commit": _git_commit_sha(),
         "trained_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "hyperparams": inputs.hyperparams,
@@ -141,8 +160,23 @@ def _write_metadata(
     return meta_path
 
 
-def _copy_feature_pipeline(out_dir: Path) -> None:
-    shutil.copyfile(CONTRACT_PATH, out_dir / "feature_pipeline.json")
+def _copy_feature_pipeline(out_dir: Path, model_name: str) -> None:
+    """Copy the per-model canonical contract to the bundle dir as
+    ``feature_pipeline.json``. Java's serving loader always reads from
+    ``<artifact_dir>/feature_pipeline.json``; the on-disk filename is
+    head-agnostic so the same loader code works for any model."""
+    shutil.copyfile(_contract_path_for(model_name), out_dir / "feature_pipeline.json")
+
+
+def _write_pitch_type_mapping(out_dir: Path, mapping: dict[str, int]) -> Path:
+    """Persist the loader's pitch_type → int mapping for Java consumption (post head only).
+
+    Same shape as park_id_mapping.json — sorted by key for byte-stability.
+    """
+    payload = {"pitch_type": dict(sorted(mapping.items())), "missing_value": -1}
+    path = out_dir / "pitch_type_mapping.json"
+    path.write_text(json.dumps(payload, indent=2, sort_keys=False) + "\n")
+    return path
 
 
 def _write_park_id_mapping(out_dir: Path, mapping: dict[str, int]) -> Path:
@@ -181,6 +215,8 @@ def _write_lookups_for_pipeline(out_dir: Path, inputs: PersistInputs) -> None:
     """
     if inputs.park_id_mapping is not None:
         _write_park_id_mapping(out_dir, inputs.park_id_mapping)
+    if inputs.pitch_type_mapping is not None:
+        _write_pitch_type_mapping(out_dir, inputs.pitch_type_mapping)
     pitcher_src = inputs.pitcher_te_path or (ENCODINGS_DIR / f"pitcher_fold{inputs.fold_id}.json")
     if pitcher_src.exists():
         _copy_te_lookup(pitcher_src, out_dir / "pitcher_te.json")
@@ -212,7 +248,7 @@ def persist_lightgbm_v1(
     cal_path = out_dir / "calibrator.json"
     bundle.calibrator.to_json(cal_path)
 
-    _copy_feature_pipeline(out_dir)
+    _copy_feature_pipeline(out_dir, inputs.model_name)
     _write_lookups_for_pipeline(out_dir, inputs)
 
     snapshot_path, data_hash = _write_training_data_snapshot(out_dir, inputs.test_df)
@@ -265,7 +301,7 @@ def persist_lr_baseline_v1(
     cal_path = out_dir / "calibrator.json"
     bundle.calibrator.to_json(cal_path)
 
-    _copy_feature_pipeline(out_dir)
+    _copy_feature_pipeline(out_dir, inputs.model_name)
     _write_lookups_for_pipeline(out_dir, inputs)
 
     snapshot_path, data_hash = _write_training_data_snapshot(out_dir, inputs.test_df)
