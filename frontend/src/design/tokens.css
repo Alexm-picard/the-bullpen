@@ -1,0 +1,28 @@
+/* Tailwind 4 @theme block — exposes design tokens as CSS custom properties + utility
+ * classes (bg-bgBase, text-textStrong, etc.). Lives inside src/design/ so it's the only
+ * place outside tokens.ts that holds raw hex literals — the lint:hex-codes script's
+ * allowlist (src/design/) covers it.
+ *
+ * Values mirror src/design/tokens.ts. If you change one, change both — or grep will
+ * find you. */
+@theme {
+  --color-bgBase: #fafaf7;
+  --color-bgElevated: #ffffff;
+  --color-bgSubtle: #f2f1ed;
+  --color-bgEmphasis: #e8e6e0;
+  --color-textStrong: #161513;
+  --color-textDefault: #2d2b27;
+  --color-textMuted: #6b6862;
+  --color-textSubtle: #9a968f;
+  --color-accent: #b53d2c;
+  --color-success: #3f7a3f;
+  --color-warning: #c28a2a;
+  --color-danger: #9e2a2b;
+  --color-info: #3b5ba9;
+
+  --font-ui: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-data:
+    "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --font-display:
+    "Source Serif 4", "Source Serif Pro", Georgia, "Times New Roman", serif;
+}

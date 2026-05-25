@@ -1,0 +1,11 @@
+/* Editorial-data font stack (leaf 4a).
+ *
+ * Loads Inter (UI), JetBrains Mono (data), and Source Serif 4 (display) from Google Fonts
+ * for v1. Self-hosting under /public/fonts/ is a Phase 5 polish item — for the v1 portfolio
+ * cut, Google's CDN + preconnect hint is the right speed/effort trade.
+ *
+ * Preconnect happens via <link rel="preconnect"> in index.html so the connection is open by
+ * the time the @import resolves on first paint.
+ */
+
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&display=swap");
