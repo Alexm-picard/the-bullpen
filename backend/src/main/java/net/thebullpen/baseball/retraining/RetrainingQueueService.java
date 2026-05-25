@@ -179,6 +179,23 @@ public class RetrainingQueueService {
     return repo.findAllQueued();
   }
 
+  /**
+   * True iff {@code modelName} has a trigger that's QUEUED or RUNNING with {@code enqueued_at}
+   * within the last {@code window}. Used by the 3d.2 drift + manual triggers to dedup: re-firing
+   * the same logical signal shouldn't create duplicate queue rows. Distinct from {@link
+   * RetrainingException.DuplicateTriggerId} which guards exact trigger_id reuse — this guards "same
+   * model, recently retrained-or-queued."
+   */
+  public boolean isAlreadyQueuedRecently(String modelName, java.time.Duration window) {
+    java.time.Instant cutoff = java.time.Instant.now().minus(window);
+    return repo.findByModel(modelName).stream()
+        .anyMatch(
+            t ->
+                (t.status() == QueueStatus.QUEUED || t.status() == QueueStatus.RUNNING)
+                    && t.enqueuedAt() != null
+                    && !t.enqueuedAt().isBefore(cutoff));
+  }
+
   // --- helpers ----------------------------------------------------------
 
   private RetrainingTrigger loadOrThrow(String triggerId) {
