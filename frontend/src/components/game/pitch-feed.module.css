@@ -1,0 +1,15 @@
+/* Subtle 200 ms fade for newly-arriving pitch entries (leaf 4d.2). */
+.pitchEntry {
+  animation: pitchEntryFade 200ms ease-out;
+}
+
+@keyframes pitchEntryFade {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
