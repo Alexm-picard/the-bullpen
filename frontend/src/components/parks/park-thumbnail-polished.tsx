@@ -16,7 +16,7 @@
  */
 import { Paper, Stack, Text, Title } from "@mantine/core";
 import { useHover } from "@mantine/hooks";
-import { memo, useEffect } from "react";
+import { memo, useEffect, useState } from "react";
 
 import { colors } from "../../design/tokens";
 
@@ -49,11 +49,13 @@ function ParkThumbnailPolishedInner({
   onHoverChange,
 }: ParkThumbnailPolishedProps) {
   const { hovered, ref } = useHover<HTMLDivElement>();
+  const [focused, setFocused] = useState(false);
+  const active = hovered || focused;
 
   useEffect(() => {
     if (!onHoverChange) return;
-    onHoverChange(hovered ? parkId : null);
-  }, [hovered, parkId, onHoverChange]);
+    onHoverChange(active ? parkId : null);
+  }, [active, parkId, onHoverChange]);
 
   const p = clamp01(probHr ?? 0);
   const tint = probHr != null && !isLoading ? viridis(p) : null;
@@ -67,14 +69,28 @@ function ParkThumbnailPolishedInner({
   return (
     <Paper
       ref={ref}
+      role="button"
+      tabIndex={0}
+      aria-label={`${name} — P(HR) ${probHr == null ? "unknown" : probHr.toFixed(3)}`}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          // Keyboard-equivalent of hover: explicitly fire the callback so the
+          // detail panel updates on Enter even if focus state was already set.
+          onHoverChange?.(parkId);
+        }
+      }}
       p="xs"
       radius="md"
       withBorder
       shadow="0"
       style={{
         transition: "transform 150ms ease",
-        transform: hovered ? "translateY(-2px)" : "translateY(0)",
-        outline: hovered ? `1px solid ${colors.accent}` : "none",
+        transform: active ? "translateY(-2px)" : "translateY(0)",
+        outline: active ? `1px solid ${colors.accent}` : "none",
+        cursor: "pointer",
       }}
     >
       <Stack gap={6} align="stretch">
