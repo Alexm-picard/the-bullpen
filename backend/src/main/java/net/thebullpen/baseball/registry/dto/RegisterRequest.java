@@ -26,6 +26,21 @@ public record RegisterRequest(
     String createdBy,
     String notes) {
 
+  /**
+   * {@code model_name} character class — leaf 3a.5 "Known edge cases" pins this so a slash in the
+   * name can't escape the snapshot-storage directory layout. Lowercase + digits + underscores only;
+   * no path separators, no whitespace, no shell metacharacters.
+   */
+  private static final java.util.regex.Pattern MODEL_NAME_PATTERN =
+      java.util.regex.Pattern.compile("^[a-z0-9_]+$");
+
+  /**
+   * {@code version} character class — same logic as {@link #MODEL_NAME_PATTERN} plus dot and hyphen
+   * (so semver-like + git-like version strings work). Still no slash, no whitespace.
+   */
+  private static final java.util.regex.Pattern VERSION_PATTERN =
+      java.util.regex.Pattern.compile("^[a-zA-Z0-9_.-]+$");
+
   public RegisterRequest {
     Objects.requireNonNull(modelName, "modelName");
     Objects.requireNonNull(version, "version");
@@ -39,8 +54,17 @@ public record RegisterRequest(
     if (modelName.isBlank()) {
       throw new IllegalArgumentException("modelName must not be blank");
     }
+    if (!MODEL_NAME_PATTERN.matcher(modelName).matches()) {
+      throw new IllegalArgumentException(
+          "modelName must match ^[a-z0-9_]+$ (no slashes / whitespace / uppercase); got: "
+              + modelName);
+    }
     if (version.isBlank()) {
       throw new IllegalArgumentException("version must not be blank");
+    }
+    if (!VERSION_PATTERN.matcher(version).matches()) {
+      throw new IllegalArgumentException(
+          "version must match ^[a-zA-Z0-9_.-]+$ (no slashes / whitespace); got: " + version);
     }
   }
 }

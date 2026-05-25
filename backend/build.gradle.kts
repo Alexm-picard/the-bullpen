@@ -34,6 +34,12 @@ dependencies {
 
     implementation("net.logstash.logback:logstash-logback-encoder:8.0")
 
+    // ADR-0007: single S3-compatible client across prod (Cloudflare R2) and offline dev (MinIO).
+    // bom keeps the s3 + apache-client + sts versions aligned without listing each explicitly.
+    implementation(platform("software.amazon.awssdk:bom:2.30.20"))
+    implementation("software.amazon.awssdk:s3")
+    implementation("software.amazon.awssdk:apache-client")
+
     implementation("com.microsoft.onnxruntime:onnxruntime:1.20.0")
     // EJML for the 15x15 fundamental-matrix inversion in the forward simulator (2a.9).
     // Leaner than Commons Math, actively maintained, simpler API for this use case.
@@ -44,8 +50,9 @@ dependencies {
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
-    testImplementation("org.testcontainers:junit-jupiter:1.20.4")
-    testImplementation("org.testcontainers:clickhouse:1.20.4")
+    testImplementation("org.testcontainers:junit-jupiter:1.20.6")
+    testImplementation("org.testcontainers:clickhouse:1.20.6")
+    testImplementation("org.testcontainers:minio:1.20.6")
 
     errorprone("com.google.errorprone:error_prone_core:2.36.0")
 }

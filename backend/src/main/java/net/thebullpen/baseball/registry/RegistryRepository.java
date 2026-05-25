@@ -124,6 +124,46 @@ public class RegistryRepository {
         modelName);
   }
 
+  /**
+   * Replace the {@code artifact_path} + {@code metadata_path} for one row — used by the 3a.5
+   * retention sweep to flip a local prefix to its archived S3 prefix, and by {@code restoreVersion}
+   * to flip it back. The feature_pipeline + calibrator + parquet siblings live in the same
+   * directory so updating the two tracked paths is enough — the rest are derived by {@link
+   * SnapshotStorage} from the same parent.
+   *
+   * <p>Bumps {@code updated_at}. Returns the rows-updated count (always 0 or 1).
+   */
+  public int updatePaths(long id, String artifactPath, String metadataPath) {
+    return jdbc.update(
+        "UPDATE model_versions SET artifact_path = ?, metadata_path = ?,"
+            + " updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        artifactPath,
+        metadataPath,
+        id);
+  }
+
+  /**
+   * Every {@code model_versions.id} ever inserted — feeds the 3a.5 reconciliation job that compares
+   * against {@code prediction_log} for orphan-id detection (Risk Register G2). The call
+   * intentionally isn't stage-filtered: an archived row's id still appears in older prediction_log
+   * rows, and that's fine — orphan means "id never registered at all," not "id no longer active."
+   */
+  public List<Long> findAllIds() {
+    return jdbc.queryForList("SELECT id FROM model_versions", Long.class);
+  }
+
+  /**
+   * Every {@code (model_name, version)} pair ever registered — same purpose as {@link
+   * #findAllIds()} but matched to the {@code prediction_log} schema (which carries the string-typed
+   * {@code model_name + model_version} rather than the numeric FK). The reconciliation job joins on
+   * this pair.
+   */
+  public List<String[]> findAllNameVersionPairs() {
+    return jdbc.query(
+        "SELECT model_name, version FROM model_versions",
+        (rs, n) -> new String[] {rs.getString(1), rs.getString(2)});
+  }
+
   // --- reads --------------------------------------------------------------
 
   public Optional<ModelVersion> findById(long id) {

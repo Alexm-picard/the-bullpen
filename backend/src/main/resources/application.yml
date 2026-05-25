@@ -38,3 +38,27 @@ bullpen:
     # Required in prod (sourced from secrets.env / systemd EnvironmentFile);
     # tests override via @DynamicPropertySource. Decision [29], leaf 3a.4.
     basicauth: ${THEBULLPEN_ADMIN_BASIC_AUTH:}
+
+  # ADR-0007: S3-compatible client. Prod = Cloudflare R2; offline dev = MinIO on
+  # localhost:9000; tests = a Testcontainers MinIO with @DynamicPropertySource.
+  # The endpoint URL is the only environment-specific knob.
+  s3:
+    endpoint-url: ${S3_ENDPOINT_URL:}
+    region: ${S3_REGION:auto}
+    access-key-id: ${S3_ACCESS_KEY_ID:}
+    secret-access-key: ${S3_SECRET_ACCESS_KEY:}
+    bucket: ${S3_BUCKET:bullpen-prod}
+
+  # Snapshot storage layout (3a.5). Local base path is configurable so dev on
+  # macOS doesn't try to write to /var/lib/thebullpen; prod sets this via the
+  # systemd EnvironmentFile.
+  snapshot:
+    local-base-path: ${BULLPEN_MODELS_DIR:./data/models}
+    keep-locally: 5
+    archive-prefix: models-archive
+
+  # Discord webhook for ops notices. Stubbed to log-only when the URL is blank
+  # (3a.5 reconciliation job is the first caller; real client lands in 3c when
+  # drift alerts need it). Source: DISCORD_WEBHOOK_URL.
+  discord:
+    webhook-url: ${DISCORD_WEBHOOK_URL:}

@@ -3,6 +3,7 @@ package net.thebullpen.baseball.registry;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import net.thebullpen.baseball.registry.dto.ModelVersion;
 import net.thebullpen.baseball.registry.dto.RegisterRequest;
@@ -39,14 +40,17 @@ public class RegistryService {
   private final RegistryRepository repo;
   private final FeatureSchemaHasher hasher;
   private final ExperimentResultsRepository experimentRepo;
+  private final SnapshotStorage snapshotStorage;
 
   public RegistryService(
       RegistryRepository repo,
       FeatureSchemaHasher hasher,
-      ExperimentResultsRepository experimentRepo) {
+      ExperimentResultsRepository experimentRepo,
+      SnapshotStorage snapshotStorage) {
     this.repo = repo;
     this.hasher = hasher;
     this.experimentRepo = experimentRepo;
+    this.snapshotStorage = snapshotStorage;
   }
 
   // --- register -----------------------------------------------------------
@@ -141,12 +145,27 @@ public class RegistryService {
   }
 
   private ModelVersion doInsert(RegisterRequest req, String featureSchemaHash) {
+    // 3a.5: copy the caller's source files into the canonical snapshot layout
+    // <local-base>/<model_name>/<version>/{model.onnx, metadata.json, feature_pipeline.json}.
+    // The registered paths point at the canonical destination so retention + restore have a
+    // single place to flip. featurePipelinePath isn't a tracked column (the schema_hash is the
+    // proxy), but we still archive the file so the pipeline can be reconstituted from S3.
+    Path snapshotDir =
+        snapshotStorage.placeArtifacts(
+            req.modelName(),
+            req.version(),
+            Map.of(
+                SnapshotStorage.ARTIFACT_FILE, Path.of(req.artifactPath()),
+                SnapshotStorage.METADATA_FILE, Path.of(req.metadataPath()),
+                SnapshotStorage.FEATURE_PIPELINE_FILE, Path.of(req.featurePipelinePath())));
+    String canonicalArtifact = snapshotDir.resolve(SnapshotStorage.ARTIFACT_FILE).toString();
+    String canonicalMetadata = snapshotDir.resolve(SnapshotStorage.METADATA_FILE).toString();
     ModelVersion inserted =
         repo.insert(
             req.modelName(),
             req.version(),
-            req.artifactPath(),
-            req.metadataPath(),
+            canonicalArtifact,
+            canonicalMetadata,
             req.trainingDataHash(),
             req.trainingDataWindow(),
             featureSchemaHash,
@@ -160,7 +179,20 @@ public class RegistryService {
         inserted.modelName(),
         inserted.version(),
         inserted.id());
+    // Retention sweep: any non-CHAMPION / non-SHADOW row beyond keepLocally is pushed to S3 and
+    // its paths flipped. No-op when no R2 client is configured (dev without S3_ENDPOINT_URL).
+    snapshotStorage.enforceRetention(inserted.modelName());
     return inserted;
+  }
+
+  /**
+   * Pull an archived version's snapshot back from S3 to local disk and update the tracked paths to
+   * the local copies. Wraps {@link SnapshotStorage#restoreVersion(long)} so callers go through the
+   * service boundary (the runbook references this method).
+   */
+  @Transactional
+  public Path restoreVersion(long versionId) {
+    return snapshotStorage.restoreVersion(versionId);
   }
 
   private static RegisterRequest appendNotesReason(

@@ -43,6 +43,14 @@ class RegistryServiceIT {
     registry.add("spring.datasource.url", () -> url);
     registry.add("spring.datasource.driver-class-name", () -> "org.sqlite.JDBC");
     registry.add("spring.flyway.url", () -> url);
+    // 3a.5: SnapshotStorage writes copies of every registered artifact under this base path.
+    // Per-JVM temp so the tests don't pollute ./data/models. R2 is intentionally NOT configured
+    // (bullpen.s3.endpoint-url stays blank) so the retention sweep no-ops.
+    Path snapshotBase =
+        Path.of(
+            System.getProperty("java.io.tmpdir"),
+            "bullpen-registry-svc-it-snapshots-" + UUID.randomUUID());
+    registry.add("bullpen.snapshot.local-base-path", snapshotBase::toString);
   }
 
   @Autowired private RegistryService service;

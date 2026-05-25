@@ -21,7 +21,7 @@ import org.springframework.context.annotation.Profile;
  * net.thebullpen.baseball.inference.PredictionLogWriter} won't materialize).
  */
 @Configuration
-@Profile("api")
+@Profile({"api", "worker"})
 @ConditionalOnProperty(
     name = "bullpen.clickhouse.enabled",
     havingValue = "true",

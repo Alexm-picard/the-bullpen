@@ -66,6 +66,14 @@ class RegistryControllerIT {
     registry.add("spring.datasource.driver-class-name", () -> "org.sqlite.JDBC");
     registry.add("spring.flyway.url", () -> url);
     registry.add("bullpen.admin.basicauth", () -> ADMIN_USER + ":" + ADMIN_PASS);
+    // 3a.5: SnapshotStorage writes copies of every registered artifact under this base path.
+    // Per-JVM temp so tests don't pollute ./data/models. No S3 endpoint configured so the
+    // retention sweep no-ops cleanly.
+    Path snapshotBase =
+        Path.of(
+            System.getProperty("java.io.tmpdir"),
+            "bullpen-registry-ctrl-it-snapshots-" + UUID.randomUUID());
+    registry.add("bullpen.snapshot.local-base-path", snapshotBase::toString);
   }
 
   @Autowired private MockMvc mvc;
