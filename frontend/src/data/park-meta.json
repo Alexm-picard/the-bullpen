@@ -5,7 +5,39 @@
     "altitudeM": 8,
     "shortFenceFt": 330,
     "centerFenceFt": 400,
-    "deepestFenceFt": 400
+    "deepestFenceFt": 400,
+    "fences": [
+      {
+        "angleDeg": -45,
+        "label": "LF",
+        "distanceFt": 330,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": -22.5,
+        "label": "LC",
+        "distanceFt": 367,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 0,
+        "label": "CF",
+        "distanceFt": 400,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 22.5,
+        "label": "RC",
+        "distanceFt": 367,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 45,
+        "label": "RF",
+        "distanceFt": 330,
+        "heightFt": 8
+      }
+    ]
   },
   "ATL": {
     "name": "Truist Park",
@@ -13,7 +45,39 @@
     "altitudeM": 280,
     "shortFenceFt": 325,
     "centerFenceFt": 400,
-    "deepestFenceFt": 400
+    "deepestFenceFt": 400,
+    "fences": [
+      {
+        "angleDeg": -45,
+        "label": "LF",
+        "distanceFt": 325,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": -22.5,
+        "label": "LC",
+        "distanceFt": 375,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 0,
+        "label": "CF",
+        "distanceFt": 400,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 22.5,
+        "label": "RC",
+        "distanceFt": 375,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 45,
+        "label": "RF",
+        "distanceFt": 335,
+        "heightFt": 16
+      }
+    ]
   },
   "AZ": {
     "name": "Chase Field",
@@ -21,7 +85,39 @@
     "altitudeM": 331,
     "shortFenceFt": 330,
     "centerFenceFt": 407,
-    "deepestFenceFt": 407
+    "deepestFenceFt": 407,
+    "fences": [
+      {
+        "angleDeg": -45,
+        "label": "LF",
+        "distanceFt": 335,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": -22.5,
+        "label": "LC",
+        "distanceFt": 376,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 0,
+        "label": "CF",
+        "distanceFt": 407,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 22.5,
+        "label": "RC",
+        "distanceFt": 376,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 45,
+        "label": "RF",
+        "distanceFt": 330,
+        "heightFt": 8
+      }
+    ]
   },
   "BAL": {
     "name": "Camden Yards",
@@ -29,7 +125,39 @@
     "altitudeM": 17,
     "shortFenceFt": 318,
     "centerFenceFt": 410,
-    "deepestFenceFt": 410
+    "deepestFenceFt": 410,
+    "fences": [
+      {
+        "angleDeg": -45,
+        "label": "LF",
+        "distanceFt": 318,
+        "heightFt": 21
+      },
+      {
+        "angleDeg": -22.5,
+        "label": "LC",
+        "distanceFt": 373,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 0,
+        "label": "CF",
+        "distanceFt": 410,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 22.5,
+        "label": "RC",
+        "distanceFt": 364,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 45,
+        "label": "RF",
+        "distanceFt": 333,
+        "heightFt": 8
+      }
+    ]
   },
   "BOS": {
     "name": "Fenway Park",
@@ -37,7 +165,47 @@
     "altitudeM": 6,
     "shortFenceFt": 302,
     "centerFenceFt": 390,
-    "deepestFenceFt": 420
+    "deepestFenceFt": 420,
+    "fences": [
+      {
+        "angleDeg": -45,
+        "label": "LF",
+        "distanceFt": 302,
+        "heightFt": 5
+      },
+      {
+        "angleDeg": -22.5,
+        "label": "LC",
+        "distanceFt": 380,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 0,
+        "label": "CF",
+        "distanceFt": 390,
+        "heightFt": 17
+      },
+      {
+        "angleDeg": 10,
+        "label": "10°",
+        "distanceFt": 420,
+        "heightFt": 17
+      },
+      {
+        "angleDeg": 22.5,
+        "label": "RC",
+        "distanceFt": 379,
+        "heightFt": 37,
+        "note": "Green Monster (LF, 37 ft)"
+      },
+      {
+        "angleDeg": 45,
+        "label": "RF",
+        "distanceFt": 310,
+        "heightFt": 37,
+        "note": "Monster carries to the LF line"
+      }
+    ]
   },
   "CHC": {
     "name": "Wrigley Field",
@@ -45,7 +213,41 @@
     "altitudeM": 182,
     "shortFenceFt": 353,
     "centerFenceFt": 400,
-    "deepestFenceFt": 400
+    "deepestFenceFt": 400,
+    "fences": [
+      {
+        "angleDeg": -45,
+        "label": "LF",
+        "distanceFt": 353,
+        "heightFt": 11.5
+      },
+      {
+        "angleDeg": -22.5,
+        "label": "LC",
+        "distanceFt": 368,
+        "heightFt": 11.5,
+        "note": "Ivy-clad LCF wall jog"
+      },
+      {
+        "angleDeg": 0,
+        "label": "CF",
+        "distanceFt": 400,
+        "heightFt": 11.5
+      },
+      {
+        "angleDeg": 22.5,
+        "label": "RC",
+        "distanceFt": 368,
+        "heightFt": 11.5,
+        "note": "Ivy-clad RCF wall jog"
+      },
+      {
+        "angleDeg": 45,
+        "label": "RF",
+        "distanceFt": 355,
+        "heightFt": 11.5
+      }
+    ]
   },
   "CIN": {
     "name": "Great American Ball Park",
@@ -53,7 +255,40 @@
     "altitudeM": 150,
     "shortFenceFt": 325,
     "centerFenceFt": 404,
-    "deepestFenceFt": 404
+    "deepestFenceFt": 404,
+    "fences": [
+      {
+        "angleDeg": -45,
+        "label": "LF",
+        "distanceFt": 325,
+        "heightFt": 12
+      },
+      {
+        "angleDeg": -22.5,
+        "label": "LC",
+        "distanceFt": 370,
+        "heightFt": 12
+      },
+      {
+        "angleDeg": 0,
+        "label": "CF",
+        "distanceFt": 404,
+        "heightFt": 12
+      },
+      {
+        "angleDeg": 22.5,
+        "label": "RC",
+        "distanceFt": 379,
+        "heightFt": 12,
+        "note": "Power Stack notch in RCF"
+      },
+      {
+        "angleDeg": 45,
+        "label": "RF",
+        "distanceFt": 328,
+        "heightFt": 12
+      }
+    ]
   },
   "CLE": {
     "name": "Progressive Field",
@@ -61,7 +296,39 @@
     "altitudeM": 207,
     "shortFenceFt": 325,
     "centerFenceFt": 405,
-    "deepestFenceFt": 405
+    "deepestFenceFt": 405,
+    "fences": [
+      {
+        "angleDeg": -45,
+        "label": "LF",
+        "distanceFt": 325,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": -22.5,
+        "label": "LC",
+        "distanceFt": 375,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 0,
+        "label": "CF",
+        "distanceFt": 405,
+        "heightFt": 9
+      },
+      {
+        "angleDeg": 22.5,
+        "label": "RC",
+        "distanceFt": 370,
+        "heightFt": 19
+      },
+      {
+        "angleDeg": 45,
+        "label": "RF",
+        "distanceFt": 325,
+        "heightFt": 19
+      }
+    ]
   },
   "COL": {
     "name": "Coors Field",
@@ -69,7 +336,39 @@
     "altitudeM": 1580,
     "shortFenceFt": 347,
     "centerFenceFt": 415,
-    "deepestFenceFt": 415
+    "deepestFenceFt": 415,
+    "fences": [
+      {
+        "angleDeg": -45,
+        "label": "LF",
+        "distanceFt": 350,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": -22.5,
+        "label": "LC",
+        "distanceFt": 375,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 0,
+        "label": "CF",
+        "distanceFt": 415,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 22.5,
+        "label": "RC",
+        "distanceFt": 390,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 45,
+        "label": "RF",
+        "distanceFt": 347,
+        "heightFt": 8
+      }
+    ]
   },
   "CWS": {
     "name": "Guaranteed Rate Field",
@@ -77,7 +376,39 @@
     "altitudeM": 180,
     "shortFenceFt": 330,
     "centerFenceFt": 400,
-    "deepestFenceFt": 400
+    "deepestFenceFt": 400,
+    "fences": [
+      {
+        "angleDeg": -45,
+        "label": "LF",
+        "distanceFt": 335,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": -22.5,
+        "label": "LC",
+        "distanceFt": 372,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 0,
+        "label": "CF",
+        "distanceFt": 400,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 22.5,
+        "label": "RC",
+        "distanceFt": 377,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 45,
+        "label": "RF",
+        "distanceFt": 330,
+        "heightFt": 8
+      }
+    ]
   },
   "DET": {
     "name": "Comerica Park",
@@ -85,7 +416,39 @@
     "altitudeM": 180,
     "shortFenceFt": 330,
     "centerFenceFt": 420,
-    "deepestFenceFt": 420
+    "deepestFenceFt": 420,
+    "fences": [
+      {
+        "angleDeg": -45,
+        "label": "LF",
+        "distanceFt": 330,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": -22.5,
+        "label": "LC",
+        "distanceFt": 365,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 0,
+        "label": "CF",
+        "distanceFt": 420,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 22.5,
+        "label": "RC",
+        "distanceFt": 370,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 45,
+        "label": "RF",
+        "distanceFt": 345,
+        "heightFt": 8
+      }
+    ]
   },
   "HOU": {
     "name": "Minute Maid Park",
@@ -93,7 +456,40 @@
     "altitudeM": 7,
     "shortFenceFt": 315,
     "centerFenceFt": 409,
-    "deepestFenceFt": 409
+    "deepestFenceFt": 409,
+    "fences": [
+      {
+        "angleDeg": -45,
+        "label": "LF",
+        "distanceFt": 326,
+        "heightFt": 7
+      },
+      {
+        "angleDeg": -22.5,
+        "label": "LC",
+        "distanceFt": 373,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 0,
+        "label": "CF",
+        "distanceFt": 409,
+        "heightFt": 9
+      },
+      {
+        "angleDeg": 22.5,
+        "label": "RC",
+        "distanceFt": 362,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 45,
+        "label": "RF",
+        "distanceFt": 315,
+        "heightFt": 19,
+        "note": "Crawford Boxes — LF wall steps in at 315 ft with a 19 ft face"
+      }
+    ]
   },
   "KC": {
     "name": "Kauffman Stadium",
@@ -101,7 +497,39 @@
     "altitudeM": 247,
     "shortFenceFt": 330,
     "centerFenceFt": 410,
-    "deepestFenceFt": 410
+    "deepestFenceFt": 410,
+    "fences": [
+      {
+        "angleDeg": -45,
+        "label": "LF",
+        "distanceFt": 330,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": -22.5,
+        "label": "LC",
+        "distanceFt": 387,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 0,
+        "label": "CF",
+        "distanceFt": 410,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 22.5,
+        "label": "RC",
+        "distanceFt": 387,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 45,
+        "label": "RF",
+        "distanceFt": 330,
+        "heightFt": 8
+      }
+    ]
   },
   "LAA": {
     "name": "Angel Stadium",
@@ -109,7 +537,39 @@
     "altitudeM": 50,
     "shortFenceFt": 333,
     "centerFenceFt": 396,
-    "deepestFenceFt": 396
+    "deepestFenceFt": 396,
+    "fences": [
+      {
+        "angleDeg": -45,
+        "label": "LF",
+        "distanceFt": 333,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": -22.5,
+        "label": "LC",
+        "distanceFt": 365,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 0,
+        "label": "CF",
+        "distanceFt": 396,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 22.5,
+        "label": "RC",
+        "distanceFt": 365,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 45,
+        "label": "RF",
+        "distanceFt": 333,
+        "heightFt": 8
+      }
+    ]
   },
   "LAD": {
     "name": "Dodger Stadium",
@@ -117,7 +577,39 @@
     "altitudeM": 132,
     "shortFenceFt": 330,
     "centerFenceFt": 395,
-    "deepestFenceFt": 395
+    "deepestFenceFt": 395,
+    "fences": [
+      {
+        "angleDeg": -45,
+        "label": "LF",
+        "distanceFt": 330,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": -22.5,
+        "label": "LC",
+        "distanceFt": 375,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 0,
+        "label": "CF",
+        "distanceFt": 395,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 22.5,
+        "label": "RC",
+        "distanceFt": 360,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 45,
+        "label": "RF",
+        "distanceFt": 330,
+        "heightFt": 8
+      }
+    ]
   },
   "MIA": {
     "name": "loanDepot park",
@@ -125,7 +617,39 @@
     "altitudeM": 2,
     "shortFenceFt": 335,
     "centerFenceFt": 407,
-    "deepestFenceFt": 407
+    "deepestFenceFt": 407,
+    "fences": [
+      {
+        "angleDeg": -45,
+        "label": "LF",
+        "distanceFt": 335,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": -22.5,
+        "label": "LC",
+        "distanceFt": 392,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 0,
+        "label": "CF",
+        "distanceFt": 407,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 22.5,
+        "label": "RC",
+        "distanceFt": 386,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 45,
+        "label": "RF",
+        "distanceFt": 344,
+        "heightFt": 8
+      }
+    ]
   },
   "MIL": {
     "name": "American Family Field",
@@ -133,7 +657,39 @@
     "altitudeM": 195,
     "shortFenceFt": 344,
     "centerFenceFt": 400,
-    "deepestFenceFt": 400
+    "deepestFenceFt": 400,
+    "fences": [
+      {
+        "angleDeg": -45,
+        "label": "LF",
+        "distanceFt": 345,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": -22.5,
+        "label": "LC",
+        "distanceFt": 374,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 0,
+        "label": "CF",
+        "distanceFt": 400,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 22.5,
+        "label": "RC",
+        "distanceFt": 371,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 45,
+        "label": "RF",
+        "distanceFt": 344,
+        "heightFt": 8
+      }
+    ]
   },
   "MIN": {
     "name": "Target Field",
@@ -141,7 +697,39 @@
     "altitudeM": 251,
     "shortFenceFt": 328,
     "centerFenceFt": 411,
-    "deepestFenceFt": 411
+    "deepestFenceFt": 411,
+    "fences": [
+      {
+        "angleDeg": -45,
+        "label": "LF",
+        "distanceFt": 328,
+        "heightFt": 23
+      },
+      {
+        "angleDeg": -22.5,
+        "label": "LC",
+        "distanceFt": 367,
+        "heightFt": 23
+      },
+      {
+        "angleDeg": 0,
+        "label": "CF",
+        "distanceFt": 411,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 22.5,
+        "label": "RC",
+        "distanceFt": 377,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 45,
+        "label": "RF",
+        "distanceFt": 339,
+        "heightFt": 8
+      }
+    ]
   },
   "NYM": {
     "name": "Citi Field",
@@ -149,7 +737,39 @@
     "altitudeM": 11,
     "shortFenceFt": 330,
     "centerFenceFt": 408,
-    "deepestFenceFt": 408
+    "deepestFenceFt": 408,
+    "fences": [
+      {
+        "angleDeg": -45,
+        "label": "LF",
+        "distanceFt": 330,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": -22.5,
+        "label": "LC",
+        "distanceFt": 383,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 0,
+        "label": "CF",
+        "distanceFt": 408,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 22.5,
+        "label": "RC",
+        "distanceFt": 379,
+        "heightFt": 16
+      },
+      {
+        "angleDeg": 45,
+        "label": "RF",
+        "distanceFt": 335,
+        "heightFt": 16
+      }
+    ]
   },
   "NYY": {
     "name": "Yankee Stadium",
@@ -157,7 +777,39 @@
     "altitudeM": 16,
     "shortFenceFt": 314,
     "centerFenceFt": 408,
-    "deepestFenceFt": 408
+    "deepestFenceFt": 408,
+    "fences": [
+      {
+        "angleDeg": -45,
+        "label": "LF",
+        "distanceFt": 314,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": -22.5,
+        "label": "LC",
+        "distanceFt": 385,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 0,
+        "label": "CF",
+        "distanceFt": 408,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 22.5,
+        "label": "RC",
+        "distanceFt": 399,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 45,
+        "label": "RF",
+        "distanceFt": 318,
+        "heightFt": 8
+      }
+    ]
   },
   "PHI": {
     "name": "Citizens Bank Park",
@@ -165,7 +817,39 @@
     "altitudeM": 5,
     "shortFenceFt": 329,
     "centerFenceFt": 401,
-    "deepestFenceFt": 401
+    "deepestFenceFt": 401,
+    "fences": [
+      {
+        "angleDeg": -45,
+        "label": "LF",
+        "distanceFt": 330,
+        "heightFt": 12.5
+      },
+      {
+        "angleDeg": -22.5,
+        "label": "LC",
+        "distanceFt": 369,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 0,
+        "label": "CF",
+        "distanceFt": 401,
+        "heightFt": 6
+      },
+      {
+        "angleDeg": 22.5,
+        "label": "RC",
+        "distanceFt": 374,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 45,
+        "label": "RF",
+        "distanceFt": 329,
+        "heightFt": 12.5
+      }
+    ]
   },
   "PIT": {
     "name": "PNC Park",
@@ -173,7 +857,39 @@
     "altitudeM": 215,
     "shortFenceFt": 320,
     "centerFenceFt": 399,
-    "deepestFenceFt": 399
+    "deepestFenceFt": 399,
+    "fences": [
+      {
+        "angleDeg": -45,
+        "label": "LF",
+        "distanceFt": 320,
+        "heightFt": 21
+      },
+      {
+        "angleDeg": -22.5,
+        "label": "LC",
+        "distanceFt": 375,
+        "heightFt": 21
+      },
+      {
+        "angleDeg": 0,
+        "label": "CF",
+        "distanceFt": 399,
+        "heightFt": 10
+      },
+      {
+        "angleDeg": 22.5,
+        "label": "RC",
+        "distanceFt": 389,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 45,
+        "label": "RF",
+        "distanceFt": 325,
+        "heightFt": 6
+      }
+    ]
   },
   "SD": {
     "name": "Petco Park",
@@ -181,7 +897,39 @@
     "altitudeM": 17,
     "shortFenceFt": 322,
     "centerFenceFt": 396,
-    "deepestFenceFt": 396
+    "deepestFenceFt": 396,
+    "fences": [
+      {
+        "angleDeg": -45,
+        "label": "LF",
+        "distanceFt": 322,
+        "heightFt": 11
+      },
+      {
+        "angleDeg": -22.5,
+        "label": "LC",
+        "distanceFt": 391,
+        "heightFt": 11
+      },
+      {
+        "angleDeg": 0,
+        "label": "CF",
+        "distanceFt": 396,
+        "heightFt": 11
+      },
+      {
+        "angleDeg": 22.5,
+        "label": "RC",
+        "distanceFt": 391,
+        "heightFt": 11
+      },
+      {
+        "angleDeg": 45,
+        "label": "RF",
+        "distanceFt": 336,
+        "heightFt": 11
+      }
+    ]
   },
   "SEA": {
     "name": "T-Mobile Park",
@@ -189,7 +937,39 @@
     "altitudeM": 60,
     "shortFenceFt": 326,
     "centerFenceFt": 401,
-    "deepestFenceFt": 401
+    "deepestFenceFt": 401,
+    "fences": [
+      {
+        "angleDeg": -45,
+        "label": "LF",
+        "distanceFt": 326,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": -22.5,
+        "label": "LC",
+        "distanceFt": 381,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 0,
+        "label": "CF",
+        "distanceFt": 401,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 22.5,
+        "label": "RC",
+        "distanceFt": 378,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 45,
+        "label": "RF",
+        "distanceFt": 331,
+        "heightFt": 8
+      }
+    ]
   },
   "SF": {
     "name": "Oracle Park",
@@ -197,7 +977,45 @@
     "altitudeM": 12,
     "shortFenceFt": 309,
     "centerFenceFt": 391,
-    "deepestFenceFt": 421
+    "deepestFenceFt": 421,
+    "fences": [
+      {
+        "angleDeg": -45,
+        "label": "LF",
+        "distanceFt": 309,
+        "heightFt": 25
+      },
+      {
+        "angleDeg": -32,
+        "label": "-32°",
+        "distanceFt": 421,
+        "heightFt": 25
+      },
+      {
+        "angleDeg": -22.5,
+        "label": "LC",
+        "distanceFt": 421,
+        "heightFt": 25
+      },
+      {
+        "angleDeg": 0,
+        "label": "CF",
+        "distanceFt": 391,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 22.5,
+        "label": "RC",
+        "distanceFt": 364,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 45,
+        "label": "RF",
+        "distanceFt": 339,
+        "heightFt": 8
+      }
+    ]
   },
   "STL": {
     "name": "Busch Stadium",
@@ -205,7 +1023,39 @@
     "altitudeM": 142,
     "shortFenceFt": 335,
     "centerFenceFt": 400,
-    "deepestFenceFt": 400
+    "deepestFenceFt": 400,
+    "fences": [
+      {
+        "angleDeg": -45,
+        "label": "LF",
+        "distanceFt": 335,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": -22.5,
+        "label": "LC",
+        "distanceFt": 375,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 0,
+        "label": "CF",
+        "distanceFt": 400,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 22.5,
+        "label": "RC",
+        "distanceFt": 375,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 45,
+        "label": "RF",
+        "distanceFt": 336,
+        "heightFt": 8
+      }
+    ]
   },
   "TB": {
     "name": "Tropicana Field",
@@ -213,7 +1063,39 @@
     "altitudeM": 11,
     "shortFenceFt": 315,
     "centerFenceFt": 404,
-    "deepestFenceFt": 404
+    "deepestFenceFt": 404,
+    "fences": [
+      {
+        "angleDeg": -45,
+        "label": "LF",
+        "distanceFt": 322,
+        "heightFt": 11.5
+      },
+      {
+        "angleDeg": -22.5,
+        "label": "LC",
+        "distanceFt": 370,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 0,
+        "label": "CF",
+        "distanceFt": 404,
+        "heightFt": 9
+      },
+      {
+        "angleDeg": 22.5,
+        "label": "RC",
+        "distanceFt": 370,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 45,
+        "label": "RF",
+        "distanceFt": 315,
+        "heightFt": 11.5
+      }
+    ]
   },
   "TEX": {
     "name": "Globe Life Field",
@@ -221,7 +1103,39 @@
     "altitudeM": 130,
     "shortFenceFt": 326,
     "centerFenceFt": 407,
-    "deepestFenceFt": 407
+    "deepestFenceFt": 407,
+    "fences": [
+      {
+        "angleDeg": -45,
+        "label": "LF",
+        "distanceFt": 326,
+        "heightFt": 14
+      },
+      {
+        "angleDeg": -22.5,
+        "label": "LC",
+        "distanceFt": 374,
+        "heightFt": 14
+      },
+      {
+        "angleDeg": 0,
+        "label": "CF",
+        "distanceFt": 407,
+        "heightFt": 14
+      },
+      {
+        "angleDeg": 22.5,
+        "label": "RC",
+        "distanceFt": 372,
+        "heightFt": 14
+      },
+      {
+        "angleDeg": 45,
+        "label": "RF",
+        "distanceFt": 329,
+        "heightFt": 14
+      }
+    ]
   },
   "TOR": {
     "name": "Rogers Centre",
@@ -229,7 +1143,39 @@
     "altitudeM": 76,
     "shortFenceFt": 328,
     "centerFenceFt": 400,
-    "deepestFenceFt": 400
+    "deepestFenceFt": 400,
+    "fences": [
+      {
+        "angleDeg": -45,
+        "label": "LF",
+        "distanceFt": 328,
+        "heightFt": 10
+      },
+      {
+        "angleDeg": -22.5,
+        "label": "LC",
+        "distanceFt": 375,
+        "heightFt": 10
+      },
+      {
+        "angleDeg": 0,
+        "label": "CF",
+        "distanceFt": 400,
+        "heightFt": 10
+      },
+      {
+        "angleDeg": 22.5,
+        "label": "RC",
+        "distanceFt": 375,
+        "heightFt": 10
+      },
+      {
+        "angleDeg": 45,
+        "label": "RF",
+        "distanceFt": 328,
+        "heightFt": 10
+      }
+    ]
   },
   "WSH": {
     "name": "Nationals Park",
@@ -237,6 +1183,38 @@
     "altitudeM": 12,
     "shortFenceFt": 335,
     "centerFenceFt": 402,
-    "deepestFenceFt": 402
+    "deepestFenceFt": 402,
+    "fences": [
+      {
+        "angleDeg": -45,
+        "label": "LF",
+        "distanceFt": 335,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": -22.5,
+        "label": "LC",
+        "distanceFt": 370,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 0,
+        "label": "CF",
+        "distanceFt": 402,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 22.5,
+        "label": "RC",
+        "distanceFt": 377,
+        "heightFt": 8
+      },
+      {
+        "angleDeg": 45,
+        "label": "RF",
+        "distanceFt": 336,
+        "heightFt": 8
+      }
+    ]
   }
 }

@@ -1,0 +1,44 @@
+{
+  "_comment": "Per-park SVG overrides applied by build-park-svgs.mjs. Entries name a sharp kink in the wall that a smooth bezier through the canonical fence_polyline would over-smooth — the kink reads as the park's signature (Monster, Big Concourse, Crawford boxes). Each entry targets a polyline point by its angle_from_centerline_deg. Kind: 'wall-tick' draws a short perpendicular tick at the point (signals an abrupt wall height step). 'v-notch' inserts a small V into the bezier at the point (signals a wall recess). 'sharp-angle' forces the bezier to break — segments either side of the point are drawn as straight lines instead of curves (signals a wall corner). 'note' is the human label surfaced into park-meta.json.",
+  "BOS": {
+    "kinks": [
+      {
+        "angleDeg": 22.5,
+        "kind": "wall-tick",
+        "note": "Green Monster (LF, 37 ft)"
+      },
+      {
+        "angleDeg": 45,
+        "kind": "wall-tick",
+        "note": "Monster carries to the LF line"
+      }
+    ]
+  },
+  "CHC": {
+    "kinks": [
+      { "angleDeg": -22.5, "kind": "v-notch", "note": "Ivy-clad LCF wall jog" },
+      { "angleDeg": 22.5, "kind": "v-notch", "note": "Ivy-clad RCF wall jog" }
+    ]
+  },
+  "HOU": {
+    "kinks": [
+      {
+        "angleDeg": 45,
+        "kind": "sharp-angle",
+        "note": "Crawford Boxes — LF wall steps in at 315 ft with a 19 ft face"
+      }
+    ]
+  },
+  "CIN": {
+    "kinks": [
+      {
+        "angleDeg": 22.5,
+        "kind": "v-notch",
+        "note": "Power Stack notch in RCF"
+      }
+    ]
+  },
+  "DET": {
+    "kinks": []
+  }
+}
