@@ -194,6 +194,15 @@ public class RegistryRepository {
    * Every registered version of one model, newest-first by {@code created_at}. Includes archived
    * rows — callers that want only live versions filter with {@code WHERE stage != 'archived'}.
    */
+  /**
+   * Distinct {@code model_name} values present in the registry, alphabetical. Feeds the Ops
+   * dashboard's model-filter dropdown (leaf 4e.1) without pulling every row.
+   */
+  public List<String> findAllModelNames() {
+    return jdbc.queryForList(
+        "SELECT DISTINCT model_name FROM model_versions ORDER BY model_name ASC", String.class);
+  }
+
   public List<ModelVersion> findByName(String modelName) {
     // id DESC as tiebreaker — SQLite's CURRENT_TIMESTAMP has 1-second resolution, so two
     // back-to-back inserts share created_at and ORDER BY alone wouldn't define the order.

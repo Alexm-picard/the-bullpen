@@ -230,6 +230,11 @@ public class RegistryService {
     return repo.findByName(modelName);
   }
 
+  /** Distinct model names — feeds the Ops dashboard model-name dropdown. */
+  public List<String> findAllModelNames() {
+    return repo.findAllModelNames();
+  }
+
   public Optional<ModelVersion> findChampion(String modelName) {
     return repo.findChampion(modelName);
   }

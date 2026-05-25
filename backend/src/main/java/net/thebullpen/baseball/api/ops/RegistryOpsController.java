@@ -37,6 +37,15 @@ public class RegistryOpsController {
     this.registry = registry;
   }
 
+  /**
+   * Leaf 4e.1: lists every distinct {@code model_name} in the registry, alphabetical. Drives the
+   * Ops dashboard's model-name filter dropdown.
+   */
+  @GetMapping
+  public List<String> listAllModelNames() {
+    return registry.findAllModelNames();
+  }
+
   @GetMapping("/{modelName}")
   public List<ModelVersion> list(@PathVariable String modelName) {
     return registry.findByName(modelName);
