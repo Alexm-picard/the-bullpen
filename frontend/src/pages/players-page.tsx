@@ -8,7 +8,12 @@
 import { Container, Group, Stack, Text, Title } from "@mantine/core";
 import { useNavigate, useParams } from "react-router-dom";
 
-import { usePlayer, usePlayerPredictions } from "../api/players";
+import {
+  usePlayer,
+  usePlayerCalibration,
+  usePlayerPredictions,
+} from "../api/players";
+import { ReliabilityDiagram } from "../components/charts/reliability-diagram";
 import { PlayerSearch } from "../components/players/player-search";
 import { PredictionHistoryTable } from "../components/players/prediction-history-table";
 
@@ -41,6 +46,10 @@ export function PlayerProfilePage() {
 
   const player = usePlayer(valid ? numericId : null);
   const predictions = usePlayerPredictions(valid ? numericId : null, 50);
+  const calibration = usePlayerCalibration(
+    valid ? numericId : null,
+    "pitch_outcome_pre",
+  );
 
   return (
     <Container size="lg" py="xl">
@@ -91,7 +100,27 @@ export function PlayerProfilePage() {
           />
           <Text size="xs" c="dimmed">
             Outcome and agreement columns light up when truth-joining to the
-            pitches table lands (next leaf). Calibration plot in 4b.3.
+            pitches table lands.
+          </Text>
+        </Stack>
+
+        <Stack gap="xs">
+          <Title order={3}>Calibration · pitch_outcome_pre</Title>
+          <ReliabilityDiagram
+            bins={calibration.data}
+            isLoading={calibration.isLoading}
+            isError={calibration.isError}
+            errorMessage={
+              calibration.error instanceof Error
+                ? calibration.error.message
+                : undefined
+            }
+            caption="predicted vs. actual frequency · diagonal is perfect calibration"
+          />
+          <Text size="xs" c="dimmed">
+            Until truth-joining lands, the actual-axis is a placeholder (bin
+            midpoint) so the bins are visible — they will fall onto / off the
+            diagonal when paired truth data is available.
           </Text>
         </Stack>
       </Stack>

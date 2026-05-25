@@ -7,8 +7,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   PlayerLookupError,
   getPlayer,
+  getPlayerCalibration,
   getPlayerPredictions,
   searchPlayers,
+  type CalibrationBin,
   type PlayerPredictionRow,
   type PlayerSearchResult,
 } from "./players";
@@ -180,5 +182,65 @@ describe("getPlayerPredictions", () => {
     const err = await getPlayerPredictions(660271).catch((e) => e);
     expect(err).toBeInstanceOf(PlayerLookupError);
     expect(err.status).toBe(500);
+  });
+});
+
+describe("getPlayerCalibration", () => {
+  const BIN: CalibrationBin = {
+    binStart: 0.4,
+    binEnd: 0.5,
+    predicted: 0.45,
+    actual: 0.43,
+    n: 250,
+  };
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("returns bins on 200 with the model param urlencoded", async () => {
+    (fetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => [BIN],
+    });
+
+    expect(await getPlayerCalibration(660271, "pitch_outcome_pre")).toEqual([
+      BIN,
+    ]);
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "/v1/players/660271/calibration?model=pitch_outcome_pre",
+      ),
+    );
+  });
+
+  it("throws PlayerLookupError(404) on player-not-found", async () => {
+    (fetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      json: async () => null,
+    });
+    const err = await getPlayerCalibration(999, "pitch_outcome_pre").catch(
+      (e) => e,
+    );
+    expect(err).toBeInstanceOf(PlayerLookupError);
+    expect(err.status).toBe(404);
+  });
+
+  it("throws PlayerLookupError on 400 (unknown model)", async () => {
+    (fetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      json: async () => null,
+    });
+    const err = await getPlayerCalibration(660271, "pitch_outcome_pre").catch(
+      (e) => e,
+    );
+    expect(err).toBeInstanceOf(PlayerLookupError);
+    expect(err.status).toBe(400);
   });
 });

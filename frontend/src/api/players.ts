@@ -124,3 +124,55 @@ export function usePlayerPredictions(id: number | null, limit = 50) {
     staleTime: 30_000,
   });
 }
+
+// ---------------------------------------------------------------------------
+// 4b.3 — per-player calibration bins (reliability diagram)
+// ---------------------------------------------------------------------------
+
+export type CalibrationBin = {
+  binStart: number;
+  binEnd: number;
+  predicted: number;
+  actual: number;
+  n: number;
+};
+
+export type CalibrationModel =
+  | "pitch_outcome_pre"
+  | "pitch_outcome_post"
+  | "batted_ball"
+  | "_toy_batted_ball";
+
+export async function getPlayerCalibration(
+  id: number,
+  model: CalibrationModel,
+): Promise<CalibrationBin[]> {
+  const res = await fetch(
+    `${API_BASE}/v1/players/${id}/calibration?model=${encodeURIComponent(model)}`,
+  );
+  if (res.status === 404) {
+    throw new PlayerLookupError(404, "player not found");
+  }
+  if (!res.ok) {
+    throw new PlayerLookupError(
+      res.status,
+      `calibration lookup failed: HTTP ${res.status}`,
+    );
+  }
+  return (await res.json()) as CalibrationBin[];
+}
+
+export function usePlayerCalibration(
+  id: number | null,
+  model: CalibrationModel,
+) {
+  return useQuery<CalibrationBin[], PlayerLookupError>({
+    queryKey: ["players", "calibration", id, model],
+    queryFn: () => {
+      if (id == null) throw new Error("id is required");
+      return getPlayerCalibration(id, model);
+    },
+    enabled: id != null,
+    staleTime: 60_000,
+  });
+}
