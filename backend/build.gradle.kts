@@ -30,6 +30,8 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-security")
     implementation("org.springframework.boot:spring-boot-starter-cache")
     implementation("com.github.ben-manes.caffeine:caffeine:3.1.8")
+    // Guava: needed for Hashing.murmur3_32_fixed() in the A/B router's game-id bucketer (3b.2).
+    implementation("com.google.guava:guava:33.4.0-jre")
     implementation("org.flywaydb:flyway-core:11.3.2")
     runtimeOnly("org.xerial:sqlite-jdbc:3.49.1.0")
     runtimeOnly("io.micrometer:micrometer-registry-prometheus")
