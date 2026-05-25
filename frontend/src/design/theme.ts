@@ -30,23 +30,24 @@ export const theme = createTheme({
   // Default text + UI font.
   fontFamily: typography.fonts.ui,
   // Display font for headings — h1/h2/h3 take Source Serif 4.
+  // Sizes pulled from `typography.scale` so the type ramp has a single source.
   headings: {
     fontFamily: typography.fonts.display,
     sizes: {
       h1: {
-        fontSize: "48px",
+        fontSize: `${typography.scale[6]}px`, // 48
         lineHeight: String(typography.lineHeights.display),
       },
       h2: {
-        fontSize: "32px",
+        fontSize: `${typography.scale[5]}px`, // 32
         lineHeight: String(typography.lineHeights.display),
       },
       h3: {
-        fontSize: "24px",
+        fontSize: `${typography.scale[4]}px`, // 24
         lineHeight: String(typography.lineHeights.display),
       },
       h4: {
-        fontSize: "20px",
+        fontSize: `${typography.scale[3]}px`, // 20
         lineHeight: String(typography.lineHeights.display),
       },
     },

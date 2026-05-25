@@ -56,9 +56,9 @@ function HeaderBlock() {
           order={1}
           style={{
             margin: 0,
-            fontSize: 64,
-            lineHeight: 1.05,
-            fontWeight: 700,
+            fontSize: typography.scale[7], // 64 — tokens.typography.scale
+            lineHeight: typography.lineHeights.display,
+            fontWeight: typography.weights.bold,
           }}
         >
           A serving wrapper around three baseball models.
@@ -172,7 +172,10 @@ function ArchitectureDiagram() {
             width="100%"
             role="img"
             aria-label="Data flows from Statcast and MLB Stats API into ClickHouse, training emits ONNX, Spring serves predictions to the React frontend"
-            style={{ fontFamily: typography.fonts.data, fontSize: 11 }}
+            style={{
+              fontFamily: typography.fonts.data,
+              fontSize: typography.scale[0] - 1,
+            }}
           >
             <SourceBox x={10} y={20} w={110} label="Statcast" />
             <SourceBox x={10} y={80} w={110} label="MLB Stats API" />

@@ -84,7 +84,10 @@ export function ReliabilityDiagram({
         viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
         role="img"
         aria-label="Reliability diagram"
-        style={{ fontFamily: typography.fonts.data, fontSize: 11 }}
+        style={{
+          fontFamily: typography.fonts.data,
+          fontSize: typography.scale[0] - 1,
+        }}
       >
         {/* Plot background */}
         <rect
@@ -180,7 +183,7 @@ export function ReliabilityDiagram({
           y={SVG_HEIGHT - 4}
           textAnchor="middle"
           fill={colors.textDefault}
-          fontSize={12}
+          fontSize={typography.scale[0]}
         >
           predicted probability
         </text>
@@ -190,7 +193,7 @@ export function ReliabilityDiagram({
           transform="rotate(-90)"
           textAnchor="middle"
           fill={colors.textDefault}
-          fontSize={12}
+          fontSize={typography.scale[0]}
         >
           actual frequency
         </text>

@@ -1,0 +1,16 @@
+/* Global typography rules (leaf 5.1).
+ *
+ * Tabular figures everywhere — every numeric column reads in line because the
+ * digit advance is constant. Opt out via the `.nominal` utility for
+ * decorative numerals (e.g., logos), where proportional spacing is friendlier.
+ *
+ * Lives in src/design/ so the lint:hex-codes allowlist covers any colour
+ * literals we add here later (none today). */
+
+body {
+  font-feature-settings: "tnum" 1;
+}
+
+.nominal {
+  font-feature-settings: "tnum" 0;
+}

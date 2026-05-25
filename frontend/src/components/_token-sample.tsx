@@ -43,7 +43,7 @@ export function TokenSampleCard() {
         <Box
           style={{
             fontFamily: typography.fonts.data,
-            fontSize: 24,
+            fontSize: typography.scale[4], // 24
             color: colors.textStrong,
           }}
         >
