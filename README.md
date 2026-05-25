@@ -1,29 +1,136 @@
 # The Bullpen
 
-A self-hosted baseball analytics platform with a custom ML systems wrapper —
-model registry, A/B routing, drift detection, retraining triggers — serving
-three calibrated models (pitch outcome pre-pitch, pitch outcome post-pitch,
-batted ball per-park HR probability) for the duration of an MLB season.
-
-**Status:** Phase 0 (foundation) — Mac-side complete (CI green, Vercel live
-at `thebullpen.net`, Discord webhook + Cloudflare DNS configured). Six
-host-side items left on WSL2: systemd autostart, Cloudflare Tunnel for
-`api.thebullpen.net`, Uptime Robot monitoring, USB backup + restore drill,
-reboot drill.
-
-See [`docs/phase-status.json`](docs/phase-status.json) and the WSL2
-continuation brief
-[`docs/sessions/2026-05-19-wsl2-phase-0-completion.md`](docs/sessions/2026-05-19-wsl2-phase-0-completion.md).
+A self-hosted baseball-analytics platform built primarily as a serving
+wrapper around three calibrated models. Operates through at least one MLB
+season for a real drift postmortem.
 
 - **Live frontend**: https://thebullpen.net/
+- **Live Ops dashboard**: https://thebullpen.net/ops
+- **About + methodology**: https://thebullpen.net/about
 - **Repo**: https://github.com/Alexm-picard/the-bullpen
 
-**Read first:** [`docs/design.md`](docs/design.md),
-[`docs/plan.md`](docs/plan.md), [`docs/decisions.md`](docs/decisions.md),
-[`CLAUDE.md`](CLAUDE.md). Most "obvious" alternatives have been rejected with
-written rationale — check before re-litigating.
+## What's interesting about it
 
----
+- A **custom ML systems wrapper** — model registry, A/B router, drift
+  detection, retraining triggers — written from scratch in Java rather
+  than pulled in via MLflow. The wrapper is the project; the models are
+  the excuse.
+- **ONNX Runtime in-process** in Java + Spring Boot 3 — no Python
+  sidecar, no live RPC. Training is Python; serving is JVM.
+- **Editorial-data design system** (Inter / JetBrains Mono / Source
+  Serif 4 on a warm-paper substrate). Not yet-another-SaaS chrome.
+- **Per-model eval artifact** with rolling-origin cross-validation,
+  reliability diagrams, calibration metrics — always co-registered with
+  a logistic-regression baseline to bound the neural model's lift.
+- Mid-season **drift postmortems** when a model degrades — automated
+  trigger, human promotion gate (decision [44] / rule 6).
+- ~95 % test coverage at this writing: backend 376 tests, frontend 93;
+  every commit gates on lint, hex-codes, bundle-budget, static a11y.
+
+## How to try it
+
+The simplest path is the live site above. Local dev:
+
+```bash
+# Stateful services (ClickHouse, Prometheus, Grafana)
+docker compose -f infra/docker-compose.yml up -d
+
+# Backend (api profile on 8080, worker on 8081)
+cd backend && ./gradlew bootRun --args='--spring.profiles.active=api'
+
+# Frontend (Vite on 5173, calls Spring via CORS)
+cd ../frontend && npm install && npm run dev
+
+# Training pipeline (Python 3.11+ via uv)
+cd ../training && uv sync && uv run pytest
+```
+
+## Design + decisions
+
+Most "obvious" alternatives have been rejected with written rationale —
+check before re-litigating:
+
+- [System design](docs/design.md) — every locked technical choice with
+  context.
+- [Numbered decisions log](docs/decisions.md) — chronological append-only
+  flat log.
+- [Phased build plan](docs/plan.md) — Phase 0 → Phase 5, soft-cut
+  priority list, two-week review cadence.
+- [`CLAUDE.md`](CLAUDE.md) — non-negotiable discipline rules.
+- ADRs (long-form, top ~15 % of decisions): [`docs/adr/`](docs/adr/)
+
+### Architecture (sketch)
+
+```
+  Statcast / MLB Stats API / Weather
+                 │
+                 ▼
+        ┌────────────────┐         ┌─────────────────────┐
+        │   ClickHouse   │◀────────│   Training (Python) │
+        │ pitches+drift  │         │  rolling-CV → ONNX  │
+        └────────┬───────┘         └────────┬────────────┘
+                 │                          │
+                 ▼                          ▼
+        ┌────────────────┐         ┌─────────────────────┐
+        │ Spring 3 + JVM │◀────────│   Registry (SQLite) │
+        │ ONNX inference │         │  versions · A/B     │
+        └────────┬───────┘         └─────────────────────┘
+                 │
+                 ▼
+        React + Mantine + TanStack (this site)
+```
+
+A rendered SVG version of the diagram lives on the
+[About page](https://thebullpen.net/about).
+
+## Data sources + licensing
+
+Pitch-level data is downloaded from
+[Baseball Savant](https://baseballsavant.mlb.com/) via the
+[`pybaseball`](https://pypi.org/project/pybaseball/) client. Roster and
+game schedule come from the MLB Stats API. Weather joins from a free
+meteorology source.
+
+**This project's published outputs (predictions, model artifacts, this
+site) are derived analytics for personal research / portfolio purposes.
+Underlying play-by-play data is not redistributed.**
+
+## Known limitations
+
+- The 30-park batted-ball MLP that natively emits 30 outputs in one ONNX
+  call is Phase 2c.5 work — until it lands, `/v1/predict/batted-ball
+/all-parks` loops the toy inference 30 times (~300 μs total, still well
+  under the page render budget).
+- Live game polling worker (MLB Stats API client + per-game scheduled
+  poll on the worker profile) is wired contractually but not running —
+  the controller surface + state machine are in place and tested; the
+  poller is a one-class addition.
+- `prediction_log` truth-join to `pitches` by `(game_id, at_bat_index,
+pitch_number)` needs the indexed `pitch_id` column to land before the
+  per-player history / calibration views populate fully.
+- E2E / Playwright + Lighthouse / axe-core CI all defer to Phase 5.x.
+  Static linters (hex codes, bundle budget, a11y heuristics) fill the
+  gap until then.
+
+## What's next (v1.5)
+
+- 30-park MLP natively serving all-parks predictions
+- Truth-join landing for full calibration + agreement views
+- MLB Stats API poller wired to `GameStateMachine`
+- Admin override page wrapping the existing `POST /v1/admin/routing`
+  slider behind HTTP Basic
+- Hyperparameter search in the retraining job (fixed-HP today per
+  decision [81])
+- Per-game weather pull replacing the per-park annual default
+  atmosphere (Phase 2c.4)
+
+## Operating evidence
+
+- Drift postmortems land under
+  [`docs/postmortems/`](docs/postmortems/) when a model degrades and the
+  human review writes one up. Empty today; first lands mid-season.
+- Restore + reboot drill reports under
+  [`docs/drills/`](docs/drills/) (rule 8).
 
 ## Repository layout
 
@@ -31,89 +138,14 @@ written rationale — check before re-litigating.
 thebullpen/
 ├── backend/        Java 21 + Spring Boot 3 (Gradle Kotlin DSL)
 ├── training/       Python 3.11 (uv) — model training, eval, ONNX export
-├── frontend/       React 18 + TypeScript + Vite + Mantine + Tailwind
-├── contracts/      Canonical Python↔Java file contract (feature_pipeline.json)
-├── infra/          docker-compose, Prometheus + Grafana provisioning, backup scripts
-├── docs/           design.md, plan.md, decisions.md, adr/, drills/, deploys/
+├── frontend/       React 19 + TypeScript + Vite + Mantine 9 + Tailwind 4
+├── contracts/      Canonical Python↔Java file contract
+├── infra/          docker-compose, Prometheus + Grafana, backup scripts
+├── docs/           design.md, plan.md, decisions.md, adr/, drills/, etc.
 ├── .githooks/      pre-commit (schema_hash discipline)
 └── deploy.sh       Phase 0 deploy stub — prefer the deploy-safely skill
 ```
 
-## Local dev — quickstart
+## Contact
 
-### Stateful services (ClickHouse, Prometheus, Grafana)
-
-```bash
-docker compose -f infra/docker-compose.yml up -d
-# ClickHouse  http://localhost:8123   (default / thebullpen)
-# Prometheus  http://localhost:9090
-# Grafana     http://localhost:3000   (admin / admin)
-```
-
-### Backend
-
-```bash
-cd backend
-./gradlew bootRun --args='--spring.profiles.active=api'
-# http://localhost:8080/health
-# http://localhost:8080/actuator/health
-# http://localhost:8080/actuator/prometheus
-```
-
-Worker profile binds 8081: `./gradlew bootRun --args='--spring.profiles.active=worker'`.
-
-### Training
-
-```bash
-cd training
-uv sync
-uv run pytest                # smoke + leakage placeholder
-uv run ruff check
-uv run pyright
-```
-
-### Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev                  # http://localhost:5173 — calls Spring /health via CORS
-npm run build                # production bundle to dist/
-```
-
-## Discipline rules (non-negotiable)
-
-1. **Build the demoable spine first.** Vertical slice end-to-end is the
-   credibility floor; no horizontal building.
-2. **No hex codes in component files.** Mantine theme tokens or Tailwind
-   theme colors only.
-3. **No deploys during live games** (evenings April–October).
-4. **No cuts** to: Phase 0 foundation, eval artifacts, the model registry,
-   the Ops dashboard, Phase 6 hiring-readiness work.
-5. **No promotion of a model without pre-declared promotion criteria.**
-6. **No auto-promotion of retrained models** — retraining is automated,
-   promotion stays human-gated.
-7. **Feature schema hashing is enforced at registration** — refuse models
-   whose schema hash doesn't match `contracts/feature_pipeline.json`.
-8. **Restore + reboot drills run before the season starts.**
-9. **Two heads = two separate models** in the registry (pre-pitch +
-   post-pitch).
-10. **All rolling/form features computed via streaming temporal cutoff.**
-    Leakage tests in CI are non-negotiable.
-
-Full discipline list and rationale in [`CLAUDE.md`](CLAUDE.md) and
-[`docs/plan.md`](docs/plan.md).
-
-## ADRs
-
-The depth-layer architectural records live in [`docs/adr/`](docs/adr/).
-[`docs/decisions.md`](docs/decisions.md) is the chronological flat log;
-ADRs are the long-form record for the top ~15% of decisions.
-
-- [ADR-0001 — Java 21, not Kotlin](docs/adr/0001-java-not-kotlin.md)
-- [ADR-0002 — ONNX in-process, not Python sidecar](docs/adr/0002-onnx-in-process-not-python-sidecar.md)
-- [ADR-0003 — ClickHouse + SQLite, not Postgres-only](docs/adr/0003-clickhouse-plus-sqlite-not-postgres-only.md)
-- [ADR-0004 — Mantine + Tailwind, not pure Tailwind](docs/adr/0004-mantine-plus-tailwind-not-pure-tailwind.md)
-- [ADR-0005 — Polling, not WebSockets](docs/adr/0005-polling-not-websockets.md)
-- [ADR-0006 — Local dev on macOS, deployment to self-hosted Linux](docs/adr/0006-dev-prod-boundary.md)
-- [ADR-0007 — Object storage via S3-compatible endpoint](docs/adr/0007-s3-compatible-storage.md)
+GitHub: [@Alexm-picard](https://github.com/Alexm-picard)
