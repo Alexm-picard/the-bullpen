@@ -66,6 +66,98 @@ public class ExperimentResultsRepository {
     }
   }
 
+  /**
+   * Currently-running experiment for {@code modelName}, if any — leaf 3b.4 forbids more than one.
+   * Used by {@code ExperimentService.start} to surface {@link
+   * net.thebullpen.baseball.registry.experiment.ExperimentException.AlreadyRunning}.
+   */
+  public Optional<ExperimentResult> findRunningByModel(String modelName) {
+    try {
+      ExperimentResult row =
+          jdbc.queryForObject(
+              SELECT_ALL_COLUMNS
+                  + " WHERE model_name = ? AND status = 'running'"
+                  + " ORDER BY started_at DESC, id DESC LIMIT 1",
+              EXPERIMENT_MAPPER,
+              modelName);
+      return Optional.ofNullable(row);
+    } catch (EmptyResultDataAccessException e) {
+      return Optional.empty();
+    }
+  }
+
+  /**
+   * Insert a new experiment row in {@code running} status. {@code started_at} stamped to now;
+   * metric + sample columns null until {@code complete} fires. Returns the row as persisted with id
+   * + created_at populated.
+   */
+  public ExperimentResult insertRunning(
+      String modelName,
+      long championVersionId,
+      long challengerVersionId,
+      String primaryMetric,
+      double primaryThreshold,
+      String guardrailsJson,
+      long sampleSizeTarget,
+      String notes) {
+    org.springframework.jdbc.support.KeyHolder keyHolder =
+        new org.springframework.jdbc.support.GeneratedKeyHolder();
+    jdbc.update(
+        connection -> {
+          var ps =
+              connection.prepareStatement(
+                  "INSERT INTO experiment_results (model_name, champion_version_id,"
+                      + " challenger_version_id, started_at, primary_metric, primary_threshold,"
+                      + " guardrails, sample_size_target, status, notes)"
+                      + " VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, 'running', ?)",
+                  java.sql.Statement.RETURN_GENERATED_KEYS);
+          ps.setString(1, modelName);
+          ps.setLong(2, championVersionId);
+          ps.setLong(3, challengerVersionId);
+          ps.setString(4, primaryMetric);
+          ps.setDouble(5, primaryThreshold);
+          ps.setString(6, guardrailsJson);
+          ps.setLong(7, sampleSizeTarget);
+          ps.setString(8, notes);
+          return ps;
+        },
+        keyHolder);
+    Number key = keyHolder.getKey();
+    if (key == null) {
+      throw new IllegalStateException("INSERT into experiment_results returned no generated key");
+    }
+    return findById(key.longValue())
+        .orElseThrow(
+            () ->
+                new IllegalStateException(
+                    "experiment_results row vanished after insert: id=" + key));
+  }
+
+  /**
+   * Mark experiment {@code id} as {@code terminalStatus} with the observed metric values. Bumps
+   * {@code ended_at}. Terminal statuses are {@code passed | failed | aborted}; the transition out
+   * of {@code running} is one-way (the service enforces this via {@link
+   * net.thebullpen.baseball.registry.experiment.ExperimentException.InvalidStateTransition}).
+   */
+  public int markTerminal(
+      long id,
+      String terminalStatus,
+      long sampleSizeObserved,
+      Double championMetric,
+      Double challengerMetric,
+      String guardrailsObservedJson) {
+    return jdbc.update(
+        "UPDATE experiment_results SET status = ?, ended_at = CURRENT_TIMESTAMP,"
+            + " sample_size_observed = ?, champion_metric = ?, challenger_metric = ?,"
+            + " guardrails_observed = ? WHERE id = ?",
+        terminalStatus,
+        sampleSizeObserved,
+        championMetric,
+        challengerMetric,
+        guardrailsObservedJson,
+        id);
+  }
+
   /** All experiment rows for one model, newest-first by {@code created_at}. */
   public List<ExperimentResult> findByModel(String modelName) {
     return jdbc.query(
