@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500"
+     role="img" aria-label="Oakland Coliseum field outline"
+     fill="none" stroke="currentColor" stroke-width="2"
+     stroke-linecap="round" stroke-linejoin="round">
+  <symbol id="field" viewBox="0 0 500 500">
+    <!-- foul lines -->
+    <line x1="250" y1="480" x2="16.7" y2="246.7"/>
+    <line x1="250" y1="480" x2="483.3" y2="246.7"/>
+    <!-- outfield wall -->
+    <path d="M 16.7 246.7 L 109.6 140.9 L 250.0 80.0 L 390.4 140.9 L 483.3 246.7"/>
+    <!-- home plate (small chevron) -->
+    <path d="M 244 480 L 250 488 L 256 480 L 256 476 L 244 476 Z"/>
+  </symbol>
+  <use href="#field"/>
+</svg>

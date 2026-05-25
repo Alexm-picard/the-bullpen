@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500"
+     role="img" aria-label="Oracle Park field outline"
+     fill="none" stroke="currentColor" stroke-width="2"
+     stroke-linecap="round" stroke-linejoin="round">
+  <symbol id="field" viewBox="0 0 500 500">
+    <!-- foul lines -->
+    <line x1="250" y1="480" x2="10.3" y2="240.3"/>
+    <line x1="250" y1="480" x2="468.5" y2="261.5"/>
+    <!-- outfield wall -->
+    <path d="M 10.3 240.3 L 110.7 143.7 L 250.0 89.0 L 411.1 91.0 L 473.1 123.0 L 468.5 261.5"/>
+    <!-- home plate (small chevron) -->
+    <path d="M 244 480 L 250 488 L 256 480 L 256 476 L 244 476 Z"/>
+  </symbol>
+  <use href="#field"/>
+</svg>

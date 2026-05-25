@@ -1,0 +1,242 @@
+{
+  "ATH": {
+    "name": "Oakland Coliseum",
+    "svgPath": "/parks/ATH.svg",
+    "altitudeM": 8,
+    "shortFenceFt": 330,
+    "centerFenceFt": 400,
+    "deepestFenceFt": 400
+  },
+  "ATL": {
+    "name": "Truist Park",
+    "svgPath": "/parks/ATL.svg",
+    "altitudeM": 280,
+    "shortFenceFt": 325,
+    "centerFenceFt": 400,
+    "deepestFenceFt": 400
+  },
+  "AZ": {
+    "name": "Chase Field",
+    "svgPath": "/parks/AZ.svg",
+    "altitudeM": 331,
+    "shortFenceFt": 330,
+    "centerFenceFt": 407,
+    "deepestFenceFt": 407
+  },
+  "BAL": {
+    "name": "Camden Yards",
+    "svgPath": "/parks/BAL.svg",
+    "altitudeM": 17,
+    "shortFenceFt": 318,
+    "centerFenceFt": 410,
+    "deepestFenceFt": 410
+  },
+  "BOS": {
+    "name": "Fenway Park",
+    "svgPath": "/parks/BOS.svg",
+    "altitudeM": 6,
+    "shortFenceFt": 302,
+    "centerFenceFt": 390,
+    "deepestFenceFt": 420
+  },
+  "CHC": {
+    "name": "Wrigley Field",
+    "svgPath": "/parks/CHC.svg",
+    "altitudeM": 182,
+    "shortFenceFt": 353,
+    "centerFenceFt": 400,
+    "deepestFenceFt": 400
+  },
+  "CIN": {
+    "name": "Great American Ball Park",
+    "svgPath": "/parks/CIN.svg",
+    "altitudeM": 150,
+    "shortFenceFt": 325,
+    "centerFenceFt": 404,
+    "deepestFenceFt": 404
+  },
+  "CLE": {
+    "name": "Progressive Field",
+    "svgPath": "/parks/CLE.svg",
+    "altitudeM": 207,
+    "shortFenceFt": 325,
+    "centerFenceFt": 405,
+    "deepestFenceFt": 405
+  },
+  "COL": {
+    "name": "Coors Field",
+    "svgPath": "/parks/COL.svg",
+    "altitudeM": 1580,
+    "shortFenceFt": 347,
+    "centerFenceFt": 415,
+    "deepestFenceFt": 415
+  },
+  "CWS": {
+    "name": "Guaranteed Rate Field",
+    "svgPath": "/parks/CWS.svg",
+    "altitudeM": 180,
+    "shortFenceFt": 330,
+    "centerFenceFt": 400,
+    "deepestFenceFt": 400
+  },
+  "DET": {
+    "name": "Comerica Park",
+    "svgPath": "/parks/DET.svg",
+    "altitudeM": 180,
+    "shortFenceFt": 330,
+    "centerFenceFt": 420,
+    "deepestFenceFt": 420
+  },
+  "HOU": {
+    "name": "Minute Maid Park",
+    "svgPath": "/parks/HOU.svg",
+    "altitudeM": 7,
+    "shortFenceFt": 315,
+    "centerFenceFt": 409,
+    "deepestFenceFt": 409
+  },
+  "KC": {
+    "name": "Kauffman Stadium",
+    "svgPath": "/parks/KC.svg",
+    "altitudeM": 247,
+    "shortFenceFt": 330,
+    "centerFenceFt": 410,
+    "deepestFenceFt": 410
+  },
+  "LAA": {
+    "name": "Angel Stadium",
+    "svgPath": "/parks/LAA.svg",
+    "altitudeM": 50,
+    "shortFenceFt": 333,
+    "centerFenceFt": 396,
+    "deepestFenceFt": 396
+  },
+  "LAD": {
+    "name": "Dodger Stadium",
+    "svgPath": "/parks/LAD.svg",
+    "altitudeM": 132,
+    "shortFenceFt": 330,
+    "centerFenceFt": 395,
+    "deepestFenceFt": 395
+  },
+  "MIA": {
+    "name": "loanDepot park",
+    "svgPath": "/parks/MIA.svg",
+    "altitudeM": 2,
+    "shortFenceFt": 335,
+    "centerFenceFt": 407,
+    "deepestFenceFt": 407
+  },
+  "MIL": {
+    "name": "American Family Field",
+    "svgPath": "/parks/MIL.svg",
+    "altitudeM": 195,
+    "shortFenceFt": 344,
+    "centerFenceFt": 400,
+    "deepestFenceFt": 400
+  },
+  "MIN": {
+    "name": "Target Field",
+    "svgPath": "/parks/MIN.svg",
+    "altitudeM": 251,
+    "shortFenceFt": 328,
+    "centerFenceFt": 411,
+    "deepestFenceFt": 411
+  },
+  "NYM": {
+    "name": "Citi Field",
+    "svgPath": "/parks/NYM.svg",
+    "altitudeM": 11,
+    "shortFenceFt": 330,
+    "centerFenceFt": 408,
+    "deepestFenceFt": 408
+  },
+  "NYY": {
+    "name": "Yankee Stadium",
+    "svgPath": "/parks/NYY.svg",
+    "altitudeM": 16,
+    "shortFenceFt": 314,
+    "centerFenceFt": 408,
+    "deepestFenceFt": 408
+  },
+  "PHI": {
+    "name": "Citizens Bank Park",
+    "svgPath": "/parks/PHI.svg",
+    "altitudeM": 5,
+    "shortFenceFt": 329,
+    "centerFenceFt": 401,
+    "deepestFenceFt": 401
+  },
+  "PIT": {
+    "name": "PNC Park",
+    "svgPath": "/parks/PIT.svg",
+    "altitudeM": 215,
+    "shortFenceFt": 320,
+    "centerFenceFt": 399,
+    "deepestFenceFt": 399
+  },
+  "SD": {
+    "name": "Petco Park",
+    "svgPath": "/parks/SD.svg",
+    "altitudeM": 17,
+    "shortFenceFt": 322,
+    "centerFenceFt": 396,
+    "deepestFenceFt": 396
+  },
+  "SEA": {
+    "name": "T-Mobile Park",
+    "svgPath": "/parks/SEA.svg",
+    "altitudeM": 60,
+    "shortFenceFt": 326,
+    "centerFenceFt": 401,
+    "deepestFenceFt": 401
+  },
+  "SF": {
+    "name": "Oracle Park",
+    "svgPath": "/parks/SF.svg",
+    "altitudeM": 12,
+    "shortFenceFt": 309,
+    "centerFenceFt": 391,
+    "deepestFenceFt": 421
+  },
+  "STL": {
+    "name": "Busch Stadium",
+    "svgPath": "/parks/STL.svg",
+    "altitudeM": 142,
+    "shortFenceFt": 335,
+    "centerFenceFt": 400,
+    "deepestFenceFt": 400
+  },
+  "TB": {
+    "name": "Tropicana Field",
+    "svgPath": "/parks/TB.svg",
+    "altitudeM": 11,
+    "shortFenceFt": 315,
+    "centerFenceFt": 404,
+    "deepestFenceFt": 404
+  },
+  "TEX": {
+    "name": "Globe Life Field",
+    "svgPath": "/parks/TEX.svg",
+    "altitudeM": 130,
+    "shortFenceFt": 326,
+    "centerFenceFt": 407,
+    "deepestFenceFt": 407
+  },
+  "TOR": {
+    "name": "Rogers Centre",
+    "svgPath": "/parks/TOR.svg",
+    "altitudeM": 76,
+    "shortFenceFt": 328,
+    "centerFenceFt": 400,
+    "deepestFenceFt": 400
+  },
+  "WSH": {
+    "name": "Nationals Park",
+    "svgPath": "/parks/WSH.svg",
+    "altitudeM": 12,
+    "shortFenceFt": 335,
+    "centerFenceFt": 402,
+    "deepestFenceFt": 402
+  }
+}

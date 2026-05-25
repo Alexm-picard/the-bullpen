@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500"
+     role="img" aria-label="Fenway Park field outline"
+     fill="none" stroke="currentColor" stroke-width="2"
+     stroke-linecap="round" stroke-linejoin="round">
+  <symbol id="field" viewBox="0 0 500 500">
+    <!-- foul lines -->
+    <line x1="250" y1="480" x2="30.8" y2="260.8"/>
+    <line x1="250" y1="480" x2="463.5" y2="266.5"/>
+    <!-- outfield wall -->
+    <path d="M 30.8 260.8 L 105.0 129.8 L 177.1 66.4 L 250.0 90.0 L 395.4 128.9 L 463.5 266.5"/>
+    <!-- home plate (small chevron) -->
+    <path d="M 244 480 L 250 488 L 256 480 L 256 476 L 244 476 Z"/>
+  </symbol>
+  <use href="#field"/>
+</svg>

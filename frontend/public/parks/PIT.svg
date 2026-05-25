@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500"
+     role="img" aria-label="PNC Park field outline"
+     fill="none" stroke="currentColor" stroke-width="2"
+     stroke-linecap="round" stroke-linejoin="round">
+  <symbol id="field" viewBox="0 0 500 500">
+    <!-- foul lines -->
+    <line x1="250" y1="480" x2="20.2" y2="250.2"/>
+    <line x1="250" y1="480" x2="476.3" y2="253.7"/>
+    <!-- outfield wall -->
+    <path d="M 20.2 250.2 L 101.1 120.6 L 250.0 81.0 L 393.5 133.5 L 476.3 253.7"/>
+    <!-- home plate (small chevron) -->
+    <path d="M 244 480 L 250 488 L 256 480 L 256 476 L 244 476 Z"/>
+  </symbol>
+  <use href="#field"/>
+</svg>

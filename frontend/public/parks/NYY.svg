@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500"
+     role="img" aria-label="Yankee Stadium field outline"
+     fill="none" stroke="currentColor" stroke-width="2"
+     stroke-linecap="round" stroke-linejoin="round">
+  <symbol id="field" viewBox="0 0 500 500">
+    <!-- foul lines -->
+    <line x1="250" y1="480" x2="25.1" y2="255.1"/>
+    <line x1="250" y1="480" x2="472.0" y2="258.0"/>
+    <!-- outfield wall -->
+    <path d="M 25.1 255.1 L 97.3 111.4 L 250.0 72.0 L 397.3 124.3 L 472.0 258.0"/>
+    <!-- home plate (small chevron) -->
+    <path d="M 244 480 L 250 488 L 256 480 L 256 476 L 244 476 Z"/>
+  </symbol>
+  <use href="#field"/>
+</svg>
