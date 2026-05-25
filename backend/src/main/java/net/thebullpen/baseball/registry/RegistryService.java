@@ -41,16 +41,23 @@ public class RegistryService {
   private final FeatureSchemaHasher hasher;
   private final ExperimentResultsRepository experimentRepo;
   private final SnapshotStorage snapshotStorage;
+  // @Lazy breaks the circular dep: RoutingService -> RegistryService (challenger lookup) and
+  // RegistryService -> RoutingService (ensureRoutingForChampion on promote). The Spring-injected
+  // proxy resolves on first call, so by the time we promote the bean is fully constructed.
+  private final net.thebullpen.baseball.inference.routing.RoutingService routingService;
 
   public RegistryService(
       RegistryRepository repo,
       FeatureSchemaHasher hasher,
       ExperimentResultsRepository experimentRepo,
-      SnapshotStorage snapshotStorage) {
+      SnapshotStorage snapshotStorage,
+      @org.springframework.context.annotation.Lazy
+          net.thebullpen.baseball.inference.routing.RoutingService routingService) {
     this.repo = repo;
     this.hasher = hasher;
     this.experimentRepo = experimentRepo;
     this.snapshotStorage = snapshotStorage;
+    this.routingService = routingService;
   }
 
   // --- register -----------------------------------------------------------
@@ -318,6 +325,10 @@ public class RegistryService {
           incoming.id());
     }
     repo.updateStage(incoming.id(), Stage.CHAMPION);
+    // 3b.1: ensure model_routing has a row for this model pointing at the new champion. First
+    // promotion auto-creates with SHADOW mode + 0 traffic; subsequent promotions just update
+    // the champion_version_id. Same enclosing transaction as the stage update.
+    routingService.ensureRoutingForChampion(incoming.modelName(), incoming.id());
   }
 
   // --- helpers ------------------------------------------------------------
