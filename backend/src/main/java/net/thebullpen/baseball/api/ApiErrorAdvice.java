@@ -13,6 +13,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.server.ResponseStatusException;
@@ -68,6 +69,16 @@ public class ApiErrorAdvice {
             "request method '" + ex.getMethod() + "' is not supported",
             correlationId());
     return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED).body(body);
+  }
+
+  @ExceptionHandler(MissingServletRequestParameterException.class)
+  public ResponseEntity<ApiError> handleMissingParam(MissingServletRequestParameterException ex) {
+    ApiError body =
+        ApiError.validation(
+            "required parameter is missing",
+            correlationId(),
+            List.of(new FieldError(ex.getParameterName(), "must be present")));
+    return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
   }
 
   @ExceptionHandler(NoResourceFoundException.class)

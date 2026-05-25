@@ -8,6 +8,7 @@ import {
 } from "react-router-dom";
 import HomePage from "./pages/home-page";
 import ParksPage from "./pages/parks-page";
+import PlayersPage, { PlayerProfilePage } from "./pages/players-page";
 
 function Layout() {
   return (
@@ -24,6 +25,9 @@ function Layout() {
               </Anchor>
               <Anchor component={NavLink} to="/parks">
                 parks
+              </Anchor>
+              <Anchor component={NavLink} to="/players">
+                players
               </Anchor>
             </Group>
           </Group>
@@ -43,6 +47,8 @@ export default function App() {
         <Route element={<Layout />}>
           <Route index element={<HomePage />} />
           <Route path="parks" element={<ParksPage />} />
+          <Route path="players" element={<PlayersPage />} />
+          <Route path="players/:id" element={<PlayerProfilePage />} />
         </Route>
       </Routes>
     </BrowserRouter>
