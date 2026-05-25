@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "lint:hex-codes": "node scripts/lint-hex-codes.mjs",
+    "bundle-budget": "node scripts/bundle-budget.mjs",
     "build:parks": "node scripts/build-park-svgs.mjs",
     "preview": "vite preview",
     "test": "vitest"

@@ -1,4 +1,12 @@
-import { Anchor, AppShell, Container, Group, Title } from "@mantine/core";
+import {
+  Anchor,
+  AppShell,
+  Container,
+  Group,
+  Loader,
+  Title,
+} from "@mantine/core";
+import { lazy, Suspense } from "react";
 import {
   BrowserRouter,
   NavLink,
@@ -6,13 +14,34 @@ import {
   Route,
   Routes,
 } from "react-router-dom";
-import AboutPage from "./pages/about-page";
-import { GamePage, TodaysGamesPage } from "./pages/game-page";
+
 import HomePage from "./pages/home-page";
-import OpsPage from "./pages/ops-page";
-import ParksPage from "./pages/parks-page";
-import ParksToyPage from "./pages/parks-toy-page";
-import PlayersPage, { PlayerProfilePage } from "./pages/players-page";
+
+/**
+ * Every non-home page is lazy-loaded so the initial chunk is just the layout
+ * shell + home page. React Router resolves the route, Suspense shows a small
+ * loader while the route's chunk fetches, then the page renders. Pages with
+ * named (non-default) exports are mapped to a `{ default: NamedExport }` shape
+ * because React's `lazy` requires a default export contract.
+ */
+const AboutPage = lazy(() => import("./pages/about-page"));
+const ParksPage = lazy(() => import("./pages/parks-page"));
+const ParksToyPage = lazy(() => import("./pages/parks-toy-page"));
+const OpsPage = lazy(() => import("./pages/ops-page"));
+
+const PlayersPage = lazy(() => import("./pages/players-page"));
+const PlayerProfilePage = lazy(() =>
+  import("./pages/players-page").then((m) => ({
+    default: m.PlayerProfilePage,
+  })),
+);
+
+const TodaysGamesPage = lazy(() =>
+  import("./pages/game-page").then((m) => ({ default: m.TodaysGamesPage })),
+);
+const GamePage = lazy(() =>
+  import("./pages/game-page").then((m) => ({ default: m.GamePage })),
+);
 
 function Layout() {
   return (
@@ -47,9 +76,21 @@ function Layout() {
         </Container>
       </AppShell.Header>
       <AppShell.Main>
-        <Outlet />
+        <Suspense fallback={<RoutePending />}>
+          <Outlet />
+        </Suspense>
       </AppShell.Main>
     </AppShell>
+  );
+}
+
+function RoutePending() {
+  return (
+    <Container size="lg" py="xl">
+      <Group justify="center" py="xl">
+        <Loader size="sm" />
+      </Group>
+    </Container>
   );
 }
 
