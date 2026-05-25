@@ -6,6 +6,7 @@ import {
   Route,
   Routes,
 } from "react-router-dom";
+import AboutPage from "./pages/about-page";
 import { GamePage, TodaysGamesPage } from "./pages/game-page";
 import HomePage from "./pages/home-page";
 import OpsPage from "./pages/ops-page";
@@ -38,6 +39,9 @@ function Layout() {
               <Anchor component={NavLink} to="/ops">
                 ops
               </Anchor>
+              <Anchor component={NavLink} to="/about">
+                about
+              </Anchor>
             </Group>
           </Group>
         </Container>
@@ -62,6 +66,7 @@ export default function App() {
           <Route path="games" element={<TodaysGamesPage />} />
           <Route path="games/:id" element={<GamePage />} />
           <Route path="ops" element={<OpsPage />} />
+          <Route path="about" element={<AboutPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

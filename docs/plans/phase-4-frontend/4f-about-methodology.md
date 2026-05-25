@@ -7,6 +7,7 @@
 ## Scope boundaries
 
 **IN scope**:
+
 - React page at `/about` with editorial visual treatment (decision `[100]`, `[102]`, `[111]`)
 - Editorial layout pattern: max-width 720 px, generous vertical rhythm
 - Source Serif 4 headlines at 48–64 px, weight 600+
@@ -20,6 +21,7 @@
 - Embedded illustrations (a small ASCII / SVG architecture diagram)
 
 **OUT of scope**:
+
 - Storybook / a11y pass — Phase 5.4
 - Public launch posts — Phase 5.6
 
@@ -47,6 +49,7 @@
 ## Required files / modules
 
 **New**:
+
 - `frontend/src/pages/about/about-page.tsx`
 - `frontend/src/pages/about/sections/`:
   - `intro.tsx`
@@ -58,6 +61,7 @@
 - `frontend/src/components/editorial/section.tsx` — wraps content in editorial layout
 
 **Modified**:
+
 - `App.tsx` — add `/about` route.
 
 ---
@@ -67,7 +71,9 @@
 1. Author `<EditorialSection title body />`:
    ```tsx
    <article className="mx-auto max-w-[720px] py-24">
-     <h2 className="font-display text-scale-7 leading-display tracking-tight">{title}</h2>
+     <h2 className="font-display text-scale-7 leading-display tracking-tight">
+       {title}
+     </h2>
      <div className="prose mt-8">{body}</div>
    </article>
    ```
@@ -122,3 +128,4 @@
 ## Status log
 
 | 2026-05-10 | Authored. |
+| 2026-05-25 | Delivered. **Files**: `frontend/src/components/editorial/editorial-section.tsx` — 720-px max-width primitive (`layouts.editorialMaxWidth` from tokens), optional eyebrow above an order-2 Source-Serif Title, 64-px top/bottom padding. `frontend/src/pages/about-page.tsx` is one file with six inline sections (Intro / Models / TrainingData / EvalMethodology / DriftRetraining / WhatsNext) — flatter than the leaf body's `sections/*.tsx` split because each section is <500 words. Hero header at 64-px order-1 Title with eyebrow + dimmed subhead. Between Models and TrainingData sits a 640×200 inline SVG **architecture diagram**: Statcast / MLB Stats API / Weather → ClickHouse → Training (Py) + Registry (SQLite) → Spring (Java) → React frontend. All boxes use token surface colors; arrows in `colors.textMuted`. **Prose drawn from** design.md §1, §2, §5, plus references to rule 9 (two heads = two models), rule 10 (rolling-origin), decision [44] (manual promotion gate), Risk I7 (training data licensing — closed inline in the prose). What's-next list cherry-picks 6 actual deferrals discovered across Phase 4: 30-park MLP, prediction_log truth-join, MLB-Stats-API poller, admin A/B slider, HP search, per-game weather. All internal links resolve; external links carry `rel="noopener noreferrer"`. **Deferrals**: Lighthouse a11y ≥90 + Playwright `font-family === "Source Serif 4"` need a real browser harness — manually verified Title order=1 resolves to display font via theme.headings; lands when e2e harness bootstraps in Phase 5.4. Sections/\*.tsx file split is a trivial future move. **Tests**: 3-case `editorial-section.test.tsx` (title / eyebrow / 720-px max-width). Frontend 93 (was 90); backend unchanged (376). All checks clean. **Risk I7** closed. |
