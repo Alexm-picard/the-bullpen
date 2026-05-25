@@ -121,6 +121,80 @@ public class TrainingDistributionLoader {
   /** Test hook: forget cached distributions for a version. */
   public void invalidate(long versionId) {
     cache.remove(versionId);
+    predictionCache.remove(versionId);
+  }
+
+  // --- per-class prediction reference (3c.3) ---------------------------
+
+  private final Map<Long, Map<String, double[]>> predictionCache = new ConcurrentHashMap<>();
+
+  /**
+   * Read the {@code training_prediction_distribution} block from {@code metadata.json}:
+   *
+   * <pre>
+   *   "training_prediction_distribution": {
+   *     "ball":          [0.30, 0.31, 0.28, ...],
+   *     "called_strike": [0.20, 0.18, 0.21, ...],
+   *     ...
+   *   }
+   * </pre>
+   *
+   * <p>Returns class-name → reference sample. Empty map if absent (training pipeline hasn't emitted
+   * the block yet — leaf "Known edge cases" graceful degradation).
+   */
+  public Map<String, double[]> loadPerClassPredictionReference(long versionId, Path metadataPath) {
+    return predictionCache.computeIfAbsent(versionId, id -> loadPerClassFresh(id, metadataPath));
+  }
+
+  private Map<String, double[]> loadPerClassFresh(long versionId, Path metadataPath) {
+    if (!Files.exists(metadataPath)) {
+      log.warn(
+          "TrainingDistributionLoader: metadata.json missing for version {} at {} — empty per-class refs",
+          versionId,
+          metadataPath);
+      return Map.of();
+    }
+    try {
+      JsonNode root = MAPPER.readTree(metadataPath.toFile());
+      JsonNode predNode = root.path("training_prediction_distribution");
+      if (predNode.isMissingNode() || predNode.isNull() || !predNode.isObject()) {
+        log.info(
+            "TrainingDistributionLoader: version {} has no training_prediction_distribution block"
+                + " in {} — PSI-prediction cannot be computed for this version",
+            versionId,
+            metadataPath);
+        return Map.of();
+      }
+      Map<String, double[]> out = new HashMap<>();
+      predNode
+          .fields()
+          .forEachRemaining(
+              entry -> {
+                if (!entry.getValue().isArray()) {
+                  return;
+                }
+                List<Double> sample = new ArrayList<>();
+                entry.getValue().forEach(v -> sample.add(v.asDouble()));
+                double[] arr = new double[sample.size()];
+                for (int i = 0; i < sample.size(); i++) {
+                  arr[i] = sample.get(i);
+                }
+                out.put(entry.getKey(), arr);
+              });
+      log.info(
+          "TrainingDistributionLoader: version {} loaded {} class reference distributions",
+          versionId,
+          out.size());
+      return out;
+    } catch (IOException e) {
+      log.warn(
+          "TrainingDistributionLoader: could not read training_prediction_distribution from {} for"
+              + " version {}",
+          metadataPath,
+          versionId,
+          e);
+      return Map.of();
+    }
   }
 
   /** Result type: reference distributions partitioned by kind. */
