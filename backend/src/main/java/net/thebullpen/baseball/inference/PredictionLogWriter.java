@@ -27,9 +27,9 @@ public class PredictionLogWriter {
 
   private static final String INSERT_SQL =
       "INSERT INTO prediction_log "
-          + "(request_id, request_at, model_name, model_version, role, "
+          + "(request_id, request_at, model_name, model_version, model_version_id, role, "
           + " feature_hash, features, prediction, latency_ms, correlation_id) "
-          + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+          + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
   private final DataSource clickhouse;
 
@@ -48,12 +48,17 @@ public class PredictionLogWriter {
         stmt.setTimestamp(2, Timestamp.from(ev.requestAt()));
         stmt.setString(3, ev.modelName());
         stmt.setString(4, ev.modelVersion());
-        stmt.setString(5, ev.role().dbValue());
-        stmt.setString(6, ev.featureHash());
-        stmt.setString(7, ev.features());
-        stmt.setString(8, ev.prediction());
-        stmt.setFloat(9, ev.latencyMs());
-        stmt.setString(10, ev.correlationId() == null ? "" : ev.correlationId());
+        if (ev.modelVersionId() == null) {
+          stmt.setNull(5, java.sql.Types.BIGINT);
+        } else {
+          stmt.setLong(5, ev.modelVersionId());
+        }
+        stmt.setString(6, ev.role().dbValue());
+        stmt.setString(7, ev.featureHash());
+        stmt.setString(8, ev.features());
+        stmt.setString(9, ev.prediction());
+        stmt.setFloat(10, ev.latencyMs());
+        stmt.setString(11, ev.correlationId() == null ? "" : ev.correlationId());
         stmt.addBatch();
       }
       stmt.executeBatch();

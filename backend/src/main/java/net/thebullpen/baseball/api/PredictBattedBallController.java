@@ -134,12 +134,17 @@ public class PredictBattedBallController {
               ? legacyFeatureSchemaHash
               : modelLoader.loadBattedBall(routed.servingVersionId()).schemaHash();
 
+      // 3b.5: populate modelVersionId so reconciliation can join precisely against the
+      // registry. Legacy fallback (-1L servingVersionId) → null FK; ModelLoader-resolved
+      // versions → their real id.
+      Long servingVersionFk = routed.servingVersionId() == -1L ? null : routed.servingVersionId();
       logger.enqueue(
           new PredictionLogEvent(
               UUID.randomUUID(),
               requestAt,
               ToyBattedBallInference.MODEL_NAME,
               servingVersionLabel,
+              servingVersionFk,
               toLogRole(routed.servingRole()),
               servingSchemaHash,
               serializeFeatures(req),
@@ -157,6 +162,7 @@ public class PredictBattedBallController {
                 requestAt,
                 ToyBattedBallInference.MODEL_NAME,
                 shadowModel.version(),
+                shadowVid,
                 PredictionLogEvent.Role.SHADOW,
                 shadowModel.schemaHash(),
                 serializeFeatures(req),

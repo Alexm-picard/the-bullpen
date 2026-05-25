@@ -111,6 +111,93 @@ class AsyncPredictionLoggerTest {
     }
   }
 
+  // --- 3b.5 additions: V2 modelVersionId roundtrip + shadow-mode 2× load --------------
+
+  @Test
+  void v1_legacy_constructor_carries_null_modelVersionId() {
+    PredictionLogEvent ev = sampleEvent(0);
+    assertThat(ev.modelVersionId())
+        .as("legacy 1.7-era constructor must default modelVersionId to null")
+        .isNull();
+  }
+
+  @Test
+  void v2_constructor_carries_explicit_modelVersionId() {
+    PredictionLogEvent ev =
+        new PredictionLogEvent(
+            UUID.randomUUID(),
+            Instant.now(),
+            "_toy_batted_ball",
+            "v0",
+            42L,
+            PredictionLogEvent.Role.CHAMPION,
+            "hash",
+            "{}",
+            "{}",
+            1.0f,
+            "cid");
+    assertThat(ev.modelVersionId()).isEqualTo(42L);
+  }
+
+  @Test
+  void shadow_mode_2x_volume_does_not_drop_at_20k_default_capacity() throws InterruptedException {
+    // The 3b.3 batted-ball router produces 2 log rows per request when shadow mode is active
+    // (CHAMPION + SHADOW). At 1000 req/s sustained for 5 seconds = 10K requests = 20K log rows.
+    // With default capacity bumped to 20K + 1-sec flush cadence, drops should stay at 0 as long
+    // as the writer can drain in time. This test simulates by flushing-as-we-go.
+    CapturingWriter writer = new CapturingWriter();
+    AsyncPredictionLogger logger = new AsyncPredictionLogger(Optional.of(writer), registry, 20_000);
+    try {
+      logger.start();
+      int requests = 1000;
+      for (int i = 0; i < requests; i++) {
+        // shadow-mode dispatch produces 2 rows per request.
+        logger.enqueue(sampleEvent(i)); // CHAMPION row
+        logger.enqueue(shadowEvent(i)); // SHADOW row
+        // flush in small batches like the real 1-sec scheduler would.
+        if (i % 250 == 0) {
+          logger.flushOnce();
+        }
+      }
+      // final drain
+      while (logger.flushOnce() > 0) {
+        // keep draining
+      }
+      assertThat(writer.captured()).hasSize(requests * 2);
+      assertThat(registry.counter("thebullpen_prediction_log_dropped_total").count())
+          .as("shadow-mode 2x volume should not drop under sustained 1K req/s with 20K capacity")
+          .isEqualTo(0);
+      // verify roles are correct: half CHAMPION + half SHADOW
+      long champions =
+          writer.captured().stream()
+              .filter(e -> e.role() == PredictionLogEvent.Role.CHAMPION)
+              .count();
+      long shadows =
+          writer.captured().stream()
+              .filter(e -> e.role() == PredictionLogEvent.Role.SHADOW)
+              .count();
+      assertThat(champions).isEqualTo(requests);
+      assertThat(shadows).isEqualTo(requests);
+    } finally {
+      logger.stop();
+    }
+  }
+
+  private static PredictionLogEvent shadowEvent(int seq) {
+    return new PredictionLogEvent(
+        UUID.randomUUID(),
+        Instant.now(),
+        "_toy_batted_ball",
+        "v1",
+        2L, // synthetic shadow version id
+        PredictionLogEvent.Role.SHADOW,
+        "hash",
+        "{\"seq\":" + seq + "}",
+        "{\"prob_hr\":0.51}",
+        3.14f,
+        "cid-shadow-" + seq);
+  }
+
   /** In-memory writer that captures events written for assertion. Thread-safe. */
   private static final class CapturingWriter extends PredictionLogWriter {
     private final List<PredictionLogEvent> captured = new ArrayList<>();

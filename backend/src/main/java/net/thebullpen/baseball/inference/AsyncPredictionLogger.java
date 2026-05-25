@@ -48,7 +48,9 @@ public class AsyncPredictionLogger {
   public AsyncPredictionLogger(
       Optional<PredictionLogWriter> writer,
       MeterRegistry meterRegistry,
-      @Value("${bullpen.inference.log.queue-capacity:10000}") int capacity) {
+      // 3b.5: bumped 10K → 20K to absorb shadow-mode 2× volume (every dispatch now produces a
+      // CHAMPION row + a SHADOW row when a challenger is registered + routed in shadow mode).
+      @Value("${bullpen.inference.log.queue-capacity:20000}") int capacity) {
     this.writer = writer;
     this.queue = new ArrayBlockingQueue<>(capacity);
     this.enqueuedCounter =
