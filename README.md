@@ -135,6 +135,9 @@ pitch_number)` needs the indexed `pitch_id` column to land before the
   in [`docs/hardening/observations.md`](docs/hardening/observations.md),
   triaged sweep doc lands as `docs/hardening/YYYY-MM-DD_sweep.md` with
   before / after metrics per item.
+- **Hiring readiness** (Phase 6) — deliverables tracked in
+  [`docs/hiring/`](docs/hiring/): 60-second verbal pitch, lessons-
+  learned doc, OSS contribution targets, recruiter-time-test.
 
 ## Repository layout
 
