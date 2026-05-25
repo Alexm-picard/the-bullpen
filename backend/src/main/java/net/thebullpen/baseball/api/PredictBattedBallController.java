@@ -13,12 +13,17 @@ import net.thebullpen.baseball.api.dto.BattedBallRequest;
 import net.thebullpen.baseball.api.dto.PredictionResponse;
 import net.thebullpen.baseball.inference.AsyncPredictionLogger;
 import net.thebullpen.baseball.inference.InferenceMetrics;
+import net.thebullpen.baseball.inference.InferenceRouter;
+import net.thebullpen.baseball.inference.ModelLoader;
 import net.thebullpen.baseball.inference.PredictionLogEvent;
+import net.thebullpen.baseball.inference.RoutedPrediction;
 import net.thebullpen.baseball.inference.ToyBattedBallInference;
+import net.thebullpen.baseball.inference.routing.Role;
 import org.slf4j.MDC;
 import org.springframework.context.annotation.Profile;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -33,62 +38,151 @@ import org.springframework.web.bind.annotation.RestController;
 @Profile("api")
 public class PredictBattedBallController {
 
-  private static final String ROLE = "champion";
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
   private final ToyBattedBallInference inference;
   private final InferenceMetrics metrics;
   private final AsyncPredictionLogger logger;
-  private final String featureSchemaHash;
+  private final InferenceRouter router;
+  private final ModelLoader modelLoader;
+  private final String legacyFeatureSchemaHash;
 
   public PredictBattedBallController(
-      ToyBattedBallInference inference, InferenceMetrics metrics, AsyncPredictionLogger logger) {
+      ToyBattedBallInference inference,
+      InferenceMetrics metrics,
+      AsyncPredictionLogger logger,
+      InferenceRouter router,
+      ModelLoader modelLoader) {
     this.inference = inference;
     this.metrics = metrics;
     this.logger = logger;
-    this.featureSchemaHash = inference.pipelineSpec().schemaHash();
+    this.router = router;
+    this.modelLoader = modelLoader;
+    this.legacyFeatureSchemaHash = inference.pipelineSpec().schemaHash();
   }
 
+  /**
+   * Predict + dispatch via {@link InferenceRouter} (leaf 3b.3). When no routing row exists for
+   * {@code _toy_batted_ball}, the legacy supplier is invoked — preserves the pre-router behavior
+   * exactly so unregistered-model environments stay green. When a routing row exists, the router
+   * fans out to champion + shadow versions in parallel; both are logged.
+   *
+   * <p>{@code X-Bullpen-Game-Id} request header drives the Murmur3 bucket assignment. When absent
+   * (Park Explorer / dev curl), a random long is used — assignment is then per-request, not
+   * per-game, which is fine for the demo-traffic case.
+   */
   @PostMapping("/batted-ball")
-  public PredictionResponse predict(@Valid @RequestBody BattedBallRequest req) throws Exception {
+  public PredictionResponse predict(
+      @Valid @RequestBody BattedBallRequest req,
+      @RequestHeader(value = "X-Bullpen-Game-Id", required = false) Long gameIdHeader)
+      throws Exception {
     Timer.Sample sample = metrics.startTimer();
     Instant requestAt = Instant.now();
+    long gameId =
+        gameIdHeader != null
+            ? gameIdHeader
+            : java.util.concurrent.ThreadLocalRandom.current().nextLong();
+    String correlationId = MDC.get("correlation_id");
+
     try {
-      float prob =
-          inference.predict(
-              req.launchSpeedMph(),
-              req.launchAngleDeg(),
-              req.releaseSpeedMph(),
-              req.parkId(),
-              req.stand());
+      RoutedPrediction<Float> routed =
+          router.route(
+              ToyBattedBallInference.MODEL_NAME,
+              gameId,
+              versionId -> {
+                try {
+                  return modelLoader
+                      .loadBattedBall(versionId)
+                      .predict(
+                          req.launchSpeedMph(),
+                          req.launchAngleDeg(),
+                          req.releaseSpeedMph(),
+                          req.parkId(),
+                          req.stand());
+                } catch (Exception e) {
+                  throw new RuntimeException(e);
+                }
+              },
+              () -> {
+                try {
+                  return inference.predict(
+                      req.launchSpeedMph(),
+                      req.launchAngleDeg(),
+                      req.releaseSpeedMph(),
+                      req.parkId(),
+                      req.stand());
+                } catch (Exception e) {
+                  throw new RuntimeException(e);
+                }
+              });
+
       long elapsedNanos = sample.stop(metrics.timer(ToyBattedBallInference.MODEL_NAME));
-      metrics.incrementPrediction(ToyBattedBallInference.MODEL_NAME, ROLE);
+      metrics.incrementPrediction(
+          ToyBattedBallInference.MODEL_NAME,
+          routed.servingRole().name().toLowerCase(java.util.Locale.ROOT));
       float elapsedMs = elapsedNanos / 1_000_000.0f;
-      String correlationId = MDC.get("correlation_id");
+      float prob = routed.servingResponse();
+
+      // Resolve serving version label: legacy fallback uses the hardcoded v0; otherwise the
+      // ModelLoader-backed model knows its own version string.
+      String servingVersionLabel =
+          routed.servingVersionId() == -1L
+              ? ToyBattedBallInference.MODEL_VERSION
+              : modelLoader.loadBattedBall(routed.servingVersionId()).version();
+      String servingSchemaHash =
+          routed.servingVersionId() == -1L
+              ? legacyFeatureSchemaHash
+              : modelLoader.loadBattedBall(routed.servingVersionId()).schemaHash();
 
       logger.enqueue(
           new PredictionLogEvent(
               UUID.randomUUID(),
               requestAt,
               ToyBattedBallInference.MODEL_NAME,
-              ToyBattedBallInference.MODEL_VERSION,
-              PredictionLogEvent.Role.CHAMPION,
-              featureSchemaHash,
+              servingVersionLabel,
+              toLogRole(routed.servingRole()),
+              servingSchemaHash,
               serializeFeatures(req),
               serializePrediction(prob),
               elapsedMs,
               correlationId));
 
+      // Shadow-mode dispatch: log the parallel SHADOW prediction with the challenger's metadata.
+      if (routed.hasShadowRow()) {
+        long shadowVid = routed.shadowVersionId().orElseThrow();
+        var shadowModel = modelLoader.loadBattedBall(shadowVid);
+        logger.enqueue(
+            new PredictionLogEvent(
+                UUID.randomUUID(),
+                requestAt,
+                ToyBattedBallInference.MODEL_NAME,
+                shadowModel.version(),
+                PredictionLogEvent.Role.SHADOW,
+                shadowModel.schemaHash(),
+                serializeFeatures(req),
+                serializePrediction(routed.shadowResponse().orElseThrow()),
+                elapsedMs,
+                correlationId));
+      }
+
       return new PredictionResponse(
           prob,
           ToyBattedBallInference.MODEL_NAME,
-          ToyBattedBallInference.MODEL_VERSION,
+          servingVersionLabel,
           elapsedNanos / 1_000L,
           correlationId);
     } catch (Exception e) {
       metrics.incrementError(ToyBattedBallInference.MODEL_NAME, e.getClass().getSimpleName());
       throw e;
     }
+  }
+
+  private static PredictionLogEvent.Role toLogRole(Role role) {
+    return switch (role) {
+      case CHAMPION -> PredictionLogEvent.Role.CHAMPION;
+      case CHALLENGER -> PredictionLogEvent.Role.CHALLENGER;
+      case SHADOW -> PredictionLogEvent.Role.SHADOW;
+    };
   }
 
   private static String serializeFeatures(BattedBallRequest req) throws JsonProcessingException {

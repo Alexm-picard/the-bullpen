@@ -251,7 +251,7 @@ public class SnapshotStorage {
 
   // --- helpers ------------------------------------------------------------
 
-  static boolean isS3Uri(String path) {
+  public static boolean isS3Uri(String path) {
     return path != null && path.startsWith(S3_URI_SCHEME);
   }
 
