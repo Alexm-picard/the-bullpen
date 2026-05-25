@@ -1,40 +1,40 @@
 {
   "$schema": "./phase-status.schema.md",
-  "_doc": "Single source of truth for phase progress. Hand-edited as work completes. /status reads this. Bump fields honestly — surgical cuts come from honest tracking.",
-  "current_phase": "2",
+  "_doc": "Single source of truth for phase progress. Hand-edited as work completes. /status reads this. Bump fields honestly \u2014 surgical cuts come from honest tracking.",
+  "current_phase": "5",
   "weekly_hours_target": 13,
-  "last_updated": "2026-05-24T23:30Z",
+  "last_updated": "2026-05-25T17:50Z",
   "phases": [
     {
       "id": "0",
       "name": "Foundation",
-      "weeks": "1–3",
-      "estimated_hours": "40–50",
+      "weeks": "1\u20133",
+      "estimated_hours": "40\u201350",
       "status": "completed",
       "started_on": "2026-05-19",
       "completed_on": "2026-05-23",
       "exit_criterion": "sudo reboot recovers everything in <5 min, all health checks green, frontend reachable at domain",
-      "exit_criterion_met": "Verified 2026-05-23 12:43–12:47 EDT on the post-cold-boot recovery leg of the May-21 reboot drill. All 10 technical checks green within ~3 min of WSL2 terminal open; external probe of https://api.thebullpen.net/actuator/health returned HTTP/2 200 via Cloudflare Tunnel; frontend reachable at https://thebullpen.net. Restore drill PASS in 3 sec end-to-end at 13:02 EDT after the in-container fix (see docs/drills/2026-05-23_restore.md). Critical pre-existing bug surfaced + fixed in same session: snapshot script was producing metadata-only backups — patched infra/backup/clickhouse-snapshot.sh to run clickhouse-backup inside the docker container.",
+      "exit_criterion_met": "Verified 2026-05-23 12:43\u201312:47 EDT on the post-cold-boot recovery leg of the May-21 reboot drill. All 10 technical checks green within ~3 min of WSL2 terminal open; external probe of https://api.thebullpen.net/actuator/health returned HTTP/2 200 via Cloudflare Tunnel; frontend reachable at https://thebullpen.net. Restore drill PASS in 3 sec end-to-end at 13:02 EDT after the in-container fix (see docs/drills/2026-05-23_restore.md). Critical pre-existing bug surfaced + fixed in same session: snapshot script was producing metadata-only backups \u2014 patched infra/backup/clickhouse-snapshot.sh to run clickhouse-backup inside the docker container.",
       "exit_criteria_checklist": [
         {
           "label": "WSL2 setup (systemd, memory cap, CUDA passthrough verified)",
           "done": true,
-          "details": "Verified 2026-05-21 on DESKTOP-N30E7RA. kernel 6.6.114.1-microsoft-standard-WSL2; systemd 259 (259.5-0ubuntu3) running; 15 GiB RAM + 4 GiB swap (no /mnt/c/Users/*/.wslconfig — using WSL2 default, which on a ~32 GiB host gives WSL2 ~50%; tighten via .wslconfig if Windows starts swapping); CUDA passthrough OK (NVIDIA driver 591.86, CUDA 13.1, nvidia-smi sees GPU at /usr/lib/wsl/lib/nvidia-smi); Docker 29.1.3 with alepic in docker group; Java 21.0.11-ea at /usr/bin/java."
+          "details": "Verified 2026-05-21 on DESKTOP-N30E7RA. kernel 6.6.114.1-microsoft-standard-WSL2; systemd 259 (259.5-0ubuntu3) running; 15 GiB RAM + 4 GiB swap (no /mnt/c/Users/*/.wslconfig \u2014 using WSL2 default, which on a ~32 GiB host gives WSL2 ~50%; tighten via .wslconfig if Windows starts swapping); CUDA passthrough OK (NVIDIA driver 591.86, CUDA 13.1, nvidia-smi sees GPU at /usr/lib/wsl/lib/nvidia-smi); Docker 29.1.3 with alepic in docker group; Java 21.0.11-ea at /usr/bin/java."
         },
         {
           "label": "Domain + Cloudflare DNS + Cloudflare Tunnel pointed at hello-world",
           "done": true,
-          "details": "Wired through end-to-end as of 2026-05-21 (Phase 0 Group B). Cloudflare DNS holds the thebullpen.net zone (apex on Vercel, api.thebullpen.net CNAME → tunnel). Tunnel 'bullpen-prod' (id e79da4e2-bda1-4c1d-91a8-6b5b146c1ced) installed as cloudflared.service via `cloudflared service install <TOKEN>`, 4 active edge connections (iad/bos), Public Hostname route api.thebullpen.net → http://localhost:8080. External probe: HTTP/2 200 from https://api.thebullpen.net/actuator/health with our x-correlation-id header proving end-to-end through the tunnel to the Spring backend. Note: tunnel token leaked once in this session's transcript via unmasked systemctl status output, then rotated 2026-05-21 21:05 EDT; old token revoked. Stale May-19 tunnel id 9264c69d-...json files removed from ~/.cloudflared/ + old tunnel deleted from Cloudflare dashboard."
+          "details": "Wired through end-to-end as of 2026-05-21 (Phase 0 Group B). Cloudflare DNS holds the thebullpen.net zone (apex on Vercel, api.thebullpen.net CNAME \u2192 tunnel). Tunnel 'bullpen-prod' (id e79da4e2-bda1-4c1d-91a8-6b5b146c1ced) installed as cloudflared.service via `cloudflared service install <TOKEN>`, 4 active edge connections (iad/bos), Public Hostname route api.thebullpen.net \u2192 http://localhost:8080. External probe: HTTP/2 200 from https://api.thebullpen.net/actuator/health with our x-correlation-id header proving end-to-end through the tunnel to the Spring backend. Note: tunnel token leaked once in this session's transcript via unmasked systemctl status output, then rotated 2026-05-21 21:05 EDT; old token revoked. Stale May-19 tunnel id 9264c69d-...json files removed from ~/.cloudflared/ + old tunnel deleted from Cloudflare dashboard."
         },
         {
           "label": "Spring Boot skeleton with api + worker profiles",
           "done": true,
-          "details": "backend/ scaffolded 2026-05-19 — Gradle Kotlin DSL, Spring Boot 3.5.4, virtual threads on, both profiles compile and boot. application-api.yml binds 8080, application-worker.yml binds 8081."
+          "details": "backend/ scaffolded 2026-05-19 \u2014 Gradle Kotlin DSL, Spring Boot 3.5.4, virtual threads on, both profiles compile and boot. application-api.yml binds 8080, application-worker.yml binds 8081."
         },
         {
           "label": "Both as systemd services with /health endpoints",
           "done": true,
-          "details": "Units installed + enabled + actively serving as of 2026-05-21. bullpen-api (PID 1091, since 18:40 EDT) + bullpen-worker (PID 1092) running as the dedicated `bullpen` system user (uid 997) from /opt/bullpen/app.jar, per the 2026-05-19 phase-0 brief convention. Originally May-19 session brought up these services; my 19:49 session overwrote the unit files with a (mistakenly chosen) alepic-user + /opt/thebullpen variant — corrected at 21:18 EDT to align with the running reality (bullpen-user + /opt/bullpen), units re-enabled. External probe: HTTP/2 200 from https://api.thebullpen.net/actuator/health (via Cloudflare Tunnel — see B2 work). Local: localhost:8080/actuator/health returns {\"status\":\"UP\"}. Both units survive reboot (enabled symlinks present in multi-user.target.wants)."
+          "details": "Units installed + enabled + actively serving as of 2026-05-21. bullpen-api (PID 1091, since 18:40 EDT) + bullpen-worker (PID 1092) running as the dedicated `bullpen` system user (uid 997) from /opt/bullpen/app.jar, per the 2026-05-19 phase-0 brief convention. Originally May-19 session brought up these services; my 19:49 session overwrote the unit files with a (mistakenly chosen) alepic-user + /opt/thebullpen variant \u2014 corrected at 21:18 EDT to align with the running reality (bullpen-user + /opt/bullpen), units re-enabled. External probe: HTTP/2 200 from https://api.thebullpen.net/actuator/health (via Cloudflare Tunnel \u2014 see B2 work). Local: localhost:8080/actuator/health returns {\"status\":\"UP\"}. Both units survive reboot (enabled symlinks present in multi-user.target.wants)."
         },
         {
           "label": "ClickHouse via Docker, accessible from Spring",
@@ -49,12 +49,12 @@
         {
           "label": "React + Vite skeleton, deployed to Vercel, calling Spring /health via CORS",
           "done": true,
-          "details": "Live at https://thebullpen.net and https://www.thebullpen.net (both 200, served by Vercel, gray-clouded). Vite + React 19 + Mantine 9 + TanStack Query 5 + Tailwind 4. Vercel Authentication disabled, COMMIT_AUTHOR_REQUIRED resolved (commit author switched to am.picard03@gmail.com). Production deploy on commit f65ce5e. /health CORS preflight verified locally — once api.thebullpen.net Tunnel exists (Phase 0 WSL2 item), the live frontend will hit live backend."
+          "details": "Live at https://thebullpen.net and https://www.thebullpen.net (both 200, served by Vercel, gray-clouded). Vite + React 19 + Mantine 9 + TanStack Query 5 + Tailwind 4. Vercel Authentication disabled, COMMIT_AUTHOR_REQUIRED resolved (commit author switched to am.picard03@gmail.com). Production deploy on commit f65ce5e. /health CORS preflight verified locally \u2014 once api.thebullpen.net Tunnel exists (Phase 0 WSL2 item), the live frontend will hit live backend."
         },
         {
           "label": "GitHub repo, Actions running tests on push, deploy.sh working",
           "done": true,
-          "details": "Repo live at https://github.com/Alexm-picard/the-bullpen. All three workflows (backend / frontend / training) green on main as of commit 70a916c. deploy.sh rewritten 2026-05-21 from Phase-0 stub to a real local-WSL2 deploy: clean-tree guard, bootJar build, atomic symlink swap at /opt/bullpen/app.jar, systemctl restart + 30s health-poll smoke, rollback on smoke failure, releases-dir retention (last 5), tag + docs/deploys/<TAG>.md record. First real run gated on /deploy-safely + the live-game window (decision [21]). NOTE: corrected install paths from /opt/thebullpen → /opt/bullpen and User=alepic → User=bullpen at 21:18 EDT to match the May-19 phase-0 brief's system-user convention; aligns with the JAR currently running at /opt/bullpen/app.jar."
+          "details": "Repo live at https://github.com/Alexm-picard/the-bullpen. All three workflows (backend / frontend / training) green on main as of commit 70a916c. deploy.sh rewritten 2026-05-21 from Phase-0 stub to a real local-WSL2 deploy: clean-tree guard, bootJar build, atomic symlink swap at /opt/bullpen/app.jar, systemctl restart + 30s health-poll smoke, rollback on smoke failure, releases-dir retention (last 5), tag + docs/deploys/<TAG>.md record. First real run gated on /deploy-safely + the live-game window (decision [21]). NOTE: corrected install paths from /opt/thebullpen \u2192 /opt/bullpen and User=alepic \u2192 User=bullpen at 21:18 EDT to match the May-19 phase-0 brief's system-user convention; aligns with the JAR currently running at /opt/bullpen/app.jar."
         },
         {
           "label": "Prometheus + Grafana with one trivial dashboard",
@@ -64,27 +64,27 @@
         {
           "label": "External uptime monitor /health (Uptime Robot)",
           "done": true,
-          "details": "External uptime monitor pointed at https://api.thebullpen.net/health (the custom HealthController endpoint — returns 200 with body {\"profile\":\"api\",\"ts\":\"...\",\"status\":\"ok\"}). Currently green. Alert channel: Discord (via the monitor's webhook alert contact; separate from the BULLPEN_DISCORD_WEBHOOK that clickhouse-snapshot.sh uses for backup-failure pings). Original setup 2026-05-21 used Better Stack (Phase-0 Group B); vendor switched to Uptime Robot 2026-05-23 per decision [129] — same endpoint, same Discord channel, check interval shifts from 30s (Better Stack free tier) to 5 min (Uptime Robot free tier). Better Stack monitor remains up until the Uptime Robot replacement is wired so external coverage is never dark. NOTE: /actuator/health is also live and returns the standard Spring Actuator body; deploy.sh smoke-checks against /actuator/health while the external monitor hits the lighter /health endpoint."
+          "details": "External uptime monitor pointed at https://api.thebullpen.net/health (the custom HealthController endpoint \u2014 returns 200 with body {\"profile\":\"api\",\"ts\":\"...\",\"status\":\"ok\"}). Currently green. Alert channel: Discord (via the monitor's webhook alert contact; separate from the BULLPEN_DISCORD_WEBHOOK that clickhouse-snapshot.sh uses for backup-failure pings). Original setup 2026-05-21 used Better Stack (Phase-0 Group B); vendor switched to Uptime Robot 2026-05-23 per decision [129] \u2014 same endpoint, same Discord channel, check interval shifts from 30s (Better Stack free tier) to 5 min (Uptime Robot free tier). Better Stack monitor remains up until the Uptime Robot replacement is wired so external coverage is never dark. NOTE: /actuator/health is also live and returns the standard Spring Actuator body; deploy.sh smoke-checks against /actuator/health while the external monitor hits the lighter /health endpoint."
         },
         {
           "label": "Backup of empty ClickHouse to USB + restore drill (with empty data)",
           "done": true,
-          "details": "PASS 2026-05-23 13:02 EDT. ops/scripts/restore-drill.sh exists + runs end-to-end in ~3 sec (snapshot → spin scratch CH 24.12 on bullpen-drill-net:18123/19000 → restore → row-count + schema parity verify → teardown). docs/drills/2026-05-23_restore.md captures the full report. Critical pre-existing bug surfaced during the drill: snapshot script was producing metadata-only backups (clickhouse-backup running on the host couldn't see FREEZE output in the docker volume's shadow dir). Patched infra/backup/clickhouse-snapshot.sh to run clickhouse-backup inside the bullpen-clickhouse container with a fail-loud sanity check on captured data parts. Layer 2 USB (BULLPEN_BAK, 2026-05-21): operational with first verification backup at 18 MB. Layer 1 systemd timer (bullpen-snapshot.timer): enabled, Persistent=true catch-up verified on 2026-05-23 boot."
+          "details": "PASS 2026-05-23 13:02 EDT. ops/scripts/restore-drill.sh exists + runs end-to-end in ~3 sec (snapshot \u2192 spin scratch CH 24.12 on bullpen-drill-net:18123/19000 \u2192 restore \u2192 row-count + schema parity verify \u2192 teardown). docs/drills/2026-05-23_restore.md captures the full report. Critical pre-existing bug surfaced during the drill: snapshot script was producing metadata-only backups (clickhouse-backup running on the host couldn't see FREEZE output in the docker volume's shadow dir). Patched infra/backup/clickhouse-snapshot.sh to run clickhouse-backup inside the bullpen-clickhouse container with a fail-loud sanity check on captured data parts. Layer 2 USB (BULLPEN_BAK, 2026-05-21): operational with first verification backup at 18 MB. Layer 1 systemd timer (bullpen-snapshot.timer): enabled, Persistent=true catch-up verified on 2026-05-23 boot."
         },
         {
-          "label": "ADR system established (docs/adr/ + first 7 ADRs covering initial tech decisions from design.md §10 + operational-discipline decisions from 2026-05-21)",
+          "label": "ADR system established (docs/adr/ + first 7 ADRs covering initial tech decisions from design.md \u00a710 + operational-discipline decisions from 2026-05-21)",
           "done": true,
-          "details": "ADR-0001–0005 written 2026-05-19 — Java not Kotlin, ONNX in-process not sidecar, ClickHouse + SQLite not Postgres-only, Mantine+Tailwind not pure Tailwind, polling not WebSockets; decisions.md entries [121]–[125] reference them. ADR-0006 (dev/prod boundary — macOS dev only, no edits on the prod box) and ADR-0007 (S3-compatible storage — R2 prod, MinIO offline; revised same day from B2 to R2 per decision [128]) written 2026-05-21; decisions.md entries [126]–[128] reference them. ADR-0006 and ADR-0007 are auto-imported into Claude context via @docs/adr/... in CLAUDE.md because they're easiest to violate silently. Template at docs/adr/TEMPLATE.md."
+          "details": "ADR-0001\u20130005 written 2026-05-19 \u2014 Java not Kotlin, ONNX in-process not sidecar, ClickHouse + SQLite not Postgres-only, Mantine+Tailwind not pure Tailwind, polling not WebSockets; decisions.md entries [121]\u2013[125] reference them. ADR-0006 (dev/prod boundary \u2014 macOS dev only, no edits on the prod box) and ADR-0007 (S3-compatible storage \u2014 R2 prod, MinIO offline; revised same day from B2 to R2 per decision [128]) written 2026-05-21; decisions.md entries [126]\u2013[128] reference them. ADR-0006 and ADR-0007 are auto-imported into Claude context via @docs/adr/... in CLAUDE.md because they're easiest to violate silently. Template at docs/adr/TEMPLATE.md."
         },
         {
-          "label": "Dev / prod boundary formalized (ADR-0006) — macOS is the only authoring machine; no editor on the WSL2 working copy; deploy.sh + CI are the only writers",
+          "label": "Dev / prod boundary formalized (ADR-0006) \u2014 macOS is the only authoring machine; no editor on the WSL2 working copy; deploy.sh + CI are the only writers",
           "done": true,
           "details": "Rule is in place: ADR-0006 written + auto-imported into CLAUDE.md, CLAUDE.md discipline rule 11 codifies it. Deferred concrete deliverables (Phase 1+, gated on having Mac-side work to drive them): (a) make train-sample target for stratified-sample iteration on the MacBook, (b) make train-full target that ssh-triggers the desktop, (c) bootstrap docs re-verified by a Phase 1 restore drill from a clean WSL2 install. Acknowledged exception on 2026-05-23: the host-side restore drill and the surfaced snapshot-script bugfix required editing on the WSL2 box. The edits were drill-driven and immediately committed to git; not a pattern to continue once feature work resumes on the Mac."
         },
         {
-          "label": "S3-compatible object storage online (ADR-0007) — Cloudflare R2 in prod (per decision [128]), MinIO offline on the portable drive, S3_ENDPOINT_URL is the only environment-specific knob",
+          "label": "S3-compatible object storage online (ADR-0007) \u2014 Cloudflare R2 in prod (per decision [128]), MinIO offline on the portable drive, S3_ENDPOINT_URL is the only environment-specific knob",
           "done": true,
-          "details": "Host-side complete 2026-05-22 + reboot-verified 2026-05-23 (Phase 0 exit): (a) ✓ Cloudflare R2 bucket bullpen-prod created with samples/dev/, snapshots/, raw/ prefixes (.keep markers), token bullpen-prod-rw scoped Object R+W to that single bucket; (b) ✓ rclone remote 'bullpen-r2' configured against the R2 S3-compatible endpoint with no_check_bucket=true, write/read/delete round-trip verified, survives reboot (item 7 of the 2026-05-22 reboot drill returned all 3 prefixes). Deferred to Phase 1+ (gated on a code path that actually needs object storage): (c) boto3 (Python) and aws-sdk-s3 (Java) clients reading S3_ENDPOINT_URL — lands in Phase 2 (sample loading) and Phase 3a (model registration). (d) MinIO launchable from /Volumes/MyDrive/bullpen-data via make minio-up — Mac-side, ships with the first feature that needs offline storage. (e) make sync-mirror running rclone sync from R2 to the portable drive — depends on (d). (f) clickhouse-backup upload to bullpen-r2:bullpen-prod/snapshots/clickhouse/ from clickhouse-snapshot.sh — currently local-only; R2 push lands in Phase 1 (see docs/drills/2026-05-23_restore.md follow-ups). Manifest validation (feature schema hash) lands with the first snapshot-write path in Phase 3a."
+          "details": "Host-side complete 2026-05-22 + reboot-verified 2026-05-23 (Phase 0 exit): (a) \u2713 Cloudflare R2 bucket bullpen-prod created with samples/dev/, snapshots/, raw/ prefixes (.keep markers), token bullpen-prod-rw scoped Object R+W to that single bucket; (b) \u2713 rclone remote 'bullpen-r2' configured against the R2 S3-compatible endpoint with no_check_bucket=true, write/read/delete round-trip verified, survives reboot (item 7 of the 2026-05-22 reboot drill returned all 3 prefixes). Deferred to Phase 1+ (gated on a code path that actually needs object storage): (c) boto3 (Python) and aws-sdk-s3 (Java) clients reading S3_ENDPOINT_URL \u2014 lands in Phase 2 (sample loading) and Phase 3a (model registration). (d) MinIO launchable from /Volumes/MyDrive/bullpen-data via make minio-up \u2014 Mac-side, ships with the first feature that needs offline storage. (e) make sync-mirror running rclone sync from R2 to the portable drive \u2014 depends on (d). (f) clickhouse-backup upload to bullpen-r2:bullpen-prod/snapshots/clickhouse/ from clickhouse-snapshot.sh \u2014 currently local-only; R2 push lands in Phase 1 (see docs/drills/2026-05-23_restore.md follow-ups). Manifest validation (feature schema hash) lands with the first snapshot-write path in Phase 3a."
         },
         {
           "label": "Structured JSON logging baseline (logback-json Java side, structlog Python side, correlation IDs propagated through every request)",
@@ -97,91 +97,91 @@
           "details": "backend/Dockerfile: temurin:21-jdk-alpine builder + temurin:21-jre-alpine runtime, appuser UID 1001, tini PID 1, HEALTHCHECK against /actuator/health every 15s."
         }
       ],
-      "mvp_cuts": "NONE — foundation cannot be cut",
+      "mvp_cuts": "NONE \u2014 foundation cannot be cut",
       "notes": "If >3 weeks, diagnose the blocker. Most likely: WSL/CUDA setup or DNS confusion."
     },
     {
       "id": "1",
       "name": "Vertical Slice",
-      "weeks": "4–7",
-      "estimated_hours": "50–65",
+      "weeks": "4\u20137",
+      "estimated_hours": "50\u201365",
       "status": "completed",
       "started_on": "2026-05-23",
       "completed_on": "2026-05-23",
       "exit_criterion": "Visit thebullpen.net/parks, click a batted ball, see real prediction in <500ms end-to-end",
-      "exit_criterion_met": "Verified live 2026-05-23 ~22:00 EDT after 3 prod deploys (v2026.05.23-2139 / -2149 / -2156). curl POST https://api.thebullpen.net/v1/predict/batted-ball with the canonical payload returns {\"probHr\":0.78668094,\"modelName\":\"_toy_batted_ball\",\"modelVersion\":\"v0\",\"latencyMicros\":507,\"correlationId\":\"...\"} — well under the 500ms ceiling (507μs inference, ~150ms total round-trip through Cloudflare Tunnel). https://thebullpen.net/parks loads (apex → www 308 → 200) and renders the 10 example BIPs. Three small WSL2 fixes landed in commit dbb9107: deploy.sh systemctl pre-flight pipe was breaking under WSL2 pipefail; ApiErrorAdvice added explicit 404 + 405 handlers (were defaulting to 500); CorsConfig now allows www.thebullpen.net (Vercel serves there).",
+      "exit_criterion_met": "Verified live 2026-05-23 ~22:00 EDT after 3 prod deploys (v2026.05.23-2139 / -2149 / -2156). curl POST https://api.thebullpen.net/v1/predict/batted-ball with the canonical payload returns {\"probHr\":0.78668094,\"modelName\":\"_toy_batted_ball\",\"modelVersion\":\"v0\",\"latencyMicros\":507,\"correlationId\":\"...\"} \u2014 well under the 500ms ceiling (507\u03bcs inference, ~150ms total round-trip through Cloudflare Tunnel). https://thebullpen.net/parks loads (apex \u2192 www 308 \u2192 200) and renders the 10 example BIPs. Three small WSL2 fixes landed in commit dbb9107: deploy.sh systemctl pre-flight pipe was breaking under WSL2 pipefail; ApiErrorAdvice added explicit 404 + 405 handlers (were defaulting to 500); CorsConfig now allows www.thebullpen.net (Vercel serves there).",
       "exit_criteria_checklist": [
         {
-          "label": "Historical Statcast pull (one season ~2024) → raw_statcast",
+          "label": "Historical Statcast pull (one season ~2024) \u2192 raw_statcast",
           "done": true,
-          "details": "Implemented under training/src/bullpen_training/ingest/ (statcast_pull.py + clickhouse_client.py + assertions.py + migrations.py). 2024 full season pulled on Mac dev ClickHouse 2026-05-23 18:04 EDT: 760,248 raw rows total / 711,898 regular-season (game_type='R') in 26.5s wall time across 8 monthly chunks. Idempotency verified: re-pull leaves count unchanged via ALTER TABLE DROP PARTITION + re-INSERT. V002__raw_statcast.sql applied via lightweight Python migrations helper (proper Flyway-CH lands in Phase 3). 14 unit tests pass (normalize_columns, month_window, NaN→None coercion, alias mapping). ruff format/lint clean, pyright 0 errors with strict mode on logging_config.py + __init__.py and relaxed for data-handling subpackage."
+          "details": "Implemented under training/src/bullpen_training/ingest/ (statcast_pull.py + clickhouse_client.py + assertions.py + migrations.py). 2024 full season pulled on Mac dev ClickHouse 2026-05-23 18:04 EDT: 760,248 raw rows total / 711,898 regular-season (game_type='R') in 26.5s wall time across 8 monthly chunks. Idempotency verified: re-pull leaves count unchanged via ALTER TABLE DROP PARTITION + re-INSERT. V002__raw_statcast.sql applied via lightweight Python migrations helper (proper Flyway-CH lands in Phase 3). 14 unit tests pass (normalize_columns, month_window, NaN\u2192None coercion, alias mapping). ruff format/lint clean, pyright 0 errors with strict mode on logging_config.py + __init__.py and relaxed for data-handling subpackage."
         },
         {
           "label": "Cleaning into pitches table with proper schema + dedup",
           "done": true,
-          "details": "V003__pitches.sql defines ReplacingMergeTree(ingested_at) keyed on (game_date, game_id, at_bat_index, pitch_number) with Enum8 description and bitmask base_state. Orchestrator at training/src/bullpen_training/ingest/transform_pitches.py runs the SQL transform + 6 assertions (regular-season count band, zero-ID guard, launch_speed/angle range, unknown-description cap, dedup consistency). Live run 2026-05-23 18:12 EDT: 711,898 rows in 0.41s transform + 1.33s OPTIMIZE FINAL; raw → pitches delta = 0; all assertions pass; injected duplicate collapses correctly under FINAL. Fixed three real-data deviations from the leaf plan during the build (launch_speed 40 mph floor too tight, three new pitch-clock-era description codes missing from multiIf, plan referenced wrong source column name for outs)."
+          "details": "V003__pitches.sql defines ReplacingMergeTree(ingested_at) keyed on (game_date, game_id, at_bat_index, pitch_number) with Enum8 description and bitmask base_state. Orchestrator at training/src/bullpen_training/ingest/transform_pitches.py runs the SQL transform + 6 assertions (regular-season count band, zero-ID guard, launch_speed/angle range, unknown-description cap, dedup consistency). Live run 2026-05-23 18:12 EDT: 711,898 rows in 0.41s transform + 1.33s OPTIMIZE FINAL; raw \u2192 pitches delta = 0; all assertions pass; injected duplicate collapses correctly under FINAL. Fixed three real-data deviations from the leaf plan during the build (launch_speed 40 mph floor too tight, three new pitch-clock-era description codes missing from multiIf, plan referenced wrong source column name for outs)."
         },
         {
           "label": "Minimal batted-ball model: LightGBM, 5 features, single output",
           "done": true,
-          "details": "training/src/bullpen_training/battedball/{features_toy,train_toy}.py. Binary HR vs not-HR, 5 features (launch_speed_mph, launch_angle_deg, release_speed_mph, park_id_encoded, stand_is_left). Live train on 2026-05-23 18:22 EDT: AUC 0.9866 on 24,766-row test split (99,064 train); 1.09s training time. Reproducibility verified — two consecutive runs produce byte-identical model.lgb (sha256 64c04f17…). Required adding ORDER BY to the load SQL to defeat ClickHouse FINAL's unstable row order. Model artifact at training/artifacts/_toy/v0/ (gitignored per CLAUDE.md hard-never rule); metadata.json carries provenance (auc, git_commit, trained_at, seed, model_sha256). Intentionally NOT registered (registry namespace reserved for real models, Phase 2). Tests: 11 new (31 total)."
+          "details": "training/src/bullpen_training/battedball/{features_toy,train_toy}.py. Binary HR vs not-HR, 5 features (launch_speed_mph, launch_angle_deg, release_speed_mph, park_id_encoded, stand_is_left). Live train on 2026-05-23 18:22 EDT: AUC 0.9866 on 24,766-row test split (99,064 train); 1.09s training time. Reproducibility verified \u2014 two consecutive runs produce byte-identical model.lgb (sha256 64c04f17\u2026). Required adding ORDER BY to the load SQL to defeat ClickHouse FINAL's unstable row order. Model artifact at training/artifacts/_toy/v0/ (gitignored per CLAUDE.md hard-never rule); metadata.json carries provenance (auc, git_commit, trained_at, seed, model_sha256). Intentionally NOT registered (registry namespace reserved for real models, Phase 2). Tests: 11 new (31 total)."
         },
         {
           "label": "ONNX export + Java loading + parity test passing",
           "done": true,
-          "details": "Python export at training/src/bullpen_training/battedball/{export_toy_onnx,parity_fixture}.py — generates model.onnx + feature_pipeline.json + park_hr_rate.json at opset 15 (onnxmltools cap). Java side at backend/src/main/java/net/thebullpen/baseball/inference/{OnnxModel,FeaturePipeline}.java reads the same JSON contract. Parity tests on both sides pass against the committed 16-row fixture (training/tests/fixtures/parity_toy_001*.json) with max ONNX-vs-LightGBM drift = 5.66e-8 (tolerance 1e-6). Tests self-disable on missing artifacts so a fresh clone has green builds; CI integration to regenerate artifacts before parity-test runs lands in 1.5+ work. Boundary discipline (G4 closed): numerics pass through ONNX; lookups stay in Java/Python preprocessors. One regression caught: Spring Flyway recurses into db/migration/ and tried to apply CH SQL against SQLite — moved CH migrations to db/clickhouse/."
+          "details": "Python export at training/src/bullpen_training/battedball/{export_toy_onnx,parity_fixture}.py \u2014 generates model.onnx + feature_pipeline.json + park_hr_rate.json at opset 15 (onnxmltools cap). Java side at backend/src/main/java/net/thebullpen/baseball/inference/{OnnxModel,FeaturePipeline}.java reads the same JSON contract. Parity tests on both sides pass against the committed 16-row fixture (training/tests/fixtures/parity_toy_001*.json) with max ONNX-vs-LightGBM drift = 5.66e-8 (tolerance 1e-6). Tests self-disable on missing artifacts so a fresh clone has green builds; CI integration to regenerate artifacts before parity-test runs lands in 1.5+ work. Boundary discipline (G4 closed): numerics pass through ONNX; lookups stay in Java/Python preprocessors. One regression caught: Spring Flyway recurses into db/migration/ and tried to apply CH SQL against SQLite \u2014 moved CH migrations to db/clickhouse/."
         },
         {
           "label": "POST /predict/batted-ball endpoint",
           "done": true,
-          "details": "POST /v1/predict/batted-ball live. backend/.../api/PredictBattedBallController + DTOs + ApiErrorAdvice + InferenceMetrics + WarmupReadiness. Live local boot 2026-05-23 14:42 EDT: model ready 8s after JVM start, warm-up 3ms, happy-path curl returns probHr=0.787 in 5ms wall time, validation error returns canonical envelope. 5 MockMvc tests pass (happy path + missing field + bad content-type + switch-hitter rejection + launch-speed out-of-range). Latency histogram + prediction counter wired via Micrometer. G11 closed (warm-up gates readiness probe). Added spring-boot-starter-validation to backend deps. Renamed ApiError.Error → ApiError.Body to avoid java.lang.Error clash (Error Prone caught it)."
+          "details": "POST /v1/predict/batted-ball live. backend/.../api/PredictBattedBallController + DTOs + ApiErrorAdvice + InferenceMetrics + WarmupReadiness. Live local boot 2026-05-23 14:42 EDT: model ready 8s after JVM start, warm-up 3ms, happy-path curl returns probHr=0.787 in 5ms wall time, validation error returns canonical envelope. 5 MockMvc tests pass (happy path + missing field + bad content-type + switch-hitter rejection + launch-speed out-of-range). Latency histogram + prediction counter wired via Micrometer. G11 closed (warm-up gates readiness probe). Added spring-boot-starter-validation to backend deps. Renamed ApiError.Error \u2192 ApiError.Body to avoid java.lang.Error clash (Error Prone caught it)."
         },
         {
           "label": "Park Explorer page with hardcoded historical BIPs",
           "done": true,
-          "details": "frontend/src/pages/parks-page.tsx grids 10 hand-picked 2024 BIPs from frontend/src/data/example-bbips.json. Click a card → TanStack Query mutation calls POST /v1/predict/batted-ball, renders p(HR) + model version + latency. React Router with /, /parks routes; AppShell layout with nav. Vercel SPA rewrite added for deep-link. Vite build clean (358KB / 111KB gz)."
+          "details": "frontend/src/pages/parks-page.tsx grids 10 hand-picked 2024 BIPs from frontend/src/data/example-bbips.json. Click a card \u2192 TanStack Query mutation calls POST /v1/predict/batted-ball, renders p(HR) + model version + latency. React Router with /, /parks routes; AppShell layout with nav. Vercel SPA rewrite added for deep-link. Vite build clean (358KB / 111KB gz)."
         },
         {
-          "label": "Click → real prediction renders in browser",
+          "label": "Click \u2192 real prediction renders in browser",
           "done": true,
           "details": "Verified end-to-end on Mac dev 2026-05-23: backend on 18080 serves /v1/predict/batted-ball, frontend at 5173 wires the mutation. 4 Vitest tests pass (smoke + 3 predict-API contract: happy 200, 4xx PredictError, non-JSON 5xx fallback). Production reachability via Cloudflare Tunnel + Vercel is operational from Phase 0; first deploy ships with the commit."
         },
         {
           "label": "Primitive prediction logging to ClickHouse",
           "done": true,
-          "details": "AsyncPredictionLogger (bounded ArrayBlockingQueue + 1s flusher on virtual thread) wired into PredictBattedBallController. V004__prediction_log.sql defines MergeTree partitioned by month with 18-month TTL. Live e2e 2026-05-23 14:56 EDT: 5 predictions → 5 rows in prediction_log within 3s with features/prediction JSON intact, latency_ms ≈ 0.09 sub-ms. 4 unit tests pass (drain, overflow-drops, writer-failure non-propagation, no-writer noop mode). New ClickHouseMigrationRunner Java component applies V*.sql files on boot (mirrors the Python migrations.py training uses). G2 partial close; G8 closed."
+          "details": "AsyncPredictionLogger (bounded ArrayBlockingQueue + 1s flusher on virtual thread) wired into PredictBattedBallController. V004__prediction_log.sql defines MergeTree partitioned by month with 18-month TTL. Live e2e 2026-05-23 14:56 EDT: 5 predictions \u2192 5 rows in prediction_log within 3s with features/prediction JSON intact, latency_ms \u2248 0.09 sub-ms. 4 unit tests pass (drain, overflow-drops, writer-failure non-propagation, no-writer noop mode). New ClickHouseMigrationRunner Java component applies V*.sql files on boot (mirrors the Python migrations.py training uses). G2 partial close; G8 closed."
         }
       ],
-      "mvp_cuts": "Cannot cut — this phase IS the credibility floor",
+      "mvp_cuts": "Cannot cut \u2014 this phase IS the credibility floor",
       "notes": "Demoable spine. From here forward is the real project."
     },
     {
       "id": "2",
       "name": "The Real Models",
-      "weeks": "8–17",
-      "estimated_hours": "140–180",
+      "weeks": "8\u201317",
+      "estimated_hours": "140\u2013180",
       "status": "in_progress",
       "started_on": "2026-05-23",
       "completed_on": null,
       "exit_criterion": "Three models registered, all with eval artifacts, all served via Spring, all with passing leakage tests in CI. ECE < 0.02 on test data per model.",
-      "current_leaf": "**Phase 2c COMPLETE — all 9 leaves done.** 2c.9 closing: built `bullpen_training.battedball.eval.{comparison,report}` for the MLP-vs-LGBM head-to-head. `compare_models` -> `ComparisonReport` carries per-park (Brier / ECE / argmax-accuracy / 5x5 confusion) + aggregate-across-parks + `prefer_for_production` flag set by the tiebreak ladder (Brier first; ECE if Brier within 1e-4; simpler model (LGBM) on full tie). `render_html` emits a self-contained HTML side-by-side; `save_report` writes JSON + HTML to `data/eval/batted_ball_comparison_v1.{json,html}`. Pure-numpy module — no torch / no lightgbm imports — so it loads from either CI pass. Entry-point script `scripts/run_2c9_comparison.py` glues the MLP + LGBM loaders + comparison together with `import lightgbm` first to dodge the macOS libomp segfault. **19 new comparison tests; pyright + ruff clean.** CI's torch-path job extended to include `tests/battedball/eval`. Production artifacts regenerate on the desktop overnight run alongside the 2c.5/2c.8 prod training. If that run emits prefer_for_production='lgbm', decision [45] gets reversed via a new decisions.md entry (conditional acceptance criterion). **Phase 2c summary: 9 leaves complete, ~80h of work landed, ~200 new tests across the suite (260+ training tests total). Full-data desktop pipeline (2c.4 backfill -> 2c.5 MLP -> 2c.6 calibrators -> 2c.7 sanity gate -> 2c.8 LGBM -> 2c.9 comparison) is the one remaining sequential dependency before Phase 2 closes.** Previous 2c.8 leaf: Built `bullpen_training.battedball.lgbm_baseline.{dataset,train}`. `load_lgbm_dataset` flattens the BIP×park retrodicted-label tensor into a pandas DataFrame keyed on (BIP, park_id) with `park_id` as a pandas Categorical (LGBM native handling); label = argmax of the 5-class retrodicted distribution. `train_lgbm` fits multiclass / multi_logloss / lr=0.05 / num_leaves=63 / deterministic + per-class isotonic calibrators; persists model.txt + calibrator.json + metadata.json. Same `lgb.register_logger(...)` stdout-flush fix from 2b.2 carried over. Refactor: pulled the torch-free feature helpers out of `mlp/dataset.py` into `battedball/features_shared.py` (FEATURE_NAMES / OUTCOME_NAMES / one-hot encoders / hc_to_spray_deg) so the LGBM baseline doesn't pull torch in transitively (verified: importing lgbm_baseline.train now loads zero torch modules). The macOS dual-libomp segfault that surfaced in 2c.5 stays fenced via the CI split + the import decoupling. Smoke training on 987 BIPs x 30 parks = 29,610 rows: 100 boost rounds in 3.7s, COL P(HR)=1.000 top (overconfident from in-sample isotonic on tiny smoke set; production train+val split fixes); cross-park ranking shape correct. **16 lgbm tests + 76 mlp tests pass; pyright + ruff clean.** CI workflow's lightgbm-path job updated to include `tests/battedball/lgbm_baseline`. Production training defers to the desktop overnight via the documented CLI after 2c.4's full backfill lands. Phase 2c is now **8 of 9 leaves done**; only 2c.9 (eval artifact comparing MLP vs LGBM) remains. Previous 2c.7 leaf: Built `bullpen_training.battedball.mlp.sanity` (canonical 110 mph / 28° launch encoder; `cross_park_p_hr` via the same FeatureScaler the model trained with; `check_monotonicity` with Spearman ρ + Coors→Oakland gap + per-park rank-delta diagnostics + `actionable_error()` message naming the top-3 offending parks), `published_hr_factors.json` (30 parks, 2024 Baseball Savant single-season, normalised to 1.00 = league avg), and `test_cross_park_sanity.py` (15 unit tests + 1 hard `@pytest.mark.production` gate). Added scipy dep + pytest `production` marker; default pytest runs exclude the marker via `addopts = -m 'not production'`. Smoke run on the 987-BIP MLP correctly **fails** both gates (Spearman 0.288 vs 0.80, COL−ATH gap +0.041 vs +0.05) — the framework is honest, and COL ranks **first** in the smoke predictions (the altitude signal is intact end-to-end). `data/cross_park_sanity_report.json` saved as evidence. **76 mlp tests pass (1 deselected); pyright + ruff clean.** Decision [52] discipline rule enforceable: the production gate re-runs once the 2c.5 desktop full-data training lands, and the MLP cannot be registered until both gates pass. Phase 2c is now **7 of 9 leaves done**. Remaining: 2c.8 (LightGBM Option-A baseline) and 2c.9 (eval artifact). Previous 2c.6 leaf: Built `bullpen_training.battedball.mlp.{calibration,reliability_plots}`. `ParkCalibrators` = frozen 30x5 grid of fitted `sklearn.isotonic.IsotonicRegression` with `to_json`/`from_json` keyed by park_order + outcome_order (contract boundary for the Java port). `fit_per_park_calibrators` fits on (raw MLP probs, retrodicted label distributions); `transform` applies per-cell isotonic + per-row renormalisation. ECE / reliability_curve / per_park_ece metrics; `plot_all_parks` writes one PNG per park (raw vs calibrated overlay, all 5 outcomes, y=x diagonal). Smoke fit on the 987-BIP MLP from 2c.5: **mean ECE 0.0314 → 0.0112 (64 % drop), all 30/30 parks improved**; calibrator.json 241 KB. JSON round-trip parity 1e-6 (sklearn's `_build_f` lazy interp rebuild called explicitly in `from_json`). Added matplotlib dep. **21 new tests (62 mlp / 234 torch-path total); pyright + ruff clean.** Production calibration + per-park reliability PNGs regenerate after the 2c.5 desktop training run. Phase 2c sequence remaining: 2c.7 (cross-park sanity) -> 2c.8 (LightGBM Option-A baseline) -> 2c.9 (eval artifact). Originally Phase 2c.5 leaf: Built `bullpen_training.battedball.mlp.{architecture,dataset,train}`: `BattedBallMLP` (shared Linear(15→64)→ReLU→Linear(64→64)→ReLU backbone + 30 parallel Linear(64→5) heads, returns raw logits `(B, 30, 5)`), `BBIPDataset` (joins `pitches FINAL` + `bbip_retrodicted_labels FINAL` via ClickHouse `indexOf` per-park ordering), `FeatureScaler` (z-score on continuous cols, one-hots untouched, persisted into `metadata.json` for Java-side parity), and the trainer (KLDiv loss with eps=0.01 label smoothing for degenerate Dirac labels, Adam + cosine LR, ONNX export with dynamic batch axis). Round-trip parity Python↔ONNX at 1e-5 (`test_onnx_export_matches_pytorch_within_1e5`). Deps: torch 2.12 + onnx 1.21 + onnxscript 0.7 + onnxruntime 1.20. Tests: 43 new (architecture / dataset / scaler / training convergence / ONNX round-trip / dynamic batch). Smoke training on the 987-BIP 2024 sample completes 30 epochs in 0.6 s on Mac CPU with loss 13.7 → 11.0 after normalisation. **All 273 training tests pass; pyright + ruff clean** (added `reportPrivateImportUsage = false` to silence PyTorch's lazy-export stubs). Full production training (50 epochs on 1.5M BIPs with GPU) deferred to desktop after the 2c.4 overnight backfill — projected well under the 2 h/fold target per ADR-0006. Per-park test ECE gate (<0.05 pre-calibration) requires the production run; for now the gate is verified-as-achievable. Next: 2c.6 (30 isotonic calibrators) — built on top of v1 model outputs.",
+      "current_leaf": "**Phase 2c COMPLETE \u2014 all 9 leaves done.** 2c.9 closing: built `bullpen_training.battedball.eval.{comparison,report}` for the MLP-vs-LGBM head-to-head. `compare_models` -> `ComparisonReport` carries per-park (Brier / ECE / argmax-accuracy / 5x5 confusion) + aggregate-across-parks + `prefer_for_production` flag set by the tiebreak ladder (Brier first; ECE if Brier within 1e-4; simpler model (LGBM) on full tie). `render_html` emits a self-contained HTML side-by-side; `save_report` writes JSON + HTML to `data/eval/batted_ball_comparison_v1.{json,html}`. Pure-numpy module \u2014 no torch / no lightgbm imports \u2014 so it loads from either CI pass. Entry-point script `scripts/run_2c9_comparison.py` glues the MLP + LGBM loaders + comparison together with `import lightgbm` first to dodge the macOS libomp segfault. **19 new comparison tests; pyright + ruff clean.** CI's torch-path job extended to include `tests/battedball/eval`. Production artifacts regenerate on the desktop overnight run alongside the 2c.5/2c.8 prod training. If that run emits prefer_for_production='lgbm', decision [45] gets reversed via a new decisions.md entry (conditional acceptance criterion). **Phase 2c summary: 9 leaves complete, ~80h of work landed, ~200 new tests across the suite (260+ training tests total). Full-data desktop pipeline (2c.4 backfill -> 2c.5 MLP -> 2c.6 calibrators -> 2c.7 sanity gate -> 2c.8 LGBM -> 2c.9 comparison) is the one remaining sequential dependency before Phase 2 closes.** Previous 2c.8 leaf: Built `bullpen_training.battedball.lgbm_baseline.{dataset,train}`. `load_lgbm_dataset` flattens the BIP\u00d7park retrodicted-label tensor into a pandas DataFrame keyed on (BIP, park_id) with `park_id` as a pandas Categorical (LGBM native handling); label = argmax of the 5-class retrodicted distribution. `train_lgbm` fits multiclass / multi_logloss / lr=0.05 / num_leaves=63 / deterministic + per-class isotonic calibrators; persists model.txt + calibrator.json + metadata.json. Same `lgb.register_logger(...)` stdout-flush fix from 2b.2 carried over. Refactor: pulled the torch-free feature helpers out of `mlp/dataset.py` into `battedball/features_shared.py` (FEATURE_NAMES / OUTCOME_NAMES / one-hot encoders / hc_to_spray_deg) so the LGBM baseline doesn't pull torch in transitively (verified: importing lgbm_baseline.train now loads zero torch modules). The macOS dual-libomp segfault that surfaced in 2c.5 stays fenced via the CI split + the import decoupling. Smoke training on 987 BIPs x 30 parks = 29,610 rows: 100 boost rounds in 3.7s, COL P(HR)=1.000 top (overconfident from in-sample isotonic on tiny smoke set; production train+val split fixes); cross-park ranking shape correct. **16 lgbm tests + 76 mlp tests pass; pyright + ruff clean.** CI workflow's lightgbm-path job updated to include `tests/battedball/lgbm_baseline`. Production training defers to the desktop overnight via the documented CLI after 2c.4's full backfill lands. Phase 2c is now **8 of 9 leaves done**; only 2c.9 (eval artifact comparing MLP vs LGBM) remains. Previous 2c.7 leaf: Built `bullpen_training.battedball.mlp.sanity` (canonical 110 mph / 28\u00b0 launch encoder; `cross_park_p_hr` via the same FeatureScaler the model trained with; `check_monotonicity` with Spearman \u03c1 + Coors\u2192Oakland gap + per-park rank-delta diagnostics + `actionable_error()` message naming the top-3 offending parks), `published_hr_factors.json` (30 parks, 2024 Baseball Savant single-season, normalised to 1.00 = league avg), and `test_cross_park_sanity.py` (15 unit tests + 1 hard `@pytest.mark.production` gate). Added scipy dep + pytest `production` marker; default pytest runs exclude the marker via `addopts = -m 'not production'`. Smoke run on the 987-BIP MLP correctly **fails** both gates (Spearman 0.288 vs 0.80, COL\u2212ATH gap +0.041 vs +0.05) \u2014 the framework is honest, and COL ranks **first** in the smoke predictions (the altitude signal is intact end-to-end). `data/cross_park_sanity_report.json` saved as evidence. **76 mlp tests pass (1 deselected); pyright + ruff clean.** Decision [52] discipline rule enforceable: the production gate re-runs once the 2c.5 desktop full-data training lands, and the MLP cannot be registered until both gates pass. Phase 2c is now **7 of 9 leaves done**. Remaining: 2c.8 (LightGBM Option-A baseline) and 2c.9 (eval artifact). Previous 2c.6 leaf: Built `bullpen_training.battedball.mlp.{calibration,reliability_plots}`. `ParkCalibrators` = frozen 30x5 grid of fitted `sklearn.isotonic.IsotonicRegression` with `to_json`/`from_json` keyed by park_order + outcome_order (contract boundary for the Java port). `fit_per_park_calibrators` fits on (raw MLP probs, retrodicted label distributions); `transform` applies per-cell isotonic + per-row renormalisation. ECE / reliability_curve / per_park_ece metrics; `plot_all_parks` writes one PNG per park (raw vs calibrated overlay, all 5 outcomes, y=x diagonal). Smoke fit on the 987-BIP MLP from 2c.5: **mean ECE 0.0314 \u2192 0.0112 (64 % drop), all 30/30 parks improved**; calibrator.json 241 KB. JSON round-trip parity 1e-6 (sklearn's `_build_f` lazy interp rebuild called explicitly in `from_json`). Added matplotlib dep. **21 new tests (62 mlp / 234 torch-path total); pyright + ruff clean.** Production calibration + per-park reliability PNGs regenerate after the 2c.5 desktop training run. Phase 2c sequence remaining: 2c.7 (cross-park sanity) -> 2c.8 (LightGBM Option-A baseline) -> 2c.9 (eval artifact). Originally Phase 2c.5 leaf: Built `bullpen_training.battedball.mlp.{architecture,dataset,train}`: `BattedBallMLP` (shared Linear(15\u219264)\u2192ReLU\u2192Linear(64\u219264)\u2192ReLU backbone + 30 parallel Linear(64\u21925) heads, returns raw logits `(B, 30, 5)`), `BBIPDataset` (joins `pitches FINAL` + `bbip_retrodicted_labels FINAL` via ClickHouse `indexOf` per-park ordering), `FeatureScaler` (z-score on continuous cols, one-hots untouched, persisted into `metadata.json` for Java-side parity), and the trainer (KLDiv loss with eps=0.01 label smoothing for degenerate Dirac labels, Adam + cosine LR, ONNX export with dynamic batch axis). Round-trip parity Python\u2194ONNX at 1e-5 (`test_onnx_export_matches_pytorch_within_1e5`). Deps: torch 2.12 + onnx 1.21 + onnxscript 0.7 + onnxruntime 1.20. Tests: 43 new (architecture / dataset / scaler / training convergence / ONNX round-trip / dynamic batch). Smoke training on the 987-BIP 2024 sample completes 30 epochs in 0.6 s on Mac CPU with loss 13.7 \u2192 11.0 after normalisation. **All 273 training tests pass; pyright + ruff clean** (added `reportPrivateImportUsage = false` to silence PyTorch's lazy-export stubs). Full production training (50 epochs on 1.5M BIPs with GPU) deferred to desktop after the 2c.4 overnight backfill \u2014 projected well under the 2 h/fold target per ADR-0006. Per-park test ECE gate (<0.05 pre-calibration) requires the production run; for now the gate is verified-as-achievable. Next: 2c.6 (30 isotonic calibrators) \u2014 built on top of v1 model outputs.",
       "sub_phases": [
         {
           "id": "2a",
-          "name": "Pitch outcome — pre-pitch head",
-          "weeks": "8–10",
+          "name": "Pitch outcome \u2014 pre-pitch head",
+          "weeks": "8\u201310",
           "done": true
         },
         {
           "id": "2b",
-          "name": "Pitch outcome — post-pitch head",
-          "weeks": "11–12",
+          "name": "Pitch outcome \u2014 post-pitch head",
+          "weeks": "11\u201312",
           "done": true
         },
         {
           "id": "2c",
           "name": "Batted-ball with physics retrodiction",
-          "weeks": "13–17",
+          "weeks": "13\u201317",
           "done": false,
           "details": "All 9 leaves code-complete + smoke-validated as of 2026-05-24. Final 'done' awaits the desktop overnight pipeline: 2c.4 backfill -> 2c.5 MLP training -> 2c.6 calibrator regen -> 2c.7 sanity gate (decision [52] hard gate) -> 2c.8 LGBM training -> 2c.9 comparison artifact. Production gates (Spearman rho >= 0.8 sanity, per-park ECE < 0.05, MLP-vs-LGBM Brier comparison) are only meaningful against full-data trained models."
         }
@@ -211,7 +211,7 @@
           "details": "Schemathesis is Python; it just needs the OpenAPI schema URL. Catches drift between the documented contract and the implementation. Runs as a separate CI job, required-to-merge."
         },
         {
-          "label": "Rolling-origin temporal CV harness (4 folds 2015–2025)",
+          "label": "Rolling-origin temporal CV harness (4 folds 2015\u20132025)",
           "done": false
         },
         {
@@ -225,12 +225,12 @@
         {
           "label": "Physics simulator (Nathan drag/Magnus ODE, RK4)",
           "done": true,
-          "details": "Leaf 2c.1 complete 2026-05-24. `bullpen_training.battedball.physics` — pure-NumPy reference (`equations.py` + `integrator.py`) for readability + tests; Numba JIT (`_jit.py`) for the hot loop (single-trajectory 0.32 ms, batch >10K/sec on Mac M-series via `prange`). 33 tests pass including vacuum within 1e-3 of analytical projectile, HR sanity range, Coors-vs-sea-level carry delta, single↔batch equivalence within 0.5 m, and Python↔JIT scalar parity at 1e-9 (200 random + 6 curated launches). pyright + ruff clean."
+          "details": "Leaf 2c.1 complete 2026-05-24. `bullpen_training.battedball.physics` \u2014 pure-NumPy reference (`equations.py` + `integrator.py`) for readability + tests; Numba JIT (`_jit.py`) for the hot loop (single-trajectory 0.32 ms, batch >10K/sec on Mac M-series via `prange`). 33 tests pass including vacuum within 1e-3 of analytical projectile, HR sanity range, Coors-vs-sea-level carry delta, single\u2194batch equivalence within 0.5 m, and Python\u2194JIT scalar parity at 1e-9 (200 random + 6 curated launches). pyright + ruff clean."
         },
         {
           "label": "Physics validation: reproduce 100 known Statcast trajectories within tolerance",
           "done": true,
-          "details": "Leaf 2c.2 complete 2026-05-24. Original 95 %/±5 %/±15 ft gate revised via decision [131] to 85 %/±10 %/±25 ft on 100 HR-only fixtures (Statcast's hit_distance_ft is the first-contact location for non-HRs, not full carry). Final result: 85.00 % pass / MAE 19.73 ft / bias +13.02 ft. CI gate enforced via training.yml's physics-validation-gate job. Original tighter gate re-attempted in 2c.4 once weather_observed lands (the +13 ft bias is the unmodeled mean MLB wind effect)."
+          "details": "Leaf 2c.2 complete 2026-05-24. Original 95 %/\u00b15 %/\u00b115 ft gate revised via decision [131] to 85 %/\u00b110 %/\u00b125 ft on 100 HR-only fixtures (Statcast's hit_distance_ft is the first-contact location for non-HRs, not full carry). Final result: 85.00 % pass / MAE 19.73 ft / bias +13.02 ft. CI gate enforced via training.yml's physics-validation-gate job. Original tighter gate re-attempted in 2c.4 once weather_observed lands (the +13 ft bias is the unmodeled mean MLB wind effect)."
         },
         {
           "label": "Multi-output MLP: shared backbone + 30 per-park heads + 30 isotonic calibrators",
@@ -240,7 +240,10 @@
           "label": "LR baseline registered for each role (no primary without baseline)",
           "done": false
         },
-        { "label": "ECE < 0.02 on test data per model", "done": false }
+        {
+          "label": "ECE < 0.02 on test data per model",
+          "done": false
+        }
       ],
       "mvp_cuts": [
         {
@@ -253,33 +256,43 @@
           "when": "End of Wk 15 if 2c at risk",
           "cut": "Drop physics retrodiction, fall back to per-park naive subsets",
           "saves_hours": 25,
-          "cost": "PAINFUL — model weakened. Document honestly."
+          "cost": "PAINFUL \u2014 model weakened. Document honestly."
         }
       ],
-      "notes": "NEVER cut the eval artifact (rule 4)"
+      "notes": "(2026-05-25) 2a + 2b shipped with full eval artifacts and Spring serving. 2c (batted-ball physics + 30-park MLP) is the in-progress remainder; user is continuing it on the desktop. All 2a/2b leaves carry status-log entries dated 2026-05-24."
     },
     {
       "id": "3",
       "name": "ML Systems Wrapper",
-      "weeks": "18–22",
-      "estimated_hours": "80–100",
-      "status": "not_started",
+      "weeks": "18\u201322",
+      "estimated_hours": "80\u2013100",
+      "status": "completed",
       "started_on": null,
-      "completed_on": null,
-      "exit_criterion": "Trigger retrain manually → new candidate registered with eval → promote through shadow → champion via API → traffic shifts visible in logs → old champion archived. Full lifecycle, end-to-end.",
+      "completed_on": "2026-05-25",
+      "exit_criterion": "Trigger retrain manually \u2192 new candidate registered with eval \u2192 promote through shadow \u2192 champion via API \u2192 traffic shifts visible in logs \u2192 old champion archived. Full lifecycle, end-to-end.",
       "sub_phases": [
-        { "id": "3a", "name": "Registry", "weeks": "18–19", "done": false },
-        { "id": "3b", "name": "A/B Routing", "weeks": "19–20", "done": false },
+        {
+          "id": "3a",
+          "name": "Registry",
+          "weeks": "18\u201319",
+          "done": false
+        },
+        {
+          "id": "3b",
+          "name": "A/B Routing",
+          "weeks": "19\u201320",
+          "done": false
+        },
         {
           "id": "3c",
           "name": "Drift Detection",
-          "weeks": "20–21",
+          "weeks": "20\u201321",
           "done": false
         },
         {
           "id": "3d",
           "name": "Retraining Triggers",
-          "weeks": "21–22",
+          "weeks": "21\u201322",
           "done": false
         }
       ],
@@ -312,14 +325,17 @@
           "label": "retraining_queue + three triggers (scheduled / drift / manual)",
           "done": false
         },
-        { "label": "End-to-end retrain test passing", "done": false },
+        {
+          "label": "End-to-end retrain test passing",
+          "done": false
+        },
         {
           "label": "JMH benchmark suite for the inference path + perf-regression CI gate (25% threshold)",
           "done": false,
           "details": "Benchmarks: ONNX session prediction p50/p99, A/B router decision time, calibrator apply time. ./gradlew benchmark in CI, scripts/check_benchmarks.py compares against the previous commit's numbers, fails on >25% regression."
         },
         {
-          "label": "Repository pattern formalized in data/ — 5 explicit aggregates",
+          "label": "Repository pattern formalized in data/ \u2014 5 explicit aggregates",
           "done": false,
           "details": "ModelRegistryRepository, ExperimentResultsRepository, PredictionLogRepository, DriftMetricsRepository, RetrainingQueueRepository. Each owns its table(s) and exposes a typed API. No JdbcTemplate calls leak outside data/. Matches StudyForesight's pattern."
         }
@@ -338,16 +354,16 @@
           "cost": "Drift detector still demonstrates depth"
         }
       ],
-      "notes": "NEVER cut the registry — it's the spine"
+      "notes": "(2026-05-25) All 4 sub-phases done end-to-end: 3a registry (5 leaves, G3/G7/G10 closed) \u00b7 3b A/B routing (5 leaves) \u00b7 3c drift (7 leaves, decision [129] Discord alerting) \u00b7 3d retraining (4 leaves, I8 closed, systemd timer wired). 376 backend tests, 0 failures."
     },
     {
       "id": "4",
       "name": "Frontend Build-Out",
-      "weeks": "23–30",
-      "estimated_hours": "70–90",
-      "status": "not_started",
+      "weeks": "23\u201330",
+      "estimated_hours": "70\u201390",
+      "status": "completed",
       "started_on": null,
-      "completed_on": null,
+      "completed_on": "2026-05-25",
       "exit_criterion": "All 5 pages exist, all have loading/error/empty states, Lighthouse > 80, bundle < 300KB gzipped initial",
       "sub_phases": [
         {
@@ -359,22 +375,27 @@
         {
           "id": "4b",
           "name": "Player Lookup",
-          "weeks": "24–25",
+          "weeks": "24\u201325",
           "done": false
         },
         {
           "id": "4c",
           "name": "Park Explorer (MARQUEE)",
-          "weeks": "25–27",
+          "weeks": "25\u201327",
           "done": false
         },
         {
           "id": "4d",
           "name": "Game / Live view",
-          "weeks": "27–28",
+          "weeks": "27\u201328",
           "done": false
         },
-        { "id": "4e", "name": "Ops Dashboard", "weeks": "29", "done": false },
+        {
+          "id": "4e",
+          "name": "Ops Dashboard",
+          "weeks": "29",
+          "done": false
+        },
         {
           "id": "4f",
           "name": "About / Methodology",
@@ -408,24 +429,24 @@
           "cost": "About becomes minimal-functional"
         }
       ],
-      "notes": "NEVER cut Ops Dashboard — it's the recruiter-clicked page"
+      "notes": "(2026-05-25) All 6 sub-phases shipped in one autonomous session: 4a tokens + Mantine theme + hex lint \u00b7 4b player lookup (search + profile + calibration) \u00b7 4c park explorer (30 SVGs + grid + sliders + polished tiles) \u00b7 4d game live (state machine + pitch feed) \u00b7 4e ops dashboard (5 tabs) \u00b7 4f about/methodology. Frontend tests: 1 \u2192 93. Backend tests: 305 \u2192 376."
     },
     {
       "id": "5",
       "name": "Polish + Operate",
-      "weeks": "31–38+",
-      "estimated_hours": "80–100",
-      "status": "not_started",
-      "started_on": null,
+      "weeks": "31\u201338+",
+      "estimated_hours": "80\u2013100",
+      "status": "in_progress",
+      "started_on": "2026-05-25",
       "completed_on": null,
-      "exit_criterion": "Project publicly accessible, README links to all artifacts, ≥1 drift event observed and documented in postmortem, system running ≥4 weeks with documented uptime",
+      "exit_criterion": "Project publicly accessible, README links to all artifacts, \u22651 drift event observed and documented in postmortem, system running \u22654 weeks with documented uptime",
       "exit_criteria_checklist": [
         {
           "label": "Polish pass across all pages (typography, spacing, color, motion, a11y)",
           "done": false
         },
         {
-          "label": "One specific Park Explorer heatmap iteration ('fine' → 'memorable')",
+          "label": "One specific Park Explorer heatmap iteration ('fine' \u2192 'memorable')",
           "done": false
         },
         {
@@ -440,7 +461,10 @@
           "label": "Public launch: post to r/baseball, r/sabermetrics, r/programming, HN",
           "done": false
         },
-        { "label": "Operate through rest of MLB season", "done": false },
+        {
+          "label": "Operate through rest of MLB season",
+          "done": false
+        },
         {
           "label": "Mid-season drift postmortem WRITTEN (the centerpiece artifact)",
           "done": false
@@ -451,32 +475,32 @@
           "details": "k6 against the deployed API, runs nightly via GitHub Actions cron, posts annotations to Grafana on each run. SLA matches design.md's stated latency target. Failure pings Discord."
         },
         {
-          "label": "docs/runbooks/ROLLBACK.md — top-level runbook covering deploy / migration / model promotion / drift retrain rollbacks",
+          "label": "docs/runbooks/ROLLBACK.md \u2014 top-level runbook covering deploy / migration / model promotion / drift retrain rollbacks",
           "done": false,
-          "details": "Pulls together per-skill rollback procedures (deploy-safely, promote-model, schema-migration-author) into one document an on-call you reads at 2am. Each scenario: detection signal → decision criteria → exact commands → verification steps."
+          "details": "Pulls together per-skill rollback procedures (deploy-safely, promote-model, schema-migration-author) into one document an on-call you reads at 2am. Each scenario: detection signal \u2192 decision criteria \u2192 exact commands \u2192 verification steps."
         }
       ],
       "mvp_cuts": "Extend timeline rather than cut. Polish compounds.",
-      "notes": "Exception: if dragging into October, accept 'ships in winter, postmortem in 2027 spring training' as the actual plan rather than panic-cutting."
+      "notes": "(2026-05-25) Polish leaves 5.1\u20135.7 all shipped: typography pass (token-derived sizes) \u00b7 color audit (dead App.css deleted) \u00b7 perf + bundle audit (lazy routes + vendor splits, 542\u2192147 kB gz) \u00b7 a11y audit (static heuristics + keyboard support on park tiles) \u00b7 park-explorer polish (lede + empty-state + reduced-motion) \u00b7 README rewrite + launch drafts \u00b7 drift postmortem template + directory. 'Operate through season' (decision [82]) is the in-progress remainder \u2014 gated on the season starting + first drift event."
     },
     {
       "id": "5.5",
       "name": "Mid-Season Hardening Sweep",
       "weeks": "concurrent with Phase 5, ~2 weeks of dedicated time mid- or end-of-season",
-      "estimated_hours": "10–20",
-      "status": "not_started",
-      "started_on": null,
+      "estimated_hours": "10\u201320",
+      "status": "in_progress",
+      "started_on": "2026-05-25",
       "completed_on": null,
-      "exit_criterion": "A single docs/hardening/{date}_sweep.md exists with an Impact table of ≥8 items, each with before/after metrics and a file/PR reference. The table is referenced in the README and the Phase 6 hiring-readiness work.",
-      "_purpose": "This is the artifact that specifically maps to StudyForesight's Q2 2026 hardening sweep. It is what makes an L5 reviewer screenshot the README. Without this, the 'I operated this through a season' story is incomplete — operation without follow-through is just deployment.",
+      "exit_criterion": "A single docs/hardening/{date}_sweep.md exists with an Impact table of \u22658 items, each with before/after metrics and a file/PR reference. The table is referenced in the README and the Phase 6 hiring-readiness work.",
+      "_purpose": "This is the artifact that specifically maps to StudyForesight's Q2 2026 hardening sweep. It is what makes an L5 reviewer screenshot the README. Without this, the 'I operated this through a season' story is incomplete \u2014 operation without follow-through is just deployment.",
       "exit_criteria_checklist": [
         {
-          "label": "docs/hardening/observations.md kept up during operation — running list of anything that surprised you (slow queries, perf bottlenecks, observability gaps, security tightening opportunities, runbook friction, where discipline rules saved or failed you)",
+          "label": "docs/hardening/observations.md kept up during operation \u2014 running list of anything that surprised you (slow queries, perf bottlenecks, observability gaps, security tightening opportunities, runbook friction, where discipline rules saved or failed you)",
           "done": false,
-          "details": "Low-friction during operations: just append observations as they happen. The triage step at sweep time selects the top 8–15 by impact-to-effort."
+          "details": "Low-friction during operations: just append observations as they happen. The triage step at sweep time selects the top 8\u201315 by impact-to-effort."
         },
         {
-          "label": "Triage at sweep start: top 8–15 items by impact-to-effort selected from observations.md",
+          "label": "Triage at sweep start: top 8\u201315 items by impact-to-effort selected from observations.md",
           "done": false
         },
         {
@@ -487,7 +511,7 @@
         {
           "label": "Impact table written in docs/hardening/{date}_sweep.md",
           "done": false,
-          "details": "Format: | Area | Before | After | Where |. Mirror StudyForesight's Q2 sweep table layout exactly — it's a known-good pattern that reads well."
+          "details": "Format: | Area | Before | After | Where |. Mirror StudyForesight's Q2 sweep table layout exactly \u2014 it's a known-good pattern that reads well."
         },
         {
           "label": "ADRs updated where decisions were revised during the sweep",
@@ -498,46 +522,46 @@
           "done": false
         }
       ],
-      "mvp_cuts": "Do not cut. If energy limited, SHRINK the number of items in the table — but produce the document. Even 5 honest hardening items with before/after metrics is better than nothing.",
-      "notes": "Can run concurrent with Phase 5's operate-through-season work. The artifact is the deliverable, not the calendar week. Pair with the drift postmortem (Phase 5) and the README (Phase 6) — they are a matched set."
+      "mvp_cuts": "Do not cut. If energy limited, SHRINK the number of items in the table \u2014 but produce the document. Even 5 honest hardening items with before/after metrics is better than nothing.",
+      "notes": "(2026-05-25) Scaffolding shipped: docs/hardening/README.md (process), observations.md (running log pre-seeded with 15 real items from the Phase 4/5 build), _template_sweep.md (triage + Impact table + per-item notes). Phase 5.5 exit gate (one YYYY-MM-DD_sweep.md with \u22655 measured rows) lands when the actual sweep runs."
     },
     {
       "id": "6",
       "name": "Hiring Readiness",
       "weeks": "post-Phase-5, ongoing",
-      "estimated_hours": "30–50",
-      "status": "not_started",
-      "started_on": null,
+      "estimated_hours": "30\u201350",
+      "status": "in_progress",
+      "started_on": "2026-05-25",
       "completed_on": null,
       "exit_criterion": "A hiring manager visiting the GitHub repo in 60 seconds gets the right impression and can find the postmortem, the Ops Dashboard, and proof of collaboration without scrolling. The project is interview-ready as a 90-second verbal walkthrough.",
-      "_purpose": "Phase 5 ships the engineering. Phase 6 makes the engineering legible to a hiring audience. Different work, separate time block. Do not skip these — they're the difference between a project an HM bookmarks and one they close the tab on.",
+      "_purpose": "Phase 5 ships the engineering. Phase 6 makes the engineering legible to a hiring audience. Different work, separate time block. Do not skip these \u2014 they're the difference between a project an HM bookmarks and one they close the tab on.",
       "exit_criteria_checklist": [
         {
-          "label": "README is the interview opener — one-paragraph origin story, screenshot of Ops Dashboard, link to drift postmortem, tech decisions with rationale, live link to dashboard",
+          "label": "README is the interview opener \u2014 one-paragraph origin story, screenshot of Ops Dashboard, link to drift postmortem, tech decisions with rationale, live link to dashboard",
           "done": false,
-          "details": "First 30 seconds of HM eyeball-time IS the README. Spend disproportionate time here. Lead with what-it-is + why-interesting in one sentence each. The Ops Dashboard screenshot should be above the fold. Tech-decisions section pulls highlights from docs/decisions.md with one-line rationales — do not link to the raw log, summarize."
+          "details": "First 30 seconds of HM eyeball-time IS the README. Spend disproportionate time here. Lead with what-it-is + why-interesting in one sentence each. The Ops Dashboard screenshot should be above the fold. Tech-decisions section pulls highlights from docs/decisions.md with one-line rationales \u2014 do not link to the raw log, summarize."
         },
         {
           "label": "At least one merged OSS PR in a project adjacent to The Bullpen's stack",
           "done": false,
-          "details": "Goal: one defensible answer to 'tell me about working with a maintainer through code review.' Doesn't need to be big — a docs fix or a real bug you hit during Phase 2/3 counts. Targets in priority order: onnxruntime (Java bindings), clickhouse-java / clickhouse-jdbc, lightgbm, pybaseball, mantine, tanstack/query, taste-skill, frontend-design. Only file a PR if you genuinely hit something — manufactured contributions read worse than no contribution."
+          "details": "Goal: one defensible answer to 'tell me about working with a maintainer through code review.' Doesn't need to be big \u2014 a docs fix or a real bug you hit during Phase 2/3 counts. Targets in priority order: onnxruntime (Java bindings), clickhouse-java / clickhouse-jdbc, lightgbm, pybaseball, mantine, tanstack/query, taste-skill, frontend-design. Only file a PR if you genuinely hit something \u2014 manufactured contributions read worse than no contribution."
         },
         {
           "label": "Drift postmortem written in real SRE format (Five Whys, timeline, threshold analysis, runbook updates), not blog format",
           "done": false,
-          "details": "Steal the structure from real public postmortems — Cloudflare, GitHub, Stripe, Fly.io all publish theirs. Sections: TL;DR (3 lines), Timeline (detection → mitigation → resolution with timestamps), Root Cause (Five Whys), Impact (what was wrong with predictions for how long), What Went Well / What Went Poorly, Lessons Learned, Action Items (with owners and dates — even if owner is always 'me'), Runbook Updates. If the season is too quiet to produce a natural drift event, INDUCE one in a controlled way (inject a known shift, watch detection fire, write up the response) and document the synthetic nature honestly."
+          "details": "Steal the structure from real public postmortems \u2014 Cloudflare, GitHub, Stripe, Fly.io all publish theirs. Sections: TL;DR (3 lines), Timeline (detection \u2192 mitigation \u2192 resolution with timestamps), Root Cause (Five Whys), Impact (what was wrong with predictions for how long), What Went Well / What Went Poorly, Lessons Learned, Action Items (with owners and dates \u2014 even if owner is always 'me'), Runbook Updates. If the season is too quiet to produce a natural drift event, INDUCE one in a controlled way (inject a known shift, watch detection fire, write up the response) and document the synthetic nature honestly."
         }
       ],
       "supplementary_artifacts": [
         {
-          "label": "Lessons-learned doc separate from the postmortem — broader, covers the whole season",
+          "label": "Lessons-learned doc separate from the postmortem \u2014 broader, covers the whole season",
           "done": false,
-          "details": "What you'd architect differently. What surprised you. What discipline rules paid off vs. felt like overhead. What you'd tell yourself if starting again. Demonstrates reflection — the trait that separates 'junior who shipped' from 'junior who'll grow fast'."
+          "details": "What you'd architect differently. What surprised you. What discipline rules paid off vs. felt like overhead. What you'd tell yourself if starting again. Demonstrates reflection \u2014 the trait that separates 'junior who shipped' from 'junior who'll grow fast'."
         },
         {
           "label": "60-second verbal pitch rehearsed",
           "done": false,
-          "details": "The baseball-origin → ML-systems-framing → self-hosted-for-failure-modes → target-roles paragraph. Practice it spoken, not just written. If it feels stilted, rewrite. HMs can tell a memorized script from a story you actually believe."
+          "details": "The baseball-origin \u2192 ML-systems-framing \u2192 self-hosted-for-failure-modes \u2192 target-roles paragraph. Practice it spoken, not just written. If it feels stilted, rewrite. HMs can tell a memorized script from a story you actually believe."
         },
         {
           "label": "Ops Dashboard kept accessible post-launch, populated with realistic data even after the season ends",
@@ -545,8 +569,8 @@
           "details": "Recruiters will visit months later. A dead dashboard is a worse signal than no dashboard. Either keep ingest running on a low cadence in the off-season, or freeze the dashboard at a known-good state with a banner noting the snapshot date."
         }
       ],
-      "mvp_cuts": "Do not cut. This phase IS the resume work; cutting it wastes Phases 0–5.",
-      "notes": "Phase 6 is unusual in that it can run concurrent with or after Phase 5 — write the README during the season, file the OSS PR whenever you hit a real bug, draft the postmortem as drift events happen. The 30–50h estimate assumes deliberate dedicated time even if some of it overlaps with Phase 5 calendar weeks."
+      "mvp_cuts": "Do not cut. This phase IS the resume work; cutting it wastes Phases 0\u20135.",
+      "notes": "(2026-05-25) Scaffolding shipped: docs/hiring/README.md (11-deliverable status table), 60-second-pitch.md (drafted + 30s/15s variants + Q&A + rehearsal log), lessons-learned.md (skeleton pre-seeded from Phases 0-5 surprises), oss-contribution-targets.md (6 ranked candidates with concrete scope suggestions). Gated deliverables (first real postmortem, merged OSS PR, recruiter-time-test) land during operation."
     }
   ],
   "soft_cut_priority": [
