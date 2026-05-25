@@ -104,6 +104,16 @@ export default function ParksPage() {
     [],
   );
 
+  // Empty state: when no park clears even a 0.5% chance, the input is so
+  // unrealistic that the heatmap reads as flat-dark and gives the user no
+  // signal — surface an explicit message instead.
+  const allParksFlat = useMemo(() => {
+    if (!query.data) return false;
+    const probs = Object.values(query.data.probHrByPark);
+    if (probs.length === 0) return false;
+    return probs.every((p) => p < 0.005);
+  }, [query.data]);
+
   const hoveredDetail: ParkDetail | null = useMemo(() => {
     if (!hoveredParkId) return null;
     const meta = META[hoveredParkId];
@@ -123,11 +133,14 @@ export default function ParksPage() {
     <Container size="lg" py="xl">
       <Stack gap="md">
         <Title order={1}>Park Explorer</Title>
-        <Text c="dimmed">
-          A fly ball with these launch parameters against every MLB park. Tint
-          uses the Viridis ramp — darker = lower P(HR), brighter = higher. The
-          dot on each stadium is the model's estimated landing zone for this
-          input. Grid is sorted most-HR-likely first.
+        <Text c="dimmed" fs="italic" ff="serif">
+          Drag the sliders to see how the same batted ball would play in each
+          MLB park.
+        </Text>
+        <Text c="dimmed" size="sm">
+          Tint uses the Viridis ramp — darker = lower P(HR), brighter = higher.
+          The dot on each stadium is the model's estimated landing zone for this
+          input. Grid sorts most-HR-likely first.
         </Text>
 
         <LaunchParamSliders
@@ -140,6 +153,14 @@ export default function ParksPage() {
           <Text c="red">
             Could not load park predictions
             {query.error instanceof Error ? `: ${query.error.message}` : ""}.
+          </Text>
+        ) : null}
+
+        {allParksFlat ? (
+          <Text c="dimmed" size="sm" fs="italic">
+            No realistic home-run scenarios at these inputs (every park's P(HR)
+            is below 0.5%). Try a higher exit velocity or a launch angle in the
+            20–35° range.
           </Text>
         ) : null}
 

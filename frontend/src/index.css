@@ -3,6 +3,7 @@
 @import "./design/fonts.css";
 @import "./design/tokens.css";
 @import "./design/global.css";
+@import "./design/motion.css";
 
 :root {
   font-family: var(--font-ui);

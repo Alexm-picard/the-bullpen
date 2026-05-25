@@ -1,0 +1,13 @@
+/* Global prefers-reduced-motion gate (leaf 5.5).
+ * Disable any non-essential transition / animation when the user has
+ * `Reduce motion` enabled at the OS level. Components that need a
+ * different reduced-motion treatment can opt out by adding
+ * `data-motion-essential` to the element. */
+@media (prefers-reduced-motion: reduce) {
+  *:not([data-motion-essential="true"]) {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
