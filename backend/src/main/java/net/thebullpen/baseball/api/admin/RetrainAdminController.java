@@ -103,4 +103,54 @@ public class RetrainAdminController {
       throw new ResponseStatusException(HttpStatus.CONFLICT, e.getMessage(), e);
     }
   }
+
+  // --- worker-facing endpoints (3d.3) ----------------------------------
+
+  /**
+   * Worker-facing: atomically claim the next queued trigger. Returns 200 with the row when one was
+   * claimed, 204 when the queue was empty. The atomic SELECT-then-UPDATE in {@link
+   * RetrainingQueueService#claimNext} guarantees concurrent workers can't both win the same row.
+   */
+  @PostMapping("/claim")
+  public org.springframework.http.ResponseEntity<RetrainingTrigger> claim() {
+    return queue
+        .claimNext()
+        .map(
+            t -> {
+              log.info(
+                  "admin: trigger {} claimed by worker (model={})", t.triggerId(), t.modelName());
+              return org.springframework.http.ResponseEntity.ok(t);
+            })
+        .orElseGet(() -> org.springframework.http.ResponseEntity.noContent().build());
+  }
+
+  /**
+   * Worker-facing: report retrain result. {@code succeeded=true} requires {@code
+   * producedVersionId}; {@code succeeded=false} requires {@code errorMessage}. Returns the
+   * post-state row.
+   */
+  @PostMapping("/{triggerId}/complete")
+  public RetrainingTrigger complete(
+      @PathVariable String triggerId,
+      @Valid @RequestBody net.thebullpen.baseball.api.admin.dto.CompleteRetrainRequest req) {
+    if (req.succeeded() && req.producedVersionId() == null) {
+      throw new ResponseStatusException(
+          HttpStatus.BAD_REQUEST, "complete with succeeded=true requires producedVersionId");
+    }
+    if (!req.succeeded() && (req.errorMessage() == null || req.errorMessage().isBlank())) {
+      throw new ResponseStatusException(
+          HttpStatus.BAD_REQUEST, "complete with succeeded=false requires non-blank errorMessage");
+    }
+    try {
+      if (req.succeeded()) {
+        return queue.completeSuccess(triggerId, req.producedVersionId());
+      } else {
+        return queue.completeFailure(triggerId, req.errorMessage());
+      }
+    } catch (RetrainingException.UnknownTrigger e) {
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage(), e);
+    } catch (RetrainingException.InvalidStateTransition e) {
+      throw new ResponseStatusException(HttpStatus.CONFLICT, e.getMessage(), e);
+    }
+  }
 }

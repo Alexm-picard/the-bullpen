@@ -167,6 +167,88 @@ class RetrainAdminControllerIT {
         .andExpect(status().isConflict());
   }
 
+  // --- worker-facing endpoints (3d.3) ----------------------------------
+
+  @Test
+  void claim_returns_204_when_queue_is_empty() throws Exception {
+    mvc.perform(post("/v1/admin/retrain/claim").header("Authorization", BASIC))
+        .andExpect(status().isNoContent());
+  }
+
+  @Test
+  void claim_returns_running_row_when_queue_has_one() throws Exception {
+    queue.enqueue("model_a", TriggerType.MANUAL, "claim-me", Map.of());
+    mvc.perform(post("/v1/admin/retrain/claim").header("Authorization", BASIC))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.triggerId", equalTo("claim-me")))
+        .andExpect(jsonPath("$.status", equalTo("RUNNING")));
+  }
+
+  @Test
+  void complete_success_flips_to_succeeded_with_produced_version_id() throws Exception {
+    queue.enqueue("model_a", TriggerType.MANUAL, "ok-1", Map.of());
+    queue.claimNext();
+    mvc.perform(
+            post("/v1/admin/retrain/ok-1/complete")
+                .header("Authorization", BASIC)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    mapper.writeValueAsString(Map.of("succeeded", true, "producedVersionId", 42))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status", equalTo("SUCCEEDED")))
+        .andExpect(jsonPath("$.producedVersionId", equalTo(42)));
+  }
+
+  @Test
+  void complete_failure_flips_to_failed_with_error_message() throws Exception {
+    queue.enqueue("model_a", TriggerType.MANUAL, "fail-1", Map.of());
+    queue.claimNext();
+    mvc.perform(
+            post("/v1/admin/retrain/fail-1/complete")
+                .header("Authorization", BASIC)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    mapper.writeValueAsString(
+                        Map.of("succeeded", false, "errorMessage", "OOM during fit"))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status", equalTo("FAILED")));
+  }
+
+  @Test
+  void complete_success_without_producedVersionId_is_400() throws Exception {
+    queue.enqueue("model_a", TriggerType.MANUAL, "miss-1", Map.of());
+    queue.claimNext();
+    mvc.perform(
+            post("/v1/admin/retrain/miss-1/complete")
+                .header("Authorization", BASIC)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(Map.of("succeeded", true))))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void complete_failure_without_errorMessage_is_400() throws Exception {
+    queue.enqueue("model_a", TriggerType.MANUAL, "miss-2", Map.of());
+    queue.claimNext();
+    mvc.perform(
+            post("/v1/admin/retrain/miss-2/complete")
+                .header("Authorization", BASIC)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(Map.of("succeeded", false))))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void complete_for_unknown_trigger_is_404() throws Exception {
+    mvc.perform(
+            post("/v1/admin/retrain/ghost/complete")
+                .header("Authorization", BASIC)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    mapper.writeValueAsString(Map.of("succeeded", true, "producedVersionId", 1))))
+        .andExpect(status().isNotFound());
+  }
+
   private void assertThatModelHasOneTrigger(String modelName, TriggerType type) {
     org.assertj.core.api.Assertions.assertThat(queue.findByModel(modelName))
         .hasSize(1)
