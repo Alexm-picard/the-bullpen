@@ -4,9 +4,9 @@
  * allowlist (src/design/) covers it.
  *
  * Values mirror src/design/tokens.ts. If you change one, change both — or grep will
- * find you. */
+ * find you. Redesigned 2026-05-25 alongside tokens.ts. */
 @theme {
-  --color-bgBase: #fafaf7;
+  --color-bgBase: #fbfbfa;
   --color-bgElevated: #ffffff;
   --color-bgSubtle: #f2f1ed;
   --color-bgEmphasis: #e8e6e0;
@@ -14,7 +14,7 @@
   --color-textDefault: #2d2b27;
   --color-textMuted: #6b6862;
   --color-textSubtle: #9a968f;
-  --color-accent: #b53d2c;
+  --color-accent: #d7373f;
   --color-success: #3f7a3f;
   --color-warning: #c28a2a;
   --color-danger: #9e2a2b;
@@ -23,6 +23,6 @@
   --font-ui: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-data:
     "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  --font-display:
-    "Source Serif 4", "Source Serif Pro", Georgia, "Times New Roman", serif;
+  /* display now maps to Inter — Source Serif 4 dropped in the 2026-05-25 redesign. */
+  --font-display: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
 }

@@ -33,9 +33,9 @@ describe("design tokens", () => {
     expect(colors.textSubtle).toMatch(HEX);
   });
 
-  it("pins the brick-red accent — the single chromatic anchor", () => {
+  it("pins the stitching-red accent — the single chromatic anchor", () => {
     // If you change this hex you are changing the brand. Do it deliberately.
-    expect(colors.accent).toBe("#B53D2C");
+    expect(colors.accent).toBe("#D7373F");
   });
 
   it("ships a 5-stop viridis ramp and a 5-stop categorical palette", () => {
@@ -52,9 +52,12 @@ describe("design tokens", () => {
   });
 
   it("declares the three editorial-data font families", () => {
+    // 2026-05-25 redesign: display maps to Inter (Source Serif 4 dropped — see tokens.ts).
+    // The three named slots are preserved so consumers reading `typography.fonts.display`
+    // keep working; display + ui simply share Inter now.
     expect(typography.fonts.ui).toContain("Inter");
     expect(typography.fonts.data).toContain("JetBrains Mono");
-    expect(typography.fonts.display).toContain("Source Serif 4");
+    expect(typography.fonts.display).toContain("Inter");
   });
 
   it("orders the spacing scale monotonically", () => {

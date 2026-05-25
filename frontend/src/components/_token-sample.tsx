@@ -1,12 +1,14 @@
 /**
  * Visual ground-truth for the design tokens (leaf 4a acceptance criterion).
  *
- * Renders one of every primitive — Inter body, JetBrains Mono number, Source Serif 4
- * display headline, the brick-red accent, and the surface ramp. Page-level leaves later
+ * Renders one of every primitive — Inter body, JetBrains Mono number, Inter display
+ * headline, the stitching-red accent, and the surface ramp. Page-level leaves later
  * reference this in code review as "does my new component look consistent with this."
  *
  * Intentionally uses `tokens.colors.*` directly (not Tailwind classes) so the visual is
  * unambiguous about what the canonical values are.
+ *
+ * Refreshed 2026-05-25 to reflect the new tokens (substrate, accent, no Source Serif 4).
  */
 
 import { Box, Stack, Text, Title } from "@mantine/core";
@@ -20,14 +22,21 @@ export function TokenSampleCard() {
         backgroundColor: colors.bgElevated,
         color: colors.textDefault,
         border: `1px solid ${colors.bgEmphasis}`,
-        borderRadius: 8,
+        borderRadius: 6,
         padding: 32,
-        maxWidth: 720,
+        maxWidth: 680,
         fontFamily: typography.fonts.ui,
       }}
     >
       <Stack gap={24}>
-        <Title order={1} style={{ color: colors.textStrong }}>
+        <Title
+          order={1}
+          style={{
+            color: colors.textStrong,
+            fontFamily: typography.fonts.display,
+            letterSpacing: "-0.02em",
+          }}
+        >
           The Bullpen — design tokens
         </Title>
 
@@ -35,7 +44,7 @@ export function TokenSampleCard() {
           UI body copy in Inter. Used everywhere the user reads prose, labels,
           table cells, and tooltip text. The warm-paper substrate (
           <span style={{ color: colors.accent, fontWeight: 600 }}>
-            brick-red accent
+            stitching-red accent
           </span>
           ) shows here as the only chromatic note in body text.
         </Text>
@@ -68,7 +77,7 @@ export function TokenSampleCard() {
                 height: 64,
                 backgroundColor: c,
                 border: `1px solid ${colors.bgEmphasis}`,
-                borderRadius: 4,
+                borderRadius: 3,
               }}
               title={c}
             />
@@ -83,7 +92,7 @@ export function TokenSampleCard() {
                 width: 48,
                 height: 24,
                 backgroundColor: c,
-                borderRadius: 4,
+                borderRadius: 3,
               }}
               title={c}
             />

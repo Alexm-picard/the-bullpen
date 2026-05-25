@@ -33,12 +33,14 @@ describe("EditorialSection", () => {
     expect(html).toContain("01 — Overview");
   });
 
-  it("applies the 720-px editorial max-width", () => {
+  it("applies the editorial max-width from tokens", () => {
+    // The value is the source of truth in tokens.ts (layouts.editorialMaxWidth).
+    // The 2026-05-25 redesign tightened it from 720 to 680.
     const html = render(
       <EditorialSection title="t">
         <p>p</p>
       </EditorialSection>,
     );
-    expect(html).toContain("max-width:720px");
+    expect(html).toContain("max-width:680px");
   });
 });
