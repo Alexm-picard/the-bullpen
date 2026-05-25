@@ -126,11 +126,15 @@ pitch_number)` needs the indexed `pitch_id` column to land before the
 
 ## Operating evidence
 
-- Drift postmortems land under
+- **Drift postmortems** land under
   [`docs/postmortems/`](docs/postmortems/) when a model degrades and the
   human review writes one up. Empty today; first lands mid-season.
-- Restore + reboot drill reports under
+- **Restore + reboot drill reports** under
   [`docs/drills/`](docs/drills/) (rule 8).
+- **Mid-season hardening sweep** (Phase 5.5) — running observations
+  in [`docs/hardening/observations.md`](docs/hardening/observations.md),
+  triaged sweep doc lands as `docs/hardening/YYYY-MM-DD_sweep.md` with
+  before / after metrics per item.
 
 ## Repository layout
 
