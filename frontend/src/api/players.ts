@@ -78,3 +78,49 @@ export function usePlayer(id: number | null) {
     staleTime: 60_000,
   });
 }
+
+// ---------------------------------------------------------------------------
+// 4b.2 — recent predictions for a player (joined to outcomes lands later)
+// ---------------------------------------------------------------------------
+
+export type PlayerPredictionRow = {
+  requestAt: string; // ISO-8601 instant
+  modelName: string;
+  modelVersion: string;
+  role: string;
+  winnerClass: string | null;
+  winnerProb: number | null;
+  observedOutcome: string | null;
+  agreed: boolean | null;
+};
+
+export async function getPlayerPredictions(
+  id: number,
+  limit = 50,
+): Promise<PlayerPredictionRow[]> {
+  const res = await fetch(
+    `${API_BASE}/v1/players/${id}/predictions?limit=${limit}`,
+  );
+  if (res.status === 404) {
+    throw new PlayerLookupError(404, "player not found");
+  }
+  if (!res.ok) {
+    throw new PlayerLookupError(
+      res.status,
+      `predictions lookup failed: HTTP ${res.status}`,
+    );
+  }
+  return (await res.json()) as PlayerPredictionRow[];
+}
+
+export function usePlayerPredictions(id: number | null, limit = 50) {
+  return useQuery<PlayerPredictionRow[], PlayerLookupError>({
+    queryKey: ["players", "predictions", id, limit],
+    queryFn: () => {
+      if (id == null) throw new Error("id is required");
+      return getPlayerPredictions(id, limit);
+    },
+    enabled: id != null,
+    staleTime: 30_000,
+  });
+}

@@ -7,7 +7,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   PlayerLookupError,
   getPlayer,
+  getPlayerPredictions,
   searchPlayers,
+  type PlayerPredictionRow,
   type PlayerSearchResult,
 } from "./players";
 
@@ -113,5 +115,70 @@ describe("getPlayer", () => {
     const err = await getPlayer(660271).catch((e) => e);
     expect(err).toBeInstanceOf(PlayerLookupError);
     expect(err.status).toBe(503);
+  });
+});
+
+describe("getPlayerPredictions", () => {
+  const ROW: PlayerPredictionRow = {
+    requestAt: "2026-05-20T18:30:00Z",
+    modelName: "pitch_outcome_pre",
+    modelVersion: "v3",
+    role: "champion",
+    winnerClass: "ball",
+    winnerProb: 0.42,
+    observedOutcome: null,
+    agreed: null,
+  };
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("returns rows on 200 with default limit=50", async () => {
+    (fetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => [ROW],
+    });
+
+    expect(await getPlayerPredictions(660271)).toEqual([ROW]);
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/v1/players/660271/predictions?limit=50"),
+    );
+  });
+
+  it("forwards a custom limit", async () => {
+    (fetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => [],
+    });
+    await getPlayerPredictions(660271, 25);
+    expect(fetch).toHaveBeenCalledWith(expect.stringContaining("limit=25"));
+  });
+
+  it("throws PlayerLookupError(404) on player-not-found", async () => {
+    (fetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      json: async () => null,
+    });
+    const err = await getPlayerPredictions(999).catch((e) => e);
+    expect(err).toBeInstanceOf(PlayerLookupError);
+    expect(err.status).toBe(404);
+  });
+
+  it("throws PlayerLookupError on other non-200", async () => {
+    (fetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      json: async () => null,
+    });
+    const err = await getPlayerPredictions(660271).catch((e) => e);
+    expect(err).toBeInstanceOf(PlayerLookupError);
+    expect(err.status).toBe(500);
   });
 });

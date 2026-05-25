@@ -1,15 +1,16 @@
 /**
- * Player Lookup landing page (leaf 4b.1).
+ * Player Lookup pages (leaf 4b.1 + 4b.2).
  *
- * Search-only here. Selecting a result navigates to `/players/:id`, which
- * leaf 4b.2 will render. Until 4b.2 lands, the deep-link page is a placeholder
- * showing the resolved id and name.
+ * `/players` — search-only landing.
+ * `/players/:id` — header (name + position + active flag + summary) and the
+ * recent-predictions table. Calibration plot lands in 4b.3.
  */
-import { Container, Stack, Text, Title } from "@mantine/core";
+import { Container, Group, Stack, Text, Title } from "@mantine/core";
 import { useNavigate, useParams } from "react-router-dom";
 
-import { usePlayer } from "../api/players";
+import { usePlayer, usePlayerPredictions } from "../api/players";
 import { PlayerSearch } from "../components/players/player-search";
+import { PredictionHistoryTable } from "../components/players/prediction-history-table";
 
 export default function PlayersPage() {
   const navigate = useNavigate();
@@ -32,38 +33,67 @@ export default function PlayersPage() {
   );
 }
 
-/** Deep-link landing for /players/:id. Placeholder until 4b.2 lands. */
+/** Profile + recent-predictions view at /players/:id (leaf 4b.2). */
 export function PlayerProfilePage() {
   const { id } = useParams<{ id: string }>();
   const numericId = id ? Number(id) : null;
   const valid = numericId != null && Number.isFinite(numericId);
-  const { data, isLoading, isError, error } = usePlayer(
-    valid ? numericId : null,
-  );
+
+  const player = usePlayer(valid ? numericId : null);
+  const predictions = usePlayerPredictions(valid ? numericId : null, 50);
 
   return (
-    <Container size="md" py="xl">
-      <Stack gap="md">
-        <Title order={1}>
-          {data ? data.name : valid ? `Player #${id}` : "Player profile"}
-        </Title>
-        {isLoading ? <Text c="dimmed">Loading…</Text> : null}
-        {isError ? (
-          <Text c="red">
-            Could not load this player
-            {error instanceof Error ? `: ${error.message}` : ""}.
+    <Container size="lg" py="xl">
+      <Stack gap="lg">
+        <Stack gap={4}>
+          <Title order={1}>
+            {player.data
+              ? player.data.name
+              : player.isLoading
+                ? "Loading…"
+                : valid
+                  ? `Player #${id}`
+                  : "Player profile"}
+          </Title>
+          {player.data ? (
+            <Group gap="md">
+              <Text c="dimmed">
+                Position {player.data.primaryPosition} ·{" "}
+                {player.data.active ? "Active" : "Retired"} · Statcast id{" "}
+                {player.data.id}
+              </Text>
+              <Text c="dimmed" size="sm">
+                {predictions.data?.length ?? 0} recent prediction
+                {(predictions.data?.length ?? 0) === 1 ? "" : "s"}
+              </Text>
+            </Group>
+          ) : null}
+          {player.isError ? (
+            <Text c="red">
+              Could not load this player
+              {player.error instanceof Error ? `: ${player.error.message}` : ""}
+              .
+            </Text>
+          ) : null}
+        </Stack>
+
+        <Stack gap="xs">
+          <Title order={3}>Recent predictions</Title>
+          <PredictionHistoryTable
+            rows={predictions.data}
+            isLoading={predictions.isLoading}
+            isError={predictions.isError}
+            errorMessage={
+              predictions.error instanceof Error
+                ? predictions.error.message
+                : undefined
+            }
+          />
+          <Text size="xs" c="dimmed">
+            Outcome and agreement columns light up when truth-joining to the
+            pitches table lands (next leaf). Calibration plot in 4b.3.
           </Text>
-        ) : null}
-        {data ? (
-          <Text>
-            Position {data.primaryPosition} ·{" "}
-            {data.active ? "Active" : "Retired"} · Statcast id {data.id}
-          </Text>
-        ) : null}
-        <Text size="sm" c="dimmed">
-          Full profile and outing history land in leaf 4b.2; pitch-by-pitch
-          calibration plot in 4b.3.
-        </Text>
+        </Stack>
       </Stack>
     </Container>
   );

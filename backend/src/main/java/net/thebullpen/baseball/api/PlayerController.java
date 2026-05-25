@@ -1,7 +1,9 @@
 package net.thebullpen.baseball.api;
 
 import java.util.List;
+import net.thebullpen.baseball.api.dto.PlayerPredictionRow;
 import net.thebullpen.baseball.api.dto.PlayerSearchResult;
+import net.thebullpen.baseball.data.PlayerPredictionsRepository;
 import net.thebullpen.baseball.data.PlayerRepository;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
@@ -39,11 +41,14 @@ public class PlayerController {
   private static final int Q_MAX = 50;
   private static final int LIMIT_MIN = 1;
   private static final int LIMIT_MAX = 50;
+  private static final int PREDICTIONS_LIMIT_MAX = 200;
 
   private final PlayerRepository repo;
+  private final PlayerPredictionsRepository predictions;
 
-  public PlayerController(PlayerRepository repo) {
+  public PlayerController(PlayerRepository repo, PlayerPredictionsRepository predictions) {
     this.repo = repo;
+    this.predictions = predictions;
   }
 
   @GetMapping("/search")
@@ -67,5 +72,23 @@ public class PlayerController {
     return repo.findById(id)
         .orElseThrow(
             () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "player not found: " + id));
+  }
+
+  /**
+   * Recent predictions involving this player (leaf 4b.2). {@code limit} ∈ [1, 200] default 50.
+   * Returns 404 if the player itself doesn't exist (404-on-route vs empty list lets the UI tell "no
+   * predictions yet" apart from "wrong id").
+   */
+  @GetMapping("/{id}/predictions")
+  public List<PlayerPredictionRow> predictionsFor(
+      @PathVariable("id") long id, @RequestParam(name = "limit", defaultValue = "50") int limit) {
+    if (limit < 1 || limit > PREDICTIONS_LIMIT_MAX) {
+      throw new ResponseStatusException(
+          HttpStatus.BAD_REQUEST, "limit must be in [1, " + PREDICTIONS_LIMIT_MAX + "]");
+    }
+    if (repo.findById(id).isEmpty()) {
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "player not found: " + id);
+    }
+    return predictions.findRecentForPlayer(id, limit);
   }
 }

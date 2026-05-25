@@ -9,9 +9,12 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import net.thebullpen.baseball.api.dto.PlayerPredictionRow;
 import net.thebullpen.baseball.api.dto.PlayerSearchResult;
+import net.thebullpen.baseball.data.PlayerPredictionsRepository;
 import net.thebullpen.baseball.data.PlayerRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,13 +32,15 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 class PlayerControllerTest {
 
   private PlayerRepository repo;
+  private PlayerPredictionsRepository predictions;
   private MockMvc mvc;
 
   @BeforeEach
   void setup() {
     repo = mock(PlayerRepository.class);
+    predictions = mock(PlayerPredictionsRepository.class);
     mvc =
-        MockMvcBuilders.standaloneSetup(new PlayerController(repo))
+        MockMvcBuilders.standaloneSetup(new PlayerController(repo, predictions))
             .setControllerAdvice(new ApiErrorAdvice())
             .build();
   }
@@ -106,5 +111,71 @@ class PlayerControllerTest {
     when(repo.findById(9_999_999L)).thenReturn(Optional.empty());
 
     mvc.perform(get("/v1/players/9999999")).andExpect(status().isNotFound());
+  }
+
+  // --- predictionsFor (leaf 4b.2) ----------------------------------------
+
+  @Test
+  void predictionsFor_returns_rows_when_player_exists() throws Exception {
+    when(repo.findById(660271L))
+        .thenReturn(Optional.of(new PlayerSearchResult(660271L, "Aaron Judge", "RF", true)));
+    when(predictions.findRecentForPlayer(660271L, 50))
+        .thenReturn(
+            List.of(
+                new PlayerPredictionRow(
+                    Instant.parse("2026-05-20T18:30:00Z"),
+                    "pitch_outcome_pre",
+                    "v3",
+                    "champion",
+                    "ball",
+                    0.42,
+                    null,
+                    null)));
+
+    mvc.perform(get("/v1/players/660271/predictions"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].modelName").value("pitch_outcome_pre"))
+        .andExpect(jsonPath("$[0].winnerClass").value("ball"))
+        .andExpect(jsonPath("$[0].winnerProb").value(0.42));
+  }
+
+  @Test
+  void predictionsFor_empty_list_when_no_traffic() throws Exception {
+    when(repo.findById(660271L))
+        .thenReturn(Optional.of(new PlayerSearchResult(660271L, "Aaron Judge", "RF", true)));
+    when(predictions.findRecentForPlayer(660271L, 50)).thenReturn(List.of());
+
+    mvc.perform(get("/v1/players/660271/predictions"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$").isEmpty());
+  }
+
+  @Test
+  void predictionsFor_404_when_player_unknown() throws Exception {
+    when(repo.findById(9_999_999L)).thenReturn(Optional.empty());
+
+    mvc.perform(get("/v1/players/9999999/predictions")).andExpect(status().isNotFound());
+  }
+
+  @Test
+  void predictionsFor_400_when_limit_out_of_range() throws Exception {
+    when(repo.findById(660271L))
+        .thenReturn(Optional.of(new PlayerSearchResult(660271L, "Aaron Judge", "RF", true)));
+
+    mvc.perform(get("/v1/players/660271/predictions").param("limit", "5000"))
+        .andExpect(status().isBadRequest());
+    mvc.perform(get("/v1/players/660271/predictions").param("limit", "0"))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void predictionsFor_respects_custom_limit() throws Exception {
+    when(repo.findById(660271L))
+        .thenReturn(Optional.of(new PlayerSearchResult(660271L, "Aaron Judge", "RF", true)));
+    when(predictions.findRecentForPlayer(660271L, 25)).thenReturn(List.of());
+
+    mvc.perform(get("/v1/players/660271/predictions").param("limit", "25"))
+        .andExpect(status().isOk());
+    verify(predictions).findRecentForPlayer(660271L, 25);
   }
 }
