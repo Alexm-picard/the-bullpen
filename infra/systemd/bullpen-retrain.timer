@@ -1,0 +1,23 @@
+[Unit]
+Description=Hourly retrain trigger (2-6 AM ET window, decision [19] GPU scheduling)
+Documentation=https://github.com/Alexm-picard/the-bullpen/blob/main/docs/plans/phase-3-ml-wrapper/3d-retraining/3d.4-systemd-timer-2-6-am-window.md
+
+[Timer]
+# Fires hourly on the hour, 02:00 → 06:00 America/New_York (decision [19]:
+# retrain only between 2-6 AM ET so GPU contention with daytime workloads
+# stays zero). systemd's OnCalendar handles DST transitions correctly; the
+# leaf body's "Known edge cases" calls this out — verify after spring forward
+# / fall back transitions.
+OnCalendar=*-*-* 02..06:00:00 America/New_York
+
+# Don't run missed fires on boot — if the host was off during the window,
+# we don't want a stampede of catch-up runs at 7 AM.
+Persistent=false
+
+# 1-minute clock skew tolerance is plenty for an hourly batch.
+AccuracySec=1m
+
+Unit=bullpen-retrain.service
+
+[Install]
+WantedBy=timers.target

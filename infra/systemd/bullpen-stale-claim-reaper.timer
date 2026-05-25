@@ -1,0 +1,19 @@
+[Unit]
+Description=Every 30 min — flip stuck retrain rows back to queued
+Documentation=https://github.com/Alexm-picard/the-bullpen/blob/main/docs/plans/phase-3-ml-wrapper/3d-retraining/3d.4-systemd-timer-2-6-am-window.md
+
+[Timer]
+# :00 and :30 of every hour, 24/7. Cheap (one HTTP POST) so no need to
+# constrain to the retrain window.
+OnCalendar=*-*-* *:00,30:00
+
+# Don't catch up missed fires; the threshold (4h server-side) is what
+# actually catches stale claims, not the timer granularity.
+Persistent=false
+
+AccuracySec=30s
+
+Unit=bullpen-stale-claim-reaper.service
+
+[Install]
+WantedBy=timers.target

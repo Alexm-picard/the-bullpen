@@ -249,6 +249,38 @@ class RetrainAdminControllerIT {
         .andExpect(status().isNotFound());
   }
 
+  // --- reap-stale (3d.4) ----------------------------------------------
+
+  @Test
+  void reap_stale_with_no_stuck_rows_returns_zero() throws Exception {
+    mvc.perform(post("/v1/admin/retrain/reap-stale").header("Authorization", BASIC))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.reaped", equalTo(0)));
+  }
+
+  @Test
+  void reap_stale_flips_stuck_running_row_back_to_queued() throws Exception {
+    queue.enqueue("model_a", TriggerType.SCHEDULED, "stuck-1", Map.of());
+    queue.claimNext(); // now RUNNING with started_at = now
+    // Backdate started_at past the 4h default threshold so the reap-stale call catches it.
+    jdbc.update(
+        "UPDATE retraining_queue SET started_at = ? WHERE trigger_id = ?",
+        java.sql.Timestamp.from(
+            java.time.Instant.now().minus(5, java.time.temporal.ChronoUnit.HOURS)),
+        "stuck-1");
+
+    mvc.perform(post("/v1/admin/retrain/reap-stale").header("Authorization", BASIC))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.reaped", equalTo(1)));
+    org.assertj.core.api.Assertions.assertThat(queue.getByTriggerId("stuck-1").status())
+        .isEqualTo(net.thebullpen.baseball.retraining.dto.QueueStatus.QUEUED);
+  }
+
+  @Test
+  void reap_stale_unauthenticated_is_401() throws Exception {
+    mvc.perform(post("/v1/admin/retrain/reap-stale")).andExpect(status().isUnauthorized());
+  }
+
   private void assertThatModelHasOneTrigger(String modelName, TriggerType type) {
     org.assertj.core.api.Assertions.assertThat(queue.findByModel(modelName))
         .hasSize(1)

@@ -1,0 +1,35 @@
+[Unit]
+Description=The Bullpen — stale-claim reaper (recovers crashed retrain workers)
+Documentation=https://github.com/Alexm-picard/the-bullpen/blob/main/docs/plans/phase-3-ml-wrapper/3d-retraining/3d.4-systemd-timer-2-6-am-window.md
+After=network-online.target bullpen-api.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=bullpen
+Group=bullpen
+
+EnvironmentFile=-/etc/default/bullpen
+EnvironmentFile=-/etc/bullpen/secrets.env
+
+# Hits the admin endpoint to flip stuck running rows back to queued.
+# The threshold (default 4h) is configured server-side via
+# bullpen.retraining.stale-claim-threshold-hours; no client param needed.
+# -fsS: fail on HTTP error / silent / show errors only / no progress bar.
+ExecStart=/bin/sh -c '\
+  /usr/bin/curl -fsS -u "$${BULLPEN_ADMIN_USER}:$${BULLPEN_ADMIN_PASSWORD}" \
+    -X POST http://127.0.0.1:8080/v1/admin/retrain/reap-stale \
+    | /usr/bin/tee /dev/stderr'
+
+# Curl exit 22 = HTTP error >= 400. Don't restart on transient api outages —
+# next half-hour tick will pick it up.
+Restart=no
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bullpen-reaper
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true

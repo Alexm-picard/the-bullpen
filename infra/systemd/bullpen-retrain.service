@@ -1,0 +1,46 @@
+[Unit]
+Description=The Bullpen — single-shot retrain worker (claim → train → register → mark)
+Documentation=https://github.com/Alexm-picard/the-bullpen/blob/main/docs/plans/phase-3-ml-wrapper/3d-retraining/3d.3-python-retrain-job.md
+After=network-online.target bullpen-api.service
+Wants=network-online.target
+# Hard-depends on the api: the worker hits /v1/admin/retrain/claim + register.
+# If the api is down the worker exits clean (claim raises BullpenAdminError →
+# exit code 2, no row touched), so this "after" is correctness-not-required.
+
+[Service]
+Type=oneshot
+User=bullpen
+Group=bullpen
+WorkingDirectory=/opt/bullpen/training
+
+# secrets.env carries BULLPEN_ADMIN_USER + BULLPEN_ADMIN_PASSWORD that match
+# the THEBULLPEN_ADMIN_BASIC_AUTH credentials the api was started with.
+EnvironmentFile=-/etc/default/bullpen
+EnvironmentFile=-/etc/bullpen/secrets.env
+Environment=BULLPEN_ADMIN_BASE_URL=http://127.0.0.1:8080
+
+# uv resolves the project venv from training/pyproject.toml; the worker module
+# entry point is python -m bullpen_training.retraining.run.
+ExecStart=/usr/local/bin/uv run python -m bullpen_training.retraining.run
+
+# Worker exit codes (see run.py docstring):
+#   0 — succeeded OR queue empty (nothing to do)
+#   1 — training pipeline raised; row marked FAILED
+#   2 — admin-API call failed; row may be RUNNING-stuck (reaper recovers)
+# All three are "expected" from systemd's perspective — don't restart on failure.
+SuccessExitStatus=0 1 2
+
+# Don't auto-restart — the .timer fires this hourly; restarting on failure
+# would just thrash if the api is wedged. Operator inspects logs instead.
+Restart=no
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bullpen-retrain
+
+# Soft hardening (matches bullpen-api).
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/opt/bullpen

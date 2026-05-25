@@ -53,10 +53,17 @@ public class RetrainAdminController {
 
   private final ManualTrigger manualTrigger;
   private final RetrainingQueueService queue;
+  private final int staleClaimThresholdHours;
 
-  public RetrainAdminController(ManualTrigger manualTrigger, RetrainingQueueService queue) {
+  public RetrainAdminController(
+      ManualTrigger manualTrigger,
+      RetrainingQueueService queue,
+      @org.springframework.beans.factory.annotation.Value(
+              "${bullpen.retraining.stale-claim-threshold-hours:4}")
+          int staleClaimThresholdHours) {
     this.manualTrigger = manualTrigger;
     this.queue = queue;
+    this.staleClaimThresholdHours = staleClaimThresholdHours;
   }
 
   @PostMapping
@@ -152,5 +159,22 @@ public class RetrainAdminController {
     } catch (RetrainingException.InvalidStateTransition e) {
       throw new ResponseStatusException(HttpStatus.CONFLICT, e.getMessage(), e);
     }
+  }
+
+  /**
+   * Stale-claim reaper (leaf 3d.4). Flips {@code running} rows whose {@code started_at} is older
+   * than the configured threshold (default 4h, via {@code
+   * bullpen.retraining.stale-claim-threshold-hours}) back to {@code queued} so a crashed worker
+   * doesn't strand the trigger. Fired by the systemd timer every 30 min via {@code curl -X POST}.
+   * Returns the number of rows reaped.
+   */
+  @PostMapping("/reap-stale")
+  public java.util.Map<String, Integer> reapStale() {
+    int reaped = queue.reapStaleClaims(java.time.Duration.ofHours(staleClaimThresholdHours));
+    log.info(
+        "admin: reap-stale (threshold={}h) flipped {} stuck running row(s) back to queued",
+        staleClaimThresholdHours,
+        reaped);
+    return java.util.Map.of("reaped", reaped);
   }
 }
