@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "artifact_name": "combined_experiment",
+  "catcher_coverage_test": 1.0,
+  "combined_vs_hybrid_context_delta": -0.0002831360771707869,
+  "models": [
+    {
+      "name": "Hybrid + Context",
+      "accuracy": 0.45262471369448914,
+      "top2_accuracy": 0.7264412471510313,
+      "logloss": 1.3125227408443185,
+      "calibration_ece": 0.007897232805028099
+    },
+    {
+      "name": "Catcher-Hybrid (base)",
+      "accuracy": 0.45227678030612506,
+      "top2_accuracy": 0.7249917594723808,
+      "logloss": 1.317140942195727,
+      "calibration_ece": 0.00723096505527572
+    },
+    {
+      "name": "Catcher-Hybrid + Context",
+      "accuracy": 0.45234157761731836,
+      "top2_accuracy": 0.7257045298955073,
+      "logloss": 1.3141360129632687,
+      "calibration_ece": 0.00700350184640897
+    }
+  ],
+  "context_feature_importance": {
+    "times_through_order": 153809.82354927063,
+    "score_diff_live": 59083.99809837341,
+    "win_expectancy": 113216.57089233398,
+    "times_faced_today": 164300.41703224182,
+    "at_bat_number_in_game": 175764.94981002808,
+    "pitcher_avg_extension": 11059.896295547485,
+    "pitcher_avg_arm_angle": 121768.51008796692
+  }
+}
