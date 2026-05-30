@@ -38,7 +38,9 @@ import { PitchLocationHeatmap } from "../components/scouting/pitch-location-heat
 import { PlayerProfileCard } from "../components/scouting/player-profile-card";
 import { RecentPredictionsTable } from "../components/scouting/recent-predictions-table";
 import { SprayChart } from "../components/scouting/spray-chart";
+import { CornerStripes } from "../components/shared/corner-stripes";
 import { HeroEyebrow } from "../components/shared/hero-eyebrow";
+import { SectionLabel } from "../components/shared/section-label";
 import { StatTable } from "../components/shared/stat-table";
 import type {
   StatTableColumn,
@@ -141,45 +143,6 @@ export default function PlayersPage() {
 }
 
 // ── /players/:id Matchup Report ──────────────────────────────────────────────
-
-function CornerStripes() {
-  // Diagonal-stripe scarlet corner motif. 120×120 absolutely positioned via
-  // the .matchup-report__corner CSS class.
-  return (
-    <svg
-      className="matchup-report__corner"
-      role="presentation"
-      aria-label=""
-      aria-hidden="true"
-      viewBox="0 0 120 120"
-    >
-      <defs>
-        <pattern
-          id="scarlet-stripes"
-          patternUnits="userSpaceOnUse"
-          width="14"
-          height="14"
-          patternTransform="rotate(45)"
-        >
-          <rect width="14" height="14" fill={colors.bgBase} />
-          <rect x="0" width="7" height="14" fill={colors.scarlet} />
-        </pattern>
-        <clipPath id="corner-clip">
-          <polygon points="120,0 120,120 0,0" />
-        </clipPath>
-      </defs>
-      <g clipPath="url(#corner-clip)">
-        <rect
-          x="0"
-          y="0"
-          width="120"
-          height="120"
-          fill="url(#scarlet-stripes)"
-        />
-      </g>
-    </svg>
-  );
-}
 
 // Column key for the pitch-mix table (pitcher side).
 function pitchMixColumns(): StatTableColumn[] {
@@ -356,7 +319,7 @@ export function PlayerProfilePage() {
             padding: 32,
           }}
         >
-          <CornerStripes />
+          <CornerStripes className="matchup-report__corner" />
           <Stack gap={32}>
             <MatchupHeader
               primary={report.primary}
@@ -399,26 +362,6 @@ export function PlayerProfilePage() {
           </Stack>
         </div>
       </Container>
-    </div>
-  );
-}
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      style={{
-        fontFamily: typography.fonts.display,
-        fontSize: 13,
-        fontWeight: typography.weights.bold,
-        textTransform: "uppercase",
-        letterSpacing: "0.08em",
-        color: colors.textStrong,
-        marginBottom: 8,
-        paddingBottom: 4,
-        borderBottom: `1px solid ${colors.bgEmphasis}`,
-      }}
-    >
-      {children}
     </div>
   );
 }
