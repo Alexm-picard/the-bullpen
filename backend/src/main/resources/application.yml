@@ -32,6 +32,20 @@ logging:
     root: INFO
     net.thebullpen: DEBUG
 
+# A6 (ADR-0008) — error tracking via the Sentry SDK, reporting to a self-hosted
+# GlitchTip (Sentry wire-compatible). Auto-disabled when the DSN is blank, which is
+# the dev / CI / test default — so nothing phones home unless SENTRY_DSN is set in
+# the prod systemd EnvironmentFile. send-default-pii stays false (no IPs / headers).
+sentry:
+  dsn: ${SENTRY_DSN:}
+  environment: ${SENTRY_ENVIRONMENT:dev}
+  release: ${SENTRY_RELEASE:}
+  send-default-pii: false
+  traces-sample-rate: ${SENTRY_TRACES_SAMPLE_RATE:0.0}
+  logging:
+    minimum-event-level: error
+    minimum-breadcrumb-level: info
+
 bullpen:
   admin:
     # HTTP-Basic credentials for /v1/admin/** in the form "user:password".

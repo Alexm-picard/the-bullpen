@@ -61,8 +61,84 @@ services:
     depends_on:
       - prometheus
 
+  # --- A6 (ADR-0008): self-hosted error tracking via GlitchTip (Sentry-compatible) ---
+  # Behind the `errortracking` profile so the default `docker compose up` stays lean
+  # (ClickHouse/Prometheus/Grafana). Start with:
+  #   GLITCHTIP_SECRET_KEY=$(openssl rand -hex 32) docker compose \
+  #     -f infra/docker-compose.yml --profile errortracking up -d
+  # See docs/runbooks/error-tracking.md for first-user setup + the DSN wiring.
+  glitchtip-postgres:
+    image: postgres:17-alpine
+    container_name: bullpen-glitchtip-postgres
+    profiles: ["errortracking"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: glitchtip
+    volumes:
+      - glitchtip-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  glitchtip-redis:
+    image: redis:7-alpine
+    container_name: bullpen-glitchtip-redis
+    profiles: ["errortracking"]
+    restart: unless-stopped
+
+  glitchtip-web:
+    image: glitchtip/glitchtip:v4.1.1
+    container_name: bullpen-glitchtip-web
+    profiles: ["errortracking"]
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment: &glitchtip-env
+      DATABASE_URL: postgres://postgres:postgres@glitchtip-postgres:5432/glitchtip
+      REDIS_URL: redis://glitchtip-redis:6379/0
+      SECRET_KEY: "${GLITCHTIP_SECRET_KEY:?set GLITCHTIP_SECRET_KEY to a random hex string, e.g. openssl rand -hex 32}"
+      PORT: "8000"
+      GLITCHTIP_DOMAIN: "${GLITCHTIP_DOMAIN:-http://localhost:8000}"
+      DEFAULT_FROM_EMAIL: "${GLITCHTIP_FROM_EMAIL:-bullpen@localhost}"
+      EMAIL_URL: "${GLITCHTIP_EMAIL_URL:-consolemail://}"
+      # Single-operator instance: open registration off after the first superuser exists.
+      ENABLE_OPEN_USER_REGISTRATION: "${GLITCHTIP_OPEN_REGISTRATION:-false}"
+    depends_on:
+      glitchtip-postgres:
+        condition: service_healthy
+      glitchtip-redis:
+        condition: service_started
+
+  glitchtip-worker:
+    image: glitchtip/glitchtip:v4.1.1
+    container_name: bullpen-glitchtip-worker
+    profiles: ["errortracking"]
+    restart: unless-stopped
+    command: ./bin/run-celery-with-beat.sh
+    environment: *glitchtip-env
+    depends_on:
+      glitchtip-postgres:
+        condition: service_healthy
+      glitchtip-redis:
+        condition: service_started
+
+  glitchtip-migrate:
+    image: glitchtip/glitchtip:v4.1.1
+    container_name: bullpen-glitchtip-migrate
+    profiles: ["errortracking"]
+    command: ./manage.py migrate
+    environment: *glitchtip-env
+    depends_on:
+      glitchtip-postgres:
+        condition: service_healthy
+
 volumes:
   clickhouse-data:
   clickhouse-logs:
   prometheus-data:
   grafana-data:
+  glitchtip-pg-data:

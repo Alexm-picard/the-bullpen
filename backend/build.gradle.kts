@@ -43,6 +43,13 @@ dependencies {
 
     implementation("net.logstash.logback:logstash-logback-encoder:8.0")
 
+    // A6 (ADR-0008): error tracking via the Sentry SDK, reporting to a self-hosted
+    // GlitchTip (Sentry wire-compatible). BOM keeps the starter + logback appender
+    // aligned. Disabled automatically when sentry.dsn is blank (dev/CI/tests).
+    implementation(platform("io.sentry:sentry-bom:7.18.0"))
+    implementation("io.sentry:sentry-spring-boot-starter-jakarta")
+    implementation("io.sentry:sentry-logback")
+
     // ADR-0007: single S3-compatible client across prod (Cloudflare R2) and offline dev (MinIO).
     // bom keeps the s3 + apache-client + sts versions aligned without listing each explicitly.
     implementation(platform("software.amazon.awssdk:bom:2.30.20"))
