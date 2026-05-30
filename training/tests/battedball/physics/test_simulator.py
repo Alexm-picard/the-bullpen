@@ -6,6 +6,7 @@ import time
 
 import numpy as np
 import pytest
+
 from bullpen_training.battedball.physics import (
     Atmosphere,
     LaunchParams,
