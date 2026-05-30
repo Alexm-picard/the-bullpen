@@ -127,6 +127,10 @@ tasks.named<Test>("test") {
     // (ApplicationTests + the predict-controller suites) from hitting SecurityConfig's
     // blank-value IllegalStateException during context bring-up.
     systemProperty("THEBULLPEN_ADMIN_BASIC_AUTH", "test-admin:test-password")
+    // A4: rate limiting off by default in the suite so a chatty @SpringBootTest can't
+    // trip the per-IP bucket. RateLimitFilterTest builds its own enabled filter standalone,
+    // so it's unaffected by this flag.
+    systemProperty("bullpen.ratelimit.enabled", "false")
     // A2: every `test` run leaves a fresh coverage report behind so `./gradlew test`
     // alone is enough locally; CI uploads the XML/HTML.
     finalizedBy(tasks.named("jacocoTestReport"))

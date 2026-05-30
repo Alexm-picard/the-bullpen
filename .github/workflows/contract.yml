@@ -52,6 +52,7 @@ jobs:
           java -jar "$JAR" \
             --spring.profiles.active=api \
             --bullpen.clickhouse.enabled=false \
+            --bullpen.ratelimit.enabled=false \
             --server.port=8080 > /tmp/api.log 2>&1 &
           echo "API_PID=$!" >> "$GITHUB_ENV"
           for i in $(seq 1 60); do
