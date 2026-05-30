@@ -1,129 +1,424 @@
 /**
- * Player Lookup pages (leaf 4b.1 + 4b.2).
+ * Players routes — scouting-report identity, Stage 2.
  *
- * `/players` — search-only landing.
- * `/players/:id` — header (name + position + active flag + summary) and the
- * recent-predictions table. Calibration plot lands in 4b.3.
+ * `/players` (default export `PlayersPage`):
+ *   Search landing in the scouting-report identity. Cream background, scarlet
+ *   "PLAYER LOOKUP" eyebrow, Saira-Condensed h1, sheet-bordered <PlayerSearch>.
+ *   Wires PlayerSearch's existing onSelect navigation to /players/{id} unchanged.
+ *
+ * `/players/:id` (named export `PlayerProfilePage`):
+ *   The signature Matchup Report (decision [133]). Fixture-driven (the live
+ *   player → pitch-mix / spray / calibration plumbing is offline). Defaults to
+ *   Judge → Skubal when :id is missing or unknown.
+ *
+ * The page deliberately drops the api/players.ts hooks here so this route is
+ * fully self-contained on the fixture data. The hooks remain in api/players.ts
+ * for future leaves that wire real data, but the Matchup Report's job is to be
+ * the design-system showcase — synthetic data is the right tradeoff.
+ *
+ * Composition order per spec §1:
+ *   1. MatchupHeader
+ *   2. Two-column grid (left = pitcher, right = batter; flipped if primary is
+ *      a pitcher so the primary side always renders first on mobile stack)
+ *      Left col:  PlayerProfileCard (pitcher) → pitch-mix StatTable → 4-up
+ *                 PitchLocationHeatmap small-multiples
+ *      Right col: PlayerProfileCard (batter)  → splits StatTable → SprayChart
+ *   3. RecentPredictionsTable (full-width)
+ *   4. Calibration + KeyNotes paired row
  */
-import { Container, Group, Stack, Text, Title } from "@mantine/core";
+
+import { Container, Stack, Title } from "@mantine/core";
 import { useNavigate, useParams } from "react-router-dom";
 
-import {
-  usePlayer,
-  usePlayerCalibration,
-  usePlayerPredictions,
-} from "../api/players";
 import { ReliabilityDiagram } from "../components/charts/reliability-diagram";
 import { PlayerSearch } from "../components/players/player-search";
-import { PredictionHistoryTable } from "../components/players/prediction-history-table";
+import { KeyNotes } from "../components/scouting/key-notes";
+import { MatchupHeader } from "../components/scouting/matchup-header";
+import { PitchLocationHeatmap } from "../components/scouting/pitch-location-heatmap";
+import { PlayerProfileCard } from "../components/scouting/player-profile-card";
+import { RecentPredictionsTable } from "../components/scouting/recent-predictions-table";
+import { SprayChart } from "../components/scouting/spray-chart";
+import { HeroEyebrow } from "../components/shared/hero-eyebrow";
+import { StatTable } from "../components/shared/stat-table";
+import type {
+  StatTableColumn,
+  StatTableRow,
+} from "../components/shared/stat-table";
+import {
+  getDefaultMatchup,
+  METRIC_META,
+  type MatchupReport,
+  type ScoutingPlayer,
+} from "../data/matchup-fixtures";
+import { colors, layouts, typography } from "../design/tokens";
+
+import "../components/scouting/matchup.css";
+
+// ── /players landing ─────────────────────────────────────────────────────────
+
+const POSITION_PLAYERS = ["RF", "CF", "LF", "DH", "1B", "2B", "3B", "SS", "C"];
+
+function isPositionPlayer(p: ScoutingPlayer): boolean {
+  return POSITION_PLAYERS.includes(p.position);
+}
 
 export default function PlayersPage() {
   const navigate = useNavigate();
   return (
-    <Container size="md" py="xl">
-      <Stack gap="md">
-        <Title order={1}>Player Lookup</Title>
-        <Text c="dimmed">
-          Find a pitcher or hitter by name or Statcast ID. Roster is the active
-          + historical MLB set; type at least one character to begin.
-        </Text>
-        <PlayerSearch
-          autoFocus
-          onSelect={(p) => {
-            navigate(`/players/${p.id}`);
-          }}
-        />
-      </Stack>
-    </Container>
+    <div
+      style={{
+        backgroundColor: colors.bgBase,
+        minHeight: "calc(100vh - 56px)",
+        paddingTop: 48,
+        paddingBottom: 96,
+      }}
+    >
+      <Container size="md">
+        <Stack gap={24}>
+          <Stack gap={8}>
+            <HeroEyebrow>Player Lookup</HeroEyebrow>
+            <Title
+              order={1}
+              style={{
+                fontFamily: typography.fonts.display,
+                fontSize: typography.scale[6], // 48
+                fontWeight: typography.weights.heavy,
+                color: colors.textStrong,
+                textTransform: "uppercase",
+                letterSpacing: "0.005em",
+                lineHeight: typography.lineHeights.display,
+                margin: 0,
+              }}
+            >
+              Pull a Scouting Report
+            </Title>
+            <p
+              style={{
+                fontFamily: typography.fonts.body,
+                fontSize: typography.scale[3], // 20
+                color: colors.textMuted,
+                lineHeight: 1.45,
+                margin: 0,
+                maxWidth: 580,
+              }}
+            >
+              Find a batter or pitcher by name. Each report covers tool grades,
+              pitch mix or splits, density charts, recent predictions, and a
+              calibration check.
+            </p>
+          </Stack>
+          <div
+            style={{
+              backgroundColor: colors.bgSheet,
+              border: `1px solid ${colors.bgEmphasis}`,
+              borderRadius: 2,
+              padding: 16,
+            }}
+          >
+            <PlayerSearch
+              autoFocus
+              onSelect={(p) => {
+                navigate(`/players/${p.id}`);
+              }}
+            />
+            <div
+              style={{
+                marginTop: 12,
+                fontFamily: typography.fonts.mono,
+                fontSize: 11,
+                color: colors.textMuted,
+                letterSpacing: "0.04em",
+                textTransform: "uppercase",
+              }}
+            >
+              Search the full roster · type a name or jersey #
+            </div>
+          </div>
+        </Stack>
+      </Container>
+    </div>
   );
 }
 
-/** Profile + recent-predictions view at /players/:id (leaf 4b.2). */
+// ── /players/:id Matchup Report ──────────────────────────────────────────────
+
+function CornerStripes() {
+  // Diagonal-stripe scarlet corner motif. 120×120 absolutely positioned via
+  // the .matchup-report__corner CSS class.
+  return (
+    <svg
+      className="matchup-report__corner"
+      role="presentation"
+      aria-label=""
+      aria-hidden="true"
+      viewBox="0 0 120 120"
+    >
+      <defs>
+        <pattern
+          id="scarlet-stripes"
+          patternUnits="userSpaceOnUse"
+          width="14"
+          height="14"
+          patternTransform="rotate(45)"
+        >
+          <rect width="14" height="14" fill={colors.bgBase} />
+          <rect x="0" width="7" height="14" fill={colors.scarlet} />
+        </pattern>
+        <clipPath id="corner-clip">
+          <polygon points="120,0 120,120 0,0" />
+        </clipPath>
+      </defs>
+      <g clipPath="url(#corner-clip)">
+        <rect
+          x="0"
+          y="0"
+          width="120"
+          height="120"
+          fill="url(#scarlet-stripes)"
+        />
+      </g>
+    </svg>
+  );
+}
+
+// Column key for the pitch-mix table (pitcher side).
+function pitchMixColumns(): StatTableColumn[] {
+  return [
+    {
+      key: "usage",
+      label: "Usage%",
+      metricMeta: METRIC_META.usage,
+      format: (v) => `${(Number(v) * 100).toFixed(0)}%`,
+    },
+    {
+      key: "velo",
+      label: "Velo",
+      metricMeta: METRIC_META.velo,
+      format: (v) => `${Number(v).toFixed(1)}`,
+    },
+    {
+      key: "whiff",
+      label: "Whiff%",
+      metricMeta: METRIC_META.whiff,
+      format: (v) => `${(Number(v) * 100).toFixed(0)}%`,
+    },
+    {
+      key: "xwoba",
+      label: "xwOBA",
+      metricMeta: METRIC_META.xwoba_vs,
+      format: (v) => Number(v).toFixed(3).replace(/^0/, ""),
+    },
+    {
+      key: "putaway",
+      label: "PutAway%",
+      metricMeta: METRIC_META.putaway,
+      format: (v) => `${(Number(v) * 100).toFixed(0)}%`,
+    },
+  ];
+}
+
+function splitsColumns(): StatTableColumn[] {
+  return [
+    {
+      key: "pa",
+      label: "PA",
+      format: (v) => String(v),
+    },
+    {
+      key: "avg",
+      label: "AVG",
+      metricMeta: METRIC_META.avg,
+      format: (v) => Number(v).toFixed(3).replace(/^0/, ""),
+    },
+    {
+      key: "obp",
+      label: "OBP",
+      metricMeta: METRIC_META.obp,
+      format: (v) => Number(v).toFixed(3).replace(/^0/, ""),
+    },
+    {
+      key: "slg",
+      label: "SLG",
+      metricMeta: METRIC_META.slg,
+      format: (v) => Number(v).toFixed(3).replace(/^0/, ""),
+    },
+    {
+      key: "iso",
+      label: "ISO",
+      metricMeta: METRIC_META.iso,
+      format: (v) => Number(v).toFixed(3).replace(/^0/, ""),
+    },
+    {
+      key: "xwoba",
+      label: "xwOBA",
+      metricMeta: METRIC_META.xwoba_batter,
+      format: (v) => Number(v).toFixed(3).replace(/^0/, ""),
+    },
+    {
+      key: "k",
+      label: "K%",
+      metricMeta: METRIC_META.k,
+      format: (v) => `${(Number(v) * 100).toFixed(1)}%`,
+    },
+    {
+      key: "bb",
+      label: "BB%",
+      metricMeta: METRIC_META.bb,
+      format: (v) => `${(Number(v) * 100).toFixed(1)}%`,
+    },
+  ];
+}
+
+function PitcherColumn({ report }: { report: MatchupReport }) {
+  const pitcher = isPositionPlayer(report.primary)
+    ? report.opponent
+    : report.primary;
+  const mixRows: StatTableRow[] = report.pitcherMix.map((p) => ({
+    label: `${p.code} · ${p.name}`,
+    values: {
+      usage: p.usage,
+      velo: p.velo,
+      whiff: p.whiff,
+      xwoba: p.xwoba,
+      putaway: p.putaway,
+    },
+  }));
+  return (
+    <Stack gap={20}>
+      <PlayerProfileCard player={pitcher} variant="pitcher" />
+      <StatTable
+        columns={pitchMixColumns()}
+        rows={mixRows}
+        caption={`Pitch mix · ${pitcher.team} 2025–26 · vs opposite hand`}
+      />
+      <PitchLocationHeatmap
+        pitches={report.pitcherMix}
+        caption="Location density · last 60 days"
+      />
+    </Stack>
+  );
+}
+
+function BatterColumn({ report }: { report: MatchupReport }) {
+  const batter = isPositionPlayer(report.primary)
+    ? report.primary
+    : report.opponent;
+  const splitRows: StatTableRow[] = report.batterSplits.map((s) => ({
+    label: s.split,
+    values: {
+      pa: s.pa,
+      avg: s.avg,
+      obp: s.obp,
+      slg: s.slg,
+      iso: s.iso,
+      xwoba: s.xwoba,
+      k: s.k,
+      bb: s.bb,
+    },
+  }));
+  return (
+    <Stack gap={20}>
+      <PlayerProfileCard player={batter} variant="batter" />
+      <StatTable
+        columns={splitsColumns()}
+        rows={splitRows}
+        caption={`Splits · ${batter.team} 2025–26 season-to-date`}
+      />
+      <SprayChart zones={report.spray} caption="Spray distribution · 2025–26" />
+    </Stack>
+  );
+}
+
 export function PlayerProfilePage() {
   const { id } = useParams<{ id: string }>();
-  const numericId = id ? Number(id) : null;
-  const valid = numericId != null && Number.isFinite(numericId);
-
-  const player = usePlayer(valid ? numericId : null);
-  const predictions = usePlayerPredictions(valid ? numericId : null, 50);
-  const calibration = usePlayerCalibration(
-    valid ? numericId : null,
-    "pitch_outcome_pre",
-  );
+  const report = getDefaultMatchup(id);
 
   return (
-    <Container size="lg" py="xl">
-      <Stack gap="lg">
-        <Stack gap={4}>
-          <Title order={1}>
-            {player.data
-              ? player.data.name
-              : player.isLoading
-                ? "Loading…"
-                : valid
-                  ? `Player #${id}`
-                  : "Player profile"}
-          </Title>
-          {player.data ? (
-            <Group gap="md">
-              <Text c="dimmed">
-                Position {player.data.primaryPosition} ·{" "}
-                {player.data.active ? "Active" : "Retired"} · Statcast id{" "}
-                {player.data.id}
-              </Text>
-              <Text c="dimmed" size="sm">
-                {predictions.data?.length ?? 0} recent prediction
-                {(predictions.data?.length ?? 0) === 1 ? "" : "s"}
-              </Text>
-            </Group>
-          ) : null}
-          {player.isError ? (
-            <Text c="red">
-              Could not load this player
-              {player.error instanceof Error ? `: ${player.error.message}` : ""}
-              .
-            </Text>
-          ) : null}
-        </Stack>
+    <div
+      style={{
+        backgroundColor: colors.bgBase,
+        minHeight: "calc(100vh - 56px)",
+        paddingTop: 32,
+        paddingBottom: 96,
+      }}
+    >
+      <Container
+        size="lg"
+        px="md"
+        style={{ maxWidth: layouts.reportSheetMaxWidth }}
+      >
+        <div
+          className="matchup-report__shell"
+          style={{
+            backgroundColor: colors.bgSheet,
+            border: `1px solid ${colors.navy}`,
+            borderRadius: 2,
+            padding: 32,
+          }}
+        >
+          <CornerStripes />
+          <Stack gap={32}>
+            <MatchupHeader
+              primary={report.primary}
+              opponent={report.opponent}
+              context={report.context}
+            />
 
-        <Stack gap="xs">
-          <Title order={3}>Recent predictions</Title>
-          <PredictionHistoryTable
-            rows={predictions.data}
-            isLoading={predictions.isLoading}
-            isError={predictions.isError}
-            errorMessage={
-              predictions.error instanceof Error
-                ? predictions.error.message
-                : undefined
-            }
-          />
-          <Text size="xs" c="dimmed">
-            Outcome and agreement columns light up when truth-joining to the
-            pitches table lands.
-          </Text>
-        </Stack>
+            <div className="matchup-report__columns">
+              <PitcherColumn report={report} />
+              <BatterColumn report={report} />
+            </div>
 
-        <Stack gap="xs">
-          <Title order={3}>Calibration · pitch_outcome_pre</Title>
-          <ReliabilityDiagram
-            bins={calibration.data}
-            isLoading={calibration.isLoading}
-            isError={calibration.isError}
-            errorMessage={
-              calibration.error instanceof Error
-                ? calibration.error.message
-                : undefined
-            }
-            caption="predicted vs. actual frequency · diagonal is perfect calibration"
-          />
-          <Text size="xs" c="dimmed">
-            Until truth-joining lands, the actual-axis is a placeholder (bin
-            midpoint) so the bins are visible — they will fall onto / off the
-            diagonal when paired truth data is available.
-          </Text>
-        </Stack>
-      </Stack>
-    </Container>
+            <section>
+              <SectionLabel>Recent Predictions</SectionLabel>
+              <RecentPredictionsTable
+                rows={report.predictions}
+                caption="Last 12 matchup predictions · model: pitch_outcome_pre v3"
+              />
+            </section>
+
+            <div className="matchup-report__pair">
+              <section>
+                <SectionLabel>Calibration · pitch_outcome_pre</SectionLabel>
+                <div
+                  style={{
+                    backgroundColor: colors.bgSheet,
+                    border: `1px solid ${colors.bgEmphasis}`,
+                    borderRadius: 2,
+                    padding: 12,
+                  }}
+                >
+                  <ReliabilityDiagram
+                    bins={report.calibration}
+                    caption="this matchup · predicted vs. actual frequency"
+                  />
+                </div>
+              </section>
+              <KeyNotes notes={report.keyNotes} />
+            </div>
+          </Stack>
+        </div>
+      </Container>
+    </div>
+  );
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        fontFamily: typography.fonts.display,
+        fontSize: 13,
+        fontWeight: typography.weights.bold,
+        textTransform: "uppercase",
+        letterSpacing: "0.08em",
+        color: colors.textStrong,
+        marginBottom: 8,
+        paddingBottom: 4,
+        borderBottom: `1px solid ${colors.bgEmphasis}`,
+      }}
+    >
+      {children}
+    </div>
   );
 }

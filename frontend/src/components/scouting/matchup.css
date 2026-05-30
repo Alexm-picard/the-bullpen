@@ -1,0 +1,47 @@
+/* Scoped responsive rules for the Matchup Report (spec §1 hybrid responsive).
+ *
+ * Two columns at desktop; stacked at < 900 px viewport. The page wrapper
+ * declares the two-column grid via inline styles (token-driven); this file
+ * supplies the breakpoint switch and a few small responsive touches.
+ *
+ * Keeping the breakpoint here (rather than inline) avoids JSX measuring
+ * window width and rerendering on resize — pure CSS handles it. */
+
+.matchup-report__columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+.matchup-report__pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+.matchup-report__shell {
+  position: relative;
+}
+
+.matchup-report__corner {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 120px;
+  height: 120px;
+  pointer-events: none;
+  opacity: 0.18;
+}
+
+@media (max-width: 900px) {
+  .matchup-report__columns {
+    grid-template-columns: 1fr;
+  }
+  .matchup-report__pair {
+    grid-template-columns: 1fr;
+  }
+  .matchup-report__corner {
+    width: 80px;
+    height: 80px;
+  }
+}
