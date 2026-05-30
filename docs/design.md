@@ -3,7 +3,7 @@
 > **Project**: The Bullpen (`thebullpen.net`) — A baseball analytics + ML systems platform
 > **Author**: Alex Picard
 > **Status**: Pre-implementation; all decisions locked through planning session
-> **Last updated**: 2026-05-09
+> **Last updated**: 2026-05-29 (frontend identity re-pitched from editorial-data → scouting-report; see §7, §8, §10)
 
 ---
 
@@ -78,20 +78,20 @@ production system through real time-series data.
 
 ### Software
 
-| Layer               | Technology                          | Notes                                                      |
-| ------------------- | ----------------------------------- | ---------------------------------------------------------- |
-| Backend language    | **Java 21**                         | Locked. Virtual threads enabled.                           |
-| Backend framework   | **Spring Boot 3.x**                 | One JAR, two profiles (`api`, `worker`), two systemd units |
-| Training language   | **Python 3.11+**                    | Off the serving path; ONNX export only                     |
-| Inference           | **ONNX Runtime Java**               | In-process, no Python sidecar                              |
-| Analytical DB       | **ClickHouse**                      | Pitches, drift metrics, prediction logs                    |
-| App state DB        | **SQLite**                          | Model registry, A/B config, retraining queue               |
-| Frontend            | **React + TypeScript + Vite**       | Pure SPA                                                   |
-| Component library   | **Mantine + Tailwind**              | Editorial-data design system                               |
-| Process management  | **systemd**                         | Inside WSL2                                                |
-| Observability       | **Prometheus + Grafana + Actuator** | Local dashboards                                           |
-| External monitoring | **Uptime Robot + Healthchecks.io**  | Uptime + heartbeat                                         |
-| Alerting            | **Discord webhook**                 | Acts as durable incident log                               |
+| Layer               | Technology                          | Notes                                                       |
+| ------------------- | ----------------------------------- | ----------------------------------------------------------- |
+| Backend language    | **Java 21**                         | Locked. Virtual threads enabled.                            |
+| Backend framework   | **Spring Boot 3.x**                 | One JAR, two profiles (`api`, `worker`), two systemd units  |
+| Training language   | **Python 3.11+**                    | Off the serving path; ONNX export only                      |
+| Inference           | **ONNX Runtime Java**               | In-process, no Python sidecar                               |
+| Analytical DB       | **ClickHouse**                      | Pitches, drift metrics, prediction logs                     |
+| App state DB        | **SQLite**                          | Model registry, A/B config, retraining queue                |
+| Frontend            | **React + TypeScript + Vite**       | Pure SPA                                                    |
+| Component library   | **Mantine + Tailwind**              | Scouting-report design system (broadcast-graphics flavored) |
+| Process management  | **systemd**                         | Inside WSL2                                                 |
+| Observability       | **Prometheus + Grafana + Actuator** | Local dashboards                                            |
+| External monitoring | **Uptime Robot + Healthchecks.io**  | Uptime + heartbeat                                          |
+| Alerting            | **Discord webhook**                 | Acts as durable incident log                                |
 
 ### Data sources (final, locked)
 
@@ -802,26 +802,85 @@ best-effort by design.
   WebSockets explicitly rejected — coordination overhead, harder
   debugging, no UX win at this polling cadence.
 
-### Five pages (LOCKED)
+### Product metaphor: the advance-scouting packet
 
-| Page                | Pattern                           | Purpose                                                                                     |
-| ------------------- | --------------------------------- | ------------------------------------------------------------------------------------------- |
-| Game / Live view    | Analytical + live                 | Single in-progress game, pitch-by-pitch with model predictions overlay                      |
-| Player Lookup       | Analytical                        | Search any pitcher/batter; recent predictions vs. actuals; per-player calibration plot      |
-| **Park Explorer**   | **Marquee**                       | **30-stadium HR probability heatmap; sliders for launch parameters**                        |
-| **Ops Dashboard**   | **Analytical (recruiter-facing)** | **Model versions, A/B traffic split, drift charts, retraining queue, reliability diagrams** |
-| About / Methodology | Editorial                         | What models do, training data, eval methodology, "v2 ideas"                                 |
+The entire frontend is framed as a digital **advance-scouting report** —
+the packet an MLB advance scout or hitting coach hands a player before a
+series. This is not decoration: the product _is_ advance-scouting
+analytics, so the interface form matches the function. Every page is a
+"report sheet" assembled from one shared component vocabulary (matchup
+header, conditionally-formatted stat tables, pitch-location and spray
+heatmaps, 20–80 grade blocks, plain-language Key Notes). A baseball-
+literate viewer — or a recruiter skimming for fifteen seconds — recognizes
+the genre instantly.
+
+Three reference layouts anchor the system (styling in §8):
+
+- **Matchup report sheet** — batter vs. pitcher; the signature surface.
+- **Player profile card** — single-player profile with scouting grades.
+- **Spray / heat sheet** — field-diagram and zone-density charts.
+
+### Five pages (LOCKED — page _count_ unchanged; Player page re-scoped to the matchup report)
+
+| Page                        | Pattern                           | Purpose                                                                                                                                                                                                                                                                                                |
+| --------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Game / Live view            | Live report sheet                 | Single in-progress game rendered as a **live matchup report**: current batter-vs-pitcher card, pitch-by-pitch with model-prediction overlay, conditionally-formatted count/situation table updating each pitch                                                                                         |
+| **Player / Matchup Report** | **Signature report sheet**        | **Search any pitcher/batter, or pick a batter-vs-pitcher pair. Renders the full scouting report: pitch-data table (conditionally formatted), pitch-location heatmap small-multiples, splits table, spray chart, 20–80 grades, recent predictions vs. actuals, per-player calibration plot, Key Notes** |
+| **Park Explorer**           | **Marquee (interactive)**         | **30-stadium HR-probability heatmap; sliders for launch parameters. The biggest interactive build; dressed in report chrome**                                                                                                                                                                          |
+| **Ops Dashboard**           | **Analytical (recruiter-facing)** | **Model versions, A/B traffic split, drift charts, retraining queue, reliability diagrams — same design system, dashboard density**                                                                                                                                                                    |
+| About / Methodology         | Editorial sheet                   | What the models do, training data, eval methodology, "v2 ideas"; long-form reading column inside the report chrome                                                                                                                                                                                     |
 
 Conspicuously not in scope: leaderboards, team pages, social features,
-comments, fantasy integration, betting, mobile app, dark mode toggle,
-i18n.
+comments, fantasy integration, betting, mobile app, dark mode toggle, i18n.
+
+The "five pages LOCKED" decision holds — the number of pages did not grow.
+What changed: the former _Player Lookup_ page absorbs the matchup-report
+layout and becomes the identity-defining surface. The _Park Explorer_
+remains the marquee **interactive** build; the _Matchup Report_ is the
+marquee **look**.
+
+### Component vocabulary (the scouting-report kit)
+
+Built once, reused across every page. Detailed styling in §8.
+
+- **MatchupHeader** — bold condensed title ("Hitting Report — {Batter}
+  vs. {Hand} {Pitcher}"), byline/timestamp subline, optional team marks.
+- **StatTable** — the signature component. Navy header row, silver
+  row-label column, value cells **conditionally heat-mapped** good→bad.
+  Drives the pitch-data table, splits table, and career-stat blocks.
+  Tabular mono figures. Sortable; per-column ramp direction comes from
+  metadata, never hard-coded.
+- **PitchLocationHeatmap** — KDE density per pitch type with a strike-zone
+  box overlay, rendered as **small multiples** (one card per pitch type).
+  D3 + custom SVG; warm sequential ramp.
+- **SprayChart** — batted-ball density on a field diagram, sectored zones,
+  green sequential ramp. D3 + a pre-rendered field-outline asset.
+- **GradeBlock** — 20–80 scouting-grade chips/bars (Hit, Power, Run, etc.)
+  and model-confidence grades, with the grade number set large in the
+  condensed display face.
+- **PlayerProfileCard** — photo + team-logo badge + chevron data bars
+  (POSITION / AGE / HT / WT / B-T), the profile-card layout.
+- **KeyNotes** — plain-language takeaways panel. For this product the
+  bullets are **model-derived reads** ("straight four-seam that plays up";
+  "attacks the zone early — sit on first-pitch strikes"), generated from
+  the same features the models consume — never free-typed prose.
+- **CalibrationPlot / ReliabilityDiagram** — Recharts; reliability curve +
+  histogram, styled to the palette.
 
 ### Visualizations
 
-- **30-park heatmap** (Park Explorer marquee): D3, custom SVG.
-  Pre-rendered stadium outlines as static assets; only color overlays
-  dynamic. **Largest single component, ~50–70 hours.** Highest-variance
-  in visual quality. Build basic version first, iterate to polished.
+- **Conditional-format StatTable** — the most-reused viz; the heat ramp is
+  the product's visual signature. Cell color comes from a `cellColor(value,
+metric)` function (§8); pure CSS/React, no chart library.
+- **Pitch-location heatmaps** (small multiples; Player/Matchup + Game): D3,
+  custom SVG. KDE grids are pre-computed server-side; only the color raster
+  is rendered client-side.
+- **Spray charts** (Player/Matchup): D3 + a static field outline; sectored
+  density overlay.
+- **30-park heatmap** (Park Explorer marquee): D3, custom SVG. Pre-rendered
+  stadium outlines as static assets; only color overlays dynamic.
+  **Largest single component, ~50–70 hours.** Highest-variance in visual
+  quality. Build basic version first, iterate to polished.
 - **Reliability diagrams** (Ops): Recharts or Mantine charts.
 - **Live pitch overlay** (Game view): D3, custom.
 
@@ -829,113 +888,210 @@ i18n.
 
 - Bundle < 300KB gzipped initial load
 - Lazy-load Park Explorer (heaviest page)
+- KDE grids, spray grids, and field/stadium outlines are served
+  pre-computed; the client never runs density estimation
 - Lighthouse > 80 on all pages
 - Mantine pinned version (occasional breaking minor versions)
 
 ### Accessibility
 
 - Mantine handles primitives (keyboard nav, focus management, ARIA)
-- Custom visualizations need explicit pass: alt text, color-blind-safe
-  palettes (Viridis), keyboard navigation on interactive elements
-- Budget: ~4 hours for accessibility audit
+- **Conditional formatting never relies on color alone**: every heat-mapped
+  cell carries its value as text, and the good→bad ramp pairs hue with
+  luminance so it survives grayscale. A colorblind-safe diverging
+  alternative (brick→teal, the legacy palette) is available as a toggle for
+  the red→green ramp (see §8 colorblind note).
+- Custom visualizations need an explicit pass: alt text, perceptually-
+  ordered ramps, keyboard navigation on interactive elements
+- Budget: ~6 hours for the accessibility audit (raised from 4h — the
+  conditional-format system carries real colorblind risk that has to be
+  designed around, not patched at the end)
 
 ---
 
 ## 8. Design System
 
-### Visual identity (LOCKED)
+### Visual identity (LOCKED — re-pitched 2026-05-29)
 
-**Editorial-data**: Observable structurally + Pudding aspirationally +
-Athletic-flavored editorial typography on narrative pages.
+**Scouting report / broadcast graphics.** The interface looks like a
+printed MLB advance-scouting packet crossed with a broadcast lower-third:
+dense conditionally-formatted stat sheets, field and zone heatmaps, 20–80
+grade blocks, bold condensed athletic type, and a navy / scarlet / cream
+team-graphics palette. Form matches function — the product is
+advance-scouting analytics, so it presents as an advance-scouting report.
 
-The product is a tool for thinking with data. Visual ambition lives in
-the data presentation, not in chrome around it.
+This supersedes the earlier _editorial-data_ identity (Observable +
+Pudding + Athletic editorial typography). That direction is an excellent
+default for data journalism; it was the wrong fit for _this_ product, where
+the content is literally scouting analytics and the target reader
+(baseball-literate users, baseball-literate recruiters) reads the
+scouting-report genre instantly. Full rationale in §10.
 
-**Pages with deliberate visual ambition**: About, Park Explorer.
-**Other pages**: disciplined-analytical, restraint over flair.
+**Three reference modes:**
 
-Lusion-tier visuals across the project explicitly rejected (~6 additional
-months of work, fights analytical content).
+1. **Matchup report sheet** — conditionally-formatted pitch-data table +
+   pitch-location heatmap small-multiples + splits + Key Notes. The
+   signature surface.
+2. **Player profile card** — photo, logo badge, chevron data bars, 20–80
+   grades, career-stat blocks.
+3. **Spray / heat sheet** — field-diagram spray charts and zone density.
+
+**Discipline still rules.** Visual ambition lives in the data presentation
+(the heat ramps, the small-multiples, the spray charts), not in chrome.
+One decorative flourish only — the diagonal-stripe motif (below), used
+sparingly. Lusion-tier marketing visuals remain explicitly rejected (§10).
 
 ### Typography
 
-| Use                | Font               | Notes                                                         |
-| ------------------ | ------------------ | ------------------------------------------------------------- |
-| Body, UI           | **Inter**          | Tabular figures always on (`font-feature-settings: 'tnum' 1`) |
-| Data, numbers      | **JetBrains Mono** | Free, warm, friendly                                          |
-| Display, editorial | **Source Serif 4** | Used boldly: 48–64px, weight 600+, `letter-spacing: -0.02em`  |
+The voice is athletic and broadcast: a heavy **condensed** display face for
+titles and lower-third labels, a clean **tabular** sans for UI and prose,
+and a **monospace** for the box-score stat figures.
+
+| Use                                    | Font                | Notes                                                                                                          |
+| -------------------------------------- | ------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Display, titles, section heads, labels | **Saira Condensed** | Heavy weights (600–800), uppercase for labels. The signature broadcast voice. Free (Google Fonts)              |
+| Body, UI, long-form (About)            | **IBM Plex Sans**   | Tabular figures always on (`font-feature-settings: 'tnum' 1`). Distinctive, slightly technical; replaces Inter |
+| Stat figures, data tables, grades      | **IBM Plex Mono**   | The stat-sheet / box-score voice. Tabular by construction; grade numbers set large                             |
 
 **Type scale**: 1.25 modular, 16px base → 12, 14, 16, 20, 24, 32, 48, 64.
-Line height 1.5 body, 1.2 display.
+Display titles run bold and large (40–64px, condensed, uppercase or
+title-case). Line height 1.5 body, 1.1 display (condensed faces want
+tighter leading).
 
-**Discipline rule**: monospace and serif never appear on the same line.
-Sans-serif is connective tissue.
+**Discipline rule**: the condensed display face never sets running prose;
+the mono never sets sentences. Labels are condensed-uppercase, numbers are
+mono, sentences are IBM Plex Sans. Three voices, never crossed.
+
+_Why no serif:_ scouting packets and broadcast graphics don't use serifs.
+About / Methodology keeps a comfortable reading measure in IBM Plex Sans
+rather than reintroducing an editorial serif — one fewer family, more
+cohesion.
 
 ### Color palette
 
 ```
 Backgrounds:
-  bg-base       #FAFAF7   warm off-white (NOT pure white — editorial feel)
-  bg-elevated   #FFFFFF   pure white for cards, modals
-  bg-subtle     #F2F1ED   page sections, alternating rows
-  bg-emphasis   #E8E6E0   borders, dividers (NOT shadows)
+  bg-base       #F7F4EC   warm cream (printed-sheet feel, NOT pure white)
+  bg-sheet      #FFFFFF   the report sheet / cards sitting on cream
+  bg-subtle     #EFEBE0   alternating rows, page sections
+  bg-emphasis   #E0DBCD   borders, dividers (1px, NOT shadows)
+
+Chrome (team-graphics):
+  navy          #142A4C   table header rows, lower-third bars, headlines on light
+  navy-deep     #0D1B33   darkest chrome / footer
+  silver        #C9CDD4   row-label column, secondary lower-third bars
+  scarlet       #C8102E   primary accent — chevron bars, key marks, active state
 
 Text:
-  text-strong   #161513   warm near-black (NOT #000)
-  text-default  #2D2B27   body
-  text-muted    #6B6862   labels, captions
-  text-subtle   #9A968F   timestamps, tertiary
+  text-strong   #14171C   warm near-black (NOT #000)
+  text-default  #2B2F36   body
+  text-muted    #6A6F78   labels, captions
+  text-onnavy   #F7F4EC   cream text on navy chrome
 
-Accent (1, used carefully):
-  accent        #B53D2C   deep brick-red — leather-glove, not stop-sign
+Conditional-format diverging ramp (good ↔ bad) — THE signature:
+  good-3   #2E8B57   strong green   (clearly favorable)
+  good-1   #BFE3C6   pale green
+  neutral  #EDEAE0   cream-gray     (league-average / no read)
+  bad-1    #F6C9C2   pale red
+  bad-3    #D8483A   strong red     (clearly unfavorable)
 
-Data viz:
-  Sequential: Viridis or Magma (perceptually uniform, colorblind-safe)
-  Diverging:  custom brick-red ↔ teal
-  Categorical: hand-picked 5-color palette, similar saturation
+Sequential heat ramp (pitch-location KDE):
+  warm:  #FFF7E6 → #FFD37E → #F08A24 → #C8102E   (yellow → orange → scarlet)
+
+Sequential spray ramp (batted-ball density):
+  green: #EAF3E7 → #9CCB8E → #4F9E55 → #1F5E32   (monochrome green)
+
+Data viz (multi-series, non-heat):
+  Categorical: hand-picked 5-color set — navy / scarlet / teal / gold / slate
+  Colorblind-safe diverging alt: brick #B53D2C ↔ teal #2A8C8C (legacy)
 ```
 
-**Cut**: gradients (SaaS-marketing rhetoric); drop shadows (use 1px
-borders); "primary blue" (every other site has it); dark mode v1.
+**Decorative motif (the one flourish)**: a 45° **diagonal-stripe** band
+(scarlet or pale-blue on cream), used only as a corner accent or section
+divider, echoing the broadcast-graphic reference. Never behind text, never
+on data.
+
+**Cut**: gradients on chrome (broadcast graphics are flat-color); drop
+shadows (use 1px borders + the navy/silver chrome for hierarchy); "primary
+blue" SaaS button-blue (the navy is a _team_ navy — chrome, not a CTA
+color); dark mode v1.
+
+**Colorblind note (engineering judgment, carried over from the original
+Viridis decision)**: the red↔green conditional-format ramp is the classic
+colorblind trap. Three mitigations, all shipped — (1) the **value is always
+printed** in every cell, so color is redundant and never the sole carrier;
+(2) the ramp pairs hue with **luminance** (strong-good and strong-bad differ
+in lightness, so it survives a grayscale screenshot); (3) a **brick↔teal
+toggle** (the legacy diverging palette) for deuteranopia / protanopia. The
+warm and green _sequential_ ramps are single-hue and safe by construction.
 
 **Token discipline**: define once in Tailwind config, reach for tokens
-always. Hex codes in component files = defects. The StudyForesight
-hardening sweep had 245 → 93 inline hex colors; this project plans to
-avoid the regression by being disciplined from day 1.
+always. Hex codes in component files = defects. The StudyForesight hardening
+sweep had 245 → 93 inline hex colors; this project avoids the regression by
+being disciplined from day 1. The conditional-format ramp in particular
+lives behind a single `cellColor(value, metric)` helper — no component ever
+hand-picks a green or a red.
+
+### Conditional formatting (the signature system)
+
+The heat-mapped stat cell is the product's defining visual. The rules:
+
+- Each metric declares a **direction** (higher-is-better, lower-is-better,
+  or closer-to-target) and a **reference distribution** (league baseline, or
+  the player's own population) in metadata — never hard-coded per cell.
+- `cellColor(value, metric)` maps the value's percentile / z-score onto the
+  good→bad ramp; `neutral` is league-average, the saturated ends are the
+  tails.
+- The **value text always shows** and always wins legibility (mono,
+  high-contrast); the fill is a tint behind it.
+- Ramps are clamped (no runaway saturation) and consistent across the whole
+  sheet, so two cells of the same color mean the same thing.
+
+This is what makes a glance at the sheet read like a real scouting report:
+the eye goes straight to the red and the green.
 
 ### Spacing & density
 
 - **8-point grid**: 4, 8, 12, 16, 24, 32, 48, 64, 96
-- **Editorial pages** (About, methodology): max-width 720px, line-length
-  ~70 chars, generous vertical rhythm
-- **Analytical pages** (Ops, Player): max-width 1200px, side-by-side
-  panels, denser
-- **Park Explorer**: mixed — generous around heatmap, dense in controls
+- **Report sheets** (Matchup, Game, About): the sheet is bordered (1px
+  navy/emphasis), max-width ~1100px, a bold title block on top, then stacked
+  sections. Tables are **tight** (compact row height — the scouting-packet
+  density); space is generous _around_ the title block and the spray/heatmap
+  blocks.
+- **Dashboard** (Ops): max-width 1200px, side-by-side panels, denser still
+- **Park Explorer**: mixed — generous around the heatmap, dense controls
 
 ### Motion
 
 - Transitions on user-driven state changes only (150–300ms)
-- No entrance animations on page load
-- No page transitions
+- **Conditional-format cells cross-fade** their fill when the underlying
+  data updates (live game, slider change) — the one signature
+  micro-interaction
+- No entrance animations on page load; no page transitions
 - Easing: `cubic-bezier(0.4, 0, 0.2, 1)` default
-- Framer Motion for non-trivial animations only; CSS `transition` for
-  state changes
+- Framer Motion for non-trivial animations only; CSS `transition` for state
+  changes
 
-### Layout patterns (3 locked)
+### Layout patterns (4 locked)
 
-1. **Editorial**: single column, max 720px, centered, generous spacing
-2. **Analytical with sidebar**: left rail (~280px) + flexible main grid
-3. **Marquee**: full-width hero + grid below
+1. **Report sheet** — bordered sheet, bold title block, stacked
+   conditionally-formatted sections. The default; Matchup, Game, About.
+2. **Profile card** — photo + logo badge + chevron data bars + grade blocks.
+   Player header.
+3. **Dashboard grid** — panel grid, dense, recruiter-facing. Ops.
+4. **Marquee** — full-width interactive heatmap hero + report sections
+   below. Park Explorer.
 
 ### Polish phase (LOCKED, ~30–50 hours, end of build)
 
-After all 5 pages exist, deliberate cohesion pass:
+After all 5 pages exist, a deliberate cohesion pass:
 
-- Typography refinement
-- Spacing audit
-- Color audit (catch hex-code defects)
+- Typography refinement (condensed-display weight/tracking, mono figure alignment)
+- Spacing / density audit (the scouting-packet tightness is easy to lose)
+- Color audit (catch hex-code defects; verify the single `cellColor` path)
+- Conditional-format ramp calibration (do the colors mean the same thing everywhere?)
+- Colorblind pass (grayscale screenshot test + brick↔teal toggle review)
 - Motion review
-- Accessibility pass
 - Park Explorer iteration to lift "fine" → "memorable"
 
 ---
@@ -1104,12 +1260,35 @@ would reduce a flagship subsystem to "an integration."
 **Rejected** in favor of TanStack Query polling. Coordination overhead
 of WebSockets isn't justified by the polling-cadence-equivalent UX.
 
+### Editorial-data visual identity (the original §8 direction)
+
+**Rejected** and replaced by the scouting-report identity (§8). The
+editorial-data direction — Observable structure + Pudding ambition +
+Athletic editorial serif typography on a warm off-white field — is an
+excellent default for data journalism, and it was the locked choice
+through the original planning session.
+
+It was reconsidered because it dressed the product as something it isn't.
+This is advance-scouting analytics; the artifact a scout or coach actually
+holds is a conditionally-formatted scouting report, not a magazine feature.
+Adopting that genre directly (a) makes the product instantly legible to
+baseball-literate users and recruiters, (b) puts the visual ambition
+exactly where the engineering is — the conditional-format ramps, the
+pitch-location small-multiples, the spray charts — instead of in editorial
+chrome, and (c) gives the stat-dense pages (Ops, Player) a native idiom for
+showing good-vs-bad at a glance.
+
+What carried over from the editorial-data work: token discipline, the
+colorblind-safety instinct (now the brick↔teal toggle), restraint over
+flair, and the deliberate end-of-build polish phase. The pivot is a re-skin
+of the _identity_, not a re-litigation of the _discipline_.
+
 ### Lusion-tier visual ambition across the project
 
 **Rejected** after honest cost-benefit discussion. Marketing-site visual
-rhetoric fights analytical product content. Editorial-data identity is
-the right answer for this product. Lusion-tier ambition deferred to a
-future, separate, creative project.
+rhetoric fights analytical product content. The scouting-report identity
+(§8) is the right answer for this product. Lusion-tier ambition deferred to
+a future, separate, creative project.
 
 ### Pre-frontend "design phase"
 
