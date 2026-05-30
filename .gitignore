@@ -21,8 +21,8 @@ backend/HELP.md
 # --- Python / uv ---
 training/.venv/
 training/.python-version
-training/__pycache__/
-training/**/__pycache__/
+__pycache__/
+*.pyc
 training/.pytest_cache/
 training/.ruff_cache/
 training/.coverage
