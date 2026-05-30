@@ -83,10 +83,13 @@ reportPrivateImportUsage = false
 testpaths = ["tests"]
 # Skip @pytest.mark.production by default — those gates only pass against
 # the full-data trained model; opt in with `pytest -m production`.
-addopts = "-ra --strict-markers -m 'not production'"
+# Skip @pytest.mark.perf by default — throughput targets are hardware-specific
+# (tuned on dev M-series) and flap on shared CI runners; opt in with `pytest -m perf`.
+addopts = "-ra --strict-markers -m 'not production and not perf'"
 pythonpath = ["src"]
 markers = [
     "production: cross-park sanity gates that only run against the full-data trained model (decision [52])",
+    "perf: hardware-specific throughput/latency targets; validated on dev hardware, not shared CI runners",
 ]
 
 [tool.coverage.run]

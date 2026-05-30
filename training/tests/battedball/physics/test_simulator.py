@@ -6,7 +6,6 @@ import time
 
 import numpy as np
 import pytest
-
 from bullpen_training.battedball.physics import (
     Atmosphere,
     LaunchParams,
@@ -153,6 +152,7 @@ def test_single_trajectory_runs_under_50ms() -> None:
     assert elapsed_ms < 50.0, f"single-trajectory: {elapsed_ms:.1f} ms"
 
 
+@pytest.mark.perf
 def test_batch_throughput_meets_target() -> None:
     """Leaf target: >=10K trajectories/sec via simulate_batch.
 
