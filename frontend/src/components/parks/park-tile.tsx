@@ -85,8 +85,8 @@ function ParkTileInner({
         width: size,
         height: size,
         padding: spacing[3],
-        backgroundColor: colors.bgElevated,
-        border: `1px solid ${active ? colors.accent : colors.bgEmphasis}`,
+        backgroundColor: colors.bgSheet,
+        border: `1px solid ${active ? colors.scarlet : colors.bgEmphasis}`,
         position: "relative",
         display: "flex",
         flexDirection: "column",
@@ -114,9 +114,9 @@ function ParkTileInner({
             height: 18,
             padding: `0 ${spacing[1]}px`,
             borderRadius: radii.sm,
-            backgroundColor: isLeader ? colors.accent : colors.bgEmphasis,
-            color: isLeader ? colors.bgElevated : colors.textMuted,
-            fontFamily: typography.fonts.data,
+            backgroundColor: isLeader ? colors.scarlet : colors.bgEmphasis,
+            color: isLeader ? colors.bgSheet : colors.textMuted,
+            fontFamily: typography.fonts.mono,
             fontSize: typography.scale[0], // 12
             fontWeight: typography.weights.semibold,
             letterSpacing: "0.02em",
@@ -128,7 +128,7 @@ function ParkTileInner({
         <Text
           component="span"
           style={{
-            fontFamily: typography.fonts.data,
+            fontFamily: typography.fonts.mono,
             fontSize: typography.scale[0], // 12
             color: colors.textMuted,
             letterSpacing: "0.06em",
@@ -159,8 +159,8 @@ function ParkTileInner({
               cx={landX}
               cy={landY}
               r={9}
-              fill={colors.accent}
-              stroke={colors.bgElevated}
+              fill={colors.scarlet}
+              stroke={colors.bgSheet}
               strokeWidth={2}
               pointerEvents="none"
             />
@@ -178,7 +178,7 @@ function ParkTileInner({
       >
         <Text
           style={{
-            fontFamily: typography.fonts.ui,
+            fontFamily: typography.fonts.body,
             fontSize: typography.scale[0], // 12
             color: colors.textDefault,
             fontWeight: typography.weights.medium,

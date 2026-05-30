@@ -79,7 +79,7 @@ function QueueRow({ t }: { t: RetrainingTrigger }) {
       </Table.Td>
       <Table.Td>
         {t.errorMessage ? (
-          <Text size="xs" style={{ color: colors.accent }}>
+          <Text size="xs" style={{ color: colors.scarlet }}>
             {t.errorMessage.slice(0, 60)}
             {t.errorMessage.length > 60 ? "…" : ""}
           </Text>

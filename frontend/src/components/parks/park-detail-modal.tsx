@@ -122,8 +122,8 @@ export function ParkDetailModalBody({
               cx={landX}
               cy={landY}
               r={11}
-              fill={colors.accent}
-              stroke={colors.bgElevated}
+              fill={colors.scarlet}
+              stroke={colors.bgSheet}
               strokeWidth={2}
               pointerEvents="none"
             />
@@ -138,7 +138,7 @@ export function ParkDetailModalBody({
             order={2}
             style={{
               margin: 0,
-              fontFamily: typography.fonts.ui,
+              fontFamily: typography.fonts.body,
               fontSize: typography.scale[5], // 32
               fontWeight: typography.weights.semibold,
               color: colors.textStrong,
@@ -150,7 +150,7 @@ export function ParkDetailModalBody({
           </Title>
           <Text
             style={{
-              fontFamily: typography.fonts.data,
+              fontFamily: typography.fonts.mono,
               fontSize: typography.scale[1], // 14
               color: colors.textMuted,
               letterSpacing: "0.04em",
@@ -166,7 +166,7 @@ export function ParkDetailModalBody({
           <HeroEyebrow>P(HOME RUN)</HeroEyebrow>
           <Text
             style={{
-              fontFamily: typography.fonts.data,
+              fontFamily: typography.fonts.mono,
               fontSize: typography.scale[6], // 40
               fontWeight: typography.weights.medium,
               color: probHr == null ? colors.textMuted : colors.textStrong,
@@ -216,7 +216,7 @@ export function ParkDetailModalBody({
                   component="span"
                   role="cell"
                   style={{
-                    fontFamily: typography.fonts.data,
+                    fontFamily: typography.fonts.mono,
                     fontSize: typography.scale[0], // 12
                     fontWeight: typography.weights.semibold,
                     color: colors.textMuted,
@@ -237,7 +237,7 @@ export function ParkDetailModalBody({
                   <Text
                     component="span"
                     style={{
-                      fontFamily: typography.fonts.data,
+                      fontFamily: typography.fonts.mono,
                       fontSize: typography.scale[1], // 14
                       color: colors.textStrong,
                       fontVariantNumeric: "tabular-nums",
@@ -249,7 +249,7 @@ export function ParkDetailModalBody({
                     <Text
                       component="span"
                       style={{
-                        fontFamily: typography.fonts.ui,
+                        fontFamily: typography.fonts.body,
                         fontSize: typography.scale[0], // 12
                         fontStyle: "italic",
                         color: colors.textMuted,
@@ -266,9 +266,9 @@ export function ParkDetailModalBody({
 
         <Text
           style={{
-            fontFamily: typography.fonts.data,
+            fontFamily: typography.fonts.mono,
             fontSize: typography.scale[0], // 12
-            color: colors.textSubtle,
+            color: colors.textMuted,
             letterSpacing: "0.04em",
           }}
         >

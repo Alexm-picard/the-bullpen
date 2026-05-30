@@ -24,7 +24,7 @@ export type ProbBarThinProps = {
 
 export function ProbBarThin({
   value,
-  color = colors.accent,
+  color = colors.scarlet,
   ariaLabel,
   height = 3,
 }: ProbBarThinProps) {

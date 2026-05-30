@@ -35,7 +35,7 @@ export function DestinationCard({
       style={{
         display: "block",
         textDecoration: "none",
-        backgroundColor: colors.bgElevated,
+        backgroundColor: colors.bgSheet,
         border: `1px solid ${colors.bgEmphasis}`,
         borderRadius: radii.md,
         padding: spacing[5], // 24
@@ -45,7 +45,7 @@ export function DestinationCard({
       }}
       onMouseEnter={(e) => {
         (e.currentTarget as HTMLAnchorElement).style.borderColor =
-          colors.accent;
+          colors.scarlet;
       }}
       onMouseLeave={(e) => {
         (e.currentTarget as HTMLAnchorElement).style.borderColor =
@@ -56,19 +56,19 @@ export function DestinationCard({
         <Text
           component="span"
           style={{
-            fontFamily: typography.fonts.data,
+            fontFamily: typography.fonts.mono,
             fontSize: typography.scale[0], // 12
             fontWeight: typography.weights.semibold,
             letterSpacing: "0.12em",
             textTransform: "uppercase",
-            color: colors.accent,
+            color: colors.scarlet,
           }}
         >
           {eyebrow}
         </Text>
         <Text
           style={{
-            fontFamily: typography.fonts.ui,
+            fontFamily: typography.fonts.body,
             fontSize: typography.scale[4], // 24
             fontWeight: typography.weights.semibold,
             color: colors.textStrong,
@@ -80,7 +80,7 @@ export function DestinationCard({
         </Text>
         <Text
           style={{
-            fontFamily: typography.fonts.ui,
+            fontFamily: typography.fonts.body,
             fontSize: typography.scale[2], // 16
             color: colors.textMuted,
             lineHeight: typography.lineHeights.body,
@@ -92,7 +92,7 @@ export function DestinationCard({
         {stat ? (
           <Text
             style={{
-              fontFamily: typography.fonts.data,
+              fontFamily: typography.fonts.mono,
               fontSize: typography.scale[1], // 14
               color: colors.textDefault,
               marginTop: spacing[2],

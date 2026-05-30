@@ -1,14 +1,15 @@
-/* Editorial-data font stack (leaf 4a, refreshed 2026-05-25).
+/* Scouting-report font stack (updated 2026-05-29 per decision [133]).
  *
- * Loads Inter (UI + display) and JetBrains Mono (data) from Google Fonts for v1.
- * Self-hosting under /public/fonts/ is a Phase 5 polish item — for the v1 portfolio
- * cut, Google's CDN + preconnect hint is the right speed/effort trade.
+ * Three voices:
+ *   - Saira Condensed: bold condensed athletic display face for titles, labels,
+ *     lower-third bars. Weights 400–800.
+ *   - IBM Plex Sans: clean tabular sans for UI, body copy, long-form text.
+ *     Weights 400–700. `font-feature-settings: 'tnum' 1` applied globally.
+ *   - IBM Plex Mono: stat-sheet / box-score voice. Tabular by construction.
+ *     Weights 400–700.
  *
- * Source Serif 4 was dropped in the 2026-05-25 redesign — display headings now share
- * Inter at a heavier weight + tighter tracking; rationale in src/design/tokens.ts.
- *
- * Preconnect happens via <link rel="preconnect"> in index.html so the connection is open
- * by the time the @import resolves on first paint.
- */
+ * Loading via Google Fonts with display=swap. Self-hosting under /public/fonts/
+ * is a Phase 5 polish item. Preconnect hints live in index.html so the
+ * connection is open before this @import resolves on first paint. */
 
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@400;500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap");

@@ -122,7 +122,7 @@ function Sparkline({ rows }: { rows: DriftMetric[] }) {
     <svg width={width} height={height} role="img" aria-label="Drift trend">
       <polyline
         fill="none"
-        stroke={colors.accent}
+        stroke={colors.scarlet}
         strokeWidth={1.5}
         points={points}
       />

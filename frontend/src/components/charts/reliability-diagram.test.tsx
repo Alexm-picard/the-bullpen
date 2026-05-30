@@ -43,7 +43,7 @@ describe("ReliabilityDiagram", () => {
 
   it("uses the brand accent for the diagonal reference line", () => {
     const html = render(<ReliabilityDiagram bins={FIXTURE_BINS} />);
-    expect(html.toLowerCase()).toContain(colors.accent.toLowerCase());
+    expect(html.toLowerCase()).toContain(colors.scarlet.toLowerCase());
   });
 
   it("shows insufficient-data placeholder below the threshold", () => {

@@ -39,7 +39,7 @@ function ParkListRowInner({
   const active = hover || focused;
   const isLeader = rank === 1;
 
-  const rankColor = isLeader ? colors.accent : colors.textMuted;
+  const rankColor = isLeader ? colors.scarlet : colors.textMuted;
   const altDisplay = altitudeM == null ? "—" : `${Math.round(altitudeM)} m`;
   const probDisplay = probHr == null ? "—" : `${(probHr * 100).toFixed(1)}%`;
   const probAria =
@@ -86,7 +86,7 @@ function ParkListRowInner({
         <Text
           component="span"
           style={{
-            fontFamily: typography.fonts.data,
+            fontFamily: typography.fonts.mono,
             fontSize: typography.scale[1], // 14
             fontWeight: typography.weights.semibold,
             color: rankColor,
@@ -110,7 +110,7 @@ function ParkListRowInner({
           <Text
             component="span"
             style={{
-              fontFamily: typography.fonts.data,
+              fontFamily: typography.fonts.mono,
               fontSize: typography.scale[0], // 12
               color: colors.textMuted,
               letterSpacing: "0.06em",
@@ -122,7 +122,7 @@ function ParkListRowInner({
           <Text
             component="span"
             style={{
-              fontFamily: typography.fonts.ui,
+              fontFamily: typography.fonts.body,
               fontSize: typography.scale[2], // 16
               fontWeight: typography.weights.medium,
               color: colors.textDefault,
@@ -140,7 +140,7 @@ function ParkListRowInner({
         <Text
           component="span"
           style={{
-            fontFamily: typography.fonts.data,
+            fontFamily: typography.fonts.mono,
             fontSize: typography.scale[1], // 14
             color: colors.textMuted,
             textAlign: "right",
@@ -154,7 +154,7 @@ function ParkListRowInner({
         <Text
           component="span"
           style={{
-            fontFamily: typography.fonts.data,
+            fontFamily: typography.fonts.mono,
             fontSize: typography.scale[2], // 16
             fontWeight: typography.weights.semibold,
             color: probHr == null ? colors.textMuted : colors.textStrong,

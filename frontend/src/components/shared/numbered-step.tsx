@@ -23,10 +23,10 @@ export function NumberedStep({ index, title, description }: NumberedStepProps) {
       <Text
         component="span"
         style={{
-          fontFamily: typography.fonts.data,
+          fontFamily: typography.fonts.mono,
           fontSize: typography.scale[5], // 32
           fontWeight: typography.weights.medium,
-          color: colors.accent,
+          color: colors.scarlet,
           minWidth: 48,
           letterSpacing: "-0.02em",
         }}
@@ -36,7 +36,7 @@ export function NumberedStep({ index, title, description }: NumberedStepProps) {
       <Stack gap={spacing[1]}>
         <Text
           style={{
-            fontFamily: typography.fonts.ui,
+            fontFamily: typography.fonts.body,
             fontSize: typography.scale[3], // 20
             fontWeight: typography.weights.semibold,
             color: colors.textStrong,
@@ -47,7 +47,7 @@ export function NumberedStep({ index, title, description }: NumberedStepProps) {
         </Text>
         <Text
           style={{
-            fontFamily: typography.fonts.ui,
+            fontFamily: typography.fonts.body,
             fontSize: typography.scale[2], // 16
             color: colors.textMuted,
             lineHeight: typography.lineHeights.body,

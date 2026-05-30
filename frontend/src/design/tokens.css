@@ -1,28 +1,46 @@
-/* Tailwind 4 @theme block — exposes design tokens as CSS custom properties + utility
- * classes (bg-bgBase, text-textStrong, etc.). Lives inside src/design/ so it's the only
- * place outside tokens.ts that holds raw hex literals — the lint:hex-codes script's
- * allowlist (src/design/) covers it.
+/* Tailwind 4 @theme block — exposes scouting-report design tokens as CSS custom
+ * properties + utility classes (bg-bgBase, text-textStrong, bg-navy, text-scarlet,
+ * etc.). Lives inside src/design/ so it's the only place outside tokens.ts that
+ * holds raw hex literals — the lint:hex-codes script's allowlist (src/design/)
+ * covers it.
  *
- * Values mirror src/design/tokens.ts. If you change one, change both — or grep will
- * find you. Redesigned 2026-05-25 alongside tokens.ts. */
-@theme {
-  --color-bgBase: #fbfbfa;
-  --color-bgElevated: #ffffff;
-  --color-bgSubtle: #f2f1ed;
-  --color-bgEmphasis: #e8e6e0;
-  --color-textStrong: #161513;
-  --color-textDefault: #2d2b27;
-  --color-textMuted: #6b6862;
-  --color-textSubtle: #9a968f;
-  --color-accent: #d7373f;
-  --color-success: #3f7a3f;
-  --color-warning: #c28a2a;
-  --color-danger: #9e2a2b;
-  --color-info: #3b5ba9;
+ * Values mirror src/design/tokens.ts exactly. If you change one, change both.
+ * Updated 2026-05-29: scouting-report identity per decision [133].
+ *
+ * NOTE: The conditional-format ramp (condFormat.*), sequential ramps (heatWarm,
+ * spray), and colorblind alt are intentionally OMITTED from this @theme block.
+ * They're consumed only via cellColor()/SVG — not as Tailwind utility classes.
+ * Keeping them out of @theme prevents bg-condFormatGood3 etc. from polluting
+ * the generated CSS. */
 
-  --font-ui: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+@theme {
+  /* ── Backgrounds ── */
+  --color-bgBase: #f7f4ec;
+  --color-bgSheet: #ffffff;
+  --color-bgSubtle: #efebe0;
+  --color-bgEmphasis: #e0dbcd;
+
+  /* ── Broadcast chrome ── */
+  --color-navy: #142a4c;
+  --color-navyDeep: #0d1b33;
+  --color-silver: #c9cdd4;
+  --color-scarlet: #c8102e;
+
+  /* ── Text ── */
+  --color-textStrong: #14171c;
+  --color-textDefault: #2b2f36;
+  --color-textMuted: #6a6f78;
+  --color-textOnNavy: #f7f4ec;
+
+  /* ── Typography ── */
+  --font-display: "Saira Condensed", "Arial Narrow", sans-serif;
+  --font-body:
+    "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono:
+    "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* Legacy aliases consumed by index.css :root{} — point to new font names. */
+  --font-ui: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-data:
-    "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  /* display now maps to Inter — Source Serif 4 dropped in the 2026-05-25 redesign. */
-  --font-display: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }

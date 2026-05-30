@@ -16,6 +16,7 @@ import {
 } from "react-router-dom";
 
 import HomePage from "./pages/home-page";
+import { TokenSampleCard } from "./components/_token-sample";
 
 /**
  * Every non-home page is lazy-loaded so the initial chunk is just the layout
@@ -108,6 +109,7 @@ export default function App() {
           <Route path="games/:id" element={<GamePage />} />
           <Route path="ops" element={<OpsPage />} />
           <Route path="about" element={<AboutPage />} />
+          <Route path="tokens" element={<TokenSampleCard />} />
         </Route>
       </Routes>
     </BrowserRouter>

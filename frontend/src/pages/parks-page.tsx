@@ -170,9 +170,9 @@ export default function ParksPage() {
       py="xl"
       style={{ maxWidth: layouts.analyticalMaxWidth }}
     >
-      <Stack gap={spacing[4]}>
+      <Stack gap={spacing[2]}>
         {/* Hero */}
-        <Stack gap={spacing[3]}>
+        <Stack gap={spacing[2]}>
           <HeroEyebrow>PARK EXPLORER · 30 MLB PARKS · LIVE</HeroEyebrow>
           <Title
             order={1}
@@ -192,7 +192,7 @@ export default function ParksPage() {
           <Text
             style={{
               maxWidth: 720,
-              fontFamily: typography.fonts.ui,
+              fontFamily: typography.fonts.body,
               fontSize: typography.scale[3], // 20
               color: colors.textMuted,
               lineHeight: typography.lineHeights.body,
@@ -214,9 +214,9 @@ export default function ParksPage() {
         {query.isError ? (
           <Text
             style={{
-              fontFamily: typography.fonts.ui,
+              fontFamily: typography.fonts.body,
               fontSize: typography.scale[1],
-              color: colors.status.danger,
+              color: colors.scarlet,
             }}
           >
             Could not load park predictions
@@ -229,7 +229,7 @@ export default function ParksPage() {
         {allParksFlat ? (
           <Text
             style={{
-              fontFamily: typography.fonts.ui,
+              fontFamily: typography.fonts.body,
               fontSize: typography.scale[1], // 14
               fontStyle: "italic",
               color: colors.textMuted,
@@ -247,13 +247,13 @@ export default function ParksPage() {
             display: "flex",
             justifyContent: "flex-end",
             alignItems: "center",
-            gap: spacing[3],
+            gap: spacing[2],
           }}
         >
           <Text
             component="span"
             style={{
-              fontFamily: typography.fonts.ui,
+              fontFamily: typography.fonts.body,
               fontSize: typography.scale[0], // 12
               fontWeight: typography.weights.semibold,
               color: colors.textMuted,
@@ -324,7 +324,7 @@ export default function ParksPage() {
         {query.data ? (
           <Text
             style={{
-              fontFamily: typography.fonts.data,
+              fontFamily: typography.fonts.mono,
               fontSize: typography.scale[0], // 12
               color: colors.textMuted,
               letterSpacing: "0.04em",

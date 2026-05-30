@@ -103,7 +103,7 @@ function StickyControlRailInner({
             <Text
               component="label"
               style={{
-                fontFamily: typography.fonts.ui,
+                fontFamily: typography.fonts.body,
                 fontSize: typography.scale[0], // 12
                 fontWeight: typography.weights.semibold,
                 color: colors.textMuted,
@@ -176,7 +176,7 @@ function StickyControlRailInner({
         {isUpdating ? (
           <Text
             style={{
-              fontFamily: typography.fonts.data,
+              fontFamily: typography.fonts.mono,
               fontSize: typography.scale[0], // 12
               color: colors.textMuted,
               marginTop: spacing[2],
@@ -257,7 +257,7 @@ function SliderCell({
         <Text
           component="span"
           style={{
-            fontFamily: typography.fonts.ui,
+            fontFamily: typography.fonts.body,
             fontSize: typography.scale[0], // 12
             fontWeight: typography.weights.semibold,
             color: colors.textMuted,
@@ -271,9 +271,9 @@ function SliderCell({
               component="span"
               style={{
                 marginLeft: spacing[1],
-                fontFamily: typography.fonts.ui,
+                fontFamily: typography.fonts.body,
                 fontSize: typography.scale[0],
-                color: colors.textSubtle,
+                color: colors.textMuted,
                 fontWeight: typography.weights.regular,
                 letterSpacing: 0,
                 textTransform: "none",
@@ -286,7 +286,7 @@ function SliderCell({
         <Text
           component="span"
           style={{
-            fontFamily: typography.fonts.data,
+            fontFamily: typography.fonts.mono,
             fontSize: typography.scale[1], // 14
             color: colors.textStrong,
             fontVariantNumeric: "tabular-nums",

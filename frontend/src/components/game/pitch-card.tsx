@@ -36,7 +36,7 @@ function PitchCardInner({ pitch }: PitchCardProps) {
       p="xs"
       style={{
         position: "relative",
-        borderRight: showRule ? `2px solid ${colors.accent}` : undefined,
+        borderRight: showRule ? `2px solid ${colors.scarlet}` : undefined,
       }}
     >
       <Group justify="space-between" align="flex-start" wrap="nowrap">
@@ -110,7 +110,7 @@ function AgreementMarker({
     );
   }
   return (
-    <Text size="xs" ff="monospace" style={{ color: colors.accent }}>
+    <Text size="xs" ff="monospace" style={{ color: colors.scarlet }}>
       ✗ predicted {winner}
     </Text>
   );

@@ -85,7 +85,7 @@ export function ReliabilityDiagram({
         role="img"
         aria-label="Reliability diagram"
         style={{
-          fontFamily: typography.fonts.data,
+          fontFamily: typography.fonts.mono,
           fontSize: typography.scale[0] - 1,
         }}
       >
@@ -95,7 +95,7 @@ export function ReliabilityDiagram({
           y={PLOT.marginTop}
           width={PLOT.width}
           height={PLOT.height}
-          fill={colors.bgElevated}
+          fill={colors.bgSheet}
           stroke={colors.bgEmphasis}
         />
 
@@ -147,7 +147,7 @@ export function ReliabilityDiagram({
           y1={yToPx(0)}
           x2={xToPx(1)}
           y2={yToPx(1)}
-          stroke={colors.accent}
+          stroke={colors.scarlet}
           strokeWidth={1.5}
         />
 
@@ -169,10 +169,7 @@ export function ReliabilityDiagram({
               stroke={colors.textStrong}
               strokeWidth={0.5}
             >
-              <title>
-                n={b.n} · predicted={b.predicted.toFixed(3)} · actual=
-                {b.actual.toFixed(3)}
-              </title>
+              <title>{`n=${b.n} · predicted=${b.predicted.toFixed(3)} · actual=${b.actual.toFixed(3)}`}</title>
             </circle>
           );
         })}

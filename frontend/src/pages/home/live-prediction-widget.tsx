@@ -62,7 +62,7 @@ function SliderRow({
   ariaLabel: string;
 }) {
   return (
-    <Stack gap={spacing[1]}>
+    <Stack gap={spacing[0]}>
       <div
         style={{
           display: "flex",
@@ -72,7 +72,7 @@ function SliderRow({
       >
         <Text
           style={{
-            fontFamily: typography.fonts.ui,
+            fontFamily: typography.fonts.body,
             fontSize: typography.scale[1], // 14
             fontWeight: typography.weights.medium,
             color: colors.textDefault,
@@ -82,7 +82,7 @@ function SliderRow({
         </Text>
         <Text
           style={{
-            fontFamily: typography.fonts.data,
+            fontFamily: typography.fonts.mono,
             fontSize: typography.scale[1], // 14
             color: colors.textStrong,
             fontVariantNumeric: "tabular-nums",
@@ -145,34 +145,34 @@ export function LivePredictionWidget() {
   return (
     <div
       style={{
-        backgroundColor: colors.bgElevated,
+        backgroundColor: colors.bgSheet,
         border: `1px solid ${colors.bgEmphasis}`,
         borderRadius: 10,
-        padding: spacing[5], // 24
+        padding: spacing[4], // 24
         display: "flex",
         flexDirection: "column",
-        gap: spacing[4], // 16
+        gap: spacing[0], // 16
       }}
     >
       <Text
         component="span"
         style={{
-          fontFamily: typography.fonts.data,
+          fontFamily: typography.fonts.mono,
           fontSize: typography.scale[0], // 12
           fontWeight: typography.weights.semibold,
           letterSpacing: "0.12em",
           textTransform: "uppercase",
-          color: colors.accent,
+          color: colors.scarlet,
         }}
       >
         Live · POST /v1/predict/batted-ball
       </Text>
 
       {/* Park dropdown — full width row */}
-      <Stack gap={spacing[1]}>
+      <Stack gap={spacing[0]}>
         <Text
           style={{
-            fontFamily: typography.fonts.ui,
+            fontFamily: typography.fonts.body,
             fontSize: typography.scale[1], // 14
             fontWeight: typography.weights.medium,
             color: colors.textDefault,
@@ -232,7 +232,7 @@ export function LivePredictionWidget() {
       >
         <Text
           style={{
-            fontFamily: typography.fonts.ui,
+            fontFamily: typography.fonts.body,
             fontSize: typography.scale[1], // 14
             fontWeight: typography.weights.medium,
             color: colors.textDefault,
@@ -256,8 +256,8 @@ export function LivePredictionWidget() {
       {/* Output block: probability number + thin bar + footer */}
       <div
         style={{
-          marginTop: spacing[2],
-          paddingTop: spacing[4],
+          marginTop: spacing[0],
+          paddingTop: spacing[0],
           borderTop: `1px solid ${colors.bgEmphasis}`,
         }}
       >
@@ -266,12 +266,12 @@ export function LivePredictionWidget() {
             display: "flex",
             alignItems: "baseline",
             justifyContent: "space-between",
-            marginBottom: spacing[3],
+            marginBottom: spacing[0],
           }}
         >
           <Text
             style={{
-              fontFamily: typography.fonts.ui,
+              fontFamily: typography.fonts.body,
               fontSize: typography.scale[1], // 14
               color: colors.textMuted,
               letterSpacing: "0.04em",
@@ -283,10 +283,10 @@ export function LivePredictionWidget() {
           </Text>
           <Text
             style={{
-              fontFamily: typography.fonts.data,
+              fontFamily: typography.fonts.mono,
               fontSize: typography.scale[6], // 40
               fontWeight: typography.weights.medium,
-              color: isError ? colors.status.danger : colors.textStrong,
+              color: isError ? colors.scarlet : colors.textStrong,
               lineHeight: 1,
               letterSpacing: "-0.02em",
               fontVariantNumeric: "tabular-nums",
@@ -301,8 +301,8 @@ export function LivePredictionWidget() {
         />
         <Text
           style={{
-            marginTop: spacing[3],
-            fontFamily: typography.fonts.data,
+            marginTop: spacing[0],
+            fontFamily: typography.fonts.mono,
             fontSize: typography.scale[0], // 12
             color: colors.textMuted,
             fontVariantNumeric: "tabular-nums",

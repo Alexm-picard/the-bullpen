@@ -1,11 +1,10 @@
 /**
- * Snapshot of the token-sample visual ground-truth. The card renders one of every
- * primitive (warm-paper surfaces, brick-red accent, three font families, viridis +
- * categorical viz ramps) — so if a token value or a structural choice shifts in
- * tokens.ts or theme.ts, the snapshot diff makes the change loud.
+ * Snapshot + contract test for the scouting-report token sample.
  *
- * Uses renderToStaticMarkup so the test stays node-only — no jsdom dep just for
- * this single snapshot.
+ * The snapshot captures every design primitive so that any rename or value
+ * change in tokens.ts makes the diff loud. The inline assertion confirms
+ * the scarlet accent hex appears as a literal value — the chromatic anchor
+ * of the scouting-report identity.
  */
 import { MantineProvider } from "@mantine/core";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -26,12 +25,23 @@ describe("TokenSampleCard", () => {
     expect(html).toMatchSnapshot();
   });
 
-  it("references the brand accent inline (the canonical chromatic note)", () => {
+  it("references the scarlet accent inline (the canonical chromatic anchor)", () => {
     const html = renderToStaticMarkup(
       <MantineProvider theme={theme}>
         <TokenSampleCard />
       </MantineProvider>,
     );
-    expect(html.toLowerCase()).toContain(colors.accent.toLowerCase());
+    // The scarlet hex must appear as an inline style value somewhere
+    // in the rendered output — proving tokens.colors.scarlet is consumed directly.
+    expect(html.toLowerCase()).toContain(colors.scarlet.toLowerCase());
+  });
+
+  it("references the navy chrome hex inline", () => {
+    const html = renderToStaticMarkup(
+      <MantineProvider theme={theme}>
+        <TokenSampleCard />
+      </MantineProvider>,
+    );
+    expect(html.toLowerCase()).toContain(colors.navy.toLowerCase());
   });
 });

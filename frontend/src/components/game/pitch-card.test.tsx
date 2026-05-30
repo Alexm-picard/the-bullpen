@@ -70,7 +70,7 @@ describe("PitchCard", () => {
       />,
     );
     expect(html).toContain("✓ predicted called_strike");
-    expect(html).not.toContain(colors.accent.toLowerCase().slice(1)); // no brick-red rule
+    expect(html).not.toContain(colors.scarlet.toLowerCase().slice(1)); // no brick-red rule
   });
 
   it("shows ✗ and the brick-red rule when predicted != observed", () => {
@@ -91,6 +91,6 @@ describe("PitchCard", () => {
       />,
     );
     expect(html).toContain("✗ predicted called_strike");
-    expect(html.toLowerCase()).toContain(colors.accent.toLowerCase());
+    expect(html.toLowerCase()).toContain(colors.scarlet.toLowerCase());
   });
 });

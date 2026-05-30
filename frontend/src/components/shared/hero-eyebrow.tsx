@@ -20,13 +20,13 @@ export type HeroEyebrowProps = {
 
 export function HeroEyebrow({
   children,
-  color = colors.accent,
+  color = colors.scarlet,
 }: HeroEyebrowProps) {
   return (
     <Text
       component="span"
       style={{
-        fontFamily: typography.fonts.data,
+        fontFamily: typography.fonts.mono,
         fontSize: typography.scale[0], // 12
         fontWeight: typography.weights.semibold,
         letterSpacing: "0.12em",

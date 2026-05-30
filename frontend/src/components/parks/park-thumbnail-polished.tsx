@@ -89,7 +89,7 @@ function ParkThumbnailPolishedInner({
       style={{
         transition: "transform 150ms ease",
         transform: active ? "translateY(-2px)" : "translateY(0)",
-        outline: active ? `1px solid ${colors.accent}` : "none",
+        outline: active ? `1px solid ${colors.scarlet}` : "none",
         cursor: "pointer",
       }}
     >
@@ -115,7 +115,7 @@ function ParkThumbnailPolishedInner({
               cx={landX}
               cy={landY}
               r={7}
-              fill={colors.accent}
+              fill={colors.scarlet}
               stroke={colors.textStrong}
               strokeWidth={1.5}
               pointerEvents="none"

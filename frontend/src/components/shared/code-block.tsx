@@ -26,7 +26,7 @@ export function CodeBlock({ label, code, accent }: CodeBlockProps) {
       {label ? (
         <Text
           style={{
-            fontFamily: typography.fonts.data,
+            fontFamily: typography.fonts.mono,
             fontSize: typography.scale[0], // 12
             color: accent ?? colors.textMuted,
             letterSpacing: "0.08em",
@@ -45,7 +45,7 @@ export function CodeBlock({ label, code, accent }: CodeBlockProps) {
           color: colors.bgBase,
           padding: spacing[4],
           borderRadius: radii.md,
-          fontFamily: typography.fonts.data,
+          fontFamily: typography.fonts.mono,
           fontSize: typography.scale[1], // 14
           lineHeight: 1.55,
           overflowX: "auto",

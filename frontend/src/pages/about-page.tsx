@@ -164,7 +164,7 @@ function ArchitectureDiagram() {
             border: `1px solid ${colors.bgEmphasis}`,
             borderRadius: 8,
             padding: 16,
-            backgroundColor: colors.bgElevated,
+            backgroundColor: colors.bgSheet,
           }}
         >
           <svg
@@ -173,7 +173,7 @@ function ArchitectureDiagram() {
             role="img"
             aria-label="Data flows from Statcast and MLB Stats API into ClickHouse, training emits ONNX, Spring serves predictions to the React frontend"
             style={{
-              fontFamily: typography.fonts.data,
+              fontFamily: typography.fonts.mono,
               fontSize: typography.scale[0] - 1,
             }}
           >
@@ -289,7 +289,7 @@ function CenterBox({
         width={w}
         height={50}
         rx={4}
-        fill={colors.bgElevated}
+        fill={colors.bgSheet}
         stroke={colors.bgEmphasis}
       />
       <text

@@ -45,7 +45,7 @@ function LeagueLeaderStripInner({
       role="region"
       aria-label="Most-likely home run park for the current launch parameters"
       style={{
-        backgroundColor: colors.bgElevated,
+        backgroundColor: colors.bgSheet,
         border: `1px solid ${colors.bgEmphasis}`,
         borderRadius: radii.md,
         padding: spacing[5],
@@ -56,12 +56,12 @@ function LeagueLeaderStripInner({
         <Text
           component="span"
           style={{
-            fontFamily: typography.fonts.data,
+            fontFamily: typography.fonts.mono,
             fontSize: typography.scale[0], // 12
             fontWeight: typography.weights.semibold,
             letterSpacing: "0.12em",
             textTransform: "uppercase",
-            color: colors.accent,
+            color: colors.scarlet,
           }}
         >
           Most-likely HR · rank 1 of 30
@@ -101,7 +101,7 @@ function LeagueLeaderStripInner({
                 <Text
                   component="span"
                   style={{
-                    fontFamily: typography.fonts.data,
+                    fontFamily: typography.fonts.mono,
                     fontSize: typography.scale[1], // 14
                     color: colors.textMuted,
                     letterSpacing: "0.06em",
@@ -114,7 +114,7 @@ function LeagueLeaderStripInner({
             </div>
             <Text
               style={{
-                fontFamily: typography.fonts.data,
+                fontFamily: typography.fonts.mono,
                 fontSize: typography.scale[1], // 14
                 color: colors.textMuted,
                 fontVariantNumeric: "tabular-nums",
@@ -135,7 +135,7 @@ function LeagueLeaderStripInner({
           >
             <Text
               style={{
-                fontFamily: typography.fonts.data,
+                fontFamily: typography.fonts.mono,
                 fontSize: typography.scale[6], // 40
                 fontWeight: typography.weights.medium,
                 color: leader ? colors.textStrong : colors.textMuted,
@@ -159,7 +159,7 @@ function LeagueLeaderStripInner({
             <Text
               component="span"
               style={{
-                fontFamily: typography.fonts.ui,
+                fontFamily: typography.fonts.body,
                 fontSize: typography.scale[0], // 12
                 color: colors.textMuted,
                 letterSpacing: "0.04em",

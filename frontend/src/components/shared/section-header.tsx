@@ -21,12 +21,12 @@ export function SectionHeader({ eyebrow, title, lede }: SectionHeaderProps) {
       <Text
         component="span"
         style={{
-          fontFamily: typography.fonts.data,
+          fontFamily: typography.fonts.mono,
           fontSize: typography.scale[0], // 12
           fontWeight: typography.weights.semibold,
           letterSpacing: "0.12em",
           textTransform: "uppercase",
-          color: colors.accent,
+          color: colors.scarlet,
         }}
       >
         {eyebrow}
@@ -48,7 +48,7 @@ export function SectionHeader({ eyebrow, title, lede }: SectionHeaderProps) {
       {lede ? (
         <Text
           style={{
-            fontFamily: typography.fonts.ui,
+            fontFamily: typography.fonts.body,
             fontSize: typography.scale[3], // 20
             color: colors.textMuted,
             lineHeight: 1.45,

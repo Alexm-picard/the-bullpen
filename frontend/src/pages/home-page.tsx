@@ -83,27 +83,27 @@ export default function HomePage() {
         .home-hero-grid {
           display: grid;
           grid-template-columns: 5fr 7fr;
-          gap: ${spacing[7]}px;
+          gap: ${spacing[5]}px;
           align-items: center;
         }
         .home-meta-grid {
           display: grid;
           grid-template-columns: repeat(3, 1fr);
-          gap: ${spacing[4]}px;
+          gap: ${spacing[3]}px;
         }
         .home-method-grid {
           display: grid;
           grid-template-columns: 1fr 1fr;
-          gap: ${spacing[7]}px;
+          gap: ${spacing[5]}px;
           align-items: start;
         }
         .home-h1 {
           font-size: clamp(${typography.scale[6]}px, 6vw, ${typography.scale[7]}px);
         }
         @media (max-width: 900px) {
-          .home-hero-grid { grid-template-columns: 1fr; gap: ${spacing[6]}px; }
+          .home-hero-grid { grid-template-columns: 1fr; gap: ${spacing[5]}px; }
           .home-meta-grid { grid-template-columns: 1fr; }
-          .home-method-grid { grid-template-columns: 1fr; gap: ${spacing[6]}px; }
+          .home-method-grid { grid-template-columns: 1fr; gap: ${spacing[5]}px; }
         }
       `}</style>
 
@@ -111,12 +111,12 @@ export default function HomePage() {
         style={{
           maxWidth: layouts.analyticalMaxWidth,
           margin: "0 auto",
-          padding: `${spacing[8]}px ${spacing[5]}px`,
+          padding: `${spacing[7]}px ${spacing[4]}px`,
         }}
       >
         {/* ─────────────── 1. Hero ─────────────── */}
         <section className="home-hero-grid">
-          <Stack gap={spacing[5]}>
+          <Stack gap={spacing[4]}>
             <HeroEyebrow>Self-hosted · ML systems wrapper</HeroEyebrow>
             <Title
               order={1}
@@ -135,7 +135,7 @@ export default function HomePage() {
             </Title>
             <Text
               style={{
-                fontFamily: typography.fonts.ui,
+                fontFamily: typography.fonts.body,
                 fontSize: typography.scale[3], // 20
                 color: colors.textMuted,
                 lineHeight: 1.5,
@@ -150,7 +150,7 @@ export default function HomePage() {
             <div
               style={{
                 display: "flex",
-                gap: spacing[4],
+                gap: spacing[3],
                 alignItems: "center",
                 flexWrap: "wrap",
               }}
@@ -161,11 +161,11 @@ export default function HomePage() {
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
-                  gap: spacing[2],
-                  padding: `${spacing[3]}px ${spacing[5]}px`,
-                  backgroundColor: colors.accent,
-                  color: colors.bgElevated,
-                  fontFamily: typography.fonts.ui,
+                  gap: spacing[1],
+                  padding: `${spacing[2]}px ${spacing[4]}px`,
+                  backgroundColor: colors.scarlet,
+                  color: colors.bgSheet,
+                  fontFamily: typography.fonts.body,
                   fontWeight: typography.weights.semibold,
                   fontSize: typography.scale[2], // 16
                   borderRadius: 6,
@@ -181,10 +181,10 @@ export default function HomePage() {
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
-                  gap: spacing[2],
-                  padding: `${spacing[3]}px ${spacing[4]}px`,
+                  gap: spacing[1],
+                  padding: `${spacing[2]}px ${spacing[3]}px`,
                   color: colors.textStrong,
-                  fontFamily: typography.fonts.ui,
+                  fontFamily: typography.fonts.body,
                   fontWeight: typography.weights.medium,
                   fontSize: typography.scale[2], // 16
                   textDecoration: "none",
@@ -199,13 +199,13 @@ export default function HomePage() {
         </section>
 
         {/* ─────────────── 2. What's working today ─────────────── */}
-        <section style={{ marginTop: spacing[9] }}>
+        <section style={{ marginTop: spacing[8] }}>
           <SectionHeader
             eyebrow="Phase 2a · shipped"
             title="What's working today"
             lede="Two pages are real, with calibrated models behind them. The rest of the surface is honest about where it stands."
           />
-          <Box className="home-meta-grid" style={{ marginTop: spacing[6] }}>
+          <Box className="home-meta-grid" style={{ marginTop: spacing[5] }}>
             <DestinationCard
               to="/parks"
               eyebrow="Live"
@@ -230,8 +230,8 @@ export default function HomePage() {
           </Box>
           <Text
             style={{
-              marginTop: spacing[5],
-              fontFamily: typography.fonts.ui,
+              marginTop: spacing[4],
+              fontFamily: typography.fonts.body,
               fontSize: typography.scale[1], // 14
               color: colors.textMuted,
               maxWidth: 720,
@@ -241,7 +241,7 @@ export default function HomePage() {
             <Text
               component="span"
               style={{
-                fontFamily: typography.fonts.data,
+                fontFamily: typography.fonts.mono,
                 color: colors.textDefault,
                 fontWeight: typography.weights.semibold,
               }}
@@ -270,14 +270,14 @@ export default function HomePage() {
         </section>
 
         {/* ─────────────── 3. How a prediction gets here ─────────────── */}
-        <section style={{ marginTop: spacing[9] }}>
+        <section style={{ marginTop: spacing[8] }}>
           <SectionHeader
             eyebrow="Pipeline"
             title="How a prediction gets here"
             lede="Four steps from raw Statcast to a calibrated probability behind a single POST."
           />
-          <Box className="home-method-grid" style={{ marginTop: spacing[6] }}>
-            <Stack gap={spacing[5]}>
+          <Box className="home-method-grid" style={{ marginTop: spacing[5] }}>
+            <Stack gap={spacing[4]}>
               {STEPS.map((step, i) => (
                 <NumberedStep
                   key={step.title}
@@ -287,7 +287,7 @@ export default function HomePage() {
                 />
               ))}
             </Stack>
-            <Stack gap={spacing[4]}>
+            <Stack gap={spacing[3]}>
               <CodeBlock label="Request" code={CURL_EXAMPLE} />
               <CodeBlock label="Response" code={JSON_EXAMPLE} />
             </Stack>
@@ -298,14 +298,14 @@ export default function HomePage() {
         <Box
           component="footer"
           style={{
-            marginTop: spacing[9],
-            paddingTop: spacing[5],
+            marginTop: spacing[8],
+            paddingTop: spacing[4],
             borderTop: `1px solid ${colors.bgEmphasis}`,
           }}
         >
           <Text
             style={{
-              fontFamily: typography.fonts.data,
+              fontFamily: typography.fonts.mono,
               fontSize: typography.scale[0], // 12
               color: colors.textMuted,
               letterSpacing: "0.02em",
@@ -316,7 +316,7 @@ export default function HomePage() {
               href="https://github.com/Alexm-picard/thebullpen"
               target="_blank"
               rel="noopener noreferrer"
-              style={{ color: colors.accent }}
+              style={{ color: colors.scarlet }}
             >
               source on github →
             </Anchor>
