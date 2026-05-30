@@ -112,7 +112,14 @@ tasks.matching { it.name == "compileJmhJava" }.configureEach {
 tasks.matching { it.name == "spotbugsJmh" }.configureEach { enabled = false }
 
 tasks.named<Test>("test") {
-    useJUnitPlatform()
+    // @Tag("drill") tests (e.g. the drift-induction drill) are slow, verbose, and
+    // run on demand — exclude from normal CI. Run with: ./gradlew test -PrunDrills
+    //   --tests "*DriftInductionDrillIT"
+    useJUnitPlatform {
+        if (!project.hasProperty("runDrills")) {
+            excludeTags("drill")
+        }
+    }
     // Test-only default for the prod-required admin Basic-Auth credential.
     // Individual IT classes still override this via @DynamicPropertySource (the registry-it
     // suite uses 'it-admin:it-password'); this just keeps generic context-load tests
