@@ -37,9 +37,7 @@ const PlayerProfilePage = lazy(() =>
   })),
 );
 
-const TodaysGamesPage = lazy(() =>
-  import("./pages/game-page").then((m) => ({ default: m.TodaysGamesPage })),
-);
+const GamesPage = lazy(() => import("./pages/games-page"));
 const GamePage = lazy(() =>
   import("./pages/game-page").then((m) => ({ default: m.GamePage })),
 );
@@ -105,7 +103,7 @@ export default function App() {
           <Route path="parks/toy" element={<ParksToyPage />} />
           <Route path="players" element={<PlayersPage />} />
           <Route path="players/:id" element={<PlayerProfilePage />} />
-          <Route path="games" element={<TodaysGamesPage />} />
+          <Route path="games" element={<GamesPage />} />
           <Route path="games/:id" element={<GamePage />} />
           <Route path="ops" element={<OpsPage />} />
           <Route path="about" element={<AboutPage />} />

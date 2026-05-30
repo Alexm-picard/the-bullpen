@@ -1,93 +1,27 @@
 /**
- * Live-game pages (leaves 4d.1, 4d.2).
+ * Per-game live-detail page (leaves 4d.1, 4d.2).
  *
- * `/games` — list of today's games (link out to each).
- * `/games/:id` — header + live pitch feed. 4d.1 ships the header + pitch list +
- * status-driven polling; 4d.2 adds the per-pitch prediction overlay.
+ * `/games/:id` — header + live pitch feed. 4d.1 shipped the header + pitch
+ * list + status-driven polling; 4d.2 added the per-pitch prediction overlay.
+ *
+ * The slate-style `/games` index lives in `games-page.tsx` (Stage 3d,
+ * scouting-report identity). The legacy `TodaysGamesPage` export that used
+ * to live here was removed when /games moved to its Live Game variant of
+ * the Matchup Report.
  */
 import {
-  Anchor,
   Badge,
   Container,
   Group,
   Skeleton,
   Stack,
-  Table,
   Text,
   Title,
 } from "@mantine/core";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 
-import {
-  useGame,
-  useLivePitches,
-  useTodaysGames,
-  type GameSummary,
-} from "../api/games";
+import { useGame, useLivePitches, type GameSummary } from "../api/games";
 import { PitchFeed } from "../components/game/pitch-feed";
-
-export function TodaysGamesPage() {
-  const { data, isLoading, isError, error } = useTodaysGames();
-
-  return (
-    <Container size="md" py="xl">
-      <Stack gap="md">
-        <Title order={1}>Today's games</Title>
-        <Text c="dimmed">
-          Live games are polled at 12 s while in progress. The pitches_live
-          worker (Phase 4d.1 follow-up) populates this table from the MLB Stats
-          API; until that lands, this list is empty in dev.
-        </Text>
-
-        {isLoading ? (
-          <Stack gap={4}>
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} height={36} />
-            ))}
-          </Stack>
-        ) : null}
-
-        {isError ? (
-          <Text c="red">
-            Could not load today's games
-            {error instanceof Error ? `: ${error.message}` : ""}.
-          </Text>
-        ) : null}
-
-        {!isLoading && !isError && data?.length === 0 ? (
-          <Text c="dimmed">No live games right now.</Text>
-        ) : null}
-
-        {data && data.length > 0 ? (
-          <Table>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Game</Table.Th>
-                <Table.Th>Score</Table.Th>
-                <Table.Th>Status</Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {data.map((g) => (
-                <Table.Tr key={g.gameId}>
-                  <Table.Td>
-                    <Anchor component={Link} to={`/games/${g.gameId}`}>
-                      {g.awayTeam} @ {g.homeTeam}
-                    </Anchor>
-                  </Table.Td>
-                  <Table.Td ff="monospace">
-                    {g.awayScore} – {g.homeScore}
-                  </Table.Td>
-                  <Table.Td>{g.detailedState}</Table.Td>
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
-        ) : null}
-      </Stack>
-    </Container>
-  );
-}
 
 export function GamePage() {
   const { id } = useParams<{ id: string }>();
