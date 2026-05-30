@@ -25,9 +25,26 @@ jobs:
       - name: Lint
         working-directory: frontend
         run: npm run lint
-      - name: Unit tests
+      - name: Unit tests + coverage
         working-directory: frontend
-        run: npm test -- --run
+        run: npm run test:coverage
+      # A2: honest, non-gating coverage baseline surfaced in the run summary.
+      - name: Coverage summary (vitest v8, non-gating)
+        if: always()
+        working-directory: frontend
+        run: |
+          SUMMARY=coverage/coverage-summary.json
+          if [ -f "$SUMMARY" ]; then
+            node -e "const t=require('./coverage/coverage-summary.json').total; const r=k=>\`\${t[k].pct}% (\${t[k].covered}/\${t[k].total})\`; console.log('### Frontend coverage (vitest v8)\n'); for (const k of ['lines','statements','branches','functions']) console.log(\`- **\${k[0].toUpperCase()+k.slice(1)}**: \${r(k)}\`);" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning title=No coverage summary::coverage/coverage-summary.json not found"
+          fi
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: frontend/coverage/
       - name: Build
         working-directory: frontend
         run: npm run build

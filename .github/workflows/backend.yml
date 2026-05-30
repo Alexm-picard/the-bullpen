@@ -39,6 +39,8 @@ jobs:
 
       - name: Build + unit tests
         working-directory: backend
+        # `test` is finalizedBy jacocoTestReport, so the coverage report is
+        # produced here without a separate task invocation.
         run: ./gradlew build test --no-daemon
       - name: Spotless check (format must be clean)
         working-directory: backend
@@ -46,6 +48,26 @@ jobs:
       - name: Static analysis (SpotBugs)
         working-directory: backend
         run: ./gradlew spotbugsMain --no-daemon
+      # A2: publish an honest coverage baseline. Non-gating for now (mirrors the
+      # training.yml posture) — surfaces line/branch coverage in the run summary and
+      # uploads the full HTML/XML report. Ratchet a floor in once the baseline settles.
+      - name: Coverage summary (JaCoCo, non-gating)
+        if: always()
+        working-directory: backend
+        env:
+          REPORT: build/reports/jacoco/test/jacocoTestReport.xml
+        run: |
+          if [ -f "$REPORT" ]; then
+            python3 -c "import os,xml.etree.ElementTree as ET; r=ET.parse(os.environ['REPORT']).getroot(); g=lambda k:next(((int(c.get('covered')),int(c.get('missed'))) for c in r.findall('counter') if c.get('type')==k),(0,0)); f=lambda k:(lambda cov,mis: f'{100*cov/(cov+mis):.1f}% ({cov}/{cov+mis})' if cov+mis else 'n/a')(*g(k)); print('### Backend coverage (JaCoCo)\n'); [print(f'- **{k.title()}**: {f(k)}') for k in ('LINE','BRANCH','INSTRUCTION')]" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning title=No JaCoCo report::jacocoTestReport.xml not found"
+          fi
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/build/reports/jacoco/test/
       - name: Upload test reports on failure
         if: failure()
         uses: actions/upload-artifact@v4

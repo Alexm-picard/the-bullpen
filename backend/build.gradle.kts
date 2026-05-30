@@ -2,6 +2,7 @@ import net.ltgt.gradle.errorprone.errorprone
 
 plugins {
     java
+    jacoco
     id("org.springframework.boot") version "3.5.4"
     id("io.spring.dependency-management") version "1.1.7"
     id("com.diffplug.spotless") version "7.0.2"
@@ -126,4 +127,23 @@ tasks.named<Test>("test") {
     // (ApplicationTests + the predict-controller suites) from hitting SecurityConfig's
     // blank-value IllegalStateException during context bring-up.
     systemProperty("THEBULLPEN_ADMIN_BASIC_AUTH", "test-admin:test-password")
+    // A2: every `test` run leaves a fresh coverage report behind so `./gradlew test`
+    // alone is enough locally; CI uploads the XML/HTML.
+    finalizedBy(tasks.named("jacocoTestReport"))
+}
+
+// A2 — coverage measurement (audit remediation). The number is left UNGATED for now
+// (matching training.yml's "report-the-gap, don't fail-the-build" posture) so we publish
+// an honest baseline before ratcheting a floor in. No class exclusions: the denominator
+// is the whole main source set, so the percentage isn't quietly massaged.
+jacoco {
+    toolVersion = "0.8.12"
+}
+
+tasks.jacocoTestReport {
+    dependsOn(tasks.test)
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+    }
 }
