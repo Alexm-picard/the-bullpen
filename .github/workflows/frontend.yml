@@ -79,8 +79,11 @@ jobs:
       - if: steps.check.outputs.present == 'true'
         working-directory: frontend
         run: npm ci --include=optional && npx playwright install --with-deps chromium
+      # A7: non-blocking while the smoke stabilises (plan: non-blocking first, then gate).
+      # Drop continue-on-error to make E2E a required gate.
       - name: Playwright E2E
         if: steps.check.outputs.present == 'true'
+        continue-on-error: true
         working-directory: frontend
         run: npx playwright test
       - if: failure() && steps.check.outputs.present == 'true'

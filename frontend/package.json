@@ -13,7 +13,8 @@
     "build:parks": "node scripts/build-park-svgs.mjs",
     "preview": "vite preview",
     "test": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@mantine/core": "^9.2.1",
