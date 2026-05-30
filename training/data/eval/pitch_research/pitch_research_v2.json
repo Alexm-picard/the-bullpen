@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "artifact_name": "pitch_research_v2",
+  "models": [
+    {
+      "name": "T+Pitcher Embed",
+      "accuracy": 0.4399,
+      "top2_accuracy": 0.7078,
+      "logloss": 1.3281,
+      "calibration_ece": 0.0114,
+      "train_time_sec": 1221.7
+    },
+    {
+      "name": "T+Pitcher+Batter",
+      "accuracy": 0.4438,
+      "top2_accuracy": 0.7122,
+      "logloss": 1.3177,
+      "calibration_ece": 0.0079,
+      "train_time_sec": 1200.0
+    },
+    {
+      "name": "Hybrid+Pitcher",
+      "accuracy": 0.4503,
+      "top2_accuracy": 0.7243,
+      "logloss": 1.3274,
+      "calibration_ece": 0.0081,
+      "train_time_sec": 1964.4
+    },
+    {
+      "name": "Hybrid+P+B",
+      "accuracy": 0.4495,
+      "top2_accuracy": 0.7232,
+      "logloss": 1.3234,
+      "calibration_ece": 0.0074,
+      "train_time_sec": 1919.6
+    }
+  ]
+}

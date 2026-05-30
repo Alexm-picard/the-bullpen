@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "artifact_name": "arsenal_comparison",
+  "models": [
+    {
+      "name": "LGBM + Arsenal",
+      "accuracy": 0.38588348316537685,
+      "top2_accuracy": 0.6207469721343389,
+      "logloss": 1.660094221235277,
+      "calibration_ece": 0.023220095933220213,
+      "train_time_sec": 67.93151649299944
+    },
+    {
+      "name": "LGBM + Hard Mask",
+      "accuracy": 0.38589193498857594,
+      "top2_accuracy": 0.6207357030367401,
+      "logloss": 2.3735227128192165,
+      "calibration_ece": 0.02951212812399972,
+      "train_time_sec": 67.93151649299944
+    },
+    {
+      "name": "LGBM + Soft Prior",
+      "accuracy": 0.38234921243094155,
+      "top2_accuracy": 0.6047716176507876,
+      "logloss": 2.338106103841512,
+      "calibration_ece": 0.06789453236761257,
+      "train_time_sec": 67.93151649299944
+    },
+    {
+      "name": "Hybrid",
+      "accuracy": 0.4477170216901956,
+      "top2_accuracy": 0.7232041988657654,
+      "logloss": 1.309639928905606,
+      "calibration_ece": 0.0076254285962259,
+      "train_time_sec": 1785.2464575899994
+    },
+    {
+      "name": "Hybrid + Arsenal",
+      "accuracy": 0.44062171611452783,
+      "top2_accuracy": 0.7111561248954087,
+      "logloss": 1.3984161271282334,
+      "calibration_ece": 0.012475156006297623,
+      "train_time_sec": 2032.2777971350006
+    },
+    {
+      "name": "Hybrid + Hard Mask",
+      "accuracy": 0.439815975636211,
+      "top2_accuracy": 0.7073373094466028,
+      "logloss": 2.146160349639926,
+      "calibration_ece": 0.016536673379236082,
+      "train_time_sec": 2032.2777971350006
+    },
+    {
+      "name": "Hybrid + Soft Prior",
+      "accuracy": 0.41474364211599846,
+      "top2_accuracy": 0.6723101368350176,
+      "logloss": 2.0442432565993203,
+      "calibration_ece": 0.06139929659791263,
+      "train_time_sec": 2032.2777971350006
+    }
+  ]
+}

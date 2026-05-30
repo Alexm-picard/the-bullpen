@@ -1,0 +1,45 @@
+{
+  "stage": 3,
+  "shap_importance": {
+    "sequence+entity_embedding": 1.9349339262908976,
+    "pitcher_cu_pct": 0.1753344863101317,
+    "pitcher_sl_pct": 0.14480017228597877,
+    "base_state": 0.11999536138227805,
+    "pitcher_ch_pct": 0.10060811241119873,
+    "batter_stand_int": 0.08212593266022103,
+    "pitcher_avg_arm_angle": 0.07579488865759021,
+    "pitcher_ff_pct": 0.051023510801510234,
+    "pitcher_throws_int": 0.03742334138973075,
+    "pitch_number_in_ab": 0.021045524542955895,
+    "count_balls": 0.018745264698995946,
+    "count_strikes": 0.015121012764712798,
+    "score_diff_live": 0.014894504399840735,
+    "prev_pitch_result_int": 0.014136722285751491,
+    "at_bat_number_in_game": 0.009760277432209202,
+    "times_faced_today": 0.009685803931420385,
+    "times_through_order": 0.009415954106760039,
+    "outs": 0.0091051409090788,
+    "prev_pitch_type_int": 0.008328361869656258,
+    "pitcher_avg_extension": 0.008196721306035276,
+    "pitcher_avg_velo": 0.005300894625232125,
+    "batter_strikeout_rate": 0.005125001054443481,
+    "repeat_pitch_type": 0.0045151097269672015,
+    "inning": 0.004261518540188504,
+    "batter_ball_rate": 0.0030823105148318404,
+    "batter_inplay_rate": 0.003040341654578749,
+    "win_expectancy": 0.0007995385965476943,
+    "park_id_int": 0.0001944989826059349
+  },
+  "rookie": {
+    "threshold": 500,
+    "n_clusters": 8,
+    "n_rookie_test": 67050,
+    "n_test": 709906,
+    "rookie_accuracy": {
+      "default": 0.483117076808352,
+      "features": 0.4859358687546607,
+      "embedding": 0.4821476510067114,
+      "features+embedding": 0.4823266219239374
+    }
+  }
+}

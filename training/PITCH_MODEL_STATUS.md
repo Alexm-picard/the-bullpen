@@ -110,6 +110,32 @@ Takeaways:
   familiarity / fatigue signals dominate.
 - This supersedes the earlier provisional (5-epoch buggy) result.
 
+### Four-model accuracy comparison (incl. the staged streak experiment)
+
+Adding the streak/lag features (the staged `final_stage2_boosters.py`) produced a
+**new best — Context + Streak at 45.43%**, beating the prior Hybrid+Context
+champion. All on the 2025 holdout (709,906 pitches):
+
+| Rank | Model                    | Adds                           | **Accuracy** | Top-2  | LogL   | ECE        |
+| ---- | ------------------------ | ------------------------------ | ------------ | ------ | ------ | ---------- |
+| 1 🥇 | **Context + Streak**     | catcher emb + context + streak | **45.43%**   | 72.68% | 1.3172 | 0.0071     |
+| 2    | Hybrid + Context         | V2 pitcher emb + context       | 45.26%       | 72.64% | 1.3125 | 0.0079     |
+| 3    | Catcher-Hybrid + Context | catcher emb + context          | 45.23%       | 72.57% | 1.3141 | **0.0070** |
+| 4    | Catcher-Hybrid (base)    | catcher emb, no context        | 45.23%       | 72.50% | 1.3171 | 0.0072     |
+
+![Four-model accuracy](data/eval/pitch_final/four_model_accuracy.png)
+
+- **Streak features won (+0.20pp over the no-streak catcher model, +0.17pp past
+  Hybrid+Context).** The signal is `prev_pitch_type_int` (SHAP/gain dominate),
+  not the `repeat_pitch_type` counter — "what was the last pitch" >> "how many in
+  a row."
+- SHAP confirms the learned `sequence+entity_embedding` carries the model
+  (mean|SHAP| ≈ 1.93, ~10× the next feature).
+- Rookie prototyping (separate 67,050-pitch subset, not in the table above):
+  substituting the **cluster prototype features** helps rookies (48.31% → 48.59%);
+  substituting the prototype embedding slightly hurts.
+- Regenerate the chart: `uv run python scripts/plot_final_comparison.py`.
+
 ---
 
 ## 3. Performance work (verified correct)
