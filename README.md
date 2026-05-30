@@ -45,6 +45,38 @@ cd ../frontend && npm install && npm run dev
 cd ../training && uv sync && uv run pytest
 ```
 
+## Training the models
+
+Five registry artifacts — three serving models (pre-pitch head, post-pitch
+head, batted-ball MLP) plus their two baselines (pitch LR, batted-ball
+LGBM). Training runs on the self-hosted desktop only (ADR-0006: it needs
+the full 2015–2025 ClickHouse dataset and the GPU); the Mac runs a sampled
+iteration loop. **2026 is holdout-only** (rule 13).
+
+**All at once** — from `training/`, the full sequence (feature table →
+pitch heads + baselines → batted-ball pipeline):
+
+```bash
+# 0. Feature table
+uv run python -m bullpen_training.features.tier_1_2   --min-year 2015 --max-year 2025
+uv run python -m bullpen_training.features.tier_3_form --min-year 2015 --max-year 2025
+# 1–3. Pitch heads + LR baseline (+ ONNX export for the LightGBM heads)
+uv run python -m bullpen_training.pitch.production --model lightgbm   # → pitch_outcome_pre
+uv run python -m bullpen_training.pitch.production --model post       # → pitch_outcome_post
+uv run python -m bullpen_training.pitch.production --model lr         # → LR baseline
+# 4–5. Batted-ball MLP + LGBM baseline (retrodict → MLP → calibrators → gate → LGBM → compare)
+bash scripts/run_2c_overnight.sh
+```
+
+**In sections** — every step above is independent and idempotent, so on a
+box that thermal-throttles you run one, let it cool, run the next; the
+batted-ball orchestrator is itself sectionable stage-by-stage. The full
+procedure — prerequisites, per-stage heat/time table, cooldown cut-points,
+gates, and registration — lives in
+[`docs/runbooks/training-models.md`](docs/runbooks/training-models.md)
+(batted-ball detail in
+[`2c-overnight-pipeline.md`](docs/runbooks/2c-overnight-pipeline.md)).
+
 ## Design + decisions
 
 Most "obvious" alternatives have been rejected with written rationale —
