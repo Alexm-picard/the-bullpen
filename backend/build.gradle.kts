@@ -52,6 +52,11 @@ dependencies {
     implementation("com.clickhouse:clickhouse-http-client:0.7.2")
     implementation("org.apache.httpcomponents.client5:httpclient5:5.4.1")
 
+    // springdoc: auto-generate the OpenAPI 3 spec from the @RestController surface,
+    // served at /v3/api-docs (+ Swagger UI at /swagger-ui.html). The spec is the
+    // contract Schemathesis runs against in CI to catch contract↔impl drift.
+    implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.4")
+
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
     testImplementation("org.testcontainers:junit-jupiter:1.20.6")

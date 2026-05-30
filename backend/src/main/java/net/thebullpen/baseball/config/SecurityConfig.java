@@ -10,6 +10,8 @@ import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.firewall.HttpStatusRequestRejectedHandler;
+import org.springframework.security.web.firewall.RequestRejectedHandler;
 
 /**
  * Authentication boundary for the Spring app — closes Risk Register G10 by splitting two URL
@@ -52,6 +54,18 @@ public class SecurityConfig {
         .formLogin(form -> form.disable())
         .logout(logout -> logout.disable())
         .build();
+  }
+
+  /**
+   * Return 400 (not the default 500) when Spring Security's {@code StrictHttpFirewall} rejects a
+   * malformed request — e.g. a header or path with control characters. A rejected request is a
+   * client error, so a 4xx is correct; the default surfaces {@code RequestRejectedException} as a
+   * 500 because it's thrown in the filter chain, outside MVC exception handling. (Found by the
+   * Schemathesis contract job, S1f.)
+   */
+  @Bean
+  public RequestRejectedHandler requestRejectedHandler() {
+    return new HttpStatusRequestRejectedHandler();
   }
 
   @Bean

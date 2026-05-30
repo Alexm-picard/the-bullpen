@@ -50,6 +50,23 @@ class OpsControllerTest {
   }
 
   @Test
+  void typeMismatchOnPathVar_mapsTo400_notServerError() {
+    // Regression for the Schemathesis-found bug (S1f): a non-numeric {versionId}
+    // path variable raised MethodArgumentTypeMismatchException → unhandled → 500.
+    // The ApiErrorAdvice handler must map it to a 400 client error. (Direct call:
+    // standalone MockMvc doesn't route type-conversion exceptions to the advice
+    // the way the full DispatcherServlet does — the Schemathesis CI job covers
+    // the end-to-end path.)
+    var ex =
+        new org.springframework.web.method.annotation.MethodArgumentTypeMismatchException(
+            "notanumber", Long.class, "versionId", null, new NumberFormatException());
+    var response = new ApiErrorAdvice().handleTypeMismatch(ex);
+    org.junit.jupiter.api.Assertions.assertEquals(400, response.getStatusCode().value());
+    org.junit.jupiter.api.Assertions.assertEquals(
+        "invalid_input", java.util.Objects.requireNonNull(response.getBody()).error().code());
+  }
+
+  @Test
   void drift_returns_repo_rows_for_named_model() throws Exception {
     Instant now = Instant.parse("2026-05-25T12:00:00Z");
     when(driftRepo.findAllForModel("pitch_outcome_pre"))

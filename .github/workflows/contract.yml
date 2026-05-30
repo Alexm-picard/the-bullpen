@@ -1,0 +1,77 @@
+name: contract
+
+# Schemathesis API contract test (plan S1f): boots the Spring `api` profile and
+# fuzzes every operation declared in the springdoc-generated OpenAPI spec
+# (/v3/api-docs), asserting the implementation never returns a 5xx for an input
+# the schema permits. This is the high-signal, low-flake contract check — full
+# schema-conformance would need the spec enriched with the 4xx error responses
+# (tracked as a follow-up). It already caught two real "500 on malformed input"
+# bugs (non-numeric path var; firewall-rejected header), now fixed + regression-
+# tested.
+on:
+  push:
+    branches: [main]
+    paths:
+      ['backend/**', 'contracts/**', 'training/**', '.github/workflows/contract.yml']
+  pull_request:
+    paths: ['backend/**', 'contracts/**']
+
+jobs:
+  schemathesis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      # The toy batted-ball model must exist so POST /v1/predict/batted-ball serves
+      # (200) instead of 503 — ToyBattedBallInference loads ../training/artifacts/_toy/v0.
+      - name: Sync training deps
+        working-directory: training
+        run: uv sync --frozen
+      - name: Generate toy model artifacts
+        working-directory: training
+        run: uv run python -m bullpen_training.battedball.generate_ci_artifacts --write-fixture
+
+      - name: Build bootJar
+        working-directory: backend
+        run: ./gradlew bootJar --no-daemon
+
+      - name: Boot the api profile (ClickHouse disabled) + wait for health
+        working-directory: backend
+        env:
+          THEBULLPEN_ADMIN_BASIC_AUTH: ci:ci
+        run: |
+          JAR="$(ls build/libs/*.jar | grep -v plain | head -1)"
+          java -jar "$JAR" \
+            --spring.profiles.active=api \
+            --bullpen.clickhouse.enabled=false \
+            --server.port=8080 > /tmp/api.log 2>&1 &
+          echo "API_PID=$!" >> "$GITHUB_ENV"
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8080/actuator/health >/dev/null 2>&1; then
+              echo "api up after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "API did not become healthy:"; tail -40 /tmp/api.log; exit 1
+
+      - name: Schemathesis — no 5xx on schema-valid input
+        run: |
+          uvx --from schemathesis schemathesis run http://localhost:8080/v3/api-docs \
+            --exclude-path-regex '(/v1/admin|/v1/predict/pitch|/v1/predict/batted-ball/all-parks)' \
+            --checks not_a_server_error \
+            --max-examples 30
+
+      - name: API log tail on failure
+        if: failure()
+        run: tail -60 /tmp/api.log || true
+      - name: Stop API
+        if: always()
+        run: kill "${API_PID}" 2>/dev/null || true

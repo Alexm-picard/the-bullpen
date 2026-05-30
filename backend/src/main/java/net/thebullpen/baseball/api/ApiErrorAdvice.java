@@ -16,6 +16,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
@@ -90,6 +91,20 @@ public class ApiErrorAdvice {
   @ExceptionHandler(IllegalArgumentException.class)
   public ResponseEntity<ApiError> handleIllegalArgument(IllegalArgumentException ex) {
     ApiError body = ApiError.of("invalid_input", ex.getMessage(), correlationId());
+    return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+  }
+
+  /**
+   * A path/query variable that can't bind to its declared type — e.g. a non-numeric {@code
+   * versionId} on {@code /v1/ops/registry/{modelName}/{versionId}}. Spring throws this during
+   * argument resolution; without a handler it falls through to the generic 500. A malformed path
+   * variable is a client error, so map it to 400. (Found by the Schemathesis contract job, S1f.)
+   */
+  @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+  public ResponseEntity<ApiError> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+    String message =
+        "path or query parameter '" + ex.getName() + "' has an invalid value for its type";
+    ApiError body = ApiError.of("invalid_input", message, correlationId());
     return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
   }
 
