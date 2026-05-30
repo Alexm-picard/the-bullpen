@@ -88,6 +88,23 @@ RAW_STATCAST_COLUMNS: tuple[str, ...] = (
     "pfx_z",
     "release_spin_rate",
     "spin_axis",
+    # V012 — expanded columns for advanced pitch prediction.
+    "fielder_2",
+    "n_thruorder_pitcher",
+    "at_bat_number",
+    "n_priorpa_thisgame",
+    "home_score",
+    "away_score",
+    "bat_score_diff",
+    "delta_home_win_exp",
+    "delta_run_exp",
+    "home_win_exp",
+    "effective_speed",
+    "release_extension",
+    "arm_angle",
+    "if_fielding_alignment",
+    "of_fielding_alignment",
+    "zone",
 )
 
 PK_COLUMNS: tuple[str, ...] = ("game_pk", "at_bat_index", "pitch_number")
@@ -104,6 +121,9 @@ _LOW_CARDINALITY_STR_COLUMNS: tuple[str, ...] = (
     "events",
     "type",
     "bb_type",
+    # V012 expanded
+    "if_fielding_alignment",
+    "of_fielding_alignment",
 )
 
 _INTEGER_NULLABLE_COLUMNS: tuple[str, ...] = (
@@ -114,6 +134,15 @@ _INTEGER_NULLABLE_COLUMNS: tuple[str, ...] = (
     "on_1b",
     "on_2b",
     "on_3b",
+    # V012 expanded
+    "fielder_2",
+    "n_thruorder_pitcher",
+    "at_bat_number",
+    "n_priorpa_thisgame",
+    "home_score",
+    "away_score",
+    "bat_score_diff",
+    "zone",
 )
 
 _FLOAT_NULLABLE_COLUMNS: tuple[str, ...] = (
@@ -134,6 +163,13 @@ _FLOAT_NULLABLE_COLUMNS: tuple[str, ...] = (
     "pfx_z",
     "release_spin_rate",
     "spin_axis",
+    # V012 expanded
+    "delta_home_win_exp",
+    "delta_run_exp",
+    "home_win_exp",
+    "effective_speed",
+    "release_extension",
+    "arm_angle",
 )
 
 # Pybaseball's column names differ from the V002 schema in a few places.
@@ -141,6 +177,7 @@ _FLOAT_NULLABLE_COLUMNS: tuple[str, ...] = (
 # rename source columns at ingest time.
 SOURCE_ALIASES: dict[str, str] = {
     "at_bat_index": "at_bat_number",
+    "n_priorpa_thisgame": "n_priorpa_thisgame_player_at_bat",
 }
 
 # Regular-season month bounds. Postseason ignored in v1 (filter by game_type='R'
