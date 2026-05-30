@@ -833,11 +833,19 @@ Three reference layouts anchor the system (styling in §8):
 Conspicuously not in scope: leaderboards, team pages, social features,
 comments, fantasy integration, betting, mobile app, dark mode toggle, i18n.
 
-The "five pages LOCKED" decision holds — the number of pages did not grow.
-What changed: the former _Player Lookup_ page absorbs the matchup-report
-layout and becomes the identity-defining surface. The _Park Explorer_
-remains the marquee **interactive** build; the _Matchup Report_ is the
-marquee **look**.
+The "five pages LOCKED" decision holds — the number of _content_ pages did
+not grow. What changed: the former _Player Lookup_ page absorbs the
+matchup-report layout and becomes the identity-defining surface. The _Park
+Explorer_ remains the marquee **interactive** build; the _Matchup Report_ is
+the marquee **look**.
+
+> **Note (2026-05-30, decision [133] redesign):** the implemented SPA also
+> serves a `/home` route. It is the scouting-packet **cover sheet** — an
+> index/entry surface (masthead, tonight's-slate table, model-fleet ribbon,
+> a featured-matchup teaser into the Matchup Report) — not a sixth content
+> page. It carries no analytics the five pages above don't already own; it
+> is the front of the packet the other five pages live inside. The five-page
+> content lock is intact.
 
 ### Component vocabulary (the scouting-report kit)
 

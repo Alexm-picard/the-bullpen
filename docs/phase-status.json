@@ -3,7 +3,7 @@
   "_doc": "Single source of truth for phase progress. Hand-edited as work completes. /status reads this. Bump fields honestly \u2014 surgical cuts come from honest tracking.",
   "current_phase": "5",
   "weekly_hours_target": 13,
-  "last_updated": "2026-05-25T17:50Z",
+  "last_updated": "2026-05-30T17:10Z",
   "phases": [
     {
       "id": "0",
@@ -189,11 +189,13 @@
       "exit_criteria_checklist": [
         {
           "label": "Full feature pipeline with strict temporal cutoffs",
-          "done": false
+          "done": true,
+          "details": "Verified on disk 2026-05-30 audit. Feature tiers + streaming temporal cutoff implemented under training/src/bullpen_training/ (features/ + eval/leakage_guards.py); the pre-pitch head trained via 4-fold rolling-origin CV on ~4M rows/fold with proper train<val<test date ordering (eval/cv_harness.py)."
         },
         {
           "label": "Four leakage tests in CI (required-status, blocks merge)",
-          "done": false
+          "done": true,
+          "details": "Verified 2026-05-30. All four present at training/tests/leakage/ (test_no_future_contamination, test_shuffled_target, test_calendar_date_trace, test_id_consistency) and gated REQUIRED in .github/workflows/training.yml (leakage-tests job, with a skip-marker guard requiring an ADR reference)."
         },
         {
           "label": "Property tests for the leakage detector itself (Hypothesis-style)",
@@ -212,15 +214,18 @@
         },
         {
           "label": "Rolling-origin temporal CV harness (4 folds 2015\u20132025)",
-          "done": false
+          "done": true,
+          "details": "Verified 2026-05-30. training/src/bullpen_training/eval/cv_harness.py + metrics.py + artifact.py; pitch_outcome_pre/v1 eval artifact shows n_folds=4 with monotone train<val<test date windows (fold-1 train 3.86M / val 710K / test 708K rows)."
         },
         {
           "label": "Pre-pitch head: trained, calibrated, registered, served at /predict/pitch",
-          "done": false
+          "done": true,
+          "details": "Verified 2026-05-30. training/artifacts/pitch_outcome_pre/v1/eval/metrics.json: 4-fold rolling-origin CV, mean ECE 0.0035 (gate <0.02), mean log-loss 1.457, mean Brier 0.148. Served via backend/.../api/PredictPitchController (@RequestMapping /v1/predict)."
         },
         {
           "label": "Post-pitch head: separate registry entry, served",
-          "done": false
+          "done": true,
+          "details": "Verified 2026-05-30. training/artifacts/pitch_outcome_post/v1/ present with its own eval/metrics.json; separate registry entry per discipline rule 9 (two heads = two models). Served via the same PredictPitchController path."
         },
         {
           "label": "Physics simulator (Nathan drag/Magnus ODE, RK4)",
@@ -234,15 +239,18 @@
         },
         {
           "label": "Multi-output MLP: shared backbone + 30 per-park heads + 30 isotonic calibrators",
-          "done": false
+          "done": false,
+          "details": "Code-complete + smoke-validated; the per-park MLP + LGBM + calibrator code merged from the desktop 2026-05-30 (commits 9d4584a..eceb439). Full-data GPU training + registration is the remaining desktop hand-off (plan Sprint 2). Artifacts battedball_mlp_v1/ + batted_ball_lgbm_baseline/v1/ exist; final 'done' awaits per-park ECE<0.02 post-calibration on full data + registry row."
         },
         {
           "label": "LR baseline registered for each role (no primary without baseline)",
-          "done": false
+          "done": false,
+          "details": "Pitch LR baseline present at pitch_outcome_lr_baseline/v1-smoke (smoke, needs full v1). Batted-ball LR baseline co-registration lands with the Sprint-2 full-data close. Pre/post pitch heads have full eval; the baseline registration is the gap."
         },
         {
           "label": "ECE < 0.02 on test data per model",
-          "done": false
+          "done": false,
+          "details": "Pre-pitch head PASSES (mean ECE 0.0035, verified 2026-05-30). Post-pitch head eval present (verify value). Batted-ball per-park ECE<0.02 post-calibration is the remaining gate, pending the Sprint-2 full-data training run."
         }
       ],
       "mvp_cuts": [
@@ -259,7 +267,7 @@
           "cost": "PAINFUL \u2014 model weakened. Document honestly."
         }
       ],
-      "notes": "(2026-05-25) 2a + 2b shipped with full eval artifacts and Spring serving. 2c (batted-ball physics + 30-park MLP) is the in-progress remainder; user is continuing it on the desktop. All 2a/2b leaves carry status-log entries dated 2026-05-24."
+      "notes": "(2026-05-30 audit + desktop merge) 2a + 2b confirmed done on disk: pre-pitch head 4-fold rolling-origin CV, ECE 0.0035 (<0.02); post-pitch head separate registry entry; both served via PredictPitchController. All 4 leakage tests gate REQUIRED in CI; rolling-CV harness present. Desktop merge (commits 9d4584a..eceb439) brought the per-park MLP/LGBM + calibration + 56-col Statcast pull + pitch-comparison transformers + discipline rule 13 (2026 = holdout-only). Phase 2 close-out remaining (plan Sprints 1–2): (a) full-data batted-ball training+registration on the desktop GPU + per-park ECE<0.02; (b) full LR baselines per role; (c) engineering gaps — coverage floor 75%, Schemathesis contract tests, Hypothesis property tests for the leakage detector. (2026-05-25) 2a + 2b shipped with full eval artifacts and Spring serving; 2c was code-complete + smoke-validated."
     },
     {
       "id": "3",
@@ -429,7 +437,7 @@
           "cost": "About becomes minimal-functional"
         }
       ],
-      "notes": "(2026-05-25) All 6 sub-phases shipped in one autonomous session: 4a tokens + Mantine theme + hex lint \u00b7 4b player lookup (search + profile + calibration) \u00b7 4c park explorer (30 SVGs + grid + sliders + polished tiles) \u00b7 4d game live (state machine + pitch feed) \u00b7 4e ops dashboard (5 tabs) \u00b7 4f about/methodology. Frontend tests: 1 \u2192 93. Backend tests: 305 \u2192 376."
+      "notes": "(2026-05-30) Frontend fully rebuilt to the scouting-report visual identity (decision [133]): all six routes (home cover-sheet / matchup report / parks factors-appendix / games live-variant + /games/:id / ops back-of-packet / about colophon) on the new design system; shared <ReportSheet> shell + StatTable + cellColor primitives; token discipline enforced (no hex outside src/design/, lint:hex-codes green); 390+ frontend tests; initial JS ~151 kB gz / 300 kB budget. Vercel security headers (COOP/CORP/CSP frame-ancestors) live. TS strict flags partial (noUnusedLocals/Parameters set; noImplicitReturns + noUncheckedIndexedAccess pending \u2014 plan Sprint 1). (2026-05-25) Original 4a\u20134f build: 4a tokens + Mantine theme + hex lint \u00b7 4b player lookup \u00b7 4c park explorer \u00b7 4d game live \u00b7 4e ops dashboard \u00b7 4f about/methodology."
     },
     {
       "id": "5",
