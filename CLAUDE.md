@@ -4,16 +4,44 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project state
 
-**Pre-implementation.** No code, no build system, no tests yet. The repo currently
-contains three planning documents under `docs/` that are the authoritative source of truth:
+**Implemented and operating** — well past the planning stage. Backend, training, and
+frontend all carry real, tested code (≈180 Java / ≈181 Python / ≈141 TS·TSX files, 129
+commits as of 2026-05-30). The three planning docs under `docs/` remain the authoritative
+source of truth for **design rationale and locked decisions** — _not_ for current build
+status, which lives in `docs/phase-status.json` (read by `/status`):
 
 - `docs/design.md` — system design, architecture, every locked technical choice with rationale
-- `docs/plan.md` — phased build plan (Phase 0 → Phase 5), exit criteria per phase, soft-cut priority list
+- `docs/plan.md` — phased build plan (Phase 0 → Phase 6), exit criteria per phase, soft-cut priority list
 - `docs/decisions.md` — chronological numbered log of every locked decision with one-line rationale
 
 **Read all three before doing anything substantive.** They were produced by a long planning
 session and most "obvious" alternatives have already been considered and rejected
 (see `docs/design.md` §10 "Rejected Alternatives").
+
+### Phase progress (source of truth: `docs/phase-status.json`)
+
+- **Phase 0 — Foundation**: done (WSL2 host, systemd units, Cloudflare Tunnel, CI, `deploy.sh`)
+- **Phase 1 — Vertical slice**: done (one prediction end-to-end in the browser)
+- **Phase 2 — Real models**: in progress (pitch pre/post heads + LR baseline done; batted-ball MLP / physics / retrodiction landing in 2c)
+- **Phase 3 — ML systems wrapper**: done (registry, A/B router, drift jobs, retraining queue, async prediction logger)
+- **Phase 4 — Frontend build-out**: done (player lookup, park explorer, game-live, ops dashboard, about)
+- **Phase 5 — Polish + operate**: in progress (hardening sweeps, perf/a11y/bundle, public launch)
+- **Phase 6 — Hiring readiness**: in progress (README, drift postmortem, OSS targets)
+
+### Current reality vs. headline claims — keep this honest when editing docs
+
+- **Live data is narrow.** Only `/games/:id` is wired to live backend data (the player
+  search / history / reliability components also hit the API). `/`, `/parks`, `/ops`, and
+  `/about` render from `frontend/src/data/*-fixtures.ts` — they are design-system
+  showcases in v1, not live views. The Ops dashboard is fixtures despite being a
+  do-not-cut item (rule 4); wiring it to the existing `/v1/ops/*` endpoints is open work.
+- **Live game poller is wired but not running.** The controller surface + `GameStateMachine`
+  exist and are tested; the producer side (MLB Stats API client + per-game poll) is planned
+  in `docs/runbooks/live-data-setup.md` and tracked in issue #1.
+- **Coverage is not measured.** ~379 backend `@Test` + ~400 frontend tests are real, but
+  there is no JaCoCo (backend) and no vitest coverage config (frontend); training coverage
+  is ~50% behind a non-blocking gate. Do **not** cite a coverage percentage you cannot
+  reproduce from CI (the README's "~95%" is unbacked — fix, don't propagate).
 
 ## What this project is
 
@@ -27,21 +55,21 @@ matters — see `design.md` §1.
 
 ## Locked technology choices (do not re-litigate without strong cause)
 
-| Layer         | Choice                                                                                                                                           |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Backend       | **Java 21 + Spring Boot 3.x**, virtual threads, Spring MVC (not WebFlux). Strict Java, no Kotlin.                                                |
-| Deployment    | One JAR, two profiles (`api`, `worker`), two systemd units                                                                                       |
-| Inference     | **ONNX Runtime Java** in-process. No Python sidecar, no live RPC.                                                                                |
-| Training      | Python 3.11+, off the serving path. Python ↔ Java contract is file-based (ONNX + JSON metadata + `feature_pipeline.json` + Parquet snapshot).    |
-| Analytical DB | **ClickHouse** (Docker) — pitches, drift metrics, prediction logs                                                                                |
-| App state DB  | **SQLite** + Flyway — model registry, A/B config, retraining queue                                                                               |
-| Frontend      | **React 18 + TypeScript + Vite**, pure SPA. **TanStack Query** for server state, plain React Context for client state. Polling, not WebSockets.  |
-| UI            | **Mantine + Tailwind**. Editorial-data identity (Inter / JetBrains Mono / Source Serif 4).                                                       |
-| Hosting       | Self-hosted in WSL2 (Ubuntu 24.04 LTS) on personal desktop. Cloudflare Tunnel for public access. Frontend on Vercel.                             |
-| Process mgmt  | systemd (bare-metal for app, Docker for stateful services)                                                                                       |
-| Observability | Prometheus + Grafana + Actuator (internal); Uptime Robot + Healthchecks.io + Discord webhook (external)                                          |
-| Models        | LightGBM (pitch outcome, multinomial); multi-output MLP with shared backbone + 30 per-park heads (batted-ball); LR baseline always co-registered |
-| Eval          | Rolling-origin temporal CV, 4 folds 2015–2025. **Never** random splits. Within-fold split granularity is by date — never by game or pitch.       |
+| Layer         | Choice                                                                                                                                                                                                             |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Backend       | **Java 21 + Spring Boot 3.x**, virtual threads, Spring MVC (not WebFlux). Strict Java, no Kotlin.                                                                                                                  |
+| Deployment    | One JAR, two profiles (`api`, `worker`), two systemd units                                                                                                                                                         |
+| Inference     | **ONNX Runtime Java** in-process. No Python sidecar, no live RPC.                                                                                                                                                  |
+| Training      | Python 3.11+, off the serving path. Python ↔ Java contract is file-based (ONNX + JSON metadata + `feature_pipeline.json` + Parquet snapshot).                                                                      |
+| Analytical DB | **ClickHouse** (Docker) — pitches, drift metrics, prediction logs                                                                                                                                                  |
+| App state DB  | **SQLite** + Flyway — model registry, A/B config, retraining queue                                                                                                                                                 |
+| Frontend      | **React 19 + TypeScript + Vite**, pure SPA (React 19 in-repo; the "18" floor in early decisions was upgraded). **TanStack Query** for server state, plain React Context for client state. Polling, not WebSockets. |
+| UI            | **Mantine 9 + Tailwind 4**. Editorial-data identity (Inter / JetBrains Mono / Source Serif 4).                                                                                                                     |
+| Hosting       | Self-hosted in WSL2 (Ubuntu 24.04 LTS) on personal desktop. Cloudflare Tunnel for public access. Frontend on Vercel.                                                                                               |
+| Process mgmt  | systemd (bare-metal for app, Docker for stateful services)                                                                                                                                                         |
+| Observability | Prometheus + Grafana + Actuator (internal); Uptime Robot + Healthchecks.io + Discord webhook (external)                                                                                                            |
+| Models        | LightGBM (pitch outcome, multinomial); multi-output MLP with shared backbone + 30 per-park heads (batted-ball); LR baseline always co-registered                                                                   |
+| Eval          | Rolling-origin temporal CV, 4 folds 2015–2025. **Never** random splits. Within-fold split granularity is by date — never by game or pitch.                                                                         |
 
 Already-rejected alternatives (with reasoning in `design.md` §10): LLM for pitch outcome,
 PINN for ball-flight, MLflow, microservices, WebSockets, Next.js/SSR, Airflow, ESPN as
@@ -94,9 +122,10 @@ cut in a different order without explicit reasoning:
 4. Drop Game/Live view (~12h)
 5. Drop physics retrodiction for batted-ball, fall back to per-park naive subsets (~25h, **weakens model significantly — document honestly**)
 
-## Where to put things (once code exists)
+## Where to put things
 
-Per `design.md` §6, the planned Spring module layout is:
+Per `design.md` §6, the Spring module layout (in place under
+`backend/src/main/java/net/thebullpen/baseball/`) is:
 
 ```
 net.thebullpen.baseball/
@@ -182,8 +211,8 @@ Most commands assume the working directory is the project root unless noted.
 - ClickHouse + Grafana + Prometheus: `docker compose -f infra/docker-compose.yml up -d`
 - Stop: `docker compose -f infra/docker-compose.yml down` (denied by default in settings.json — pass through manually if needed)
 
-(Update commands as scaffolding lands. Hooks auto-format Java/Python/TS on every edit;
-you do not need to run formatters manually for normal editing.)
+(Scaffolding is in place; keep these commands current as it evolves. Hooks auto-format
+Java/Python/TS on every edit; you do not need to run formatters manually for normal editing.)
 
 ## Conventions and tooling
 
