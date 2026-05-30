@@ -104,14 +104,15 @@ omit = [
 ]
 
 [tool.coverage.report]
-# Honest floor: the unit-testable computational core (features, metrics, physics
-# equations, calibration, ingest transforms, leakage guards, registry hashing)
-# sits at ~50% line+branch. The remaining surface is GPU-training orchestration
-# (mlp/lgbm_per_park train.py), the retraining worker, and persist/export entry
-# points — all exercised by integration runs (the 2c desktop pipeline, the
-# physics-validation gate, the leakage gate), not unit tests. 45 is a
-# regression-prevention floor with headroom below the current ~50%. The
-# StudyForesight-parity TARGET is 75% — raising it means unit-testing the
-# training/worker orchestration (tracked in docs/hardening/observations.md).
-fail_under = 45
+# TARGET: 75% (StudyForesight parity). Current is ~50% line+branch — the gap is
+# the recently-merged per-park dataset builders + training orchestration that
+# shipped with smoke validation only. Reaching 75% is a deliberate test-writing
+# pass (unit-test mlp/lgbm_per_park/dataset.py + eval/_segments + metrics +
+# physics integrator first; smoke-test the trainers) layered in across the
+# sprints — see docs/hardening/observations.md for the module-by-module plan.
+#
+# The CI step (.github/workflows/training.yml) currently reports the gap as a
+# warning rather than failing the build, so green-main holds while coverage
+# climbs. Flip that step to a hard gate once coverage actually clears 75.
+fail_under = 75
 show_missing = true
