@@ -56,14 +56,28 @@ from bullpen_training.battedball.mlp.dataset import (
 SPEARMAN_GATE: Final[float] = 0.80
 COORS_VS_OAKLAND_GAP_GATE: Final[float] = 0.05
 
-# Canonical launch + game state used for the cross-park rank test.
-# 110 mph / 28 deg / 0 spray = a barreled fly to dead CF.
+# Representative barrel inputs that cover different spray angles so the
+# sanity test captures asymmetric fence profiles (e.g. NYY's short left
+# field porch at -30°, SF's deep right-center at +25°). A single dead-CF
+# input misses most of the park-factor signal because center-field
+# distances are similar across parks (~390-415 ft).
+CANONICAL_INPUTS: Final[list[dict[str, float | str | int]]] = [
+    {"speed": 110.0, "angle": 28.0, "spray": -35.0, "dist": 380.0, "stand": "R", "base": 0, "outs": 1},
+    {"speed": 108.0, "angle": 26.0, "spray": -20.0, "dist": 395.0, "stand": "R", "base": 0, "outs": 1},
+    {"speed": 110.0, "angle": 28.0, "spray": 0.0, "dist": 410.0, "stand": "R", "base": 0, "outs": 1},
+    {"speed": 108.0, "angle": 26.0, "spray": 20.0, "dist": 395.0, "stand": "L", "base": 0, "outs": 1},
+    {"speed": 110.0, "angle": 28.0, "spray": 35.0, "dist": 380.0, "stand": "L", "base": 0, "outs": 1},
+    {"speed": 105.0, "angle": 30.0, "spray": -10.0, "dist": 400.0, "stand": "R", "base": 0, "outs": 1},
+    {"speed": 105.0, "angle": 30.0, "spray": 10.0, "dist": 400.0, "stand": "L", "base": 0, "outs": 1},
+]
+
+# Legacy single-canonical for backwards compat in unit tests.
 CANONICAL_LAUNCH_SPEED_MPH: Final[float] = 110.0
 CANONICAL_LAUNCH_ANGLE_DEG: Final[float] = 28.0
 CANONICAL_SPRAY_ANGLE_DEG: Final[float] = 0.0
-CANONICAL_HIT_DISTANCE_FT: Final[float] = 410.0  # 110/28 carry at sea level
+CANONICAL_HIT_DISTANCE_FT: Final[float] = 410.0
 CANONICAL_STAND: Final[str] = "R"
-CANONICAL_BASE_STATE: Final[int] = 0  # bases empty
+CANONICAL_BASE_STATE: Final[int] = 0
 CANONICAL_OUTS: Final[int] = 1
 
 
@@ -125,6 +139,19 @@ def canonical_features() -> np.ndarray:
     return feats
 
 
+def _build_features(inp: dict[str, float | str | int]) -> np.ndarray:
+    """Build a 15-dim feature vector from an input dict."""
+    feats = np.zeros(len(FEATURE_NAMES), dtype=np.float32)
+    feats[0] = float(inp["speed"])
+    feats[1] = float(inp["angle"])
+    feats[2] = float(inp["spray"])
+    feats[3] = float(inp["dist"])
+    feats[4:6] = stand_one_hot(str(inp["stand"]))
+    feats[6:14] = base_state_one_hot(int(inp["base"]))
+    feats[14] = float(inp["outs"])
+    return feats
+
+
 # --- prediction ------------------------------------------------------------
 
 
@@ -135,24 +162,26 @@ def cross_park_p_hr(
     *,
     calibrators: ParkCalibrators | None = None,
 ) -> dict[str, float]:
-    """Run the model on the canonical input and return {park_id: P(HR)}.
+    """Run the model on multiple representative barrel inputs and return
+    the average {park_id: P(HR)} across all of them.
 
-    If ``calibrators`` is supplied the post-calibration P(HR) is
-    returned (matches what production serving emits). Otherwise the
-    raw softmax is used.
+    Using multiple spray angles captures asymmetric fence profiles that
+    a single dead-center input misses entirely.
     """
     if len(park_order) != model.n_parks:
         raise ValueError(f"park_order length {len(park_order)} != model.n_parks {model.n_parks}")
-    feats_raw = canonical_features().reshape(1, -1)
-    feats = scaler.transform(feats_raw)
+
+    all_feats = np.stack([_build_features(inp) for inp in CANONICAL_INPUTS], axis=0)
+    feats = scaler.transform(all_feats)
     model.eval()
     with torch.no_grad():
-        logits = model(torch.from_numpy(feats))  # (1, n_parks, 5)
+        logits = model(torch.from_numpy(feats))  # (K, n_parks, 5)
         probs = F.softmax(logits, dim=-1).numpy()
     if calibrators is not None:
         probs = transform(calibrators, probs)
-    # HR is the 5th outcome (index 4) in our outcome_order.
-    return {pid: float(probs[0, i, 4]) for i, pid in enumerate(park_order)}
+    # Average P(HR) across all K canonical inputs per park.
+    mean_p_hr = probs[:, :, 4].mean(axis=0)  # (n_parks,)
+    return {pid: float(mean_p_hr[i]) for i, pid in enumerate(park_order)}
 
 
 # --- monotonicity check ----------------------------------------------------

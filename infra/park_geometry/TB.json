@@ -4,9 +4,11 @@
   "name": "Tropicana Field",
   "altitude_m": 11.0,
   "default_atmosphere": {
-    "temp_c": 20.0,
+    "temp_c": 22.0,
     "pressure_hpa": null,
-    "humidity_pct": 50.0
+    "humidity_pct": 50,
+    "wind_speed_mph": 0,
+    "wind_bearing_deg": 0
   },
   "centerline_bearing_deg": 45.0,
   "fence_polyline": [

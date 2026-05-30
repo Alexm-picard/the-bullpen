@@ -23,10 +23,6 @@ from dataclasses import dataclass
 import numpy as np
 from torch.utils.data import Dataset
 
-# Feature / outcome ordering + one-hot helpers live in a torch-free
-# sibling module so the LightGBM baseline (2c.8) and any other consumer
-# can pick them up without dragging torch in transitively (co-loading
-# torch + lightgbm on macOS triggers a double-libomp segfault).
 from bullpen_training.battedball.features_shared import (
     FEATURE_NAMES,
     OUTCOME_NAMES,
@@ -141,6 +137,86 @@ def _query_joined(
     """
 
 
+def _query_count(
+    *,
+    season_from: int,
+    season_to: int,
+    park_order: tuple[str, ...],
+    limit: int | None = None,
+) -> str:
+    """Count the BIPs that the main query will return."""
+    parks = ", ".join(f"'{p}'" for p in park_order)
+    limit_clause = f"LIMIT {limit}" if limit else ""
+    return f"""
+    SELECT count() FROM (
+      SELECT DISTINCT p.game_id, p.at_bat_index, p.pitch_number
+      FROM pitches AS p FINAL
+      JOIN bbip_retrodicted_labels AS r FINAL
+        ON r.game_id = p.game_id
+       AND r.at_bat_index = p.at_bat_index
+       AND r.pitch_number = p.pitch_number
+      WHERE p.description = 'in_play'
+        AND p.launch_speed_mph IS NOT NULL
+        AND p.launch_angle_deg IS NOT NULL
+        AND p.hc_x IS NOT NULL AND p.hc_y IS NOT NULL
+        AND p.hit_distance_ft IS NOT NULL
+        AND toYear(p.game_date) BETWEEN {season_from} AND {season_to}
+        AND r.park_id IN ({parks})
+      {limit_clause}
+    )
+    """
+
+
+def _query_joined_chunk(
+    *,
+    season_from: int,
+    season_to: int,
+    park_order: tuple[str, ...],
+    offset_bips: int,
+    chunk_bips: int,
+) -> str:
+    """SQL for a single chunk of BIPs (LIMIT/OFFSET on the joined rows)."""
+    parks = ", ".join(f"'{p}'" for p in park_order)
+    n_parks = len(park_order)
+    return f"""
+    SELECT
+      toString(p.game_date) AS game_date,
+      toString(p.game_id) AS game_id,
+      toString(p.at_bat_index) AS at_bat_index,
+      toString(p.pitch_number) AS pitch_number,
+      toString(p.launch_speed_mph) AS launch_speed_mph,
+      toString(p.launch_angle_deg) AS launch_angle_deg,
+      toString(p.hc_x) AS hc_x,
+      toString(p.hc_y) AS hc_y,
+      toString(p.hit_distance_ft) AS hit_distance_ft,
+      p.stand AS stand,
+      toString(p.base_state) AS base_state,
+      toString(p.outs) AS outs,
+      r.park_id AS park_id,
+      toString(r.prob_out) AS prob_out,
+      toString(r.prob_1b) AS prob_1b,
+      toString(r.prob_2b) AS prob_2b,
+      toString(r.prob_3b) AS prob_3b,
+      toString(r.prob_hr) AS prob_hr
+    FROM pitches AS p FINAL
+    JOIN bbip_retrodicted_labels AS r FINAL
+      ON r.game_id = p.game_id
+     AND r.at_bat_index = p.at_bat_index
+     AND r.pitch_number = p.pitch_number
+    WHERE p.description = 'in_play'
+      AND p.launch_speed_mph IS NOT NULL
+      AND p.launch_angle_deg IS NOT NULL
+      AND p.hc_x IS NOT NULL AND p.hc_y IS NOT NULL
+      AND p.hit_distance_ft IS NOT NULL
+      AND toYear(p.game_date) BETWEEN {season_from} AND {season_to}
+      AND r.park_id IN ({parks})
+    ORDER BY p.game_date, p.game_id, p.at_bat_index, p.pitch_number,
+             indexOf([{parks}], r.park_id)
+    LIMIT {chunk_bips * n_parks} OFFSET {offset_bips * n_parks}
+    FORMAT TSV
+    """
+
+
 def _run_clickhouse(query: str, *, container: str = "bullpen-clickhouse") -> str:
     res = subprocess.run(
         ["docker", "exec", container, "clickhouse-client", "--query", query],
@@ -174,6 +250,44 @@ def _row_to_features(
     return features
 
 
+def _parse_chunk_into_arrays(
+    tsv: str,
+    n_parks: int,
+    n_outcomes: int,
+    park_index: dict[str, int],
+    features_out: np.ndarray,
+    labels_out: np.ndarray,
+    write_offset: int,
+) -> int:
+    """Parse a TSV chunk directly into pre-allocated arrays. Returns the
+    number of BIPs written."""
+    lines = tsv.strip().split("\n")
+    if not lines or not lines[0]:
+        return 0
+    rows = [line.split("\t") for line in lines]
+    n_rows = len(rows)
+    assert n_rows % n_parks == 0, (
+        f"chunk row count {n_rows} not divisible by n_parks {n_parks}"
+    )
+    n_bips = n_rows // n_parks
+    for i in range(n_bips):
+        block = rows[i * n_parks : (i + 1) * n_parks]
+        bip_idx = write_offset + i
+        features_out[bip_idx] = _row_to_features(
+            block[0][4], block[0][5], block[0][6], block[0][7],
+            block[0][8], block[0][9], block[0][10], block[0][11],
+        )
+        for row in block:
+            pid = row[12]
+            idx = park_index[pid]
+            labels_out[bip_idx, idx, 0] = float(row[13])
+            labels_out[bip_idx, idx, 1] = float(row[14])
+            labels_out[bip_idx, idx, 2] = float(row[15])
+            labels_out[bip_idx, idx, 3] = float(row[16])
+            labels_out[bip_idx, idx, 4] = float(row[17])
+    return n_bips
+
+
 def load_rows(
     *,
     season_from: int,
@@ -181,6 +295,7 @@ def load_rows(
     park_order: tuple[str, ...],
     limit: int | None = None,
     container: str = "bullpen-clickhouse",
+    chunk_size: int = 5_000,
 ) -> list[_BipRow]:
     """Pull joined rows from ClickHouse and assemble into _BipRows.
 
@@ -211,8 +326,6 @@ def load_rows(
     park_index = {pid: i for i, pid in enumerate(park_order)}
     for i in range(0, len(rows), n_parks):
         block = rows[i : i + n_parks]
-        # All n_parks rows in this block share the same BIP fields; pull
-        # features from the first row.
         features = _row_to_features(
             block[0][4],
             block[0][5],
@@ -224,9 +337,7 @@ def load_rows(
             block[0][11],
         )
         labels = np.zeros((n_parks, n_outcomes), dtype=np.float32)
-        home_park_id = block[0][9]  # home park placeholder — overwritten below
-        # The block has rows in the join's park ordering, which matches
-        # park_order because the SQL ORDER BY uses arrayIndexOf.
+        home_park_id = block[0][9]
         for row in block:
             pid = row[12]
             idx = park_index[pid]
@@ -235,18 +346,91 @@ def load_rows(
             labels[idx, 2] = float(row[15])  # prob_2b
             labels[idx, 3] = float(row[16])  # prob_3b
             labels[idx, 4] = float(row[17])  # prob_hr
-        # home_park_id is in pitches.park_id (block[0] doesn't carry it
-        # directly — we keep it for downstream; here we approximate via
-        # the stand column position lookup. For dataset purposes the
-        # home park id isn't needed for training the MLP.)
         home_park_id = ""
         out.append(_BipRow(features=features, labels=labels, home_park_id=home_park_id))
     return out
 
 
+def load_arrays(
+    *,
+    season_from: int,
+    season_to: int,
+    park_order: tuple[str, ...],
+    limit: int | None = None,
+    container: str = "bullpen-clickhouse",
+    chunk_size: int = 5_000,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Memory-efficient loader: pulls one season at a time from ClickHouse
+    into pre-allocated dense arrays.
+
+    Returns (features, labels) where:
+      - features: (N, n_features) float32
+      - labels:   (N, n_parks, n_outcomes) float32
+
+    Each season is small enough for ClickHouse to handle without the
+    OFFSET-based pagination that OOMs at high offsets on the full
+    2015-2024 join.
+    """
+    n_features = len(FEATURE_NAMES)
+    n_parks = len(park_order)
+    n_outcomes = len(OUTCOME_NAMES)
+    park_index = {pid: i for i, pid in enumerate(park_order)}
+
+    count_tsv = _run_clickhouse(
+        _query_count(
+            season_from=season_from,
+            season_to=season_to,
+            park_order=park_order,
+            limit=limit,
+        ),
+        container=container,
+    ).strip()
+    total_bips = int(count_tsv)
+    if limit is not None:
+        total_bips = min(total_bips, limit)
+    print(f"  allocating arrays for {total_bips} BIPs "
+          f"({total_bips * n_features * 4 / 1e6:.0f} MB features + "
+          f"{total_bips * n_parks * n_outcomes * 4 / 1e6:.0f} MB labels)")
+
+    features = np.zeros((total_bips, n_features), dtype=np.float32)
+    labels = np.zeros((total_bips, n_parks, n_outcomes), dtype=np.float32)
+
+    written = 0
+    for year in range(season_from, season_to + 1):
+        if limit is not None and written >= limit:
+            break
+        year_limit: int | None = None
+        if limit is not None:
+            year_limit = limit - written
+        tsv = _run_clickhouse(
+            _query_joined(
+                season_from=year,
+                season_to=year,
+                park_order=park_order,
+                limit=year_limit,
+            ),
+            container=container,
+        )
+        n = _parse_chunk_into_arrays(
+            tsv, n_parks, n_outcomes, park_index,
+            features, labels, written,
+        )
+        written += n
+        print(f"  loaded season {year}: {n} BIPs "
+              f"(total {written}/{total_bips}, "
+              f"{100 * written / total_bips:.0f}%)", flush=True)
+
+    if written < total_bips:
+        features = features[:written]
+        labels = labels[:written]
+    return features, labels
+
+
 class BBIPDataset(Dataset):
-    """Torch Dataset wrapping a list of ``_BipRow`` materialised from
-    ClickHouse. Iteration order follows the original CH query order so
+    """Torch Dataset wrapping batted-ball data from ClickHouse.
+
+    Accepts either the legacy list[_BipRow] or dense arrays from
+    load_arrays(). Iteration order follows the original CH query order so
     rolling-origin CV can split by date deterministically.
 
     ``scaler`` (optional): if provided, features are z-score normalised
@@ -254,23 +438,49 @@ class BBIPDataset(Dataset):
     reuses it for val/test so the same normalisation applies everywhere.
     """
 
-    def __init__(self, rows: list[_BipRow], scaler: FeatureScaler | None = None) -> None:
-        self._rows = rows
+    def __init__(
+        self,
+        rows_or_features: list[_BipRow] | np.ndarray,
+        labels: np.ndarray | None = None,
+        scaler: FeatureScaler | None = None,
+    ) -> None:
+        if isinstance(rows_or_features, np.ndarray):
+            assert labels is not None
+            self._features = rows_or_features
+            self._labels = labels
+            self._rows = None
+        else:
+            self._rows = rows_or_features
+            self._features = None
+            self._labels = None
         self._scaler = scaler
 
     def __len__(self) -> int:
+        if self._features is not None:
+            return self._features.shape[0]
+        assert self._rows is not None
         return len(self._rows)
 
     def __getitem__(self, idx: int) -> tuple[np.ndarray, np.ndarray]:
-        row = self._rows[idx]
-        features = (
-            self._scaler.transform(row.features) if self._scaler is not None else row.features
-        )
-        return features, row.labels
+        if self._features is not None:
+            assert self._labels is not None
+            f = self._features[idx]
+            l = self._labels[idx]
+        else:
+            assert self._rows is not None
+            row = self._rows[idx]
+            f = row.features
+            l = row.labels
+        if self._scaler is not None:
+            f = self._scaler.transform(f)
+        return f, l
 
     def all_features(self) -> np.ndarray:
         """Stack all rows' raw features into one (N, n_features) array.
         Used by :meth:`FeatureScaler.fit`."""
+        if self._features is not None:
+            return self._features
+        assert self._rows is not None
         return np.stack([r.features for r in self._rows], axis=0)
 
 
@@ -279,6 +489,7 @@ __all__ = (
     "OUTCOME_NAMES",
     "BBIPDataset",
     "base_state_one_hot",
+    "load_arrays",
     "load_rows",
     "stand_one_hot",
 )

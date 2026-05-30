@@ -18,7 +18,8 @@ Why 30 separate heads vs one head with park-id as a feature:
     dominant cost. Total ~14-20K params at the default hidden=64.
 
 Topology summary (defaults):
-    n_features=15 → Dense(64) → ReLU → Dense(64) → ReLU
+    n_features=15 → Dense(128) → ReLU → Dropout(0.1)
+                  → Dense(128) → ReLU → Dropout(0.1)
                   ↓
        (30 parallel Dense(5)) → stack → (B, 30, 5)
 """
@@ -43,7 +44,8 @@ class BattedBallMLP(nn.Module):
         n_features: int = 15,
         n_parks: int = 30,
         n_outcomes: int = 5,
-        hidden: int = 64,
+        hidden: int = 128,
+        dropout: float = 0.1,
     ) -> None:
         super().__init__()
         self.n_features = n_features
@@ -54,8 +56,10 @@ class BattedBallMLP(nn.Module):
         self.backbone = nn.Sequential(
             nn.Linear(n_features, hidden),
             nn.ReLU(),
+            nn.Dropout(dropout),
             nn.Linear(hidden, hidden),
             nn.ReLU(),
+            nn.Dropout(dropout),
         )
         # nn.ModuleList preserves the head ordering on save/load and on
         # ONNX export; using a Python list would lose the registration.
@@ -74,7 +78,8 @@ def build_model(
     n_features: int = 15,
     n_parks: int = 30,
     n_outcomes: int = 5,
-    hidden: int = 64,
+    hidden: int = 128,
+    dropout: float = 0.1,
     seed: int = 42,
 ) -> BattedBallMLP:
     """Construct a :class:`BattedBallMLP` with deterministic init.
@@ -89,6 +94,7 @@ def build_model(
         n_parks=n_parks,
         n_outcomes=n_outcomes,
         hidden=hidden,
+        dropout=dropout,
     )
 
 

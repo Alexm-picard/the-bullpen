@@ -51,6 +51,8 @@ class DefaultAtmosphere:
     temp_c: float
     pressure_hpa: float | None
     humidity_pct: float
+    wind_speed_mph: float = 0.0
+    wind_bearing_deg: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -117,6 +119,8 @@ def _parse(park_id: str, data: dict[str, Any]) -> ParkGeometry:
             temp_c=float(atmo["temp_c"]),
             pressure_hpa=None if atmo["pressure_hpa"] is None else float(atmo["pressure_hpa"]),
             humidity_pct=float(atmo["humidity_pct"]),
+            wind_speed_mph=float(atmo.get("wind_speed_mph", 0.0)),
+            wind_bearing_deg=float(atmo.get("wind_bearing_deg", 0.0)),
         ),
         centerline_bearing_deg=float(data["centerline_bearing_deg"]),
         fence_polyline=polyline,

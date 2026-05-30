@@ -37,7 +37,7 @@ from bullpen_training.battedball.lgbm_baseline.dataset import (
 )
 from bullpen_training.battedball.mlp import BBIPDataset, FeatureScaler
 from bullpen_training.battedball.mlp.architecture import build_model
-from bullpen_training.battedball.mlp.dataset import OUTCOME_NAMES, load_rows
+from bullpen_training.battedball.mlp.dataset import OUTCOME_NAMES, load_arrays
 
 
 def _load_mlp_predictions(
@@ -58,10 +58,9 @@ def _load_mlp_predictions(
     model.load_state_dict(torch.load(mlp_dir / "model.pt", weights_only=True))
     model.eval()
 
-    rows = load_rows(season_from=season_from, season_to=season_to, park_order=park_order)
-    ds = BBIPDataset(rows, scaler=scaler)
-    xs = np.stack([ds[i][0] for i in range(len(ds))], axis=0)
-    ys = np.stack([ds[i][1] for i in range(len(ds))], axis=0)
+    feat, lab = load_arrays(season_from=season_from, season_to=season_to, park_order=park_order)
+    xs = scaler.transform(feat)
+    ys = lab
     with torch.no_grad():
         probs = F.softmax(model(torch.from_numpy(xs)), dim=-1).numpy()
     # Flatten (N, n_parks, 5) -> (N*n_parks, 5) row-major
