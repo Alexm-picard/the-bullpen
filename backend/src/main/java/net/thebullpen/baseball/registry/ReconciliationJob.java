@@ -5,12 +5,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import javax.sql.DataSource;
+import net.thebullpen.baseball.data.PredictionLogRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Profile;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -39,19 +37,19 @@ public class ReconciliationJob {
   private static final Logger log = LoggerFactory.getLogger(ReconciliationJob.class);
 
   private final RegistryRepository registryRepo;
-  private final JdbcTemplate clickhouse;
+  private final PredictionLogRepository predictionLogRepo;
   private final DiscordNotifier discord;
   private final int lookbackDays;
 
   public ReconciliationJob(
       RegistryRepository registryRepo,
-      @Qualifier("clickhouseDataSource") DataSource clickhouseDataSource,
+      PredictionLogRepository predictionLogRepo,
       DiscordNotifier discord,
       @org.springframework.beans.factory.annotation.Value(
               "${bullpen.reconciliation.lookback-days:7}")
           int lookbackDays) {
     this.registryRepo = registryRepo;
-    this.clickhouse = new JdbcTemplate(clickhouseDataSource);
+    this.predictionLogRepo = predictionLogRepo;
     this.discord = discord;
     this.lookbackDays = lookbackDays;
   }
@@ -116,11 +114,7 @@ public class ReconciliationJob {
   }
 
   private List<String[]> querySeenPairsFromPredictionLog() {
-    return clickhouse.query(
-        "SELECT DISTINCT model_name, model_version FROM prediction_log"
-            + " WHERE request_at > now() - INTERVAL ? DAY",
-        (rs, n) -> new String[] {rs.getString(1), rs.getString(2)},
-        lookbackDays);
+    return predictionLogRepo.distinctServedModelVersions(lookbackDays);
   }
 
   private static String joinKey(String[] pair) {

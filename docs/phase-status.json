@@ -344,8 +344,8 @@
         },
         {
           "label": "Repository pattern formalized in data/ \u2014 5 explicit aggregates",
-          "done": false,
-          "details": "ModelRegistryRepository, ExperimentResultsRepository, PredictionLogRepository, DriftMetricsRepository, RetrainingQueueRepository. Each owns its table(s) and exposes a typed API. No JdbcTemplate calls leak outside data/. Matches StudyForesight's pattern."
+          "done": true,
+          "details": "Verified 2026-05-30 (plan S1e). All five named aggregates present and table-owning: RegistryRepository, ExperimentResultsRepository, DriftMetricsRepository, RetrainingQueueRepository, and PredictionLogRepository (read-side, ClickHouse) + PredictionLogWriter (write-side). Plus RoutingRepository, AlertHistoryRepository, and the data/ player-facing repos (Player/LivePitches/PlayerPredictions/Calibration) = 11 repos total. The one leak (ReconciliationJob built its own JdbcTemplate + inlined a raw `SELECT DISTINCT model_name, model_version FROM prediction_log`) was encapsulated into the new data/PredictionLogRepository.distinctServedModelVersions(). Audit confirms JdbcTemplate now appears only in *Repository classes; zero raw SQL outside repositories / PredictionLogWriter / ClickHouseMigrationRunner. NOTE: repos are organized by domain package (registry/, drift/, retraining/, inference/routing/) + data/, not all under data/ as design.md \u00a76 aspired \u2014 the encapsulation pattern is the substance and is met."
         }
       ],
       "mvp_cuts": [
