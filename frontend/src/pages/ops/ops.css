@@ -1,0 +1,67 @@
+/* Scoped responsive + interactive rules for the /ops Operator's Marginalia
+ * page (Stage 3b). Mirrors the home.css / matchup.css pattern — pure CSS
+ * handles breakpoints so the page never measures the viewport from JS.
+ *
+ * Colors reach through the Tailwind 4 @theme CSS custom properties declared
+ * in src/design/tokens.css (the only allowlisted hex source). Zero raw hex
+ * outside src/design/.
+ *
+ * Breakpoints:
+ *   - 900px : drift-snapshot subgrid stacks (PSI on top, ECE Δ below)
+ *           : CornerStripes downshifts 120 → 80px
+ *           : retrain-queue rows reshape vertical (trigger → modelLabel →
+ *             times → status)
+ *   - 768px : infra ribbon wraps to repeat(2, 1fr)
+ *   - 600px : masthead h1 down-shifts 64 → 48px
+ *           : retrain-queue gap tightens
+ */
+
+.ops-cover__shell {
+  position: relative;
+}
+
+.ops-cover__corner {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 120px;
+  height: 120px;
+  pointer-events: none;
+  opacity: 0.18;
+}
+
+.ops-drift__pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+@media (max-width: 900px) {
+  .ops-drift__pair {
+    grid-template-columns: 1fr;
+  }
+  .ops-cover__corner {
+    width: 80px;
+    height: 80px;
+  }
+  .ops-retrain__row {
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+  .ops-retrain__row > span:last-child {
+    text-align: left !important;
+    justify-self: start !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .ops-infra-ribbon {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+@media (max-width: 600px) {
+  .ops-cover__title {
+    font-size: 48px !important;
+  }
+}
