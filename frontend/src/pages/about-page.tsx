@@ -1,470 +1,167 @@
 /**
- * /about — long-form editorial page (leaf 4f).
+ * /about — long single-column report essay (Stage 3e, decision [133]).
  *
- * Six sections, each wrapped in `<EditorialSection>` so they share the
- * 720-px measure + Source Serif 4 headlines + vertical rhythm. Inline SVG
- * architecture diagram between Models and Eval methodology.
+ * Completes the Stage 3 redesign sequence (home → parks → players →
+ * games → ops → about). Replaces the prior off-identity editorial page
+ * with a scouting-report colophon inside the locked <ReportSheet> shell:
+ * cream + 1px navy border, max-width 1100, 32px padding, scarlet corner
+ * stripes top-right.
  *
- * Prose intentionally short: <500 words per section. Recruiters skim.
- * Drawn from docs/design.md §1, §2, §3, §5, §11.
+ * Composition order (top → bottom, inside the bordered sheet):
+ *   1. <CornerStripes />              — scarlet 45° motif (decorative)
+ *   2. <AboutHeader />                — eyebrow + two-line nameplate
+ *                                       (`ABOUT` / `THE BULLPEN`)
+ *                                       + byline strip + mono context
+ *   3. <AboutFactsRibbon />           — navy strip, 4 artifact-count cells
+ *                                       (133 DECISIONS · 7 ADRs · 3 MODELS
+ *                                       · 4 CV FOLDS) — display only
+ *   4. OPENING PITCH                  — 3 prose paragraphs
+ *   5. THE STACK                      — 10-row LAYER / CHOICE / WHY table
+ *   6. MODEL FLEET                    — 2 prose paragraphs + 4-row table
+ *                                       (MODEL · VERSION · STATE · BACKBONE)
+ *   7. OPERATIONAL DISCIPLINE         — KeyNotes with 5 numbered notes
+ *   8. INTENTIONALLY NOT HERE         — 1 framing paragraph + 11 mono tags
+ *   9. ROADMAP HONESTY                — 1 prose paragraph
+ *  10. <AboutColophonFooter />        — navy strip, COLOPHON · SHA · BUILD
+ *                                       on the left, github.com/<placeholder>
+ *                                       on the right (plain text, not a link)
+ *
+ * Fixture-only (`about-fixtures.ts`); no API calls. The colophon is editorial
+ * content that doesn't drift in v1.
+ *
+ * Constraints honored:
+ *   - One <Title order={1}> only (the masthead h1).
+ *   - No hex codes — every color via tokens or CSS-var utilities.
+ *   - No anchor on the repo placeholder — plain text only (locked pick R2).
+ *   - Reuses ReportSheet shell pattern, CornerStripes, SectionLabel, KeyNotes
+ *     from existing primitives.
+ *   - Body prose at editorial measure: IBM Plex Sans 16px × ~1.55
+ *     line-height × ~62ch max-width.
  */
-import { Anchor, Box, List, Stack, Text, Title } from "@mantine/core";
-import { Link } from "react-router-dom";
 
-import { EditorialSection } from "../components/editorial/editorial-section";
-import { colors, typography } from "../design/tokens";
+import { Stack } from "@mantine/core";
+
+import { AboutColophonFooter } from "../components/about/about-colophon-footer";
+import { AboutDiscipline } from "../components/about/about-discipline";
+import { AboutFactsRibbon } from "../components/about/about-facts-ribbon";
+import { AboutHeader } from "../components/about/about-header";
+import { AboutModelFleet } from "../components/about/about-model-fleet";
+import { AboutOpeningPitch } from "../components/about/about-opening-pitch";
+import { AboutRejectedAlternatives } from "../components/about/about-rejected-alternatives";
+import { AboutRoadmap } from "../components/about/about-roadmap";
+import { AboutStackTable } from "../components/about/about-stack-table";
+import { CornerStripes } from "../components/shared/corner-stripes";
+import { SectionLabel } from "../components/shared/section-label";
+import {
+  ABOUT_META,
+  DISCIPLINE_NOTES,
+  FACTS_RIBBON,
+  FLEET_ROWS,
+  MODEL_FLEET_PARAS,
+  OPENING_PITCH_PARAS,
+  REJECTED_PARA,
+  REJECTED_TAGS,
+  ROADMAP_PARA,
+  STACK_ROWS,
+} from "../data/about-fixtures";
+import { colors, layouts } from "../design/tokens";
+
+import "./about/about.css";
 
 export default function AboutPage() {
   return (
-    <Box>
-      <Stack gap={0}>
-        <HeaderBlock />
-        <IntroSection />
-        <ModelsSection />
-        <ArchitectureDiagram />
-        <TrainingDataSection />
-        <EvalMethodologySection />
-        <DriftRetrainingSection />
-        <WhatsNextSection />
-      </Stack>
-    </Box>
-  );
-}
-
-function HeaderBlock() {
-  return (
-    <Box
-      component="header"
+    <div
       style={{
-        maxWidth: 720,
-        marginLeft: "auto",
-        marginRight: "auto",
-        paddingTop: 96,
-        paddingBottom: 32,
+        backgroundColor: colors.bgBase,
+        minHeight: "calc(100vh - 56px)",
+        paddingTop: 32,
+        paddingBottom: 64,
       }}
     >
-      <Stack gap="md">
-        <Title
-          order={6}
-          tt="uppercase"
-          c="dimmed"
-          style={{ margin: 0, letterSpacing: "0.08em" }}
-        >
-          The Bullpen — methodology
-        </Title>
-        <Title
-          order={1}
+      <div
+        style={{
+          maxWidth: layouts.reportSheetMaxWidth,
+          margin: "0 auto",
+          padding: "0 16px",
+        }}
+      >
+        <div
+          className="about-cover__shell"
           style={{
-            margin: 0,
-            fontSize: typography.scale[7], // 64 — tokens.typography.scale
-            lineHeight: typography.lineHeights.display,
-            fontWeight: typography.weights.bold,
-          }}
-        >
-          A serving wrapper around three baseball models.
-        </Title>
-        <Text c="dimmed" size="lg">
-          Self-hosted, eight months of calendar build, operated across at least
-          one MLB season for a real drift postmortem. Not a SaaS product, not a
-          betting tool, not a research contribution.
-        </Text>
-      </Stack>
-    </Box>
-  );
-}
-
-function IntroSection() {
-  return (
-    <EditorialSection
-      eyebrow="01 — What this is"
-      title="The project, in one paragraph"
-    >
-      <Text>
-        The Bullpen is a baseball-prediction service built primarily to learn
-        and demonstrate the operational discipline around shipping ML systems —
-        a model registry, A/B routing, drift detection, automated retraining
-        triggers, and an honest set of evaluation artifacts. Three models are
-        served behind one Spring Boot app: a multinomial pitch-outcome head, a
-        per-park batted-ball MLP, and a calibrated baseline. The models are the
-        excuse; the wrapper is the project.
-      </Text>
-      <Text>
-        Hiring framing matters. The README and this page should read to a
-        recruiter as "I built a real production ML system and ran it for a
-        season," not "I trained a model in a notebook." Every locked technical
-        choice has a written rationale in{" "}
-        <Anchor
-          href="https://github.com/"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          docs/decisions.md
-        </Anchor>{" "}
-        — including the alternatives I rejected.
-      </Text>
-    </EditorialSection>
-  );
-}
-
-function ModelsSection() {
-  return (
-    <EditorialSection
-      eyebrow="02 — Models"
-      title="Three models, two heads, one wrapper"
-    >
-      <Text>
-        <strong>Pitch outcome (pre-pitch).</strong> LightGBM, 5-class
-        multinomial (ball / called strike / swinging strike / foul / in play),
-        calibrated by isotonic regression on a held-out fold. Predicts the
-        distribution of outcomes from state available before the pitch is
-        thrown.{" "}
-        <Anchor component={Link} to="/ops">
-          See registry →
-        </Anchor>
-      </Text>
-      <Text>
-        <strong>Pitch outcome (post-pitch).</strong> Same 5-class shape, with
-        early-flight features (release speed, plate location, spin rate) wired
-        in. A separate registered model — never one model with feature masking
-        (rule 9).
-      </Text>
-      <Text>
-        <strong>Batted-ball.</strong> A small MLP with a shared backbone and 30
-        per-park heads. Takes launch parameters and a park id; returns P(out /
-        1B / 2B / 3B / HR). The Phase-1 toy version serves the spine; the real
-        model lands in Phase 2c. A logistic-regression baseline is always
-        co-registered to bound how much the neural model is buying.
-      </Text>
-    </EditorialSection>
-  );
-}
-
-function ArchitectureDiagram() {
-  return (
-    <Box
-      style={{
-        maxWidth: 720,
-        marginLeft: "auto",
-        marginRight: "auto",
-        paddingTop: 16,
-        paddingBottom: 32,
-      }}
-    >
-      <Stack gap="xs">
-        <Text
-          size="xs"
-          c="dimmed"
-          tt="uppercase"
-          style={{ letterSpacing: "0.08em" }}
-        >
-          System architecture
-        </Text>
-        <Box
-          style={{
-            border: `1px solid ${colors.bgEmphasis}`,
-            borderRadius: 8,
-            padding: 16,
             backgroundColor: colors.bgSheet,
+            border: `1px solid ${colors.navy}`,
+            borderRadius: 2,
+            padding: 32,
           }}
         >
-          <svg
-            viewBox="0 0 640 200"
-            width="100%"
-            role="img"
-            aria-label="Data flows from Statcast and MLB Stats API into ClickHouse, training emits ONNX, Spring serves predictions to the React frontend"
-            style={{
-              fontFamily: typography.fonts.mono,
-              fontSize: typography.scale[0] - 1,
-            }}
-          >
-            <SourceBox x={10} y={20} w={110} label="Statcast" />
-            <SourceBox x={10} y={80} w={110} label="MLB Stats API" />
-            <SourceBox x={10} y={140} w={110} label="Weather" />
-
-            <CenterBox
-              x={170}
-              y={20}
-              w={130}
-              label="ClickHouse"
-              sub="pitches · drift"
-            />
-            <CenterBox
-              x={170}
-              y={130}
-              w={130}
-              label="Training (Py)"
-              sub="rolling-CV · ONNX"
+          <CornerStripes className="about-cover__corner" />
+          <Stack gap={28}>
+            <AboutHeader
+              issueDate={ABOUT_META.issueDate}
+              builtBy={ABOUT_META.builtBy}
+              edition={ABOUT_META.edition}
+              calendar={ABOUT_META.calendar}
+              weeklyHours={ABOUT_META.weeklyHours}
             />
 
-            <CenterBox
-              x={340}
-              y={20}
-              w={130}
-              label="Registry (SQLite)"
-              sub="versions · A/B"
+            <AboutFactsRibbon cells={FACTS_RIBBON} />
+
+            <section aria-labelledby="about-opening-pitch-label">
+              <div id="about-opening-pitch-label">
+                <SectionLabel>Opening Pitch</SectionLabel>
+              </div>
+              <AboutOpeningPitch paragraphs={OPENING_PITCH_PARAS} />
+            </section>
+
+            <section aria-labelledby="about-stack-label">
+              <div id="about-stack-label">
+                <SectionLabel>The Stack</SectionLabel>
+              </div>
+              <AboutStackTable rows={STACK_ROWS} />
+            </section>
+
+            <section aria-labelledby="about-fleet-label">
+              <div id="about-fleet-label">
+                <SectionLabel>Model Fleet</SectionLabel>
+              </div>
+              <AboutModelFleet
+                paragraphs={MODEL_FLEET_PARAS}
+                rows={FLEET_ROWS}
+              />
+            </section>
+
+            <section aria-labelledby="about-discipline-label">
+              <div id="about-discipline-label">
+                <SectionLabel>Operational Discipline</SectionLabel>
+              </div>
+              <AboutDiscipline notes={DISCIPLINE_NOTES} />
+            </section>
+
+            <section aria-labelledby="about-rejected-label">
+              <div id="about-rejected-label">
+                <SectionLabel>Intentionally Not Here</SectionLabel>
+              </div>
+              <AboutRejectedAlternatives
+                paragraph={REJECTED_PARA}
+                tags={REJECTED_TAGS}
+              />
+            </section>
+
+            <section aria-labelledby="about-roadmap-label">
+              <div id="about-roadmap-label">
+                <SectionLabel>Roadmap Honesty</SectionLabel>
+              </div>
+              <AboutRoadmap paragraph={ROADMAP_PARA} />
+            </section>
+
+            <AboutColophonFooter
+              buildSha={ABOUT_META.buildSha}
+              buildDate={ABOUT_META.buildDate}
+              repoPlaceholder={ABOUT_META.repoPlaceholder}
             />
-            <CenterBox
-              x={340}
-              y={130}
-              w={130}
-              label="Spring (Java)"
-              sub="ONNX Runtime · API"
-            />
-
-            <CenterBox
-              x={510}
-              y={75}
-              w={120}
-              label="React + Mantine"
-              sub="this site"
-            />
-
-            <Arrow x1={120} y1={45} x2={170} y2={45} />
-            <Arrow x1={120} y1={105} x2={170} y2={155} />
-            <Arrow x1={120} y1={155} x2={170} y2={155} />
-            <Arrow x1={300} y1={155} x2={340} y2={155} />
-            <Arrow x1={300} y1={45} x2={340} y2={45} />
-            <Arrow x1={405} y1={70} x2={405} y2={130} />
-            <Arrow x1={470} y1={155} x2={510} y2={105} />
-            <Arrow x1={470} y1={45} x2={510} y2={95} />
-          </svg>
-        </Box>
-      </Stack>
-    </Box>
-  );
-}
-
-function SourceBox({
-  x,
-  y,
-  w,
-  label,
-}: {
-  x: number;
-  y: number;
-  w: number;
-  label: string;
-}) {
-  return (
-    <g>
-      <rect
-        x={x}
-        y={y}
-        width={w}
-        height={40}
-        rx={4}
-        fill={colors.bgSubtle}
-        stroke={colors.bgEmphasis}
-      />
-      <text
-        x={x + w / 2}
-        y={y + 24}
-        textAnchor="middle"
-        fill={colors.textDefault}
-      >
-        {label}
-      </text>
-    </g>
-  );
-}
-
-function CenterBox({
-  x,
-  y,
-  w,
-  label,
-  sub,
-}: {
-  x: number;
-  y: number;
-  w: number;
-  label: string;
-  sub?: string;
-}) {
-  return (
-    <g>
-      <rect
-        x={x}
-        y={y}
-        width={w}
-        height={50}
-        rx={4}
-        fill={colors.bgSheet}
-        stroke={colors.bgEmphasis}
-      />
-      <text
-        x={x + w / 2}
-        y={y + 20}
-        textAnchor="middle"
-        fill={colors.textStrong}
-        fontWeight={600}
-      >
-        {label}
-      </text>
-      {sub ? (
-        <text
-          x={x + w / 2}
-          y={y + 36}
-          textAnchor="middle"
-          fill={colors.textMuted}
-        >
-          {sub}
-        </text>
-      ) : null}
-    </g>
-  );
-}
-
-function Arrow({
-  x1,
-  y1,
-  x2,
-  y2,
-}: {
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
-}) {
-  return (
-    <line
-      x1={x1}
-      y1={y1}
-      x2={x2}
-      y2={y2}
-      stroke={colors.textMuted}
-      strokeWidth={1}
-      markerEnd="url(#arrow)"
-    />
-  );
-}
-
-function TrainingDataSection() {
-  return (
-    <EditorialSection
-      eyebrow="03 — Training data"
-      title="Statcast 2015–2025, with deliberate provenance"
-    >
-      <Text>
-        The pitch-level dataset is{" "}
-        <Anchor
-          href="https://baseballsavant.mlb.com/"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Statcast
-        </Anchor>{" "}
-        pulled via{" "}
-        <Anchor
-          href="https://pypi.org/project/pybaseball/"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          pybaseball
-        </Anchor>{" "}
-        — ~200 GB by the time the historical backfill lands. Weather is joined
-        from a free meteorology source. Roster + game schedule are the MLB Stats
-        API. Training snapshots are immutable Parquet files in object storage
-        (Cloudflare R2 in prod, MinIO offline) so any model in the registry can
-        be retrained bitwise from its hash.
-      </Text>
-      <Text>
-        Data is downloaded for personal research use only. Public outputs of
-        this project (predictions, model artifacts, this site) are derived
-        analytics, not redistribution of the underlying play-by-play data.
-      </Text>
-    </EditorialSection>
-  );
-}
-
-function EvalMethodologySection() {
-  return (
-    <EditorialSection
-      eyebrow="04 — Evaluation"
-      title="Rolling-origin cross-validation, never random splits"
-    >
-      <Text>
-        Every model is evaluated by 4-fold rolling-origin cross-validation
-        across 2015–2025. Each fold trains on all earlier dates and validates on
-        a later contiguous window — no date overlap, no random split. The
-        within-fold split is by date too; never by game or by pitch (a single
-        random-pitch split silently leaks future at-bats into training).
-      </Text>
-      <Text>
-        Headline numbers — Brier, ECE, log loss — are reported as mean ± std
-        across folds, and a per-fold table sits in each model's registry detail
-        on the{" "}
-        <Anchor component={Link} to="/ops">
-          Ops page
-        </Anchor>
-        . Four leakage tests run in CI: future contamination, shuffled-target,
-        calendar-date trace, and ID consistency. None of them are negotiable.
-      </Text>
-    </EditorialSection>
-  );
-}
-
-function DriftRetrainingSection() {
-  return (
-    <EditorialSection
-      eyebrow="05 — Drift + retraining"
-      title="Drift detected, retrain queued, promotion gated"
-    >
-      <Text>
-        Drift is measured in two ways: PSI per feature on a 7-day window against
-        the training distribution, and calibration delta on the prediction logs
-        against the training-fold baseline. When either crosses its pre-declared
-        threshold for a sustained window, a row is enqueued in the retraining
-        queue with the trigger id, model name, and the metric values that fired
-        it.
-      </Text>
-      <Text>
-        The worker claims the next queued row atomically (SQLite single-writer +
-        UPDATE-WHERE-status='queued'), runs the matching training pipeline, and
-        registers the new candidate.{" "}
-        <strong>Promotion stays human-gated.</strong> Decision [44]: automated
-        retraining triggers, manual promotions. The new version lands as
-        CANDIDATE and shows up on the Ops dashboard for review — never
-        auto-routed in front of users.
-      </Text>
-    </EditorialSection>
-  );
-}
-
-function WhatsNextSection() {
-  return (
-    <EditorialSection
-      eyebrow="06 — What's next"
-      title="v1.5 ideas, cherry-picked"
-    >
-      <List spacing="xs">
-        <List.Item>
-          A 30-park batted-ball MLP that natively emits 30 outputs in one ONNX
-          call — replaces the v1 per-park loop on the Park Explorer endpoint.
-        </List.Item>
-        <List.Item>
-          Truth-joining prediction_log to pitches by an indexed pitch_id so the
-          calibration view and the per-player history table can show actual vs
-          predicted side-by-side.
-        </List.Item>
-        <List.Item>
-          The live MLB-Stats-API poller wired to the existing GameStateMachine
-          so /games/:id actually populates from real games.
-        </List.Item>
-        <List.Item>
-          A small "admin override" page wrapping the A/B traffic-percent slider
-          behind HTTP Basic — Ops dashboard stays public-read, admin writes stay
-          gated.
-        </List.Item>
-        <List.Item>
-          Hyperparameter search in the retraining job (fixed-HP today per
-          decision [81]).
-        </List.Item>
-        <List.Item>
-          Per-game weather pull replacing the per-park annual default atmosphere
-          (Phase 2c.4).
-        </List.Item>
-      </List>
-    </EditorialSection>
+          </Stack>
+        </div>
+      </div>
+    </div>
   );
 }

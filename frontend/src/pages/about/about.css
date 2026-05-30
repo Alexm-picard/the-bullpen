@@ -1,0 +1,56 @@
+/* Scoped responsive + presentation rules for the /about colophon page.
+ * Mirrors the home.css / matchup.css pattern — pure CSS handles breakpoints
+ * so the page never measures the viewport from JS.
+ *
+ * Colors reach through the Tailwind 4 @theme CSS custom properties declared
+ * in src/design/tokens.css (the only allowlisted hex source). Zero raw hex
+ * outside src/design/.
+ *
+ * Breakpoints:
+ *   - 900px : page just narrows; the prose column stays 62ch
+ *   - 600px : facts ribbon stacks to 2×2 grid; masthead h1 64px → 48px;
+ *             footer wraps vertically
+ */
+
+.about-cover__shell {
+  position: relative;
+}
+
+.about-cover__corner {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 120px;
+  height: 120px;
+  pointer-events: none;
+  opacity: 0.18;
+}
+
+/* The editorial measure — every prose-heavy block on /about clamps its width
+ * to ~62 characters so the body reads as a printed essay column, not a
+ * dashboard run. Apply on prose containers via className="about-prose". */
+.about-prose,
+.about-prose > p {
+  max-width: 62ch;
+}
+
+@media (max-width: 900px) {
+  .about-cover__corner {
+    width: 80px;
+    height: 80px;
+  }
+}
+
+@media (max-width: 600px) {
+  .about-cover__title {
+    font-size: 48px !important;
+  }
+  .about-facts-ribbon {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  .about-cover__footer {
+    flex-direction: column;
+    align-items: flex-start !important;
+    gap: 8px !important;
+  }
+}
