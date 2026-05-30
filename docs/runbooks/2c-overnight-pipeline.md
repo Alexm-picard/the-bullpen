@@ -168,10 +168,11 @@ restart from a specific stage.
 
 ## What this pipeline does NOT do
 
-- **Register the trained models in the registry.** That's 3a — once
-  the sanity gate passes here, you push the new artifacts up to S3
-  (Cloudflare R2 per ADR-0007) and register via the 3a API. The
-  pipeline only writes to local disk.
+- **Register the trained models in the registry.** That's the close-out
+  runbook [`2c-register-and-close.md`](2c-register-and-close.md) — once
+  the sanity gate passes here, it verifies the gates and registers the
+  MLP + LGBM baseline (SHADOW) via the 3a admin API. The pipeline only
+  writes to local disk.
 - **Update the live serving path.** Models stay candidates / shadow
   until promoted via 3b.
 - **Reverse decision [45] if LGBM wins.** If the 2c.9 comparison
