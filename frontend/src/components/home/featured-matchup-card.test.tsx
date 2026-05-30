@@ -17,8 +17,8 @@ import { colors } from "../../design/tokens";
 import { FeaturedMatchupCard } from "./featured-matchup-card";
 
 const DEFAULT_PROPS = {
-  batter: PLAYERS.judge_aaron,
-  pitcher: PLAYERS.skubal_tarik,
+  batter: PLAYERS.judge_aaron!,
+  pitcher: PLAYERS.skubal_tarik!,
   context: "NYY @ DET · 7:10 PM ET · Comerica Park",
   keyReads: [
     "First key read about the slider.",

@@ -274,9 +274,9 @@ export function makeGrid(
   }
   // Normalize so the global max is 1.0.
   if (max > 0) {
-    for (let r = 0; r < GRID_SIZE; r++) {
-      for (let c = 0; c < GRID_SIZE; c++) {
-        grid[r][c] = grid[r][c] / max;
+    for (const row of grid) {
+      for (let c = 0; c < row.length; c++) {
+        row[c] = row[c]! / max;
       }
     }
   }
@@ -1302,6 +1302,13 @@ export function getDefaultMatchup(playerId: string | undefined): MatchupReport {
   const [batterId, pitcherId] = pairing ?? ["judge_aaron", "skubal_tarik"];
   const batter = PLAYERS[batterId];
   const pitcher = PLAYERS[pitcherId];
+  if (!batter || !pitcher) {
+    // PAIRINGS / safeId are validated above, so a miss means inconsistent
+    // fixture data — fail loud rather than render a half-empty report.
+    throw new Error(
+      `matchup fixture inconsistency: missing player ${batterId} / ${pitcherId}`,
+    );
+  }
   const primary = safeId === pitcherId ? pitcher : batter;
   const opponent = primary.id === batter.id ? pitcher : batter;
 

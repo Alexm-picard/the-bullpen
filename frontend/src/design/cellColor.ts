@@ -88,9 +88,10 @@ function estimatePercentile(
   if (value >= ref.max) return 1;
 
   // Find the segment containing value and interpolate linearly.
+  // i ranges over [1, length), so i-1 and i are both valid indices.
   for (let i = 1; i < breakpoints.length; i++) {
-    const [x0, p0] = breakpoints[i - 1];
-    const [x1, p1] = breakpoints[i];
+    const [x0, p0] = breakpoints[i - 1]!;
+    const [x1, p1] = breakpoints[i]!;
     if (value <= x1) {
       const t = (value - x0) / (x1 - x0);
       return p0 + t * (p1 - p0);

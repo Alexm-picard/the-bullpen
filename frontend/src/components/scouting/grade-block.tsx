@@ -35,7 +35,8 @@ export function GradeBlock({ label, value }: GradeBlockProps) {
           0,
           Math.min(1, (numeric - GRADE_MIN) / (GRADE_MAX - GRADE_MIN)),
         );
-  const fillBg = cellColor(numeric, METRIC_META.grade);
+  // "grade" is a canonical metric key declared in METRIC_META.
+  const fillBg = cellColor(numeric, METRIC_META.grade!);
 
   return (
     <div

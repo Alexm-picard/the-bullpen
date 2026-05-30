@@ -25,8 +25,8 @@ describe("MatchupHeader", () => {
   it("renders 'HITTING REPORT' when primary is a position player", () => {
     const html = render(
       <MatchupHeader
-        primary={PLAYERS.judge_aaron}
-        opponent={PLAYERS.skubal_tarik}
+        primary={PLAYERS.judge_aaron!}
+        opponent={PLAYERS.skubal_tarik!}
         context="NYY @ DET"
       />,
     );
@@ -38,8 +38,8 @@ describe("MatchupHeader", () => {
   it("renders 'PITCHING REPORT' when primary is a pitcher", () => {
     const html = render(
       <MatchupHeader
-        primary={PLAYERS.skubal_tarik}
-        opponent={PLAYERS.judge_aaron}
+        primary={PLAYERS.skubal_tarik!}
+        opponent={PLAYERS.judge_aaron!}
         context="NYY @ DET"
       />,
     );
@@ -49,8 +49,8 @@ describe("MatchupHeader", () => {
   it("renders both player names in the byline", () => {
     const html = render(
       <MatchupHeader
-        primary={PLAYERS.judge_aaron}
-        opponent={PLAYERS.skubal_tarik}
+        primary={PLAYERS.judge_aaron!}
+        opponent={PLAYERS.skubal_tarik!}
         context="NYY @ DET"
       />,
     );
@@ -61,8 +61,8 @@ describe("MatchupHeader", () => {
   it("renders the context line", () => {
     const html = render(
       <MatchupHeader
-        primary={PLAYERS.judge_aaron}
-        opponent={PLAYERS.skubal_tarik}
+        primary={PLAYERS.judge_aaron!}
+        opponent={PLAYERS.skubal_tarik!}
         context="NYY @ DET · Wed May 27, 2026"
       />,
     );
@@ -72,8 +72,8 @@ describe("MatchupHeader", () => {
   it("uses scarlet for the axis glyph", () => {
     const html = render(
       <MatchupHeader
-        primary={PLAYERS.judge_aaron}
-        opponent={PLAYERS.skubal_tarik}
+        primary={PLAYERS.judge_aaron!}
+        opponent={PLAYERS.skubal_tarik!}
         context="NYY @ DET"
       />,
     );
@@ -83,8 +83,8 @@ describe("MatchupHeader", () => {
   it("includes an LHP / RHP hand badge in the title", () => {
     const html = render(
       <MatchupHeader
-        primary={PLAYERS.judge_aaron}
-        opponent={PLAYERS.skubal_tarik}
+        primary={PLAYERS.judge_aaron!}
+        opponent={PLAYERS.skubal_tarik!}
         context="NYY @ DET"
       />,
     );

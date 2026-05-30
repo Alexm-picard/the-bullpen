@@ -31,13 +31,15 @@ const RGB_STOPS = STOPS.map(hexToRgb);
 
 /** Map x ∈ [0, 1] to a Viridis hex colour. NaN / out-of-range → endpoint colours. */
 export function viridis(x: number): string {
-  if (Number.isNaN(x) || x <= 0) return STOPS[0];
-  if (x >= 1) return STOPS[STOPS.length - 1];
+  // STOPS / RGB_STOPS are fixed non-empty arrays and i is clamped to a valid
+  // segment by the x ∈ (0,1) guards above, so these index accesses are in-bounds.
+  if (Number.isNaN(x) || x <= 0) return STOPS[0]!;
+  if (x >= 1) return STOPS[STOPS.length - 1]!;
   const segments = RGB_STOPS.length - 1; // 4 segments for 5 stops
   const scaled = x * segments;
   const i = Math.floor(scaled);
   const t = scaled - i;
-  const [r0, g0, b0] = RGB_STOPS[i];
-  const [r1, g1, b1] = RGB_STOPS[i + 1];
+  const [r0, g0, b0] = RGB_STOPS[i]!;
+  const [r1, g1, b1] = RGB_STOPS[i + 1]!;
   return rgbToHex(r0 + (r1 - r0) * t, g0 + (g1 - g0) * t, b0 + (b1 - b0) * t);
 }

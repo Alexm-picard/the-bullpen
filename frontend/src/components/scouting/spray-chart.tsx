@@ -65,7 +65,8 @@ function rampColor(density: number): string {
 
 function describeDominant(zones: SprayZone[]): string {
   if (zones.length === 0) return "no spray data";
-  const top = [...zones].sort((a, b) => b.density - a.density)[0];
+  // Non-empty after the guard, so [0] is defined.
+  const top = [...zones].sort((a, b) => b.density - a.density)[0]!;
   const totalCount = zones.reduce((acc, z) => acc + z.count, 0);
   const pct =
     totalCount > 0 ? ((top.count / totalCount) * 100).toFixed(0) : "0";

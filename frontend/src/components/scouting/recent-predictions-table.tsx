@@ -30,6 +30,14 @@ function formatTs(iso: string): string {
   const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
   if (!match) return iso;
   const [, , mm, dd, hh, mi] = match;
+  if (
+    mm === undefined ||
+    dd === undefined ||
+    hh === undefined ||
+    mi === undefined
+  ) {
+    return iso;
+  }
   const monthNames = [
     "Jan",
     "Feb",

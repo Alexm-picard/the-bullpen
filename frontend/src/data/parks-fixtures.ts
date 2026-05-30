@@ -537,9 +537,9 @@ function makeMiniGrid(
     grid.push(row);
   }
   if (max > 0) {
-    for (let r = 0; r < size; r++) {
-      for (let c = 0; c < size; c++) {
-        grid[r][c] = grid[r][c] / max;
+    for (const row of grid) {
+      for (let c = 0; c < row.length; c++) {
+        row[c] = row[c]! / max;
       }
     }
   }

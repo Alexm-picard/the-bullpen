@@ -61,6 +61,11 @@ export default function HomePage() {
   const { l: lhpCount, r: rhpCount } = computeHandCounts();
   const featuredBatter = PLAYERS.judge_aaron;
   const featuredPitcher = PLAYERS.skubal_tarik;
+  if (!featuredBatter || !featuredPitcher) {
+    throw new Error(
+      "home fixture inconsistency: missing featured Judge/Skubal",
+    );
+  }
 
   return (
     <ReportSheet>

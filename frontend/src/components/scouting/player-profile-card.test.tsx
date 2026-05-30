@@ -24,28 +24,28 @@ function render(ui: React.ReactElement): string {
 describe("PlayerProfileCard", () => {
   it("renders the player name", () => {
     const html = render(
-      <PlayerProfileCard player={PLAYERS.judge_aaron} variant="batter" />,
+      <PlayerProfileCard player={PLAYERS.judge_aaron!} variant="batter" />,
     );
     expect(html).toContain("Aaron Judge");
   });
 
   it("renders header label 'Batter' for variant=batter", () => {
     const html = render(
-      <PlayerProfileCard player={PLAYERS.judge_aaron} variant="batter" />,
+      <PlayerProfileCard player={PLAYERS.judge_aaron!} variant="batter" />,
     );
     expect(html).toContain("Batter");
   });
 
   it("renders header label 'Pitcher' for variant=pitcher", () => {
     const html = render(
-      <PlayerProfileCard player={PLAYERS.skubal_tarik} variant="pitcher" />,
+      <PlayerProfileCard player={PLAYERS.skubal_tarik!} variant="pitcher" />,
     );
     expect(html).toContain("Pitcher");
   });
 
   it("renders the jersey and team", () => {
     const html = render(
-      <PlayerProfileCard player={PLAYERS.judge_aaron} variant="batter" />,
+      <PlayerProfileCard player={PLAYERS.judge_aaron!} variant="batter" />,
     );
     expect(html).toContain("#99");
     expect(html).toContain("NYY");
@@ -53,14 +53,14 @@ describe("PlayerProfileCard", () => {
 
   it("renders the summary copy", () => {
     const html = render(
-      <PlayerProfileCard player={PLAYERS.judge_aaron} variant="batter" />,
+      <PlayerProfileCard player={PLAYERS.judge_aaron!} variant="batter" />,
     );
     expect(html).toContain("Premier right-handed power threat");
   });
 
   it("renders every grade label and value", () => {
     const html = render(
-      <PlayerProfileCard player={PLAYERS.judge_aaron} variant="batter" />,
+      <PlayerProfileCard player={PLAYERS.judge_aaron!} variant="batter" />,
     );
     expect(html).toContain("Power");
     // Judge power = 80
@@ -69,14 +69,14 @@ describe("PlayerProfileCard", () => {
 
   it("renders the navy chrome in the header bar", () => {
     const html = render(
-      <PlayerProfileCard player={PLAYERS.judge_aaron} variant="batter" />,
+      <PlayerProfileCard player={PLAYERS.judge_aaron!} variant="batter" />,
     );
     expect(html.toLowerCase()).toContain(colors.navy.toLowerCase());
   });
 
   it("renders position + hand metadata", () => {
     const html = render(
-      <PlayerProfileCard player={PLAYERS.skubal_tarik} variant="pitcher" />,
+      <PlayerProfileCard player={PLAYERS.skubal_tarik!} variant="pitcher" />,
     );
     expect(html).toContain("SP");
     expect(html).toContain("L/L");

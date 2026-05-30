@@ -129,7 +129,7 @@ describe("design tokens — scouting-report identity", () => {
   it("orders the type scale monotonically and has 8 entries", () => {
     expect(typography.scale).toHaveLength(8);
     for (let i = 1; i < typography.scale.length; i++) {
-      expect(typography.scale[i]).toBeGreaterThan(typography.scale[i - 1]);
+      expect(typography.scale[i]).toBeGreaterThan(typography.scale[i - 1]!);
     }
   });
 
@@ -138,7 +138,7 @@ describe("design tokens — scouting-report identity", () => {
   it("orders the 9-entry spacing scale monotonically (8-point grid)", () => {
     expect(spacing).toHaveLength(9);
     for (let i = 1; i < spacing.length; i++) {
-      expect(spacing[i]).toBeGreaterThan(spacing[i - 1]);
+      expect(spacing[i]).toBeGreaterThan(spacing[i - 1]!);
     }
     // Floor is 4px (the grid's base unit, not 2px any more)
     expect(spacing[0]).toBe(4);

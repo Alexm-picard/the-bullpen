@@ -61,9 +61,12 @@ function describePeak(grid: number[][]): string {
   let bestC = 0;
   let best = -1;
   for (let r = 0; r < grid.length; r++) {
-    for (let c = 0; c < grid[r].length; c++) {
-      if (grid[r][c] > best) {
-        best = grid[r][c];
+    const row = grid[r];
+    if (row === undefined) continue;
+    for (let c = 0; c < row.length; c++) {
+      const value = row[c];
+      if (value !== undefined && value > best) {
+        best = value;
         bestR = r;
         bestC = c;
       }

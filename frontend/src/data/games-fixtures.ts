@@ -186,7 +186,8 @@ function dist(winner: OutcomeClass, winnerP: number): Record<string, number> {
   }
   // Normalize the others so they sum to exactly `remaining`.
   const othersSum = Object.values(biased).reduce((a, b) => a + b, 0);
-  for (const c of others) biased[c] = (biased[c] / othersSum) * remaining;
+  for (const c of others)
+    biased[c] = ((biased[c] ?? 0) / othersSum) * remaining;
 
   return { ...biased, [winner]: winnerP };
 }
