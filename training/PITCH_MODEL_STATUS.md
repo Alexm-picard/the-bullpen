@@ -24,16 +24,31 @@ Best architecture so far (the "combined" model):
 
 ### Two runners (kept separate on purpose)
 
-**Best architecture (canonical):** `training/scripts/run_combined_experiment.py`
-Trains the V2 (pitcher-emb) and catcher-aware transformers, extracts embeddings,
-and produces the 3-way comparison — Hybrid+Context / Catcher-Hybrid (base) /
-**Catcher-Hybrid + Context** (the combined model). This is the "best so far"
-without any of the three experimental ideas below. Memory-proven (completed a
-full run). Run:
+**Best architecture (canonical).** Two transformers (V2 pitcher-emb and
+catcher-aware) → LightGBM meta-models, giving Hybrid+Context / Catcher-Hybrid
+(base) / **Catcher-Hybrid + Context**. No experimental ideas (below).
 
-```bash
-cd training && CLICKHOUSE_PORT=9000 uv run python scripts/run_combined_experiment.py
-```
+- **Per-model (recommended locally — one GPU-heavy transformer at a time, so the
+  machine can rest between runs):**
+  ```bash
+  cd training
+  CLICKHOUSE_PORT=9000 uv run python scripts/train_hybrid_context.py   # V2; best accuracy 45.26%
+  # ...let it rest...
+  CLICKHOUSE_PORT=9000 uv run python scripts/train_catcher.py          # catcher; best ECE 0.0070
+  ```
+  Each trains one transformer, saves its weights to `--save-dir`
+  (`artifacts/pitch_combined_v1`), and merges into one `metadata.json`. Order is
+  irrelevant; run either alone. Shared plumbing: `pitch_comparison/combined_common.py`.
+- **All-in-one (cloud / healthy host):** `scripts/run_combined_experiment.py`
+  trains both back-to-back. Memory-proven (completed a full run).
+  ```bash
+  cd training && CLICKHOUSE_PORT=9000 uv run python scripts/run_combined_experiment.py
+  ```
+
+**Reusing saved models (no retrain):** `pitch_comparison/load_combined.py` —
+`load_combined_models("artifacts/pitch_combined_v1")` reconstructs whichever
+models have been trained (untrained ones are `None`). CLI sanity check:
+`uv run python -m bullpen_training.pitch_comparison.load_combined`.
 
 **Experimental extensions (held for cloud):** `training/scripts/run_final_experiments.py`
 (wrapper `run_final_experiments.sh`). Same catcher-aware base, plus **three
