@@ -20,7 +20,6 @@ from pathlib import Path
 import numpy as np
 
 from bullpen_training.pitch_comparison.combined_common import (
-    ALL_FEAT,
     feature_matrix,  # noqa: F401  (kept for parity; stages build matrices themselves)
 )
 from bullpen_training.pitch_comparison.config import ExperimentConfig
@@ -70,8 +69,11 @@ def main() -> None:
     print("loading enriched data (with streak features)...")
     raw = load_enriched_data(season_from=cfg.season_from, season_to=cfg.season_to, limit=cfg.limit)
     train_df, val_df, test_df = prepare_enriched_datasets(
-        raw, train_years=cfg.train_years, val_years=cfg.val_years,
-        test_years=cfg.test_years, add_streak=True,
+        raw,
+        train_years=cfg.train_years,
+        val_years=cfg.val_years,
+        test_years=cfg.test_years,
+        add_streak=True,
     )
     del raw
     gc.collect()
@@ -81,6 +83,7 @@ def main() -> None:
         return
 
     import pandas as pd
+
     for df in (train_df, val_df, test_df):
         for col in streak_feat:
             df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -96,15 +99,25 @@ def main() -> None:
 
     print("\ntraining catcher-aware transformer (GPU)...")
     model, index, p_map, c_map, _t = train_catcher_transformer(
-        train_df, val_df, full_df, cfg, use_catcher=True, variant_name="Catcher",
+        train_df,
+        val_df,
+        full_df,
+        cfg,
+        use_catcher=True,
+        variant_name="Catcher",
     )
     set_cluster_embeddings(
-        clusters, model.pitcher_emb.weight.detach().cpu().numpy(), p_map, train_df,
+        clusters,
+        model.pitcher_emb.weight.detach().cpu().numpy(),
+        p_map,
+        train_df,
     )
     pe_dim = model.pitcher_emb.embedding_dim
 
     print("extracting catcher-hybrid embeddings (GPU)...")
-    emb_train = extract_catcher_hybrid_embeddings(model, index, p_map, c_map, full_df, train_idx, cfg)
+    emb_train = extract_catcher_hybrid_embeddings(
+        model, index, p_map, c_map, full_df, train_idx, cfg
+    )
     emb_val = extract_catcher_hybrid_embeddings(model, index, p_map, c_map, full_df, val_idx, cfg)
     emb_test = extract_catcher_hybrid_embeddings(model, index, p_map, c_map, full_df, test_idx, cfg)
     n_emb = int(emb_train.shape[1])
@@ -127,21 +140,24 @@ def main() -> None:
     save_array(stage_dir, "is_rookie_test", is_rookie_test.astype(bool))
     save_array(stage_dir, "cluster_ids_test", cluster_ids_test.astype(np.int32))
     save_pickle(stage_dir, "clusters", clusters)
-    save_meta(stage_dir, {
-        "n_emb": n_emb,
-        "n_streak": n_streak,
-        "d_model": int(cfg.d_model),
-        "pitcher_embed_dim": int(pe_dim),
-        "pitcher_emb_slice": [int(cfg.d_model), int(cfg.d_model + pe_dim)],
-        "tab_cols": list(streak_feat),
-        "ctx_cols": list(ctx_feat),
-        "streak_cols": list(STREAK_FEATURE_COLS),
-        "n_test": int(len(test_df)),
-        "n_rookie_test": int(is_rookie_test.sum()),
-        "rookie_threshold": ROOKIE_PITCH_THRESHOLD,
-        "seed": cfg.seed,
-        "lgbm_num_threads": cfg.lgbm_num_threads,
-    })
+    save_meta(
+        stage_dir,
+        {
+            "n_emb": n_emb,
+            "n_streak": n_streak,
+            "d_model": int(cfg.d_model),
+            "pitcher_embed_dim": int(pe_dim),
+            "pitcher_emb_slice": [int(cfg.d_model), int(cfg.d_model + pe_dim)],
+            "tab_cols": list(streak_feat),
+            "ctx_cols": list(ctx_feat),
+            "streak_cols": list(STREAK_FEATURE_COLS),
+            "n_test": len(test_df),
+            "n_rookie_test": int(is_rookie_test.sum()),
+            "rookie_threshold": ROOKIE_PITCH_THRESHOLD,
+            "seed": cfg.seed,
+            "lgbm_num_threads": cfg.lgbm_num_threads,
+        },
+    )
     print(f"  stage 1 complete -> {stage_dir}")
     print("  next: let the machine cool, then run final_stage2_boosters.py")
 

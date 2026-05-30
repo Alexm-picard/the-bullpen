@@ -338,13 +338,12 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    park_ids = (
-        tuple(sorted(args.parks)) if args.parks
-        else tuple(sorted(load_all_parks().keys()))
-    )
+    park_ids = tuple(sorted(args.parks)) if args.parks else tuple(sorted(load_all_parks().keys()))
 
-    print(f"training {len(park_ids)} per-park models "
-          f"(seasons {args.train_season_from}-{args.train_season_to})")
+    print(
+        f"training {len(park_ids)} per-park models "
+        f"(seasons {args.train_season_from}-{args.train_season_to})"
+    )
 
     train_all_parks(
         park_ids=park_ids,

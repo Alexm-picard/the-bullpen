@@ -79,13 +79,15 @@ def _evaluate(
     return ModelMetrics(
         name=name,
         pt_accuracy=float(accuracy_score(y_pt, pt_pred_class)),
-        pt_logloss=float(log_loss(y_pt, preds.pitch_type_proba,
-                                  labels=list(range(len(PITCH_TYPE_CLASSES))))),
+        pt_logloss=float(
+            log_loss(y_pt, preds.pitch_type_proba, labels=list(range(len(PITCH_TYPE_CLASSES))))
+        ),
         velo_mae=float(mean_absolute_error(y_velo, preds.velocity)),
         velo_rmse=float(np.sqrt(np.mean((y_velo - preds.velocity) ** 2))),
         outcome_accuracy=float(accuracy_score(y_out, out_pred_class)),
-        outcome_logloss=float(log_loss(y_out, preds.outcome_proba,
-                                       labels=list(range(len(OUTCOME_CLASSES))))),
+        outcome_logloss=float(
+            log_loss(y_out, preds.outcome_proba, labels=list(range(len(OUTCOME_CLASSES))))
+        ),
         ab_mae=float(mean_absolute_error(y_ab, preds.ab_pitch_count)),
         ab_rmse=float(np.sqrt(np.mean((y_ab - preds.ab_pitch_count) ** 2))),
         train_time_sec=train_time,
@@ -100,22 +102,34 @@ def _plot_comparison(
     colors = [COLORS.get(n, "#888888") for n in names]
 
     metric_groups = [
-        ("Pitch Type\nAccuracy", [m.pt_accuracy for m in metrics_list],
-         "higher", "pitch_type_accuracy"),
-        ("Pitch Type\nLog Loss", [m.pt_logloss for m in metrics_list],
-         "lower", "pitch_type_logloss"),
-        ("Velocity\nMAE (mph)", [m.velo_mae for m in metrics_list],
-         "lower", "velocity_mae"),
-        ("Velocity\nRMSE (mph)", [m.velo_rmse for m in metrics_list],
-         "lower", "velocity_rmse"),
-        ("Outcome\nAccuracy", [m.outcome_accuracy for m in metrics_list],
-         "higher", "outcome_accuracy"),
-        ("Outcome\nLog Loss", [m.outcome_logloss for m in metrics_list],
-         "lower", "outcome_logloss"),
-        ("AB Pitch Count\nMAE", [m.ab_mae for m in metrics_list],
-         "lower", "ab_count_mae"),
-        ("Training\nTime (sec)", [m.train_time_sec for m in metrics_list],
-         "lower", "train_time"),
+        (
+            "Pitch Type\nAccuracy",
+            [m.pt_accuracy for m in metrics_list],
+            "higher",
+            "pitch_type_accuracy",
+        ),
+        (
+            "Pitch Type\nLog Loss",
+            [m.pt_logloss for m in metrics_list],
+            "lower",
+            "pitch_type_logloss",
+        ),
+        ("Velocity\nMAE (mph)", [m.velo_mae for m in metrics_list], "lower", "velocity_mae"),
+        ("Velocity\nRMSE (mph)", [m.velo_rmse for m in metrics_list], "lower", "velocity_rmse"),
+        (
+            "Outcome\nAccuracy",
+            [m.outcome_accuracy for m in metrics_list],
+            "higher",
+            "outcome_accuracy",
+        ),
+        (
+            "Outcome\nLog Loss",
+            [m.outcome_logloss for m in metrics_list],
+            "lower",
+            "outcome_logloss",
+        ),
+        ("AB Pitch Count\nMAE", [m.ab_mae for m in metrics_list], "lower", "ab_count_mae"),
+        ("Training\nTime (sec)", [m.train_time_sec for m in metrics_list], "lower", "train_time"),
     ]
 
     fig, axes = plt.subplots(2, 4, figsize=(24, 10))
@@ -128,10 +142,7 @@ def _plot_comparison(
         ax.grid(axis="y", alpha=0.3)
         ax.tick_params(axis="x", rotation=20, labelsize=8)
 
-        best_idx = (
-            int(np.argmax(vals)) if direction == "higher"
-            else int(np.argmin(vals))
-        )
+        best_idx = int(np.argmax(vals)) if direction == "higher" else int(np.argmin(vals))
         bars[best_idx].set_edgecolor("black")
         bars[best_idx].set_linewidth(2)
 
@@ -141,7 +152,8 @@ def _plot_comparison(
 
     fig.suptitle(
         "Four-Way Pitch Model Comparison (test on 2025 holdout)",
-        fontsize=15, fontweight="bold",
+        fontsize=15,
+        fontweight="bold",
     )
     fig.tight_layout()
     fig.savefig(out_dir / "pitch_comparison_summary.png", dpi=150)
@@ -158,22 +170,46 @@ def _plot_per_target_bars(
     colors = [COLORS.get(n, "#888") for n in names]
 
     targets = [
-        ("Pitch Type Prediction",
-         "Accuracy", [m.pt_accuracy for m in metrics_list], True,
-         "Log Loss", [m.pt_logloss for m in metrics_list], False,
-         "pitch_type_detail.png"),
-        ("Velocity Prediction",
-         "MAE (mph)", [m.velo_mae for m in metrics_list], False,
-         "RMSE (mph)", [m.velo_rmse for m in metrics_list], False,
-         "velocity_detail.png"),
-        ("Pitch Outcome Prediction",
-         "Accuracy", [m.outcome_accuracy for m in metrics_list], True,
-         "Log Loss", [m.outcome_logloss for m in metrics_list], False,
-         "outcome_detail.png"),
-        ("AB Pitch Count Prediction",
-         "MAE (pitches)", [m.ab_mae for m in metrics_list], False,
-         "RMSE (pitches)", [m.ab_rmse for m in metrics_list], False,
-         "ab_count_detail.png"),
+        (
+            "Pitch Type Prediction",
+            "Accuracy",
+            [m.pt_accuracy for m in metrics_list],
+            True,
+            "Log Loss",
+            [m.pt_logloss for m in metrics_list],
+            False,
+            "pitch_type_detail.png",
+        ),
+        (
+            "Velocity Prediction",
+            "MAE (mph)",
+            [m.velo_mae for m in metrics_list],
+            False,
+            "RMSE (mph)",
+            [m.velo_rmse for m in metrics_list],
+            False,
+            "velocity_detail.png",
+        ),
+        (
+            "Pitch Outcome Prediction",
+            "Accuracy",
+            [m.outcome_accuracy for m in metrics_list],
+            True,
+            "Log Loss",
+            [m.outcome_logloss for m in metrics_list],
+            False,
+            "outcome_detail.png",
+        ),
+        (
+            "AB Pitch Count Prediction",
+            "MAE (pitches)",
+            [m.ab_mae for m in metrics_list],
+            False,
+            "RMSE (pitches)",
+            [m.ab_rmse for m in metrics_list],
+            False,
+            "ab_count_detail.png",
+        ),
     ]
 
     for title, m1_label, m1_vals, m1_higher, m2_label, m2_vals, m2_higher, fname in targets:
@@ -186,8 +222,7 @@ def _plot_per_target_bars(
         best1 = int(np.argmax(m1_vals)) if m1_higher else int(np.argmin(m1_vals))
         for i, v in enumerate(m1_vals):
             weight = "bold" if i == best1 else "normal"
-            ax1.text(i, v, f"{v:.4f}", ha="center", va="bottom",
-                     fontsize=9, fontweight=weight)
+            ax1.text(i, v, f"{v:.4f}", ha="center", va="bottom", fontsize=9, fontweight=weight)
 
         ax2.bar(names, m2_vals, color=colors, alpha=0.85)
         ax2.set_title(m2_label)
@@ -196,8 +231,7 @@ def _plot_per_target_bars(
         best2 = int(np.argmax(m2_vals)) if m2_higher else int(np.argmin(m2_vals))
         for i, v in enumerate(m2_vals):
             weight = "bold" if i == best2 else "normal"
-            ax2.text(i, v, f"{v:.4f}", ha="center", va="bottom",
-                     fontsize=9, fontweight=weight)
+            ax2.text(i, v, f"{v:.4f}", ha="center", va="bottom", fontsize=9, fontweight=weight)
 
         fig.suptitle(title, fontsize=13, fontweight="bold")
         fig.tight_layout()
@@ -230,9 +264,7 @@ def _print_table(metrics_list: list[ModelMetrics]) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Four-way pitch model comparison."
-    )
+    parser = argparse.ArgumentParser(description="Four-way pitch model comparison.")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--out-dir", type=Path, default=Path("data/eval/pitch"))
     parser.add_argument("--seed", type=int, default=42)
@@ -240,7 +272,9 @@ def main() -> None:
 
     print("loading pitch data from ClickHouse...")
     raw_df = load_pitch_data(
-        season_from=2015, season_to=2025, limit=args.limit,
+        season_from=2015,
+        season_to=2025,
+        limit=args.limit,
     )
     print(f"  {len(raw_df)} rows loaded")
 
@@ -256,12 +290,13 @@ def main() -> None:
     )
     print(f"  train: {len(train_df)}  val: {len(val_df)}  test: {len(test_df)}")
     if len(test_df) == 0:
-        print("ERROR: test set is empty. Use a wider season range or "
-              "remove --limit so data covers 2025.")
+        print(
+            "ERROR: test set is empty. Use a wider season range or "
+            "remove --limit so data covers 2025."
+        )
         return
     if len(val_df) == 0:
-        print("WARNING: val set is empty — no early stopping for "
-              "boosted models.")
+        print("WARNING: val set is empty — no early stopping for boosted models.")
 
     # Ensure numeric types for all feature columns.
     for df in [train_df, val_df, test_df]:
@@ -281,7 +316,9 @@ def main() -> None:
     # 2. Multi-task MLP
     print("\n[2/4] training Multi-task MLP...")
     mlp_model, mlp_scaler, mlp_time = train_mlp(
-        train_df, val_df, seed=args.seed,
+        train_df,
+        val_df,
+        seed=args.seed,
     )
     mlp_preds = predict_mlp(mlp_model, mlp_scaler, test_df)
     mlp_metrics = _evaluate("Multi-task MLP", mlp_preds, test_df, mlp_time)
@@ -299,7 +336,9 @@ def main() -> None:
     # 4. Logistic / Ridge baseline
     print("\n[4/4] training Logistic/Ridge baseline...")
     bl_bundle, bl_scaler, bl_time = train_baseline(
-        train_df, val_df, seed=args.seed,
+        train_df,
+        val_df,
+        seed=args.seed,
     )
     bl_preds = predict_baseline(bl_bundle, bl_scaler, test_df)
     bl_metrics = _evaluate("Logistic/Ridge", bl_preds, test_df, bl_time)

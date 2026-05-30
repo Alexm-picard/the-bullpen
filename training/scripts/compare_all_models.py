@@ -127,7 +127,9 @@ def _load_per_park_mlp_results(
         model.eval()
 
         feat, lab = load_park_arrays(
-            park_id=park_id, season_from=season_from, season_to=season_to,
+            park_id=park_id,
+            season_from=season_from,
+            season_to=season_to,
         )
         if feat.shape[0] == 0:
             continue
@@ -188,7 +190,9 @@ def _load_lgbm_per_park_results(
 
         bundle = load_per_park_bundle(park_dir)
         df = load_park_lgbm_dataset(
-            park_id=park_id, season_from=season_from, season_to=season_to,
+            park_id=park_id,
+            season_from=season_from,
+            season_to=season_to,
         )
         if df.empty:
             continue
@@ -237,8 +241,13 @@ def _plot_grouped_bars(
         for idx, (_, vals, color) in enumerate(all_vals):
             if vals[i] == best:
                 ax.plot(
-                    x[i] + offsets[idx], vals[i], marker="*", color=color,
-                    markersize=10, markeredgecolor="black", markeredgewidth=0.5,
+                    x[i] + offsets[idx],
+                    vals[i],
+                    marker="*",
+                    color=color,
+                    markersize=10,
+                    markeredgecolor="black",
+                    markeredgewidth=0.5,
                     zorder=5,
                 )
 
@@ -396,15 +405,21 @@ def main() -> None:
     ]
 
     chart_defs = [
-        ("brier", "Brier Score",
-         "Per-Park Brier Score (lower = better)",
-         True, "comparison_brier.png"),
-        ("ece", "ECE",
-         "Per-Park ECE (lower = better)",
-         True, "comparison_ece.png"),
-        ("accuracy", "Accuracy",
-         "Per-Park Argmax Accuracy (higher = better)",
-         False, "comparison_accuracy.png"),
+        (
+            "brier",
+            "Brier Score",
+            "Per-Park Brier Score (lower = better)",
+            True,
+            "comparison_brier.png",
+        ),
+        ("ece", "ECE", "Per-Park ECE (lower = better)", True, "comparison_ece.png"),
+        (
+            "accuracy",
+            "Accuracy",
+            "Per-Park Argmax Accuracy (higher = better)",
+            False,
+            "comparison_accuracy.png",
+        ),
     ]
     for metric, ylabel, title, lower, fname in chart_defs:
         bar_data = [
@@ -412,9 +427,12 @@ def main() -> None:
             for label, results, color in model_series
         ]
         _plot_grouped_bars(
-            common_parks, bar_data,
-            ylabel=ylabel, title=title,
-            out_path=out_dir / fname, lower_is_better=lower,
+            common_parks,
+            bar_data,
+            ylabel=ylabel,
+            title=title,
+            out_path=out_dir / fname,
+            lower_is_better=lower,
         )
 
     _plot_summary(model_series, out_dir / "comparison_summary.png")
@@ -430,8 +448,13 @@ def main() -> None:
     model_keys = ["mlp", "per_park_mlp", "lgbm", "lgbm_per_park"]
     for key, (_, results, _) in zip(model_keys, model_series, strict=True):
         json_out["models"][key] = [  # type: ignore[union-attr]
-            {"park_id": r.park_id, "brier": r.brier, "ece": r.ece,
-             "accuracy": r.accuracy, "n_samples": r.n_samples}
+            {
+                "park_id": r.park_id,
+                "brier": r.brier,
+                "ece": r.ece,
+                "accuracy": r.accuracy,
+                "n_samples": r.n_samples,
+            }
             for r in results
         ]
     json_path = out_dir / "comparison_all.json"

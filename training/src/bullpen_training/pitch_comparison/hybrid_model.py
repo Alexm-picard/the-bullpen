@@ -42,7 +42,10 @@ def _extract_embeddings(
     model.to(device).eval()
 
     ds = PitchSequenceDataset(
-        index, indices, config.seq_window, include_features=False,
+        index,
+        indices,
+        config.seq_window,
+        include_features=False,
     )
     loader = DataLoader(
         ds,
@@ -73,20 +76,22 @@ def train_hybrid(
 ) -> tuple[lgb.Booster, float]:
     t0 = time.perf_counter()
 
-    train_indices = np.where(
-        full_df["season"].isin(config.train_years).values
-    )[0].astype(np.int32)
-    val_indices = np.where(
-        full_df["season"].isin(config.val_years).values
-    )[0].astype(np.int32)
+    train_indices = np.where(full_df["season"].isin(config.train_years).values)[0].astype(np.int32)
+    val_indices = np.where(full_df["season"].isin(config.val_years).values)[0].astype(np.int32)
 
     print("  extracting train embeddings...", flush=True)
     train_emb = _extract_embeddings(
-        transformer, index, train_indices, config,
+        transformer,
+        index,
+        train_indices,
+        config,
     )
     print("  extracting val embeddings...", flush=True)
     val_emb = _extract_embeddings(
-        transformer, index, val_indices, config,
+        transformer,
+        index,
+        val_indices,
+        config,
     )
 
     # Combine embeddings + tabular features.
@@ -142,11 +147,12 @@ def predict_hybrid(
     full_df: pd.DataFrame,
     config: ExperimentConfig,
 ) -> PredictionBundle:
-    test_indices = np.where(
-        full_df["season"].isin(config.test_years).values
-    )[0].astype(np.int32)
+    test_indices = np.where(full_df["season"].isin(config.test_years).values)[0].astype(np.int32)
     test_emb = _extract_embeddings(
-        transformer, index, test_indices, config,
+        transformer,
+        index,
+        test_indices,
+        config,
     )
     feat_cols = list(FEATURE_COLS)
     test_tab = test_df[feat_cols].values.astype(np.float32)

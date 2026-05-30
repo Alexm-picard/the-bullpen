@@ -38,9 +38,7 @@ class PitcherSequenceIndex:
 
         # Extract column arrays for fast token construction.
         self.pitch_type_int = df["pitch_type_int"].values.astype(np.int8)
-        self.release_speed = df["release_speed_mph"].values.astype(
-            np.float32
-        )
+        self.release_speed = df["release_speed_mph"].values.astype(np.float32)
         self.outcome_int = df["outcome_int"].values.astype(np.int8)
         self.count_balls = df["count_balls"].values.astype(np.int8)
         self.count_strikes = df["count_strikes"].values.astype(np.int8)
@@ -52,11 +50,7 @@ class PitcherSequenceIndex:
 
         # Features array for hybrid model.
         feat_cols = [c for c in FEATURE_COLS if c in df.columns]
-        self.features = (
-            df[feat_cols].values.astype(np.float32)
-            if feat_cols
-            else None
-        )
+        self.features = df[feat_cols].values.astype(np.float32) if feat_cols else None
 
         # Build per-pitcher sorted row indices.
         # Data is already sorted by game_date/game_id/at_bat_index/pitch_number,
@@ -93,7 +87,9 @@ class PitcherSequenceIndex:
         return tm
 
     def get_sequence_rows(
-        self, global_row: int, window_size: int,
+        self,
+        global_row: int,
+        window_size: int,
     ) -> np.ndarray:
         """Return up to window_size prior row indices for this row's pitcher."""
         pid = int(self.row_to_pitcher[global_row])
@@ -109,9 +105,7 @@ class PitcherSequenceIndex:
         if 0 <= pt < N_PITCH_TYPES:
             token[pt] = 1.0
         # Normalized velocity (center ~90 mph, scale ~10).
-        token[N_PITCH_TYPES] = (
-            float(self.release_speed[row]) - 90.0
-        ) / 10.0
+        token[N_PITCH_TYPES] = (float(self.release_speed[row]) - 90.0) / 10.0
         oc = int(self.outcome_int[row])
         if 0 <= oc < N_OUTCOMES:
             token[N_PITCH_TYPES + 1 + oc] = 1.0
@@ -142,17 +136,17 @@ class PitchSequenceDataset(Dataset):
         return len(self.valid_indices)
 
     def __getitem__(
-        self, idx: int,
+        self,
+        idx: int,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
         """Returns (sequence, padding_mask, features, target_pitch_type)."""
         global_row = int(self.valid_indices[idx])
-        seq_rows = self.index.get_sequence_rows(
-            global_row, self.window_size
-        )
+        seq_rows = self.index.get_sequence_rows(global_row, self.window_size)
 
         # Build sequence tensor with left-padding (gather precomputed tokens).
         seq = np.zeros(
-            (self.window_size, RAW_TOKEN_DIM), dtype=np.float32,
+            (self.window_size, RAW_TOKEN_DIM),
+            dtype=np.float32,
         )
         pad_mask = np.ones(self.window_size, dtype=np.bool_)
         n_real = len(seq_rows)

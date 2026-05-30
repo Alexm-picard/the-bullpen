@@ -11,9 +11,7 @@ class ExperimentConfig:
     seed: int = 42
     season_from: int = 2015
     season_to: int = 2025
-    train_years: tuple[int, ...] = field(
-        default_factory=lambda: tuple(range(2015, 2024))
-    )
+    train_years: tuple[int, ...] = field(default_factory=lambda: tuple(range(2015, 2024)))
     val_years: tuple[int, ...] = (2024,)
     test_years: tuple[int, ...] = (2025,)
     limit: int | None = None
@@ -72,7 +70,10 @@ class ExperimentConfig:
         return "cpu"
 
     def loader_kwargs(
-        self, *, persistent: bool = False, force_sync: bool = False,
+        self,
+        *,
+        persistent: bool = False,
+        force_sync: bool = False,
     ) -> dict:
         """DataLoader kwargs honouring the worker config.
 

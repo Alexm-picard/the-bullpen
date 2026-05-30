@@ -71,9 +71,13 @@ def main() -> None:
     b_streak.save_model(str(stage_dir / "streak_booster.txt"))
 
     streak_importance = {
-        n: float(v) for n, v in zip(
-            feat_names, b_streak.feature_importance(importance_type="gain"), strict=True,
-        ) if n in STREAK_FEATURE_COLS
+        n: float(v)
+        for n, v in zip(
+            feat_names,
+            b_streak.feature_importance(importance_type="gain"),
+            strict=True,
+        )
+        if n in STREAK_FEATURE_COLS
     }
     print("  streak feature importance (gain):")
     for n, v in sorted(streak_importance.items(), key=lambda x: -x[1]):
@@ -83,15 +87,23 @@ def main() -> None:
     b_ref = train_lgbm(xtr[:, :-n_streak], y_tr, xva[:, :-n_streak], y_va, cfg)
     p = np.asarray(b_ref.predict(xte[:, :-n_streak]), dtype=np.float32)
     m_ref = compute_pitch_type_metrics("Context (ref)", y_te, p, 0.0)
-    print(f"  acc={m_ref.accuracy:.4f}  top2={m_ref.top2_accuracy:.4f}  ece={m_ref.calibration_ece:.4f}")
+    print(
+        f"  acc={m_ref.accuracy:.4f}  top2={m_ref.top2_accuracy:.4f}"
+        f"  ece={m_ref.calibration_ece:.4f}"
+    )
     results.insert(0, m_ref)  # reference first
     b_ref.save_model(str(stage_dir / "context_ref_booster.txt"))
 
     out = {
         "stage": 2,
         "streak_models": [
-            {"name": r.name, "accuracy": r.accuracy, "top2_accuracy": r.top2_accuracy,
-             "logloss": r.logloss, "calibration_ece": r.calibration_ece}
+            {
+                "name": r.name,
+                "accuracy": r.accuracy,
+                "top2_accuracy": r.top2_accuracy,
+                "logloss": r.logloss,
+                "calibration_ece": r.calibration_ece,
+            }
             for r in results
         ],
         "streak_feature_importance": streak_importance,

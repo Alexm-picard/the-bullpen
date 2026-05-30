@@ -102,6 +102,6 @@ def test_python_onnx_matches_expected_for_every_row() -> None:
         probs = cast(np.ndarray, out[1] if len(out) > 1 else out[0])
         got = float(probs[0][1])
         wanted = float(want["onnx_probability"])  # type: ignore[arg-type]
-        assert (
-            abs(got - wanted) < tolerance
-        ), f"prob drift > {tolerance} on game_id={want['game_id']}: got {got} wanted {wanted}"
+        assert abs(got - wanted) < tolerance, (
+            f"prob drift > {tolerance} on game_id={want['game_id']}: got {got} wanted {wanted}"
+        )

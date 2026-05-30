@@ -48,7 +48,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Catcher-influence experiment.")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument(
-        "--out-dir", type=Path, default=Path("data/eval/pitch_catcher"),
+        "--out-dir",
+        type=Path,
+        default=Path("data/eval/pitch_catcher"),
     )
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
@@ -59,7 +61,9 @@ def main() -> None:
 
     print("loading enriched data...")
     raw_df = load_enriched_data(
-        season_from=cfg.season_from, season_to=cfg.season_to, limit=cfg.limit,
+        season_from=cfg.season_from,
+        season_to=cfg.season_to,
+        limit=cfg.limit,
     )
     print(f"  {len(raw_df)} rows")
     print("preparing splits...")
@@ -93,14 +97,26 @@ def main() -> None:
     # === 1. Pitcher embeddings only ===
     print("\n[1/2] Pitcher embeddings only...")
     p_model, p_index, p_pm, p_cm, p_time = train_catcher_transformer(
-        train_df, val_df, full_df, cfg,
-        use_catcher=False, variant_name="Pitcher-only",
+        train_df,
+        val_df,
+        full_df,
+        cfg,
+        use_catcher=False,
+        variant_name="Pitcher-only",
     )
     p_preds = predict_catcher_transformer(
-        p_model, p_index, p_pm, p_cm, full_df, cfg,
+        p_model,
+        p_index,
+        p_pm,
+        p_cm,
+        full_df,
+        cfg,
     )
     m = compute_pitch_type_metrics(
-        "Pitcher only", y_test, p_preds.pitch_type_proba, p_time,
+        "Pitcher only",
+        y_test,
+        p_preds.pitch_type_proba,
+        p_time,
     )
     results.append(m)
     print(f"  acc={m.accuracy:.4f}  top2={m.top2_accuracy:.4f}")
@@ -110,14 +126,26 @@ def main() -> None:
     # === 2. Pitcher + catcher embeddings ===
     print("\n[2/2] Pitcher + catcher embeddings...")
     c_model, c_index, c_pm, c_cm, c_time = train_catcher_transformer(
-        train_df, val_df, full_df, cfg,
-        use_catcher=True, variant_name="Pitcher+Catcher",
+        train_df,
+        val_df,
+        full_df,
+        cfg,
+        use_catcher=True,
+        variant_name="Pitcher+Catcher",
     )
     c_preds = predict_catcher_transformer(
-        c_model, c_index, c_pm, c_cm, full_df, cfg,
+        c_model,
+        c_index,
+        c_pm,
+        c_cm,
+        full_df,
+        cfg,
     )
     m = compute_pitch_type_metrics(
-        "Pitcher + Catcher", y_test, c_preds.pitch_type_proba, c_time,
+        "Pitcher + Catcher",
+        y_test,
+        c_preds.pitch_type_proba,
+        c_time,
     )
     results.append(m)
     print(f"  acc={m.accuracy:.4f}  top2={m.top2_accuracy:.4f}")
@@ -135,8 +163,10 @@ def main() -> None:
     print("=" * len(hdr))
 
     delta = results[1].accuracy - results[0].accuracy
-    print(f"\nCatcher effect on accuracy: {delta:+.4f} "
-          f"({'catcher helps' if delta > 0.001 else 'no material effect'})")
+    print(
+        f"\nCatcher effect on accuracy: {delta:+.4f} "
+        f"({'catcher helps' if delta > 0.001 else 'no material effect'})"
+    )
 
     # Plot comparison.
     names = [r.name for r in results]
@@ -182,7 +212,9 @@ def main() -> None:
 
             perp = min(30, embs.shape[0] - 1)
             coords = TSNE(
-                n_components=2, random_state=cfg.seed, perplexity=perp,
+                n_components=2,
+                random_state=cfg.seed,
+                perplexity=perp,
             ).fit_transform(embs)
             method = "t-SNE"
 
@@ -195,8 +227,7 @@ def main() -> None:
         fig.tight_layout()
         fig.savefig(out_dir / "catcher_embeddings.png", dpi=150)
         plt.close(fig)
-        print(f"  wrote {out_dir / 'catcher_embeddings.png'} "
-              f"({len(cids)} catchers, {method})")
+        print(f"  wrote {out_dir / 'catcher_embeddings.png'} ({len(cids)} catchers, {method})")
 
     json_out = {
         "schema_version": 1,
@@ -205,8 +236,10 @@ def main() -> None:
         "catcher_accuracy_delta": float(delta),
         "models": [
             {
-                "name": r.name, "accuracy": r.accuracy,
-                "top2_accuracy": r.top2_accuracy, "logloss": r.logloss,
+                "name": r.name,
+                "accuracy": r.accuracy,
+                "top2_accuracy": r.top2_accuracy,
+                "logloss": r.logloss,
                 "calibration_ece": r.calibration_ece,
             }
             for r in results

@@ -110,6 +110,10 @@ public class ModelLoader {
               + " — run the registry-snapshot-recovery runbook to restore it locally first");
     }
     Path snapshotDir = Path.of(mv.artifactPath()).getParent();
+    if (snapshotDir == null) {
+      throw new IllegalStateException(
+          "artifact path has no parent directory: " + mv.artifactPath());
+    }
     try {
       return LoadedBattedBallModel.load(
           versionId,

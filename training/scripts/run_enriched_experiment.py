@@ -55,12 +55,18 @@ def _extract_v2_embeddings(model, index, pitcher_map, batter_map, full_df, indic
     all_pid = _map_ids(full_df["pitcher_id"].values, pitcher_map)
     all_bid = _map_ids(full_df["batter_id"].values, batter_map)
     ds = _SeqWithIdsDataset(
-        index, indices, all_pid[indices], all_bid[indices],
+        index,
+        indices,
+        all_pid[indices],
+        all_bid[indices],
         cfg.seq_window,
     )
     loader = DataLoader(
-        ds, batch_size=cfg.transformer_batch_size * 2,
-        shuffle=False, collate_fn=_collate_v2, num_workers=0,
+        ds,
+        batch_size=cfg.transformer_batch_size * 2,
+        shuffle=False,
+        collate_fn=_collate_v2,
+        num_workers=0,
     )
     embs = []
     with torch.no_grad():
@@ -78,13 +84,21 @@ def _train_lgbm(train_x, train_y, val_x, val_y, seed):
         "objective": "multiclass",
         "num_class": len(PITCH_TYPE_CLASSES),
         "metric": "multi_logloss",
-        "learning_rate": 0.05, "num_leaves": 63, "seed": seed,
-        "deterministic": True, "force_row_wise": True, "verbose": -1,
+        "learning_rate": 0.05,
+        "num_leaves": 63,
+        "seed": seed,
+        "deterministic": True,
+        "force_row_wise": True,
+        "verbose": -1,
     }
     dt = lgb.Dataset(train_x, label=train_y)
     dv = lgb.Dataset(val_x, label=val_y, reference=dt)
     return lgb.train(
-        params, dt, 2000, valid_sets=[dt, dv], valid_names=["t", "v"],
+        params,
+        dt,
+        2000,
+        valid_sets=[dt, dv],
+        valid_names=["t", "v"],
         callbacks=[lgb.early_stopping(50, first_metric_only=True, verbose=False)],
     )
 
@@ -102,7 +116,9 @@ def main() -> None:
 
     print("loading enriched data...")
     raw_df = load_enriched_data(
-        season_from=cfg.season_from, season_to=cfg.season_to, limit=cfg.limit,
+        season_from=cfg.season_from,
+        season_to=cfg.season_to,
+        limit=cfg.limit,
     )
     print(f"  {len(raw_df)} rows")
     print("preparing enriched splits...")
@@ -120,6 +136,7 @@ def main() -> None:
         return
 
     import pandas as pd
+
     all_feat = list(FEATURE_COLS) + list(CONTEXT_FEATURE_COLS)
     for df in [train_df, val_df, test_df]:
         for col in all_feat:
@@ -134,7 +151,11 @@ def main() -> None:
     # Train the V2 transformer (pitcher embeddings) once.
     print("\ntraining V2 transformer (pitcher embeddings)...")
     v2_model, v2_index, v2_pm, v2_bm, v2_time = train_transformer_v2(
-        train_df, val_df, full_df, cfg, use_batter_embed=False,
+        train_df,
+        val_df,
+        full_df,
+        cfg,
+        use_batter_embed=False,
         variant_name="V2",
     )
 
@@ -157,7 +178,10 @@ def main() -> None:
     b_booster = _train_lgbm(base_train, train_y, base_val, val_y, cfg.seed)
     b_proba = np.asarray(b_booster.predict(base_test), dtype=np.float32)
     m = compute_pitch_type_metrics(
-        "Hybrid (base)", y_test, b_proba, v2_time + (time.perf_counter() - t0),
+        "Hybrid (base)",
+        y_test,
+        b_proba,
+        v2_time + (time.perf_counter() - t0),
     )
     results.append(m)
     print(f"  acc={m.accuracy:.4f}  top2={m.top2_accuracy:.4f}")
@@ -171,16 +195,16 @@ def main() -> None:
     c_booster = _train_lgbm(ctx_train, train_y, ctx_val, val_y, cfg.seed)
     c_proba = np.asarray(c_booster.predict(ctx_test), dtype=np.float32)
     m = compute_pitch_type_metrics(
-        "Hybrid + Context", y_test, c_proba, v2_time + (time.perf_counter() - t0),
+        "Hybrid + Context",
+        y_test,
+        c_proba,
+        v2_time + (time.perf_counter() - t0),
     )
     results.append(m)
     print(f"  acc={m.accuracy:.4f}  top2={m.top2_accuracy:.4f}")
 
     # === Feature importance of context features ===
-    feat_names = (
-        [f"emb_{i}" for i in range(train_emb.shape[1])]
-        + list(all_feat)
-    )
+    feat_names = [f"emb_{i}" for i in range(train_emb.shape[1])] + list(all_feat)
     importances = c_booster.feature_importance(importance_type="gain")
     ctx_importance = {
         name: float(imp)
@@ -237,8 +261,10 @@ def main() -> None:
         "artifact_name": "enriched_experiment",
         "models": [
             {
-                "name": r.name, "accuracy": r.accuracy,
-                "top2_accuracy": r.top2_accuracy, "logloss": r.logloss,
+                "name": r.name,
+                "accuracy": r.accuracy,
+                "top2_accuracy": r.top2_accuracy,
+                "logloss": r.logloss,
                 "calibration_ece": r.calibration_ece,
             }
             for r in results

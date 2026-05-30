@@ -41,7 +41,8 @@ class _EmbeddingDataset(Dataset):
         return self.features.shape[0]
 
     def __getitem__(
-        self, idx: int,
+        self,
+        idx: int,
     ) -> tuple[np.ndarray, int, int, int]:
         return (
             self.features[idx],
@@ -81,10 +82,14 @@ class PitcherBatterEmbeddingModel(nn.Module):
     ) -> None:
         super().__init__()
         self.pitcher_emb = nn.Embedding(
-            n_pitchers, pitcher_embed_dim, padding_idx=0,
+            n_pitchers,
+            pitcher_embed_dim,
+            padding_idx=0,
         )
         self.batter_emb = nn.Embedding(
-            n_batters, batter_embed_dim, padding_idx=0,
+            n_batters,
+            batter_embed_dim,
+            padding_idx=0,
         )
         in_dim = pitcher_embed_dim + batter_embed_dim + n_features
         self.net = nn.Sequential(
@@ -118,10 +123,12 @@ def _build_id_mapping(
 
 
 def _apply_id_mapping(
-    ids: np.ndarray, mapping: dict[int, int],
+    ids: np.ndarray,
+    mapping: dict[int, int],
 ) -> np.ndarray:
     return np.array(
-        [mapping.get(int(x), 0) for x in ids], dtype=np.int64,
+        [mapping.get(int(x), 0) for x in ids],
+        dtype=np.int64,
     )
 
 
@@ -142,10 +149,12 @@ def train_embedding_model(
 
     train_feat = train_df[feat].values.astype(np.float32)
     train_pid = _apply_id_mapping(
-        train_df["pitcher_id"].values, pitcher_map,
+        train_df["pitcher_id"].values,
+        pitcher_map,
     )
     train_bid = _apply_id_mapping(
-        train_df["batter_id"].values, batter_map,
+        train_df["batter_id"].values,
+        batter_map,
     )
     train_y = train_df["pitch_type_int"].values
 
@@ -174,10 +183,13 @@ def train_embedding_model(
     ).to(device)
 
     optimizer = torch.optim.Adam(
-        model.parameters(), lr=config.embed_lr, weight_decay=1e-4,
+        model.parameters(),
+        lr=config.embed_lr,
+        weight_decay=1e-4,
     )
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=config.embed_epochs,
+        optimizer,
+        T_max=config.embed_epochs,
     )
 
     t0 = time.perf_counter()
@@ -203,8 +215,7 @@ def train_embedding_model(
         if (epoch + 1) % 5 == 0 or epoch == 0:
             avg = loss_sum / max(n_batches, 1)
             print(
-                f"  embed epoch {epoch + 1}/{config.embed_epochs}  "
-                f"loss={avg:.4f}",
+                f"  embed epoch {epoch + 1}/{config.embed_epochs}  loss={avg:.4f}",
                 flush=True,
             )
 
@@ -232,10 +243,12 @@ def predict_embedding_model(
     test_feat = (test_feat - feat_mean) / feat_std
 
     test_pid = _apply_id_mapping(
-        test_df["pitcher_id"].values, pitcher_map,
+        test_df["pitcher_id"].values,
+        pitcher_map,
     )
     test_bid = _apply_id_mapping(
-        test_df["batter_id"].values, batter_map,
+        test_df["batter_id"].values,
+        batter_map,
     )
 
     all_probs: list[np.ndarray] = []

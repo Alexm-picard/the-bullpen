@@ -38,10 +38,10 @@ log = logging.getLogger(__name__)
 class PredictionBundle:
     """Predictions from one model on one dataset."""
 
-    pitch_type_proba: np.ndarray   # (N, 8)
-    velocity: np.ndarray           # (N,)
-    outcome_proba: np.ndarray      # (N, 6)
-    ab_pitch_count: np.ndarray     # (N,)
+    pitch_type_proba: np.ndarray  # (N, 8)
+    velocity: np.ndarray  # (N,)
+    outcome_proba: np.ndarray  # (N, 6)
+    ab_pitch_count: np.ndarray  # (N,)
     elapsed_train_sec: float
 
 
@@ -59,8 +59,12 @@ def train_lgbm(
     t0 = time.perf_counter()
 
     base_params = dict(
-        learning_rate=0.05, num_leaves=63, seed=seed,
-        deterministic=True, force_row_wise=True, verbose=-1,
+        learning_rate=0.05,
+        num_leaves=63,
+        seed=seed,
+        deterministic=True,
+        force_row_wise=True,
+        verbose=-1,
     )
     has_val = len(val_df) > 0
 
@@ -71,59 +75,80 @@ def train_lgbm(
         cbs: list = []
         if has_val:
             dv = lgb.Dataset(
-                val_df[feat], label=val_label, reference=dt,
+                val_df[feat],
+                label=val_label,
+                reference=dt,
             )
             valid_sets.append(dv)
             valid_names.append("v")
-            cbs.append(lgb.early_stopping(
-                50, first_metric_only=True, verbose=False,
-            ))
+            cbs.append(
+                lgb.early_stopping(
+                    50,
+                    first_metric_only=True,
+                    verbose=False,
+                )
+            )
         return lgb.train(
-            params, dt, 2000,
-            valid_sets=valid_sets, valid_names=valid_names,
+            params,
+            dt,
+            2000,
+            valid_sets=valid_sets,
+            valid_names=valid_names,
             callbacks=cbs,
         )
 
     pt_params = {
-        **base_params, "objective": "multiclass",
+        **base_params,
+        "objective": "multiclass",
         "num_class": len(PITCH_TYPE_CLASSES),
         "metric": "multi_logloss",
     }
     pt_model = _train_one(
-        pt_params, train_df["pitch_type_int"],
+        pt_params,
+        train_df["pitch_type_int"],
         val_df["pitch_type_int"] if has_val else None,
     )
 
     velo_params = {
-        **base_params, "objective": "regression", "metric": "rmse",
+        **base_params,
+        "objective": "regression",
+        "metric": "rmse",
     }
     velo_model = _train_one(
-        velo_params, train_df["release_speed_mph"],
+        velo_params,
+        train_df["release_speed_mph"],
         val_df["release_speed_mph"] if has_val else None,
     )
 
     out_params = {
-        **base_params, "objective": "multiclass",
+        **base_params,
+        "objective": "multiclass",
         "num_class": len(OUTCOME_CLASSES),
         "metric": "multi_logloss",
     }
     out_model = _train_one(
-        out_params, train_df["outcome_int"],
+        out_params,
+        train_df["outcome_int"],
         val_df["outcome_int"] if has_val else None,
     )
 
     ab_params = {
-        **base_params, "objective": "regression", "metric": "rmse",
+        **base_params,
+        "objective": "regression",
+        "metric": "rmse",
     }
     ab_model = _train_one(
-        ab_params, train_df["ab_total_pitches"],
+        ab_params,
+        train_df["ab_total_pitches"],
         val_df["ab_total_pitches"] if has_val else None,
     )
 
     elapsed = time.perf_counter() - t0
     bundle = {
-        "pitch_type": pt_model, "velocity": velo_model,
-        "outcome": out_model, "ab_count": ab_model,
+        "pitch_type": pt_model,
+        "velocity": velo_model,
+        "outcome": out_model,
+        "ab_count": ab_model,
     }
     return bundle, elapsed
 
@@ -159,9 +184,15 @@ class MultiTaskMLP(nn.Module):
     def __init__(self, n_features: int, *, hidden: int = 256, dropout: float = 0.15):
         super().__init__()
         self.backbone = nn.Sequential(
-            nn.Linear(n_features, hidden), nn.ReLU(), nn.Dropout(dropout),
-            nn.Linear(hidden, hidden), nn.ReLU(), nn.Dropout(dropout),
-            nn.Linear(hidden, hidden // 2), nn.ReLU(), nn.Dropout(dropout),
+            nn.Linear(n_features, hidden),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden, hidden),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden, hidden // 2),
+            nn.ReLU(),
+            nn.Dropout(dropout),
         )
         self.head_pitch_type = nn.Linear(hidden // 2, len(PITCH_TYPE_CLASSES))
         self.head_velocity = nn.Linear(hidden // 2, 1)
@@ -249,7 +280,9 @@ def train_mlp(
 
 
 def predict_mlp(
-    model: MultiTaskMLP, scaler: StandardScaler, df: pd.DataFrame,
+    model: MultiTaskMLP,
+    scaler: StandardScaler,
+    df: pd.DataFrame,
 ) -> PredictionBundle:
     feat = list(FEATURE_COLS)
     x = scaler.transform(df[feat].values.astype(np.float32))
@@ -288,59 +321,85 @@ def train_xgb(
 
     pt_model = _fit_xgb(
         xgb.XGBClassifier(
-            n_estimators=500, max_depth=6, learning_rate=0.1,
+            n_estimators=500,
+            max_depth=6,
+            learning_rate=0.1,
             objective="multi:softprob",
             num_class=len(PITCH_TYPE_CLASSES),
             eval_metric="mlogloss",
             early_stopping_rounds=30 if has_val else None,
-            random_state=seed, verbosity=0, tree_method="hist",
+            random_state=seed,
+            verbosity=0,
+            tree_method="hist",
         ),
-        train_df[feat], train_df["pitch_type_int"],
+        train_df[feat],
+        train_df["pitch_type_int"],
         val_df[feat] if has_val else None,
         val_df["pitch_type_int"] if has_val else None,
     )
 
     velo_model = _fit_xgb(
         xgb.XGBRegressor(
-            n_estimators=500, max_depth=6, learning_rate=0.1,
-            objective="reg:squarederror", eval_metric="rmse",
+            n_estimators=500,
+            max_depth=6,
+            learning_rate=0.1,
+            objective="reg:squarederror",
+            eval_metric="rmse",
             early_stopping_rounds=30 if has_val else None,
-            random_state=seed, verbosity=0, tree_method="hist",
+            random_state=seed,
+            verbosity=0,
+            tree_method="hist",
         ),
-        train_df[feat], train_df["release_speed_mph"],
+        train_df[feat],
+        train_df["release_speed_mph"],
         val_df[feat] if has_val else None,
         val_df["release_speed_mph"] if has_val else None,
     )
 
     out_model = _fit_xgb(
         xgb.XGBClassifier(
-            n_estimators=500, max_depth=6, learning_rate=0.1,
+            n_estimators=500,
+            max_depth=6,
+            learning_rate=0.1,
             objective="multi:softprob",
             num_class=len(OUTCOME_CLASSES),
             eval_metric="mlogloss",
             early_stopping_rounds=30 if has_val else None,
-            random_state=seed, verbosity=0, tree_method="hist",
+            random_state=seed,
+            verbosity=0,
+            tree_method="hist",
         ),
-        train_df[feat], train_df["outcome_int"],
+        train_df[feat],
+        train_df["outcome_int"],
         val_df[feat] if has_val else None,
         val_df["outcome_int"] if has_val else None,
     )
 
     ab_model = _fit_xgb(
         xgb.XGBRegressor(
-            n_estimators=500, max_depth=6, learning_rate=0.1,
-            objective="reg:squarederror", eval_metric="rmse",
+            n_estimators=500,
+            max_depth=6,
+            learning_rate=0.1,
+            objective="reg:squarederror",
+            eval_metric="rmse",
             early_stopping_rounds=30 if has_val else None,
-            random_state=seed, verbosity=0, tree_method="hist",
+            random_state=seed,
+            verbosity=0,
+            tree_method="hist",
         ),
-        train_df[feat], train_df["ab_total_pitches"],
+        train_df[feat],
+        train_df["ab_total_pitches"],
         val_df[feat] if has_val else None,
         val_df["ab_total_pitches"] if has_val else None,
     )
 
     elapsed = time.perf_counter() - t0
-    return {"pitch_type": pt_model, "velocity": velo_model,
-            "outcome": out_model, "ab_count": ab_model}, elapsed
+    return {
+        "pitch_type": pt_model,
+        "velocity": velo_model,
+        "outcome": out_model,
+        "ab_count": ab_model,
+    }, elapsed
 
 
 def predict_xgb(bundle: dict[str, Any], df: pd.DataFrame) -> PredictionBundle:
@@ -368,9 +427,7 @@ def train_baseline(
     t0 = time.perf_counter()
 
     scaler = StandardScaler()
-    train_x = scaler.fit_transform(
-        train_df[feat].values.astype(np.float64)
-    )
+    train_x = scaler.fit_transform(train_df[feat].values.astype(np.float64))
     nan_mask = np.isnan(train_x)
     if nan_mask.any():
         col_means = np.nanmean(train_x, axis=0)
@@ -379,7 +436,9 @@ def train_baseline(
 
     # Pitch type.
     pt_model = LogisticRegression(
-        max_iter=500, solver="lbfgs", random_state=seed,
+        max_iter=500,
+        solver="lbfgs",
+        random_state=seed,
     )
     pt_model.fit(train_x, train_df["pitch_type_int"])
 
@@ -389,7 +448,9 @@ def train_baseline(
 
     # Outcome.
     out_model = LogisticRegression(
-        max_iter=500, solver="lbfgs", random_state=seed,
+        max_iter=500,
+        solver="lbfgs",
+        random_state=seed,
     )
     out_model.fit(train_x, train_df["outcome_int"])
 
@@ -398,12 +459,22 @@ def train_baseline(
     ab_model.fit(train_x, train_df["ab_total_pitches"])
 
     elapsed = time.perf_counter() - t0
-    return {"pitch_type": pt_model, "velocity": velo_model,
-            "outcome": out_model, "ab_count": ab_model}, scaler, elapsed
+    return (
+        {
+            "pitch_type": pt_model,
+            "velocity": velo_model,
+            "outcome": out_model,
+            "ab_count": ab_model,
+        },
+        scaler,
+        elapsed,
+    )
 
 
 def predict_baseline(
-    bundle: dict[str, Any], scaler: StandardScaler, df: pd.DataFrame,
+    bundle: dict[str, Any],
+    scaler: StandardScaler,
+    df: pd.DataFrame,
 ) -> PredictionBundle:
     feat = list(FEATURE_COLS)
     x = scaler.transform(df[feat].values.astype(np.float64))

@@ -101,8 +101,7 @@ def test_post_model_uses_more_features_than_pre() -> None:
         "release_pos_z_in",
     } & set(bundle.feature_cols)
     assert len(tier4_present) == 10, (
-        f"post bundle missing Tier 4 features: "
-        f"{sorted(set(bundle.feature_cols) ^ tier4_present)}"
+        f"post bundle missing Tier 4 features: {sorted(set(bundle.feature_cols) ^ tier4_present)}"
     )
     # And the total count must be 41 (31 + 10), not 31.
     assert len(bundle.feature_cols) == 41

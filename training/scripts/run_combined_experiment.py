@@ -34,6 +34,8 @@ import lightgbm as lgb
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import torch
+from torch.utils.data import DataLoader
 
 from bullpen_training.pitch_comparison.config import ExperimentConfig
 from bullpen_training.pitch_comparison.data import (
@@ -54,15 +56,11 @@ from bullpen_training.pitch_comparison.transformer_catcher import (
     train_catcher_transformer,
 )
 from bullpen_training.pitch_comparison.transformer_v2 import (
-    train_transformer_v2,
-)
-from bullpen_training.pitch_comparison.transformer_v2 import (
     _collate_v2,
     _map_ids,
     _SeqWithIdsDataset,
+    train_transformer_v2,
 )
-import torch
-from torch.utils.data import DataLoader
 
 
 def _extract_v2_embeddings(model, index, pitcher_map, batter_map, full_df, indices, cfg):
@@ -72,11 +70,18 @@ def _extract_v2_embeddings(model, index, pitcher_map, batter_map, full_df, indic
     all_pid = _map_ids(full_df["pitcher_id"].values, pitcher_map)
     all_bid = _map_ids(full_df["batter_id"].values, batter_map)
     ds = _SeqWithIdsDataset(
-        index, indices, all_pid[indices], all_bid[indices], cfg.seq_window,
+        index,
+        indices,
+        all_pid[indices],
+        all_bid[indices],
+        cfg.seq_window,
     )
     loader = DataLoader(
-        ds, batch_size=cfg.transformer_batch_size * 2,
-        shuffle=False, collate_fn=_collate_v2, num_workers=0,
+        ds,
+        batch_size=cfg.transformer_batch_size * 2,
+        shuffle=False,
+        collate_fn=_collate_v2,
+        num_workers=0,
     )
     embs = []
     with torch.no_grad():
@@ -94,14 +99,22 @@ def _train_lgbm(train_x, train_y, val_x, val_y, seed, num_threads=0):
         "objective": "multiclass",
         "num_class": len(PITCH_TYPE_CLASSES),
         "metric": "multi_logloss",
-        "learning_rate": 0.05, "num_leaves": 63, "seed": seed,
-        "deterministic": True, "force_row_wise": True, "verbose": -1,
+        "learning_rate": 0.05,
+        "num_leaves": 63,
+        "seed": seed,
+        "deterministic": True,
+        "force_row_wise": True,
+        "verbose": -1,
         "num_threads": num_threads,  # 0 = all cores (cloud default)
     }
     dt = lgb.Dataset(train_x, label=train_y)
     dv = lgb.Dataset(val_x, label=val_y, reference=dt)
     return lgb.train(
-        params, dt, 2000, valid_sets=[dt, dv], valid_names=["t", "v"],
+        params,
+        dt,
+        2000,
+        valid_sets=[dt, dv],
+        valid_names=["t", "v"],
         callbacks=[lgb.early_stopping(50, first_metric_only=True, verbose=False)],
     )
 
@@ -112,11 +125,14 @@ def main() -> None:
     parser.add_argument("--out-dir", type=Path, default=Path("data/eval/pitch_combined"))
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
-        "--save-dir", type=Path, default=Path("artifacts/pitch_combined_v1"),
+        "--save-dir",
+        type=Path,
+        default=Path("artifacts/pitch_combined_v1"),
         help="Where to persist trained model weights (.gitignored).",
     )
     parser.add_argument(
-        "--no-save", action="store_true",
+        "--no-save",
+        action="store_true",
         help="Skip writing model weights (metrics-only run).",
     )
     args = parser.parse_args()
@@ -130,7 +146,9 @@ def main() -> None:
 
     print("loading enriched data...")
     raw_df = load_enriched_data(
-        season_from=cfg.season_from, season_to=cfg.season_to, limit=cfg.limit,
+        season_from=cfg.season_from,
+        season_to=cfg.season_to,
+        limit=cfg.limit,
     )
     print(f"  {len(raw_df)} rows")
     print("preparing enriched splits...")
@@ -172,7 +190,12 @@ def main() -> None:
     # ============================================================
     print("\n[A] training V2 transformer (pitcher embeddings only)...")
     v2_model, v2_index, v2_pm, v2_bm, v2_time = train_transformer_v2(
-        train_df, val_df, full_df, cfg, use_batter_embed=False, variant_name="V2",
+        train_df,
+        val_df,
+        full_df,
+        cfg,
+        use_batter_embed=False,
+        variant_name="V2",
     )
     print("extracting V2 embeddings...")
     v2_train = _extract_v2_embeddings(v2_model, v2_index, v2_pm, v2_bm, full_df, train_idx, cfg)
@@ -186,9 +209,14 @@ def main() -> None:
     x_te = np.hstack([v2_test, test_df[all_feat].values.astype(np.float32)])
     booster = _train_lgbm(x_tr, train_y, x_va, val_y, cfg.seed, cfg.lgbm_num_threads)
     proba = np.asarray(booster.predict(x_te), dtype=np.float32)
-    results.append(compute_pitch_type_metrics(
-        "Hybrid + Context", y_test, proba, v2_time + (time.perf_counter() - t0),
-    ))
+    results.append(
+        compute_pitch_type_metrics(
+            "Hybrid + Context",
+            y_test,
+            proba,
+            v2_time + (time.perf_counter() - t0),
+        )
+    )
     print(f"  acc={results[-1].accuracy:.4f}  top2={results[-1].top2_accuracy:.4f}")
     if save_dir is not None:
         torch.save(v2_model.state_dict(), save_dir / "v2_transformer.pt")
@@ -205,10 +233,17 @@ def main() -> None:
     # ============================================================
     print("\n[B] training catcher-aware transformer (pitcher + catcher embeddings)...")
     c_model, c_index, c_pm, c_cm, c_time = train_catcher_transformer(
-        train_df, val_df, full_df, cfg, use_catcher=True, variant_name="Catcher",
+        train_df,
+        val_df,
+        full_df,
+        cfg,
+        use_catcher=True,
+        variant_name="Catcher",
     )
     print("extracting catcher-hybrid embeddings...")
-    c_train = extract_catcher_hybrid_embeddings(c_model, c_index, c_pm, c_cm, full_df, train_idx, cfg)
+    c_train = extract_catcher_hybrid_embeddings(
+        c_model, c_index, c_pm, c_cm, full_df, train_idx, cfg
+    )
     c_val = extract_catcher_hybrid_embeddings(c_model, c_index, c_pm, c_cm, full_df, val_idx, cfg)
     c_test = extract_catcher_hybrid_embeddings(c_model, c_index, c_pm, c_cm, full_df, test_idx, cfg)
 
@@ -220,9 +255,14 @@ def main() -> None:
     x_te = np.hstack([c_test, test_df[base_feat].values.astype(np.float32)])
     booster = _train_lgbm(x_tr, train_y, x_va, val_y, cfg.seed, cfg.lgbm_num_threads)
     proba = np.asarray(booster.predict(x_te), dtype=np.float32)
-    results.append(compute_pitch_type_metrics(
-        "Catcher-Hybrid (base)", y_test, proba, c_time + (time.perf_counter() - t0),
-    ))
+    results.append(
+        compute_pitch_type_metrics(
+            "Catcher-Hybrid (base)",
+            y_test,
+            proba,
+            c_time + (time.perf_counter() - t0),
+        )
+    )
     print(f"  acc={results[-1].accuracy:.4f}  top2={results[-1].top2_accuracy:.4f}")
 
     # The combination: catcher emb + base + enriched context.
@@ -233,9 +273,14 @@ def main() -> None:
     x_te = np.hstack([c_test, test_df[all_feat].values.astype(np.float32)])
     combined_booster = _train_lgbm(x_tr, train_y, x_va, val_y, cfg.seed, cfg.lgbm_num_threads)
     proba = np.asarray(combined_booster.predict(x_te), dtype=np.float32)
-    results.append(compute_pitch_type_metrics(
-        "Catcher-Hybrid + Context", y_test, proba, c_time + (time.perf_counter() - t0),
-    ))
+    results.append(
+        compute_pitch_type_metrics(
+            "Catcher-Hybrid + Context",
+            y_test,
+            proba,
+            c_time + (time.perf_counter() - t0),
+        )
+    )
     print(f"  acc={results[-1].accuracy:.4f}  top2={results[-1].top2_accuracy:.4f}")
 
     # Context feature importance within the combined model.
@@ -309,8 +354,10 @@ def main() -> None:
         "combined_vs_hybrid_context_delta": float(combined_acc - base_acc),
         "models": [
             {
-                "name": r.name, "accuracy": r.accuracy,
-                "top2_accuracy": r.top2_accuracy, "logloss": r.logloss,
+                "name": r.name,
+                "accuracy": r.accuracy,
+                "top2_accuracy": r.top2_accuracy,
+                "logloss": r.logloss,
                 "calibration_ece": r.calibration_ece,
             }
             for r in results
@@ -356,13 +403,15 @@ def main() -> None:
                 "catcher_context_lgbm.txt": {
                     "features": "[catcher-hybrid emb] + " + str(list(all_feat)),
                     "metrics": next(
-                        (m for m in json_out["models"] if m["name"] == "Catcher-Hybrid + Context"), None
+                        (m for m in json_out["models"] if m["name"] == "Catcher-Hybrid + Context"),
+                        None,
                     ),
                 },
                 "catcher_base_lgbm.txt": {
                     "features": "[catcher-hybrid emb] + " + str(list(base_feat)),
                     "metrics": next(
-                        (m for m in json_out["models"] if m["name"] == "Catcher-Hybrid (base)"), None
+                        (m for m in json_out["models"] if m["name"] == "Catcher-Hybrid (base)"),
+                        None,
                     ),
                 },
                 "hybrid_context_lgbm.txt": {

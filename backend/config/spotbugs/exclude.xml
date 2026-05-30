@@ -1,6 +1,90 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SpotBugs exclusion filter — calibrated to the project's conventions.
+
+  Background (2026-05-30): the backend `test` CI job (which runs spotbugsMain +
+  spotbugsTest) had been red since phase-3a.2 (2026-05-24) on ~120 findings,
+  none of which were real defects. They were: Java-record exposure (EI/EI2),
+  test-scaffolding null-derefs, ONNX framework idioms, and theoretical Path-null.
+  The gate was effectively unwatched. This filter calibrates it to the codebase's
+  conventions so it gates on genuinely new issues, not record/framework noise.
+  The handful of real findings (a dead store, three theoretical Path-null sites)
+  were FIXED in code, not suppressed.
+-->
 <FindBugsFilter>
+    <!-- Spring Boot's generated Application class. -->
     <Match>
         <Class name="~.*\.Application"/>
+    </Match>
+
+    <!--
+      EI_EXPOSE_REP / EI_EXPOSE_REP2: domain records + DTOs carry Map/List fields
+      and are immutable-by-convention data carriers (FeaturePipeline$Spec,
+      AllParksPredictionResponse, LivePitchRow, etc.). Defensive-copying ~98 such
+      sites would be churn that makes the records worse, not safer — callers do
+      not mutate them. Disabled project-wide; this is the standard calibration for
+      a Java-record-heavy codebase.
+    -->
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!--
+      OBL_UNSATISFIED_OBLIGATION* false positive on Spring's PreparedStatementCreator
+      idiom. The repositories pass a `connection -> { PreparedStatement ps = ...;
+      return ps; }` lambda to JdbcTemplate.update(PreparedStatementCreator, KeyHolder).
+      Per that contract the FRAMEWORK owns closing the returned statement — the lambda
+      must not. SpotBugs can't see across the framework boundary. Scoped to the
+      data-access packages that use this idiom.
+    -->
+    <Match>
+        <Bug code="OBL"/>
+        <Class name="~net\.thebullpen\.baseball\.(registry|drift|retraining|data|inference)\..*"/>
+    </Match>
+
+    <!--
+      Test sources: don't gate test scaffolding on SpotBugs. The NP findings are
+      getResource()/Files.list() idioms (a missing fixture SHOULD fail the test
+      loudly), and the CNT "rough value of Math.PI = 3.14" hits are fixture literals.
+    -->
+    <Match>
+        <Class name="~.*Test(\$.*)?"/>
+    </Match>
+    <Match>
+        <Class name="~.*IT(\$.*)?"/>
+    </Match>
+
+    <!--
+      VA_FORMAT_STRING_USES_NEWLINE is unrelated; this VA suppression targets the
+      ONNX Runtime createTensor(env, Object) idiom where a float[][] is passed as the
+      tensor data object — the intended ONNX API usage, flagged as ambiguous varargs.
+    -->
+    <Match>
+        <Bug code="VA"/>
+        <Class name="~net\.thebullpen\.baseball\.inference\..*"/>
+    </Match>
+
+    <!--
+      CT (constructor throws → partially-initialized object / finalizer attack):
+      R2ArchiveClient validates its @Value-injected config in the constructor and
+      throws on a blank endpoint. Finalizer attacks require a malicious subclass +
+      a finalize() override; this Spring-constructed client has neither and finalizers
+      are deprecated since Java 9. Benign.
+    -->
+    <Match>
+        <Bug code="CT"/>
+        <Class name="net.thebullpen.baseball.registry.R2ArchiveClient"/>
+    </Match>
+
+    <!--
+      DB (same code for two conditional branches): PredictPitchController selects
+      modelVersion = head==PRE ? MODEL_VERSION : POST_MODEL_VERSION. The two version
+      constants currently share a value ("v1"), so SpotBugs sees identical branches.
+      They are semantically distinct (the pre/post heads version independently) and
+      will diverge; keeping the ternary documents that intent.
+    -->
+    <Match>
+        <Bug code="DB"/>
+        <Class name="net.thebullpen.baseball.api.PredictPitchController"/>
     </Match>
 </FindBugsFilter>

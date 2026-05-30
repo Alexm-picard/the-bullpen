@@ -92,12 +92,18 @@ def load_combined_models(
     ct = meta.get("catcher_transformer")
     if ct and (save_dir / ct["weights"]).exists():
         catcher = CatcherAwareTransformer(
-            raw_token_dim=ct["raw_token_dim"], d_model=ct["d_model"],
-            nhead=ct["nhead"], num_layers=ct["num_layers"],
-            dim_feedforward=ct["dim_feedforward"], n_classes=len(PITCH_TYPE_CLASSES),
-            dropout=ct["dropout"], n_pitchers=ct["n_pitchers"],
-            n_catchers=ct["n_catchers"], pitcher_embed_dim=ct["pitcher_embed_dim"],
-            catcher_embed_dim=ct["catcher_embed_dim"], use_catcher=True,
+            raw_token_dim=ct["raw_token_dim"],
+            d_model=ct["d_model"],
+            nhead=ct["nhead"],
+            num_layers=ct["num_layers"],
+            dim_feedforward=ct["dim_feedforward"],
+            n_classes=len(PITCH_TYPE_CLASSES),
+            dropout=ct["dropout"],
+            n_pitchers=ct["n_pitchers"],
+            n_catchers=ct["n_catchers"],
+            pitcher_embed_dim=ct["pitcher_embed_dim"],
+            catcher_embed_dim=ct["catcher_embed_dim"],
+            use_catcher=True,
         )
         catcher.load_state_dict(torch.load(save_dir / ct["weights"], map_location=dev))
         catcher.to(dev).eval()
@@ -118,11 +124,17 @@ def load_combined_models(
         if src is not None:
             n_pitchers = vt["n_pitchers"] if vt else len(v2_pm) + 1
             v2 = TransformerV2(
-                raw_token_dim=src["raw_token_dim"], d_model=src["d_model"],
-                nhead=src["nhead"], num_layers=src["num_layers"],
-                dim_feedforward=src["dim_feedforward"], n_classes=len(PITCH_TYPE_CLASSES),
-                dropout=src["dropout"], n_pitchers=n_pitchers, n_batters=1,
-                pitcher_embed_dim=src["pitcher_embed_dim"], use_batter_embed=False,
+                raw_token_dim=src["raw_token_dim"],
+                d_model=src["d_model"],
+                nhead=src["nhead"],
+                num_layers=src["num_layers"],
+                dim_feedforward=src["dim_feedforward"],
+                n_classes=len(PITCH_TYPE_CLASSES),
+                dropout=src["dropout"],
+                n_pitchers=n_pitchers,
+                n_batters=1,
+                pitcher_embed_dim=src["pitcher_embed_dim"],
+                use_batter_embed=False,
             )
             v2.load_state_dict(torch.load(v2_pt, map_location=dev))
             v2.to(dev).eval()
@@ -133,12 +145,17 @@ def load_combined_models(
         return lgb.Booster(model_file=str(p)) if p.exists() else None
 
     return CombinedModels(
-        metadata=meta, device=dev,
-        catcher_transformer=catcher, pitcher_map=pitcher_map, catcher_map=catcher_map,
+        metadata=meta,
+        device=dev,
+        catcher_transformer=catcher,
+        pitcher_map=pitcher_map,
+        catcher_map=catcher_map,
         catcher_context_booster=_booster("catcher_context_lgbm.txt"),
         catcher_base_booster=_booster("catcher_base_lgbm.txt"),
         hybrid_context_booster=_booster("hybrid_context_lgbm.txt"),
-        v2_transformer=v2, v2_pitcher_map=v2_pm, v2_batter_map=v2_bm,
+        v2_transformer=v2,
+        v2_pitcher_map=v2_pm,
+        v2_batter_map=v2_bm,
     )
 
 
@@ -152,8 +169,10 @@ def main() -> None:
     print(f"loaded from {args.save_dir} on {b.device}")
     if b.catcher_transformer is not None:
         n = sum(p.numel() for p in b.catcher_transformer.parameters())
-        print(f"  catcher transformer: {n:,} params | "
-              f"pitchers={len(b.pitcher_map)} catchers={len(b.catcher_map)}")
+        print(
+            f"  catcher transformer: {n:,} params | "
+            f"pitchers={len(b.pitcher_map)} catchers={len(b.catcher_map)}"
+        )
     else:
         print("  catcher transformer: not trained yet")
     print(f"  v2 transformer:          {'ok' if b.v2_transformer else 'not trained yet'}")

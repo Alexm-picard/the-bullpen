@@ -266,16 +266,20 @@ def _parse_chunk_into_arrays(
         return 0
     rows = [line.split("\t") for line in lines]
     n_rows = len(rows)
-    assert n_rows % n_parks == 0, (
-        f"chunk row count {n_rows} not divisible by n_parks {n_parks}"
-    )
+    assert n_rows % n_parks == 0, f"chunk row count {n_rows} not divisible by n_parks {n_parks}"
     n_bips = n_rows // n_parks
     for i in range(n_bips):
         block = rows[i * n_parks : (i + 1) * n_parks]
         bip_idx = write_offset + i
         features_out[bip_idx] = _row_to_features(
-            block[0][4], block[0][5], block[0][6], block[0][7],
-            block[0][8], block[0][9], block[0][10], block[0][11],
+            block[0][4],
+            block[0][5],
+            block[0][6],
+            block[0][7],
+            block[0][8],
+            block[0][9],
+            block[0][10],
+            block[0][11],
         )
         for row in block:
             pid = row[12]
@@ -388,9 +392,11 @@ def load_arrays(
     total_bips = int(count_tsv)
     if limit is not None:
         total_bips = min(total_bips, limit)
-    print(f"  allocating arrays for {total_bips} BIPs "
-          f"({total_bips * n_features * 4 / 1e6:.0f} MB features + "
-          f"{total_bips * n_parks * n_outcomes * 4 / 1e6:.0f} MB labels)")
+    print(
+        f"  allocating arrays for {total_bips} BIPs "
+        f"({total_bips * n_features * 4 / 1e6:.0f} MB features + "
+        f"{total_bips * n_parks * n_outcomes * 4 / 1e6:.0f} MB labels)"
+    )
 
     features = np.zeros((total_bips, n_features), dtype=np.float32)
     labels = np.zeros((total_bips, n_parks, n_outcomes), dtype=np.float32)
@@ -412,13 +418,21 @@ def load_arrays(
             container=container,
         )
         n = _parse_chunk_into_arrays(
-            tsv, n_parks, n_outcomes, park_index,
-            features, labels, written,
+            tsv,
+            n_parks,
+            n_outcomes,
+            park_index,
+            features,
+            labels,
+            written,
         )
         written += n
-        print(f"  loaded season {year}: {n} BIPs "
-              f"(total {written}/{total_bips}, "
-              f"{100 * written / total_bips:.0f}%)", flush=True)
+        print(
+            f"  loaded season {year}: {n} BIPs "
+            f"(total {written}/{total_bips}, "
+            f"{100 * written / total_bips:.0f}%)",
+            flush=True,
+        )
 
     if written < total_bips:
         features = features[:written]
@@ -465,15 +479,15 @@ class BBIPDataset(Dataset):
         if self._features is not None:
             assert self._labels is not None
             f = self._features[idx]
-            l = self._labels[idx]
+            lab = self._labels[idx]
         else:
             assert self._rows is not None
             row = self._rows[idx]
             f = row.features
-            l = row.labels
+            lab = row.labels
         if self._scaler is not None:
             f = self._scaler.transform(f)
-        return f, l
+        return f, lab
 
     def all_features(self) -> np.ndarray:
         """Stack all rows' raw features into one (N, n_features) array.

@@ -36,7 +36,6 @@ from bullpen_training.battedball.mlp.dataset import (
     BBIPDataset,
     FeatureScaler,
     load_arrays,
-    load_rows,
 )
 from bullpen_training.battedball.parks.loader import load_all_parks
 

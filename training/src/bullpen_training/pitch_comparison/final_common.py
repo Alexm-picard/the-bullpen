@@ -49,9 +49,7 @@ def save_meta(stage_dir: Path, meta: dict) -> None:
 def load_meta(stage_dir: Path) -> dict:
     p = stage_dir / "stage_meta.json"
     if not p.exists():
-        raise FileNotFoundError(
-            f"{p} not found — run final_stage1_embeddings.py first."
-        )
+        raise FileNotFoundError(f"{p} not found — run final_stage1_embeddings.py first.")
     return json.loads(p.read_text())
 
 
@@ -91,6 +89,12 @@ def shap_importance(booster, x_sample, feat_names, n_emb, out_dir) -> dict:
 
 
 __all__ = (
-    "STAGE_DIR", "load_array", "load_meta", "load_pickle",
-    "save_array", "save_meta", "save_pickle", "shap_importance",
+    "STAGE_DIR",
+    "load_array",
+    "load_meta",
+    "load_pickle",
+    "save_array",
+    "save_meta",
+    "save_pickle",
+    "shap_importance",
 )

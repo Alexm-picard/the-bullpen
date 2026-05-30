@@ -109,10 +109,7 @@ def _established_profiles(train_df: pd.DataFrame) -> pd.DataFrame:
         pitcher_throws_int=("pitcher_throws_int", "first"),
     )
     # Arsenal fractions per pitcher.
-    mix = (
-        est.groupby(["pitcher_id", "pitch_type_int"]).size()
-        .unstack(fill_value=0)
-    )
+    mix = est.groupby(["pitcher_id", "pitch_type_int"]).size().unstack(fill_value=0)
     mix = mix.div(mix.sum(axis=1), axis=0)
     for k, cls in enumerate(PITCH_TYPE_CLASSES):
         col = f"arsenal_{cls}"
@@ -129,11 +126,11 @@ def build_prototype_clusters(
     """Fit k-means archetypes on established pitchers (train data only)."""
     profiles = _established_profiles(train_df)
     profile_cols = [
-        "pitcher_throws_int", *(_PROFILE_PHYSICAL), *_arsenal_cols(),
+        "pitcher_throws_int",
+        *(_PROFILE_PHYSICAL),
+        *_arsenal_cols(),
     ]
-    profile_fill = {
-        c: float(profiles[c].mean()) for c in profile_cols
-    }
+    profile_fill = {c: float(profiles[c].mean()) for c in profile_cols}
     x = profiles[profile_cols].fillna(profile_fill).to_numpy(dtype=np.float64)
 
     scaler = StandardScaler()
@@ -145,22 +142,14 @@ def build_prototype_clusters(
 
     # Per-pitcher career features (train-only career aggregates), one row
     # per established pitcher, to average into cluster prototypes.
-    career = (
-        train_df.groupby("pitcher_id")[list(SUBSTITUTE_FEATURE_COLS)]
-        .first()
-        .reset_index()
-    )
+    career = train_df.groupby("pitcher_id")[list(SUBSTITUTE_FEATURE_COLS)].first().reset_index()
     profiles = profiles.merge(career, on="pitcher_id", how="left")
 
     feature_protos: dict[int, dict[str, float]] = {}
     for cid in range(n_clusters):
         members = profiles[profiles["cluster"] == cid]
-        feature_protos[cid] = {
-            col: float(members[col].mean()) for col in SUBSTITUTE_FEATURE_COLS
-        }
-    league_proto = {
-        col: float(train_df[col].mean()) for col in SUBSTITUTE_FEATURE_COLS
-    }
+        feature_protos[cid] = {col: float(members[col].mean()) for col in SUBSTITUTE_FEATURE_COLS}
+    league_proto = {col: float(train_df[col].mean()) for col in SUBSTITUTE_FEATURE_COLS}
 
     return PrototypeClusters(
         scaler=scaler,
@@ -175,7 +164,9 @@ def build_prototype_clusters(
 
 
 def _prior_expanding_mean(
-    df: pd.DataFrame, col: str, count_prior: np.ndarray,
+    df: pd.DataFrame,
+    col: str,
+    count_prior: np.ndarray,
 ) -> np.ndarray:
     """Expanding mean over a pitcher's strictly-prior pitches."""
     csum = df.groupby("pitcher_id", sort=False)[col].cumsum().to_numpy()
@@ -187,7 +178,8 @@ def _prior_expanding_mean(
 
 
 def assign_clusters_streaming(
-    df: pd.DataFrame, clusters: PrototypeClusters,
+    df: pd.DataFrame,
+    clusters: PrototypeClusters,
 ) -> np.ndarray:
     """Nearest cluster per row from the pitcher's prior-only profile.
 
@@ -211,7 +203,9 @@ def assign_clusters_streaming(
         tmp = df[["pitcher_id"]].copy()
         tmp["_ind"] = ind.to_numpy()
         feats[f"arsenal_{cls}"] = _prior_expanding_mean(
-            tmp, "_ind", count_prior,
+            tmp,
+            "_ind",
+            count_prior,
         )
 
     x = np.column_stack([feats[c] for c in clusters.profile_cols])

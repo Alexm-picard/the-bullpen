@@ -46,12 +46,16 @@ def load_splits(cfg: ExperimentConfig):
     """
     print("loading enriched data...")
     raw = load_enriched_data(
-        season_from=cfg.season_from, season_to=cfg.season_to, limit=cfg.limit,
+        season_from=cfg.season_from,
+        season_to=cfg.season_to,
+        limit=cfg.limit,
     )
     print(f"  {len(raw)} rows")
     print("preparing enriched splits...")
     train_df, val_df, test_df = prepare_enriched_datasets(
-        raw, train_years=cfg.train_years, val_years=cfg.val_years,
+        raw,
+        train_years=cfg.train_years,
+        val_years=cfg.val_years,
         test_years=cfg.test_years,
     )
     del raw
@@ -78,14 +82,22 @@ def train_lgbm(train_x, train_y, val_x, val_y, cfg: ExperimentConfig):
         "objective": "multiclass",
         "num_class": len(PITCH_TYPE_CLASSES),
         "metric": "multi_logloss",
-        "learning_rate": 0.05, "num_leaves": 63, "seed": cfg.seed,
-        "deterministic": True, "force_row_wise": True, "verbose": -1,
+        "learning_rate": 0.05,
+        "num_leaves": 63,
+        "seed": cfg.seed,
+        "deterministic": True,
+        "force_row_wise": True,
+        "verbose": -1,
         "num_threads": cfg.lgbm_num_threads,  # 0 = all cores
     }
     dt = lgb.Dataset(train_x, label=train_y)
     dv = lgb.Dataset(val_x, label=val_y, reference=dt)
     return lgb.train(
-        params, dt, 2000, valid_sets=[dt, dv], valid_names=["t", "v"],
+        params,
+        dt,
+        2000,
+        valid_sets=[dt, dv],
+        valid_names=["t", "v"],
         callbacks=[lgb.early_stopping(50, first_metric_only=True, verbose=False)],
     )
 
@@ -98,8 +110,11 @@ def extract_v2_embeddings(model, index, pitcher_map, batter_map, full_df, indice
     all_bid = _map_ids(full_df["batter_id"].values, batter_map)
     ds = _SeqWithIdsDataset(index, indices, all_pid[indices], all_bid[indices], cfg.seq_window)
     loader = DataLoader(
-        ds, batch_size=cfg.transformer_batch_size * 2,
-        shuffle=False, collate_fn=_collate_v2, **cfg.loader_kwargs(force_sync=True),
+        ds,
+        batch_size=cfg.transformer_batch_size * 2,
+        shuffle=False,
+        collate_fn=_collate_v2,
+        **cfg.loader_kwargs(force_sync=True),
     )
     out: np.ndarray | None = None
     write = 0
@@ -122,8 +137,11 @@ def feature_matrix(emb: np.ndarray, df: pd.DataFrame, cols: list[str]) -> np.nda
 
 def metric_dict(m: PitchTypeMetrics) -> dict:
     return {
-        "name": m.name, "accuracy": m.accuracy, "top2_accuracy": m.top2_accuracy,
-        "logloss": m.logloss, "calibration_ece": m.calibration_ece,
+        "name": m.name,
+        "accuracy": m.accuracy,
+        "top2_accuracy": m.top2_accuracy,
+        "logloss": m.logloss,
+        "calibration_ece": m.calibration_ece,
     }
 
 
@@ -131,15 +149,18 @@ def catcher_arch_meta(model, cfg: ExperimentConfig) -> dict:
     return {
         "class": "CatcherAwareTransformer",
         "raw_token_dim": int(model.token_proj.in_features),
-        "d_model": int(model.d_model), "nhead": cfg.nhead,
-        "num_layers": cfg.num_encoder_layers, "dim_feedforward": cfg.dim_feedforward,
+        "d_model": int(model.d_model),
+        "nhead": cfg.nhead,
+        "num_layers": cfg.num_encoder_layers,
+        "dim_feedforward": cfg.dim_feedforward,
         "dropout": cfg.transformer_dropout,
         "pitcher_embed_dim": int(model.pitcher_emb.embedding_dim),
         "catcher_embed_dim": int(model.catcher_emb.embedding_dim),
         "n_pitchers": int(model.pitcher_emb.num_embeddings),
         "n_catchers": int(model.catcher_emb.num_embeddings),
         "seq_window": cfg.seq_window,
-        "weights": "catcher_transformer.pt", "id_maps": "catcher_id_maps.json",
+        "weights": "catcher_transformer.pt",
+        "id_maps": "catcher_id_maps.json",
     }
 
 
@@ -147,13 +168,16 @@ def v2_arch_meta(model, cfg: ExperimentConfig) -> dict:
     return {
         "class": "TransformerV2",
         "raw_token_dim": int(model.token_proj.in_features),
-        "d_model": int(model.d_model), "nhead": cfg.nhead,
-        "num_layers": cfg.num_encoder_layers, "dim_feedforward": cfg.dim_feedforward,
+        "d_model": int(model.d_model),
+        "nhead": cfg.nhead,
+        "num_layers": cfg.num_encoder_layers,
+        "dim_feedforward": cfg.dim_feedforward,
         "dropout": cfg.transformer_dropout,
         "pitcher_embed_dim": int(model.pitcher_emb.embedding_dim),
         "n_pitchers": int(model.pitcher_emb.num_embeddings),
         "seq_window": cfg.seq_window,
-        "weights": "v2_transformer.pt", "id_maps": "v2_id_maps.json",
+        "weights": "v2_transformer.pt",
+        "id_maps": "v2_id_maps.json",
     }
 
 
@@ -164,9 +188,14 @@ def update_metadata(save_dir: Path, *, results: list[dict] | None = None, **bloc
     Result rows are de-duplicated by name so a re-run overwrites cleanly.
     """
     p = save_dir / "metadata.json"
-    meta = json.loads(p.read_text()) if p.exists() else {
-        "artifact_name": "pitch_combined_v1", "results": [],
-    }
+    meta = (
+        json.loads(p.read_text())
+        if p.exists()
+        else {
+            "artifact_name": "pitch_combined_v1",
+            "results": [],
+        }
+    )
     meta.update(blocks)
     if results:
         names = {r["name"] for r in results}
@@ -176,7 +205,14 @@ def update_metadata(save_dir: Path, *, results: list[dict] | None = None, **bloc
 
 
 __all__ = (
-    "ALL_FEAT", "BASE_FEAT", "catcher_arch_meta", "extract_v2_embeddings",
-    "feature_matrix", "load_splits", "metric_dict", "train_lgbm",
-    "update_metadata", "v2_arch_meta",
+    "ALL_FEAT",
+    "BASE_FEAT",
+    "catcher_arch_meta",
+    "extract_v2_embeddings",
+    "feature_matrix",
+    "load_splits",
+    "metric_dict",
+    "train_lgbm",
+    "update_metadata",
+    "v2_arch_meta",
 )

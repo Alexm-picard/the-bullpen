@@ -33,7 +33,6 @@ import torch
 import torch.nn.functional as F
 
 from bullpen_training.battedball.mlp import (
-    BBIPDataset,
     FeatureScaler,
 )
 from bullpen_training.battedball.mlp.architecture import build_model

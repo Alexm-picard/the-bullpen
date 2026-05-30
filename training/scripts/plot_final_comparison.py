@@ -19,9 +19,13 @@ import matplotlib.pyplot as plt
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Four-model accuracy bar chart.")
-    ap.add_argument("--combined", type=Path, default=Path("data/eval/pitch_combined/combined_experiment.json"))
+    ap.add_argument(
+        "--combined", type=Path, default=Path("data/eval/pitch_combined/combined_experiment.json")
+    )
     ap.add_argument("--stage2", type=Path, default=Path("data/eval/pitch_final/final_stage2.json"))
-    ap.add_argument("--out", type=Path, default=Path("data/eval/pitch_final/four_model_accuracy.png"))
+    ap.add_argument(
+        "--out", type=Path, default=Path("data/eval/pitch_final/four_model_accuracy.png")
+    )
     args = ap.parse_args()
 
     models: dict[str, dict] = {}
@@ -61,10 +65,25 @@ def main() -> None:
     ax.tick_params(axis="x", rotation=12, labelsize=9)
     ax.grid(axis="y", alpha=0.3)
     for b, a in zip(bars, accs, strict=True):
-        ax.text(b.get_x() + b.get_width() / 2, a, f"{a * 100:.2f}%",
-                ha="center", va="bottom", fontweight="bold", fontsize=10)
-    ax.text(0.99, 0.02, "best = Context + Streak", transform=ax.transAxes,
-            ha="right", va="bottom", fontsize=8, color="#059669")
+        ax.text(
+            b.get_x() + b.get_width() / 2,
+            a,
+            f"{a * 100:.2f}%",
+            ha="center",
+            va="bottom",
+            fontweight="bold",
+            fontsize=10,
+        )
+    ax.text(
+        0.99,
+        0.02,
+        "best = Context + Streak",
+        transform=ax.transAxes,
+        ha="right",
+        va="bottom",
+        fontsize=8,
+        color="#059669",
+    )
     fig.tight_layout()
     args.out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(args.out, dpi=150)

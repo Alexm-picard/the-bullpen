@@ -64,22 +64,12 @@ class EnrichedSequenceIndex:
         # New context data for enriched tokens.
         z8 = np.zeros(self.n_rows, dtype=np.int8)
         z64 = np.zeros(self.n_rows, dtype=np.int64)
-        self.inning = (
-            df["inning"].values.astype(np.int8)
-            if "inning" in df else z8.copy()
-        )
-        self.outs = (
-            df["outs"].values.astype(np.int8)
-            if "outs" in df else z8.copy()
-        )
+        self.inning = df["inning"].values.astype(np.int8) if "inning" in df else z8.copy()
+        self.outs = df["outs"].values.astype(np.int8) if "outs" in df else z8.copy()
         self.base_state = (
-            df["base_state"].values.astype(np.int8)
-            if "base_state" in df else z8.copy()
+            df["base_state"].values.astype(np.int8) if "base_state" in df else z8.copy()
         )
-        self.game_id = (
-            df["game_id"].values.astype(np.int64)
-            if "game_id" in df else z64.copy()
-        )
+        self.game_id = df["game_id"].values.astype(np.int64) if "game_id" in df else z64.copy()
 
         # Per-pitcher career avg velocity (for velo_vs_avg).
         self.pitcher_avg_velo = np.zeros(self.n_rows, dtype=np.float32)
@@ -120,7 +110,7 @@ class EnrichedSequenceIndex:
         pt = self.pitch_type_int.astype(np.int64)
         valid_pt = (pt >= 0) & (pt < N_PT)
         tm[np.nonzero(valid_pt)[0], pt[valid_pt]] = 1.0  # [0:N_PT]
-        tm[:, N_PT] = (velo - 90.0) / 10.0               # velo
+        tm[:, N_PT] = (velo - 90.0) / 10.0  # velo
         avg = self.pitcher_avg_velo
         tm[:, N_PT + 1] = np.where(avg > 0, (velo - avg) / 5.0, 0.0)  # velo_vs_avg
         oc = self.outcome_int.astype(np.int64)
@@ -137,7 +127,9 @@ class EnrichedSequenceIndex:
         return tm
 
     def get_sequence_rows(
-        self, global_row: int, window_size: int,
+        self,
+        global_row: int,
+        window_size: int,
     ) -> np.ndarray:
         pid = int(self.row_to_pitcher[global_row])
         pos = int(self.row_to_pos[global_row])
@@ -198,7 +190,9 @@ class EnrichedSequenceIndex:
         return token
 
     def compute_live_game_features(
-        self, global_row: int, seq_rows: np.ndarray,
+        self,
+        global_row: int,
+        seq_rows: np.ndarray,
     ) -> np.ndarray:
         """Compute live-game rolling features from the sequence."""
         features = np.zeros(N_LIVE_FEATURES, dtype=np.float32)
@@ -229,14 +223,16 @@ class EnrichedSequenceIndex:
                 late = float(np.mean(game_velos[-5:]))
                 features[2] = (late - early) / 5.0  # normalized
             elif n_game >= 2:
-                features[2] = (
-                    float(game_velos[-1]) - float(game_velos[0])
-                ) / 5.0
+                features[2] = (float(game_velos[-1]) - float(game_velos[0])) / 5.0
 
         # times_through_order proxy: inning / 3.
-        features[3] = min(
-            float(self.inning[global_row]) / 3.0, 3.0,
-        ) / 3.0
+        features[3] = (
+            min(
+                float(self.inning[global_row]) / 3.0,
+                3.0,
+            )
+            / 3.0
+        )
 
         return features
 
@@ -262,16 +258,19 @@ class EnrichedSequenceDataset(Dataset):
         return len(self.valid_indices)
 
     def __getitem__(
-        self, idx: int,
+        self,
+        idx: int,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, int, int, int]:
         """Returns (seq, pad_mask, live_features, pitcher_id, batter_id, target)."""
         global_row = int(self.valid_indices[idx])
         seq_rows = self.index.get_sequence_rows(
-            global_row, self.window_size,
+            global_row,
+            self.window_size,
         )
 
         seq = np.zeros(
-            (self.window_size, TOKEN_V2_DIM), dtype=np.float32,
+            (self.window_size, TOKEN_V2_DIM),
+            dtype=np.float32,
         )
         pad_mask = np.ones(self.window_size, dtype=np.bool_)
         n_real = len(seq_rows)
@@ -280,11 +279,14 @@ class EnrichedSequenceDataset(Dataset):
             pad_mask[self.window_size - n_real :] = False
 
         live_feats = self.index.compute_live_game_features(
-            global_row, seq_rows,
+            global_row,
+            seq_rows,
         )
         target = int(self.index.pitch_type_int[global_row])
         return (
-            seq, pad_mask, live_feats,
+            seq,
+            pad_mask,
+            live_feats,
             int(self.pitcher_ids[idx]),
             int(self.batter_ids[idx]),
             target,

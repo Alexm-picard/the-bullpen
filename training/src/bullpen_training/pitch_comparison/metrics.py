@@ -27,12 +27,12 @@ class PitchTypeMetrics:
 
 
 def top_k_accuracy(
-    y_true: np.ndarray, y_proba: np.ndarray, k: int = 2,
+    y_true: np.ndarray,
+    y_proba: np.ndarray,
+    k: int = 2,
 ) -> float:
     top_k_preds = np.argsort(y_proba, axis=1)[:, -k:]
-    return float(np.mean([
-        y_true[i] in top_k_preds[i] for i in range(len(y_true))
-    ]))
+    return float(np.mean([y_true[i] in top_k_preds[i] for i in range(len(y_true))]))
 
 
 def expected_calibration_error(

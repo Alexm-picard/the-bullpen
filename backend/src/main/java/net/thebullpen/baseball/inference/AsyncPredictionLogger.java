@@ -80,9 +80,8 @@ public class AsyncPredictionLogger {
               t.setName("prediction-log-flusher");
               return t;
             });
-    var unused =
-        flusher.scheduleAtFixedRate(
-            this::flushQuietly, FLUSH_INTERVAL_SECONDS, FLUSH_INTERVAL_SECONDS, TimeUnit.SECONDS);
+    flusher.scheduleAtFixedRate(
+        this::flushQuietly, FLUSH_INTERVAL_SECONDS, FLUSH_INTERVAL_SECONDS, TimeUnit.SECONDS);
     log.info(
         "AsyncPredictionLogger started capacity={} flush_interval_s={}",
         queue.remainingCapacity() + queue.size(),

@@ -71,7 +71,8 @@ COLORS = {
 
 
 def _plot_summary(
-    results: list[PitchTypeMetrics], out_dir: Path,
+    results: list[PitchTypeMetrics],
+    out_dir: Path,
 ) -> None:
     names = [r.name for r in results]
     colors = [COLORS.get(n, "#888") for n in names]
@@ -94,10 +95,7 @@ def _plot_summary(
         ax.grid(axis="y", alpha=0.3)
         ax.tick_params(axis="x", rotation=35, labelsize=7)
 
-        best = (
-            int(np.argmax(vals)) if higher_better
-            else int(np.argmin(vals))
-        )
+        best = int(np.argmax(vals)) if higher_better else int(np.argmin(vals))
         bars[best].set_edgecolor("black")
         bars[best].set_linewidth(2)
         for i, v in enumerate(vals):
@@ -109,7 +107,8 @@ def _plot_summary(
 
     fig.suptitle(
         "8-Model Pitch Type Comparison (2025 holdout)",
-        fontsize=14, fontweight="bold",
+        fontsize=14,
+        fontweight="bold",
     )
     fig.tight_layout()
     fig.savefig(out_dir / "pitch_all_summary.png", dpi=150)
@@ -118,7 +117,8 @@ def _plot_summary(
 
 
 def _plot_per_class(
-    results: list[PitchTypeMetrics], out_dir: Path,
+    results: list[PitchTypeMetrics],
+    out_dir: Path,
 ) -> None:
     n_models = len(results)
     classes = list(PITCH_TYPE_CLASSES)
@@ -131,8 +131,7 @@ def _plot_per_class(
     for idx, r in enumerate(results):
         vals = [r.per_class_accuracy.get(c, 0.0) for c in classes]
         offset = (idx - n_models / 2 + 0.5) * width
-        ax.bar(x + offset, vals, width, label=r.name,
-               color=colors[idx], alpha=0.85)
+        ax.bar(x + offset, vals, width, label=r.name, color=colors[idx], alpha=0.85)
 
     ax.set_xlabel("Pitch Type")
     ax.set_ylabel("Accuracy")
@@ -148,10 +147,7 @@ def _plot_per_class(
 
 
 def _print_table(results: list[PitchTypeMetrics]) -> None:
-    hdr = (
-        f"{'Model':<20s} | {'Acc':>7s} {'Top2':>7s} "
-        f"{'LogL':>7s} {'ECE':>7s} | {'Time':>7s}"
-    )
+    hdr = f"{'Model':<20s} | {'Acc':>7s} {'Top2':>7s} {'LogL':>7s} {'ECE':>7s} | {'Time':>7s}"
     print("\n" + "=" * len(hdr))
     print(hdr)
     print("-" * len(hdr))
@@ -171,27 +167,34 @@ def main() -> None:
     )
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument(
-        "--out-dir", type=Path,
+        "--out-dir",
+        type=Path,
         default=Path("data/eval/pitch_advanced"),
     )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
-        "--skip-baselines", action="store_true",
+        "--skip-baselines",
+        action="store_true",
         help="Skip the 4 baseline models (run only advanced).",
     )
     parser.add_argument("--season-from", type=int, default=2015)
     parser.add_argument("--season-to", type=int, default=2025)
     parser.add_argument(
-        "--train-years", nargs="*", type=int, default=None,
+        "--train-years",
+        nargs="*",
+        type=int,
+        default=None,
     )
     parser.add_argument("--val-year", type=int, default=2024)
     parser.add_argument("--test-year", type=int, default=2025)
     args = parser.parse_args()
 
     train_years = (
-        tuple(args.train_years) if args.train_years
+        tuple(args.train_years)
+        if args.train_years
         else tuple(
-            y for y in range(args.season_from, args.season_to + 1)
+            y
+            for y in range(args.season_from, args.season_to + 1)
             if y != args.val_year and y != args.test_year
         )
     )
@@ -221,10 +224,7 @@ def main() -> None:
         val_years=cfg.val_years,
         test_years=cfg.test_years,
     )
-    print(
-        f"  train: {len(train_df)}  val: {len(val_df)}  "
-        f"test: {len(test_df)}"
-    )
+    print(f"  train: {len(train_df)}  val: {len(val_df)}  test: {len(test_df)}")
     del raw_df
     gc.collect()
 
@@ -245,21 +245,33 @@ def main() -> None:
         print("\n[1/8] LightGBM...")
         lgbm_b, lgbm_t = train_lgbm(train_df, val_df, seed=cfg.seed)
         lgbm_p = predict_lgbm(lgbm_b, test_df)
-        all_results.append(compute_pitch_type_metrics(
-            "LightGBM", y_test, lgbm_p.pitch_type_proba, lgbm_t,
-        ))
+        all_results.append(
+            compute_pitch_type_metrics(
+                "LightGBM",
+                y_test,
+                lgbm_p.pitch_type_proba,
+                lgbm_t,
+            )
+        )
         print(f"  done in {lgbm_t:.1f}s")
         del lgbm_b, lgbm_p
         gc.collect()
 
         print("\n[2/8] Multi-task MLP...")
         mlp_m, mlp_s, mlp_t = train_mlp(
-            train_df, val_df, seed=cfg.seed,
+            train_df,
+            val_df,
+            seed=cfg.seed,
         )
         mlp_p = predict_mlp(mlp_m, mlp_s, test_df)
-        all_results.append(compute_pitch_type_metrics(
-            "Multi-task MLP", y_test, mlp_p.pitch_type_proba, mlp_t,
-        ))
+        all_results.append(
+            compute_pitch_type_metrics(
+                "Multi-task MLP",
+                y_test,
+                mlp_p.pitch_type_proba,
+                mlp_t,
+            )
+        )
         print(f"  done in {mlp_t:.1f}s")
         del mlp_m, mlp_s, mlp_p
         gc.collect()
@@ -267,21 +279,33 @@ def main() -> None:
         print("\n[3/8] XGBoost...")
         xgb_b, xgb_t = train_xgb(train_df, val_df, seed=cfg.seed)
         xgb_p = predict_xgb(xgb_b, test_df)
-        all_results.append(compute_pitch_type_metrics(
-            "XGBoost", y_test, xgb_p.pitch_type_proba, xgb_t,
-        ))
+        all_results.append(
+            compute_pitch_type_metrics(
+                "XGBoost",
+                y_test,
+                xgb_p.pitch_type_proba,
+                xgb_t,
+            )
+        )
         print(f"  done in {xgb_t:.1f}s")
         del xgb_b, xgb_p
         gc.collect()
 
         print("\n[4/8] Logistic/Ridge...")
         bl_b, bl_s, bl_t = train_baseline(
-            train_df, val_df, seed=cfg.seed,
+            train_df,
+            val_df,
+            seed=cfg.seed,
         )
         bl_p = predict_baseline(bl_b, bl_s, test_df)
-        all_results.append(compute_pitch_type_metrics(
-            "Logistic/Ridge", y_test, bl_p.pitch_type_proba, bl_t,
-        ))
+        all_results.append(
+            compute_pitch_type_metrics(
+                "Logistic/Ridge",
+                y_test,
+                bl_p.pitch_type_proba,
+                bl_t,
+            )
+        )
         print(f"  done in {bl_t:.1f}s")
         del bl_b, bl_s, bl_p
         gc.collect()
@@ -290,33 +314,61 @@ def main() -> None:
 
     # Reconstruct full_df for sequence index.
     full_df = pd.concat(
-        [train_df, val_df, test_df], ignore_index=True,
+        [train_df, val_df, test_df],
+        ignore_index=True,
     )
 
     print("\n[5/8] Transformer Sequence Model...")
     tf_model, tf_index, tf_t = train_transformer(
-        train_df, val_df, full_df, cfg,
+        train_df,
+        val_df,
+        full_df,
+        cfg,
     )
     tf_p = predict_transformer(
-        tf_model, tf_index, test_df, full_df, cfg,
+        tf_model,
+        tf_index,
+        test_df,
+        full_df,
+        cfg,
     )
-    all_results.append(compute_pitch_type_metrics(
-        "Transformer", y_test, tf_p.pitch_type_proba, tf_t,
-    ))
+    all_results.append(
+        compute_pitch_type_metrics(
+            "Transformer",
+            y_test,
+            tf_p.pitch_type_proba,
+            tf_t,
+        )
+    )
     print(f"  done in {tf_t:.1f}s")
     del tf_p
     gc.collect()
 
     print("\n[6/8] Hybrid (Transformer + LightGBM)...")
     hy_booster, hy_t = train_hybrid(
-        train_df, val_df, full_df, tf_model, tf_index, cfg,
+        train_df,
+        val_df,
+        full_df,
+        tf_model,
+        tf_index,
+        cfg,
     )
     hy_p = predict_hybrid(
-        hy_booster, tf_model, tf_index, test_df, full_df, cfg,
+        hy_booster,
+        tf_model,
+        tf_index,
+        test_df,
+        full_df,
+        cfg,
     )
-    all_results.append(compute_pitch_type_metrics(
-        "Hybrid (T+LGBM)", y_test, hy_p.pitch_type_proba, hy_t,
-    ))
+    all_results.append(
+        compute_pitch_type_metrics(
+            "Hybrid (T+LGBM)",
+            y_test,
+            hy_p.pitch_type_proba,
+            hy_t,
+        )
+    )
     print(f"  done in {hy_t:.1f}s")
     del hy_booster, hy_p, tf_model, tf_index
     gc.collect()
@@ -324,23 +376,39 @@ def main() -> None:
     print("\n[7/8] Hierarchical Classifier...")
     hi_b, hi_t = train_hierarchical(train_df, val_df, cfg)
     hi_p = predict_hierarchical(hi_b, test_df, cfg)
-    all_results.append(compute_pitch_type_metrics(
-        "Hierarchical", y_test, hi_p.pitch_type_proba, hi_t,
-    ))
+    all_results.append(
+        compute_pitch_type_metrics(
+            "Hierarchical",
+            y_test,
+            hi_p.pitch_type_proba,
+            hi_t,
+        )
+    )
     print(f"  done in {hi_t:.1f}s")
     del hi_b, hi_p
     gc.collect()
 
     print("\n[8/8] Pitcher Embedding Model...")
     em_m, em_pm, em_bm, em_t = train_embedding_model(
-        train_df, val_df, cfg,
+        train_df,
+        val_df,
+        cfg,
     )
     em_p = predict_embedding_model(
-        em_m, em_pm, em_bm, test_df, cfg,
+        em_m,
+        em_pm,
+        em_bm,
+        test_df,
+        cfg,
     )
-    all_results.append(compute_pitch_type_metrics(
-        "Pitcher Embed", y_test, em_p.pitch_type_proba, em_t,
-    ))
+    all_results.append(
+        compute_pitch_type_metrics(
+            "Pitcher Embed",
+            y_test,
+            em_p.pitch_type_proba,
+            em_t,
+        )
+    )
     print(f"  done in {em_t:.1f}s")
     del em_m, em_p
     gc.collect()

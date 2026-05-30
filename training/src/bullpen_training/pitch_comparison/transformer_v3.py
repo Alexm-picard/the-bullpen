@@ -40,7 +40,8 @@ def _build_id_map(ids: np.ndarray) -> dict[int, int]:
 
 def _map_ids(ids: np.ndarray, mapping: dict[int, int]) -> np.ndarray:
     return np.array(
-        [mapping.get(int(x), 0) for x in ids], dtype=np.int64,
+        [mapping.get(int(x), 0) for x in ids],
+        dtype=np.int64,
     )
 
 
@@ -66,15 +67,20 @@ class TransformerV3(nn.Module):
         self.token_proj = nn.Linear(token_dim, d_model)
         self.pos_enc = PositionalEncoding(d_model)
         encoder_layer = nn.TransformerEncoderLayer(
-            d_model=d_model, nhead=nhead,
+            d_model=d_model,
+            nhead=nhead,
             dim_feedforward=dim_feedforward,
-            dropout=dropout, batch_first=True,
+            dropout=dropout,
+            batch_first=True,
         )
         self.encoder = nn.TransformerEncoder(
-            encoder_layer, num_layers=num_layers,
+            encoder_layer,
+            num_layers=num_layers,
         )
         self.pitcher_emb = nn.Embedding(
-            n_pitchers, pitcher_embed_dim, padding_idx=0,
+            n_pitchers,
+            pitcher_embed_dim,
+            padding_idx=0,
         )
         head_input = d_model + pitcher_embed_dim + n_live_features
         self.head = nn.Sequential(
@@ -109,7 +115,8 @@ class TransformerV3(nn.Module):
         pooled = self.encode(seq, pad_mask)
         p_emb = self.pitcher_emb(pitcher_ids)
         combined = torch.cat(
-            [pooled, p_emb, live_features], dim=-1,
+            [pooled, p_emb, live_features],
+            dim=-1,
         )
         return self.head(self.dropout_layer(combined))
 
@@ -123,7 +130,7 @@ def _compute_temporal_weights(
     weights = np.ones(len(seasons), dtype=np.float32)
     for i, s in enumerate(seasons):
         years_ago = max_season - int(s)
-        weights[i] = decay ** years_ago
+        weights[i] = decay**years_ago
     return weights
 
 
@@ -144,7 +151,8 @@ def train_transformer_v3(
 
     pitcher_map = _build_id_map(train_df["pitcher_id"].values)
     all_pitcher_mapped = _map_ids(
-        full_df["pitcher_id"].values, pitcher_map,
+        full_df["pitcher_id"].values,
+        pitcher_map,
     )
     all_batter_mapped = np.zeros(len(full_df), dtype=np.int64)
 
@@ -154,26 +162,32 @@ def train_transformer_v3(
     val_indices = np.where(val_mask)[0].astype(np.int32)
 
     train_ds = EnrichedSequenceDataset(
-        index, train_indices,
+        index,
+        train_indices,
         all_pitcher_mapped[train_indices],
         all_batter_mapped[train_indices],
         config.seq_window,
     )
     val_ds = EnrichedSequenceDataset(
-        index, val_indices,
+        index,
+        val_indices,
         all_pitcher_mapped[val_indices],
         all_batter_mapped[val_indices],
         config.seq_window,
     )
 
     train_loader = DataLoader(
-        train_ds, batch_size=config.transformer_batch_size,
-        shuffle=True, collate_fn=collate_enriched,
+        train_ds,
+        batch_size=config.transformer_batch_size,
+        shuffle=True,
+        collate_fn=collate_enriched,
         **config.loader_kwargs(persistent=True),
     )
     val_loader = DataLoader(
-        val_ds, batch_size=config.transformer_batch_size * 2,
-        shuffle=False, collate_fn=collate_enriched,
+        val_ds,
+        batch_size=config.transformer_batch_size * 2,
+        shuffle=False,
+        collate_fn=collate_enriched,
         **config.loader_kwargs(persistent=True),
     )
 
@@ -188,10 +202,13 @@ def train_transformer_v3(
     ).to(device)
 
     optimizer = torch.optim.Adam(
-        model.parameters(), lr=config.transformer_lr, weight_decay=1e-4,
+        model.parameters(),
+        lr=config.transformer_lr,
+        weight_decay=1e-4,
     )
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=config.transformer_epochs,
+        optimizer,
+        T_max=config.transformer_epochs,
     )
 
     # Temporal weights for training samples.
@@ -227,10 +244,7 @@ def train_transformer_v3(
                     sample_weights[start:end],
                 ).to(device)
                 if len(w) == bs:
-                    loss = (
-                        F.cross_entropy(logits, targets, reduction="none")
-                        * w
-                    ).mean()
+                    loss = (F.cross_entropy(logits, targets, reduction="none") * w).mean()
                 else:
                     loss = F.cross_entropy(logits, targets)
             else:
@@ -258,17 +272,15 @@ def train_transformer_v3(
                 targets = targets.to(device)
                 logits = model(seq, pad_mask, live, pids)
                 val_loss_sum += F.cross_entropy(
-                    logits, targets,
+                    logits,
+                    targets,
                 ).item()
                 val_b += 1
         val_loss = val_loss_sum / max(val_b, 1)
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            best_state = {
-                k: v.cpu().clone()
-                for k, v in model.state_dict().items()
-            }
+            best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
             patience_counter = 0
         else:
             patience_counter += 1
@@ -302,19 +314,23 @@ def predict_transformer_v3(
     test_mask = full_df["season"].isin(config.test_years).values
     test_indices = np.where(test_mask)[0].astype(np.int32)
     all_pitcher_mapped = _map_ids(
-        full_df["pitcher_id"].values, pitcher_map,
+        full_df["pitcher_id"].values,
+        pitcher_map,
     )
     all_batter_mapped = np.zeros(len(full_df), dtype=np.int64)
 
     test_ds = EnrichedSequenceDataset(
-        index, test_indices,
+        index,
+        test_indices,
         all_pitcher_mapped[test_indices],
         all_batter_mapped[test_indices],
         config.seq_window,
     )
     loader = DataLoader(
-        test_ds, batch_size=config.transformer_batch_size * 2,
-        shuffle=False, collate_fn=collate_enriched,
+        test_ds,
+        batch_size=config.transformer_batch_size * 2,
+        shuffle=False,
+        collate_fn=collate_enriched,
         **config.loader_kwargs(force_sync=True),
     )
 
@@ -358,12 +374,17 @@ def extract_v3_embeddings(
     all_bid = np.zeros(len(full_df), dtype=np.int64)
 
     ds = EnrichedSequenceDataset(
-        index, indices, all_pid[indices], all_bid[indices],
+        index,
+        indices,
+        all_pid[indices],
+        all_bid[indices],
         config.seq_window,
     )
     loader = DataLoader(
-        ds, batch_size=config.transformer_batch_size * 2,
-        shuffle=False, collate_fn=collate_enriched,
+        ds,
+        batch_size=config.transformer_batch_size * 2,
+        shuffle=False,
+        collate_fn=collate_enriched,
         **config.loader_kwargs(force_sync=True),
     )
     embs: list[np.ndarray] = []

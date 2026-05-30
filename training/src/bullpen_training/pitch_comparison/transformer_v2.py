@@ -42,7 +42,8 @@ def _build_id_map(ids: np.ndarray) -> dict[int, int]:
 
 def _map_ids(ids: np.ndarray, mapping: dict[int, int]) -> np.ndarray:
     return np.array(
-        [mapping.get(int(x), 0) for x in ids], dtype=np.int64,
+        [mapping.get(int(x), 0) for x in ids],
+        dtype=np.int64,
     )
 
 
@@ -62,7 +63,9 @@ class _SeqWithIdsDataset(Dataset):
         )
 
         self._inner = PitchSequenceDataset(
-            index, valid_indices, window_size,
+            index,
+            valid_indices,
+            window_size,
         )
         self._pitcher_ids = pitcher_ids
         self._batter_ids = batter_ids
@@ -71,11 +74,13 @@ class _SeqWithIdsDataset(Dataset):
         return len(self._inner)
 
     def __getitem__(
-        self, idx: int,
+        self,
+        idx: int,
     ) -> tuple[np.ndarray, np.ndarray, int, int, int]:
         seq, pad_mask, _feat, target = self._inner[idx]
         return (
-            seq, pad_mask,
+            seq,
+            pad_mask,
             int(self._pitcher_ids[idx]),
             int(self._batter_ids[idx]),
             target,
@@ -125,22 +130,29 @@ class TransformerV2(nn.Module):
         self.token_proj = nn.Linear(raw_token_dim, d_model)
         self.pos_enc = PositionalEncoding(d_model)
         encoder_layer = nn.TransformerEncoderLayer(
-            d_model=d_model, nhead=nhead,
+            d_model=d_model,
+            nhead=nhead,
             dim_feedforward=dim_feedforward,
-            dropout=dropout, batch_first=True,
+            dropout=dropout,
+            batch_first=True,
         )
         self.encoder = nn.TransformerEncoder(
-            encoder_layer, num_layers=num_layers,
+            encoder_layer,
+            num_layers=num_layers,
         )
 
         self.pitcher_emb = nn.Embedding(
-            n_pitchers, pitcher_embed_dim, padding_idx=0,
+            n_pitchers,
+            pitcher_embed_dim,
+            padding_idx=0,
         )
         head_input = d_model + pitcher_embed_dim
 
         if use_batter_embed:
             self.batter_emb = nn.Embedding(
-                n_batters, batter_embed_dim, padding_idx=0,
+                n_batters,
+                batter_embed_dim,
+                padding_idx=0,
             )
             head_input += batter_embed_dim
         else:
@@ -212,33 +224,41 @@ def train_transformer_v2(
     val_indices = np.where(val_mask)[0].astype(np.int32)
 
     all_pitcher_mapped = _map_ids(
-        full_df["pitcher_id"].values, pitcher_map,
+        full_df["pitcher_id"].values,
+        pitcher_map,
     )
     all_batter_mapped = _map_ids(
-        full_df["batter_id"].values, batter_map,
+        full_df["batter_id"].values,
+        batter_map,
     )
 
     train_ds = _SeqWithIdsDataset(
-        index, train_indices,
+        index,
+        train_indices,
         all_pitcher_mapped[train_indices],
         all_batter_mapped[train_indices],
         config.seq_window,
     )
     val_ds = _SeqWithIdsDataset(
-        index, val_indices,
+        index,
+        val_indices,
         all_pitcher_mapped[val_indices],
         all_batter_mapped[val_indices],
         config.seq_window,
     )
 
     train_loader = DataLoader(
-        train_ds, batch_size=config.transformer_batch_size,
-        shuffle=True, collate_fn=_collate_v2,
+        train_ds,
+        batch_size=config.transformer_batch_size,
+        shuffle=True,
+        collate_fn=_collate_v2,
         **config.loader_kwargs(persistent=True),
     )
     val_loader = DataLoader(
-        val_ds, batch_size=config.transformer_batch_size * 2,
-        shuffle=False, collate_fn=_collate_v2,
+        val_ds,
+        batch_size=config.transformer_batch_size * 2,
+        shuffle=False,
+        collate_fn=_collate_v2,
         **config.loader_kwargs(persistent=True),
     )
 
@@ -256,10 +276,13 @@ def train_transformer_v2(
     ).to(device)
 
     optimizer = torch.optim.Adam(
-        model.parameters(), lr=config.transformer_lr, weight_decay=1e-4,
+        model.parameters(),
+        lr=config.transformer_lr,
+        weight_decay=1e-4,
     )
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=config.transformer_epochs,
+        optimizer,
+        T_max=config.transformer_epochs,
     )
 
     best_val_loss = float("inf")
@@ -302,17 +325,15 @@ def train_transformer_v2(
                 targets = targets.to(device)
                 logits = model(seq, pad_mask, pids, bids)
                 val_loss_sum += F.cross_entropy(
-                    logits, targets,
+                    logits,
+                    targets,
                 ).item()
                 val_b += 1
         val_loss = val_loss_sum / max(val_b, 1)
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            best_state = {
-                k: v.cpu().clone()
-                for k, v in model.state_dict().items()
-            }
+            best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
             patience_counter = 0
         else:
             patience_counter += 1
@@ -326,7 +347,8 @@ def train_transformer_v2(
 
         if patience_counter >= 5:
             print(
-                f"  early stopping at epoch {epoch + 1}", flush=True,
+                f"  early stopping at epoch {epoch + 1}",
+                flush=True,
             )
             break
 
@@ -351,21 +373,26 @@ def predict_transformer_v2(
     test_indices = np.where(test_mask)[0].astype(np.int32)
 
     all_pitcher_mapped = _map_ids(
-        full_df["pitcher_id"].values, pitcher_map,
+        full_df["pitcher_id"].values,
+        pitcher_map,
     )
     all_batter_mapped = _map_ids(
-        full_df["batter_id"].values, batter_map,
+        full_df["batter_id"].values,
+        batter_map,
     )
 
     test_ds = _SeqWithIdsDataset(
-        index, test_indices,
+        index,
+        test_indices,
         all_pitcher_mapped[test_indices],
         all_batter_mapped[test_indices],
         config.seq_window,
     )
     test_loader = DataLoader(
-        test_ds, batch_size=config.transformer_batch_size * 2,
-        shuffle=False, collate_fn=_collate_v2,
+        test_ds,
+        batch_size=config.transformer_batch_size * 2,
+        shuffle=False,
+        collate_fn=_collate_v2,
         **config.loader_kwargs(force_sync=True),
     )
 

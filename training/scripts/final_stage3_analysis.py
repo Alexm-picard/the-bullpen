@@ -84,14 +84,20 @@ def main() -> None:
     rookie_rows = {"default": _rookie_acc(np.asarray(booster.predict(xte), dtype=np.float32))}
     if n_rookie > 0:
         for label, sub_f, sub_e in [
-            ("features", True, False), ("embedding", False, True),
+            ("features", True, False),
+            ("embedding", False, True),
             ("features+embedding", True, True),
         ]:
             tab2, emb2 = apply_prototype_substitution(
-                tab_test, tab_cols, emb_test,
-                cluster_ids=cluster_ids_test, is_rookie=is_rookie_test,
-                clusters=clusters, pitcher_emb_slice=pe_slice,
-                substitute_features=sub_f, substitute_embedding=sub_e,
+                tab_test,
+                tab_cols,
+                emb_test,
+                cluster_ids=cluster_ids_test,
+                is_rookie=is_rookie_test,
+                clusters=clusters,
+                pitcher_emb_slice=pe_slice,
+                substitute_features=sub_f,
+                substitute_embedding=sub_e,
             )
             p = np.asarray(booster.predict(np.hstack([emb2, tab2])), dtype=np.float32)
             rookie_rows[label] = _rookie_acc(p)

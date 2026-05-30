@@ -35,7 +35,7 @@ from bullpen_training.battedball.lgbm_baseline import load_baseline, predict_pro
 from bullpen_training.battedball.lgbm_baseline.dataset import (
     load_lgbm_dataset,
 )
-from bullpen_training.battedball.mlp import BBIPDataset, FeatureScaler
+from bullpen_training.battedball.mlp import FeatureScaler
 from bullpen_training.battedball.mlp.architecture import build_model
 from bullpen_training.battedball.mlp.dataset import OUTCOME_NAMES, load_arrays
 

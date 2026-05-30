@@ -96,15 +96,23 @@ def _train_lgbm(train_x, train_y, val_x, val_y, seed, num_threads=8):
         "objective": "multiclass",
         "num_class": len(PITCH_TYPE_CLASSES),
         "metric": "multi_logloss",
-        "learning_rate": 0.05, "num_leaves": 63, "seed": seed,
-        "deterministic": True, "force_row_wise": True, "verbose": -1,
+        "learning_rate": 0.05,
+        "num_leaves": 63,
+        "seed": seed,
+        "deterministic": True,
+        "force_row_wise": True,
+        "verbose": -1,
         # Cap threads to limit peak power/heat (host crashes under all-core load).
         "num_threads": num_threads,
     }
     dt = lgb.Dataset(train_x, label=train_y)
     dv = lgb.Dataset(val_x, label=val_y, reference=dt)
     return lgb.train(
-        params, dt, 2000, valid_sets=[dt, dv], valid_names=["t", "v"],
+        params,
+        dt,
+        2000,
+        valid_sets=[dt, dv],
+        valid_names=["t", "v"],
         callbacks=[lgb.early_stopping(50, first_metric_only=True, verbose=False)],
     )
 
@@ -124,16 +132,11 @@ def _shap_analysis(booster, x_sample, feat_names, n_emb, out_dir):
         arr = np.stack(sv, axis=0)
     else:
         arr = np.asarray(sv)
-        if arr.ndim == 3:  # (n_samples, n_features, n_classes)
-            arr = np.transpose(arr, (2, 0, 1))
-        else:
-            arr = arr[None, ...]
+        # (n_samples, n_features, n_classes) → (n_classes, n_samples, n_features)
+        arr = np.transpose(arr, (2, 0, 1)) if arr.ndim == 3 else arr[None, ...]
     mean_abs = np.abs(arr).mean(axis=(0, 1))  # per feature
 
-    named = {
-        feat_names[i]: float(mean_abs[i])
-        for i in range(n_emb, len(feat_names))
-    }
+    named = {feat_names[i]: float(mean_abs[i]) for i in range(n_emb, len(feat_names))}
     named["sequence+entity_embedding"] = float(mean_abs[:n_emb].sum())
 
     ranked = dict(sorted(named.items(), key=lambda x: -x[1]))
@@ -166,7 +169,9 @@ def main() -> None:
 
     print("loading enriched data...")
     raw_df = load_enriched_data(
-        season_from=cfg.season_from, season_to=cfg.season_to, limit=cfg.limit,
+        season_from=cfg.season_from,
+        season_to=cfg.season_to,
+        limit=cfg.limit,
     )
     print(f"  {len(raw_df)} rows")
     print("preparing enriched splits (with streak features)...")
@@ -210,19 +215,27 @@ def main() -> None:
     # ---- Train the catcher-aware transformer once ----------------------
     print("\ntraining catcher-aware transformer (pitcher + catcher)...")
     model, index, p_map, c_map, t_time = train_catcher_transformer(
-        train_df, val_df, full_df, cfg, use_catcher=True, variant_name="Catcher",
+        train_df,
+        val_df,
+        full_df,
+        cfg,
+        use_catcher=True,
+        variant_name="Catcher",
     )
     set_cluster_embeddings(
         clusters,
         model.pitcher_emb.weight.detach().cpu().numpy(),
-        p_map, train_df,
+        p_map,
+        train_df,
     )
     pe_dim = model.pitcher_emb.embedding_dim
     pitcher_emb_slice = slice(cfg.d_model, cfg.d_model + pe_dim)
 
     _mem("after train (pre-extract)")
     print("extracting catcher-hybrid embeddings...")
-    emb_train = extract_catcher_hybrid_embeddings(model, index, p_map, c_map, full_df, train_idx, cfg)
+    emb_train = extract_catcher_hybrid_embeddings(
+        model, index, p_map, c_map, full_df, train_idx, cfg
+    )
     _mem("after emb_train")
     emb_val = extract_catcher_hybrid_embeddings(model, index, p_map, c_map, full_df, val_idx, cfg)
     emb_test = extract_catcher_hybrid_embeddings(model, index, p_map, c_map, full_df, test_idx, cfg)
@@ -243,7 +256,7 @@ def main() -> None:
     tab_cols = streak_feat  # superset; the streak cols are the LAST n_streak
 
     # Precompute rookie-eval inputs from full_df NOW, then free full_df.
-    n_test = int(len(test_df))
+    n_test = len(test_df)
     cum = compute_cum_pitch_count(full_df)
     is_rookie_test = cum[test_idx] < ROOKIE_PITCH_THRESHOLD
     cluster_ids_test = assign_clusters_streaming(full_df, clusters)[test_idx]
@@ -264,9 +277,11 @@ def main() -> None:
     del train_df, val_df, test_df
     gc.collect()
     print("\nbuilding booster feature matrices...")
-    xtr = np.hstack([emb_train, tab_tr]); del emb_train, tab_tr
+    xtr = np.hstack([emb_train, tab_tr])
+    del emb_train, tab_tr
     gc.collect()
-    xva = np.hstack([emb_val, tab_va]); del emb_val, tab_va
+    xva = np.hstack([emb_val, tab_va])
+    del emb_val, tab_va
     gc.collect()
     xte = np.hstack([emb_test, tab_test])  # keep emb_test + tab_test for rookie
     gc.collect()
@@ -278,17 +293,22 @@ def main() -> None:
     b_streak = _train_lgbm(xtr, train_y, xva, val_y, cfg.seed, cfg.lgbm_num_threads)
     p_streak = np.asarray(b_streak.predict(xte), dtype=np.float32)
     m_streak = compute_pitch_type_metrics(
-        "Context + Streak", y_test, p_streak, t_time + (time.perf_counter() - t0),
+        "Context + Streak",
+        y_test,
+        p_streak,
+        t_time + (time.perf_counter() - t0),
     )
     print(f"  acc={m_streak.accuracy:.4f}  top2={m_streak.top2_accuracy:.4f}")
     _mem("after streak booster")
 
     streak_importance = {
-        n: float(v) for n, v in zip(
+        n: float(v)
+        for n, v in zip(
             feat_names,
             b_streak.feature_importance(importance_type="gain"),
             strict=True,
-        ) if n in STREAK_FEATURE_COLS
+        )
+        if n in STREAK_FEATURE_COLS
     }
     print("  streak feature importance (gain):")
     for n, v in sorted(streak_importance.items(), key=lambda x: -x[1]):
@@ -304,12 +324,19 @@ def main() -> None:
     print("\n[1b] Catcher-Hybrid + Context (reference, no streak)...")
     t0 = time.perf_counter()
     b_ref = _train_lgbm(
-        xtr[:, :-n_streak], train_y, xva[:, :-n_streak], val_y,
-        cfg.seed, cfg.lgbm_num_threads,
+        xtr[:, :-n_streak],
+        train_y,
+        xva[:, :-n_streak],
+        val_y,
+        cfg.seed,
+        cfg.lgbm_num_threads,
     )
     p_ref = np.asarray(b_ref.predict(xte[:, :-n_streak]), dtype=np.float32)
     m_ref = compute_pitch_type_metrics(
-        "Context (ref)", y_test, p_ref, t_time + (time.perf_counter() - t0),
+        "Context (ref)",
+        y_test,
+        p_ref,
+        t_time + (time.perf_counter() - t0),
     )
     print(f"  acc={m_ref.accuracy:.4f}  top2={m_ref.top2_accuracy:.4f}")
     del b_ref, p_ref
@@ -333,15 +360,17 @@ def main() -> None:
     # ---- Idea 3: rookie prototyping ------------------------------------
     print("\n[4] rookie prototype-clustering evaluation...")
     n_rookie = int(is_rookie_test.sum())
-    print(f"  rookie test pitches: {n_rookie:,} / {n_test:,} "
-          f"({n_rookie / max(n_test, 1):.2%})")
+    print(f"  rookie test pitches: {n_rookie:,} / {n_test:,} ({n_rookie / max(n_test, 1):.2%})")
 
     def _rookie_acc(proba):
         if n_rookie == 0:
             return float("nan")
-        return float(accuracy_score(
-            y_test[is_rookie_test], proba[is_rookie_test].argmax(1),
-        ))
+        return float(
+            accuracy_score(
+                y_test[is_rookie_test],
+                proba[is_rookie_test].argmax(1),
+            )
+        )
 
     rookie_rows = {"default": _rookie_acc(p_streak)}
 
@@ -353,10 +382,15 @@ def main() -> None:
         ]
         for label, sub_f, sub_e in variants:
             tab2, emb2 = apply_prototype_substitution(
-                tab_test, tab_cols, emb_test,
-                cluster_ids=cluster_ids_test, is_rookie=is_rookie_test,
-                clusters=clusters, pitcher_emb_slice=pitcher_emb_slice,
-                substitute_features=sub_f, substitute_embedding=sub_e,
+                tab_test,
+                tab_cols,
+                emb_test,
+                cluster_ids=cluster_ids_test,
+                is_rookie=is_rookie_test,
+                clusters=clusters,
+                pitcher_emb_slice=pitcher_emb_slice,
+                substitute_features=sub_f,
+                substitute_embedding=sub_e,
             )
             x_proto = np.hstack([emb2, tab2])
             p_proto = np.asarray(b_streak.predict(x_proto), dtype=np.float32)
@@ -418,8 +452,10 @@ def main() -> None:
         "artifact_name": "final_experiments",
         "streak_models": [
             {
-                "name": r.name, "accuracy": r.accuracy,
-                "top2_accuracy": r.top2_accuracy, "logloss": r.logloss,
+                "name": r.name,
+                "accuracy": r.accuracy,
+                "top2_accuracy": r.top2_accuracy,
+                "logloss": r.logloss,
                 "calibration_ece": r.calibration_ece,
             }
             for r in results

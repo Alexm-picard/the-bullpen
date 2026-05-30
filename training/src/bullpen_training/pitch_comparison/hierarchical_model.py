@@ -26,13 +26,16 @@ from bullpen_training.pitch_comparison.models import PredictionBundle
 
 COARSE_CLASSES: Final[tuple[str, ...]] = ("Fastball", "Breaking", "Offspeed")
 COARSE_MAP: Final[dict[str, str]] = {
-    "FF": "Fastball", "SI": "Fastball", "FC": "Fastball",
-    "SL": "Breaking", "CU": "Breaking", "ST": "Breaking",
-    "CH": "Offspeed", "OTHER": "Offspeed",
+    "FF": "Fastball",
+    "SI": "Fastball",
+    "FC": "Fastball",
+    "SL": "Breaking",
+    "CU": "Breaking",
+    "ST": "Breaking",
+    "CH": "Offspeed",
+    "OTHER": "Offspeed",
 }
-COARSE_TO_INT: Final[dict[str, int]] = {
-    c: i for i, c in enumerate(COARSE_CLASSES)
-}
+COARSE_TO_INT: Final[dict[str, int]] = {c: i for i, c in enumerate(COARSE_CLASSES)}
 FINE_WITHIN_COARSE: Final[dict[str, tuple[str, ...]]] = {
     "Fastball": ("FF", "SI", "FC"),
     "Breaking": ("SL", "CU", "ST"),
@@ -56,9 +59,7 @@ def _map_fine_within(
 ) -> np.ndarray:
     """Map global 8-class ints to local within-coarse ints."""
     fine_types = FINE_WITHIN_COARSE[coarse_name]
-    global_to_local = {
-        PITCH_TYPE_TO_INT[ft]: i for i, ft in enumerate(fine_types)
-    }
+    global_to_local = {PITCH_TYPE_TO_INT[ft]: i for i, ft in enumerate(fine_types)}
     local = np.zeros(len(pitch_type_int), dtype=np.int8)
     for g_idx, l_idx in global_to_local.items():
         local[pitch_type_int == g_idx] = l_idx
@@ -87,10 +88,7 @@ def train_hierarchical(
     train_coarse = _map_to_coarse(
         train_df["pitch_type_int"].values,
     )
-    val_coarse = (
-        _map_to_coarse(val_df["pitch_type_int"].values) if has_val
-        else None
-    )
+    val_coarse = _map_to_coarse(val_df["pitch_type_int"].values) if has_val else None
 
     coarse_params = {
         **base_params,
@@ -106,12 +104,14 @@ def train_hierarchical(
         dv = lgb.Dataset(val_df[feat], label=val_coarse, reference=dt)
         valid_sets.append(dv)
         valid_names.append("v")
-        cbs.append(
-            lgb.early_stopping(50, first_metric_only=True, verbose=False)
-        )
+        cbs.append(lgb.early_stopping(50, first_metric_only=True, verbose=False))
     coarse_model = lgb.train(
-        coarse_params, dt, config.hier_num_boost_round,
-        valid_sets=valid_sets, valid_names=valid_names, callbacks=cbs,
+        coarse_params,
+        dt,
+        config.hier_num_boost_round,
+        valid_sets=valid_sets,
+        valid_names=valid_names,
+        callbacks=cbs,
     )
     print("  coarse classifier trained", flush=True)
 
@@ -127,7 +127,8 @@ def train_hierarchical(
 
         train_sub = train_df.loc[train_mask]
         train_fine_y = _map_fine_within(
-            train_sub["pitch_type_int"].values, coarse_name,
+            train_sub["pitch_type_int"].values,
+            coarse_name,
         )
 
         fine_params = {
@@ -146,20 +147,30 @@ def train_hierarchical(
             if val_mask.sum() > 0:
                 val_sub = val_df.loc[val_mask]
                 val_fine_y = _map_fine_within(
-                    val_sub["pitch_type_int"].values, coarse_name,
+                    val_sub["pitch_type_int"].values,
+                    coarse_name,
                 )
                 dv = lgb.Dataset(
-                    val_sub[feat], label=val_fine_y, reference=dt,
+                    val_sub[feat],
+                    label=val_fine_y,
+                    reference=dt,
                 )
                 valid_sets.append(dv)
                 valid_names.append("v")
-                cbs.append(lgb.early_stopping(
-                    50, first_metric_only=True, verbose=False,
-                ))
+                cbs.append(
+                    lgb.early_stopping(
+                        50,
+                        first_metric_only=True,
+                        verbose=False,
+                    )
+                )
 
         fine_models[coarse_name] = lgb.train(
-            fine_params, dt, config.hier_num_boost_round,
-            valid_sets=valid_sets, valid_names=valid_names,
+            fine_params,
+            dt,
+            config.hier_num_boost_round,
+            valid_sets=valid_sets,
+            valid_names=valid_names,
             callbacks=cbs,
         )
         print(f"  fine classifier '{coarse_name}' trained", flush=True)
@@ -180,7 +191,8 @@ def predict_hierarchical(
 
     # Stage 1: coarse probabilities.
     coarse_proba = np.asarray(
-        bundle["coarse"].predict(x), dtype=np.float64,
+        bundle["coarse"].predict(x),
+        dtype=np.float64,
     )
 
     # Stage 2: fine probabilities within each category.
@@ -193,16 +205,15 @@ def predict_hierarchical(
 
         if coarse_name in bundle["fine"]:
             fine_proba = np.asarray(
-                bundle["fine"][coarse_name].predict(x), dtype=np.float64,
+                bundle["fine"][coarse_name].predict(x),
+                dtype=np.float64,
             )
         else:
             fine_proba = np.ones((n, len(fine_types))) / len(fine_types)
 
         for local_idx, ft_name in enumerate(fine_types):
             global_idx = PITCH_TYPE_TO_INT[ft_name]
-            final_proba[:, global_idx] = (
-                p_coarse * fine_proba[:, local_idx]
-            )
+            final_proba[:, global_idx] = p_coarse * fine_proba[:, local_idx]
 
     # Renormalize.
     row_sums = final_proba.sum(axis=1, keepdims=True)

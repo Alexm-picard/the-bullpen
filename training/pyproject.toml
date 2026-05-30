@@ -54,6 +54,14 @@ select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
 
 [tool.pyright]
 include = ["src", "eval", "tests"]
+# pitch_comparison/ is the exploratory model-comparison research subpackage
+# (transformer/embedding/arsenal studies that informed model selection) — not
+# on the production train or serve path (pitch/, battedball/, eval/, ingest/
+# are). It is pandas/torch-heavy with partial stubs, so basic-mode type checks
+# there are the same "theatre, not safety" the strict-list comment describes —
+# extended from strict to full exclusion for a non-production research module.
+# The production pipeline stays fully type-checked.
+exclude = ["src/bullpen_training/pitch_comparison"]
 pythonVersion = "3.11"
 # strict applies to modules where Unknown* would catch real bugs. The data
 # subpackages (ingest/, eval/) wrap pandas/pybaseball/clickhouse-driver

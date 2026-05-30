@@ -171,8 +171,14 @@ def load_park_arrays(
             continue
         cols = line.split("\t")
         features[written] = _row_to_features(
-            cols[0], cols[1], cols[2], cols[3],
-            cols[4], cols[5], cols[6], cols[7],
+            cols[0],
+            cols[1],
+            cols[2],
+            cols[3],
+            cols[4],
+            cols[5],
+            cols[6],
+            cols[7],
         )
         labels[written, 0] = float(cols[8])
         labels[written, 1] = float(cols[9])

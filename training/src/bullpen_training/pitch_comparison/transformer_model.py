@@ -54,10 +54,7 @@ class PositionalEncoding(nn.Module):
         super().__init__()
         pe = torch.zeros(max_len, d_model)
         position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(
-            torch.arange(0, d_model, 2).float()
-            * (-math.log(10000.0) / d_model)
-        )
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
         self.register_buffer("pe", pe.unsqueeze(0))
@@ -90,7 +87,8 @@ class PitchSequenceTransformer(nn.Module):
             batch_first=True,
         )
         self.encoder = nn.TransformerEncoder(
-            encoder_layer, num_layers=num_layers,
+            encoder_layer,
+            num_layers=num_layers,
         )
         self.head = nn.Linear(d_model, n_classes)
         self.dropout = nn.Dropout(dropout)
@@ -106,9 +104,7 @@ class PitchSequenceTransformer(nn.Module):
         x = self.encoder(x, src_key_padding_mask=unmask_fully_padded(pad_mask))
         # Mean-pool over non-padded positions (ORIGINAL mask).
         mask_expand = (~pad_mask).unsqueeze(-1).float()
-        pooled = (x * mask_expand).sum(dim=1) / mask_expand.sum(
-            dim=1
-        ).clamp(min=1)
+        pooled = (x * mask_expand).sum(dim=1) / mask_expand.sum(dim=1).clamp(min=1)
         return pooled
 
     def forward(
@@ -132,19 +128,18 @@ def train_transformer(
     print("  building pitcher sequence index...", flush=True)
     index = PitcherSequenceIndex(full_df)
 
-    train_indices = np.where(
-        full_df["season"].isin(config.train_years).values
-    )[0].astype(np.int32)
-    val_indices = np.where(
-        full_df["season"].isin(config.val_years).values
-    )[0].astype(np.int32)
+    train_indices = np.where(full_df["season"].isin(config.train_years).values)[0].astype(np.int32)
+    val_indices = np.where(full_df["season"].isin(config.val_years).values)[0].astype(np.int32)
 
     train_ds = PitchSequenceDataset(
-        index, train_indices, config.seq_window,
+        index,
+        train_indices,
+        config.seq_window,
     )
     has_val = len(val_indices) > 0 and set(config.val_years) != set(config.train_years)
     val_ds = PitchSequenceDataset(
-        index, val_indices if has_val else train_indices[:0],
+        index,
+        val_indices if has_val else train_indices[:0],
         config.seq_window,
     )
     train_loader = DataLoader(
@@ -171,10 +166,13 @@ def train_transformer(
     ).to(device)
 
     optimizer = torch.optim.Adam(
-        model.parameters(), lr=config.transformer_lr, weight_decay=1e-4,
+        model.parameters(),
+        lr=config.transformer_lr,
+        weight_decay=1e-4,
     )
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=config.transformer_epochs,
+        optimizer,
+        T_max=config.transformer_epochs,
     )
 
     best_val_loss = float("inf")
@@ -216,16 +214,15 @@ def train_transformer(
                     targets = targets.to(device)
                     logits = model(seq, pad_mask)
                     val_loss_sum += F.cross_entropy(
-                        logits, targets,
+                        logits,
+                        targets,
                     ).item()
                     val_batches += 1
             val_loss = val_loss_sum / max(val_batches, 1)
 
         if has_val and val_loss < best_val_loss:
             best_val_loss = val_loss
-            best_state = {
-                k: v.cpu().clone() for k, v in model.state_dict().items()
-            }
+            best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
             patience_counter = 0
         else:
             patience_counter += 1
@@ -240,7 +237,8 @@ def train_transformer(
 
         if has_val and patience_counter >= patience:
             print(
-                f"  early stopping at epoch {epoch + 1}", flush=True,
+                f"  early stopping at epoch {epoch + 1}",
+                flush=True,
             )
             break
 
@@ -260,11 +258,11 @@ def predict_transformer(
     device = torch.device(config.resolve_device())
     model.to(device).eval()
 
-    test_indices = np.where(
-        full_df["season"].isin(config.test_years).values
-    )[0].astype(np.int32)
+    test_indices = np.where(full_df["season"].isin(config.test_years).values)[0].astype(np.int32)
     test_ds = PitchSequenceDataset(
-        index, test_indices, config.seq_window,
+        index,
+        test_indices,
+        config.seq_window,
     )
     test_loader = DataLoader(
         test_ds,

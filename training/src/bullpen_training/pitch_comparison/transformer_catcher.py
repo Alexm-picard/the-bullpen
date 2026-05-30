@@ -55,7 +55,9 @@ class _SeqCatcherDataset(Dataset):
         window_size: int = 20,
     ) -> None:
         self._inner = PitchSequenceDataset(
-            index, valid_indices, window_size,
+            index,
+            valid_indices,
+            window_size,
         )
         self._pitcher_ids = pitcher_ids
         self._catcher_ids = catcher_ids
@@ -64,11 +66,13 @@ class _SeqCatcherDataset(Dataset):
         return len(self._inner)
 
     def __getitem__(
-        self, idx: int,
+        self,
+        idx: int,
     ) -> tuple[np.ndarray, np.ndarray, int, int, int]:
         seq, pad_mask, _feat, target = self._inner[idx]
         return (
-            seq, pad_mask,
+            seq,
+            pad_mask,
             int(self._pitcher_ids[idx]),
             int(self._catcher_ids[idx]),
             target,
@@ -115,20 +119,27 @@ class CatcherAwareTransformer(nn.Module):
         self.token_proj = nn.Linear(raw_token_dim, d_model)
         self.pos_enc = PositionalEncoding(d_model)
         encoder_layer = nn.TransformerEncoderLayer(
-            d_model=d_model, nhead=nhead,
+            d_model=d_model,
+            nhead=nhead,
             dim_feedforward=dim_feedforward,
-            dropout=dropout, batch_first=True,
+            dropout=dropout,
+            batch_first=True,
         )
         self.encoder = nn.TransformerEncoder(
-            encoder_layer, num_layers=num_layers,
+            encoder_layer,
+            num_layers=num_layers,
         )
         self.pitcher_emb = nn.Embedding(
-            n_pitchers, pitcher_embed_dim, padding_idx=0,
+            n_pitchers,
+            pitcher_embed_dim,
+            padding_idx=0,
         )
         head_input = d_model + pitcher_embed_dim
         if use_catcher:
             self.catcher_emb = nn.Embedding(
-                n_catchers, catcher_embed_dim, padding_idx=0,
+                n_catchers,
+                catcher_embed_dim,
+                padding_idx=0,
             )
             head_input += catcher_embed_dim
         else:
@@ -142,7 +153,9 @@ class CatcherAwareTransformer(nn.Module):
         self.dropout_layer = nn.Dropout(dropout)
 
     def encode(
-        self, seq: torch.Tensor, pad_mask: torch.Tensor,
+        self,
+        seq: torch.Tensor,
+        pad_mask: torch.Tensor,
     ) -> torch.Tensor:
         x = self.token_proj(seq)
         x = self.pos_enc(x)
@@ -194,28 +207,37 @@ def train_catcher_transformer(
     all_cid = _map_ids(full_df["catcher_id"].values, catcher_map)
 
     train_ds = _SeqCatcherDataset(
-        index, train_indices,
-        all_pid[train_indices], all_cid[train_indices],
+        index,
+        train_indices,
+        all_pid[train_indices],
+        all_cid[train_indices],
         config.seq_window,
     )
     val_ds = _SeqCatcherDataset(
-        index, val_indices,
-        all_pid[val_indices], all_cid[val_indices],
+        index,
+        val_indices,
+        all_pid[val_indices],
+        all_cid[val_indices],
         config.seq_window,
     )
     train_loader = DataLoader(
-        train_ds, batch_size=config.transformer_batch_size,
-        shuffle=True, collate_fn=_collate_catcher,
+        train_ds,
+        batch_size=config.transformer_batch_size,
+        shuffle=True,
+        collate_fn=_collate_catcher,
         **config.loader_kwargs(persistent=True),
     )
     val_loader = DataLoader(
-        val_ds, batch_size=config.transformer_batch_size * 2,
-        shuffle=False, collate_fn=_collate_catcher,
+        val_ds,
+        batch_size=config.transformer_batch_size * 2,
+        shuffle=False,
+        collate_fn=_collate_catcher,
         **config.loader_kwargs(persistent=True),
     )
 
     model = CatcherAwareTransformer(
-        d_model=config.d_model, nhead=config.nhead,
+        d_model=config.d_model,
+        nhead=config.nhead,
         num_layers=config.num_encoder_layers,
         dim_feedforward=config.dim_feedforward,
         dropout=config.transformer_dropout,
@@ -227,10 +249,13 @@ def train_catcher_transformer(
     ).to(device)
 
     optimizer = torch.optim.Adam(
-        model.parameters(), lr=config.transformer_lr, weight_decay=1e-4,
+        model.parameters(),
+        lr=config.transformer_lr,
+        weight_decay=1e-4,
     )
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=config.transformer_epochs,
+        optimizer,
+        T_max=config.transformer_epochs,
     )
 
     best_val_loss = float("inf")
@@ -276,9 +301,7 @@ def train_catcher_transformer(
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            best_state = {
-                k: v.cpu().clone() for k, v in model.state_dict().items()
-            }
+            best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
             patience_counter = 0
         else:
             patience_counter += 1
@@ -322,13 +345,17 @@ def predict_catcher_transformer(
     all_cid = _map_ids(full_df["catcher_id"].values, catcher_map)
 
     test_ds = _SeqCatcherDataset(
-        index, test_indices,
-        all_pid[test_indices], all_cid[test_indices],
+        index,
+        test_indices,
+        all_pid[test_indices],
+        all_cid[test_indices],
         config.seq_window,
     )
     loader = DataLoader(
-        test_ds, batch_size=config.transformer_batch_size * 2,
-        shuffle=False, collate_fn=_collate_catcher,
+        test_ds,
+        batch_size=config.transformer_batch_size * 2,
+        shuffle=False,
+        collate_fn=_collate_catcher,
         **config.loader_kwargs(force_sync=True),
     )
     all_probs: list[np.ndarray] = []
@@ -376,12 +403,17 @@ def extract_catcher_hybrid_embeddings(
     all_pid = _map_ids(full_df["pitcher_id"].values, pitcher_map)
     all_cid = _map_ids(full_df["catcher_id"].values, catcher_map)
     ds = _SeqCatcherDataset(
-        index, indices, all_pid[indices], all_cid[indices],
+        index,
+        indices,
+        all_pid[indices],
+        all_cid[indices],
         config.seq_window,
     )
     loader = DataLoader(
-        ds, batch_size=config.transformer_batch_size * 2,
-        shuffle=False, collate_fn=_collate_catcher,
+        ds,
+        batch_size=config.transformer_batch_size * 2,
+        shuffle=False,
+        collate_fn=_collate_catcher,
         **config.loader_kwargs(force_sync=True),
     )
     # Preallocate the output and fill row-slices instead of accumulating a

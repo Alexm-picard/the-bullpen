@@ -46,8 +46,11 @@ def extract_attention_weights(
     sample_idx = indices[:max_samples]
     ds = PitchSequenceDataset(index, sample_idx, config.seq_window)
     loader = DataLoader(
-        ds, batch_size=256, shuffle=False,
-        collate_fn=collate_sequences, num_workers=0,
+        ds,
+        batch_size=256,
+        shuffle=False,
+        collate_fn=collate_sequences,
+        num_workers=0,
     )
 
     all_attn: list[np.ndarray] = []
@@ -86,7 +89,9 @@ def extract_attention_weights(
             for layer in model.encoder.layers:
                 # Call self_attn directly to get weights.
                 src2, w = layer.self_attn(
-                    x, x, x,
+                    x,
+                    x,
+                    x,
                     key_padding_mask=pad_mask,
                     need_weights=True,
                     average_attn_weights=False,
@@ -143,7 +148,9 @@ def plot_attention_heatmap(
 
     for ex_idx in range(min(n_examples, attentions.shape[0])):
         fig, axes = plt.subplots(
-            1, n_heads, figsize=(4 * n_heads, 4),
+            1,
+            n_heads,
+            figsize=(4 * n_heads, 4),
         )
         if n_heads == 1:
             axes = [axes]
@@ -182,7 +189,9 @@ def plot_temporal_attention_decay(
     seq_len = attentions.shape[3]
 
     fig, axes = plt.subplots(
-        1, n_layers, figsize=(8 * n_layers, 5),
+        1,
+        n_layers,
+        figsize=(8 * n_layers, 5),
     )
     if n_layers == 1:
         axes = [axes]
@@ -200,8 +209,10 @@ def plot_temporal_attention_decay(
             positions = np.arange(seq_len)
             recency = seq_len - positions
             ax.plot(
-                recency, mean_by_pos[head_idx],
-                label=f"Head {head_idx}", alpha=0.8,
+                recency,
+                mean_by_pos[head_idx],
+                label=f"Head {head_idx}",
+                alpha=0.8,
             )
         ax.set_xlabel("Pitches Ago (recency)")
         ax.set_ylabel("Mean Attention Weight")
@@ -212,7 +223,8 @@ def plot_temporal_attention_decay(
 
     fig.suptitle(
         "Temporal Attention Decay (last query position)",
-        fontsize=13, fontweight="bold",
+        fontsize=13,
+        fontweight="bold",
     )
     fig.tight_layout()
     fig.savefig(out_dir / "attention_temporal_decay.png", dpi=150)
@@ -233,7 +245,9 @@ def plot_calibration_curve(
     class_names = PITCH_TYPE_CLASSES[:n_classes]
 
     fig, axes = plt.subplots(
-        2, 4, figsize=(20, 10),
+        2,
+        4,
+        figsize=(20, 10),
     )
     axes_flat = axes.flatten()
 
@@ -257,9 +271,12 @@ def plot_calibration_curve(
 
         if bin_confs:
             ax.bar(
-                bin_confs, bin_accs,
-                width=1.0 / n_bins * 0.8, alpha=0.6,
-                color="#2563eb", edgecolor="white",
+                bin_confs,
+                bin_accs,
+                width=1.0 / n_bins * 0.8,
+                alpha=0.6,
+                color="#2563eb",
+                edgecolor="white",
             )
         ax.plot([0, 1], [0, 1], "k--", alpha=0.5, label="Perfect")
         ax.set_xlim(0, 1)
@@ -271,7 +288,8 @@ def plot_calibration_curve(
 
     fig.suptitle(
         f"Calibration / Reliability Diagram — {model_name}",
-        fontsize=14, fontweight="bold",
+        fontsize=14,
+        fontweight="bold",
     )
     fig.tight_layout()
     fig.savefig(out_dir / "calibration_reliability.png", dpi=150)
@@ -293,14 +311,20 @@ def plot_confidence_histogram(
 
     fig, ax = plt.subplots(figsize=(10, 6))
     ax.hist(
-        max_conf[correct], bins=50, alpha=0.6,
+        max_conf[correct],
+        bins=50,
+        alpha=0.6,
         label=f"Correct (n={int(correct.sum())})",
-        color="#059669", density=True,
+        color="#059669",
+        density=True,
     )
     ax.hist(
-        max_conf[~correct], bins=50, alpha=0.6,
+        max_conf[~correct],
+        bins=50,
+        alpha=0.6,
         label=f"Incorrect (n={int((~correct).sum())})",
-        color="#dc2626", density=True,
+        color="#dc2626",
+        density=True,
     )
     ax.set_xlabel("Max Predicted Probability")
     ax.set_ylabel("Density")
@@ -325,17 +349,19 @@ def plot_topk_curve(
     accs = []
     for k in ks:
         top_k = np.argsort(y_proba, axis=1)[:, -k:]
-        acc = float(np.mean([
-            y_true[i] in top_k[i] for i in range(len(y_true))
-        ]))
+        acc = float(np.mean([y_true[i] in top_k[i] for i in range(len(y_true))]))
         accs.append(acc)
 
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.plot(ks, accs, "o-", color="#2563eb", linewidth=2, markersize=8)
     for k, a in zip(ks, accs, strict=True):
         ax.annotate(
-            f"{a:.3f}", (k, a), textcoords="offset points",
-            xytext=(0, 10), ha="center", fontsize=9,
+            f"{a:.3f}",
+            (k, a),
+            textcoords="offset points",
+            xytext=(0, 10),
+            ha="center",
+            fontsize=9,
         )
     ax.set_xlabel("k")
     ax.set_ylabel("Top-k Accuracy")
@@ -358,7 +384,8 @@ def plot_entropy_analysis(
 ) -> None:
     """Prediction entropy distribution and accuracy by entropy bin."""
     entropy = -np.sum(
-        y_proba * np.log(y_proba + 1e-9), axis=1,
+        y_proba * np.log(y_proba + 1e-9),
+        axis=1,
     )
     y_pred = y_proba.argmax(axis=1)
     correct = y_pred == y_true
@@ -384,8 +411,12 @@ def plot_entropy_analysis(
             bin_accs.append(float(correct[mask].mean()))
 
     ax2.plot(
-        bin_centers, bin_accs, "o-", color="#059669",
-        linewidth=2, markersize=8,
+        bin_centers,
+        bin_accs,
+        "o-",
+        color="#059669",
+        linewidth=2,
+        markersize=8,
     )
     ax2.set_xlabel("Prediction Entropy")
     ax2.set_ylabel("Accuracy")
@@ -394,7 +425,8 @@ def plot_entropy_analysis(
 
     fig.suptitle(
         f"Uncertainty Analysis — {model_name}",
-        fontsize=13, fontweight="bold",
+        fontsize=13,
+        fontweight="bold",
     )
     fig.tight_layout()
     fig.savefig(out_dir / "entropy_analysis.png", dpi=150)

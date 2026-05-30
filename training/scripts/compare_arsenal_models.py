@@ -89,8 +89,11 @@ def _train_lgbm_with_features(
     dt = lgb.Dataset(train_x, label=train_y)
     dv = lgb.Dataset(val_x, label=val_y, reference=dt)
     return lgb.train(
-        params, dt, 2000,
-        valid_sets=[dt, dv], valid_names=["t", "v"],
+        params,
+        dt,
+        2000,
+        valid_sets=[dt, dv],
+        valid_names=["t", "v"],
         callbacks=[
             lgb.early_stopping(50, first_metric_only=True, verbose=False),
         ],
@@ -110,21 +113,30 @@ def _extract_transformer_embeddings(
     model.to(device).eval()
     ds = PitchSequenceDataset(index, indices, config.seq_window)
     loader = DataLoader(
-        ds, batch_size=config.transformer_batch_size * 2,
-        shuffle=False, collate_fn=collate_sequences, num_workers=0,
+        ds,
+        batch_size=config.transformer_batch_size * 2,
+        shuffle=False,
+        collate_fn=collate_sequences,
+        num_workers=0,
     )
     embs: list[np.ndarray] = []
     with torch.no_grad():
         for seq, pad_mask, _f, _t in loader:
-            emb = model.encode(
-                seq.to(device), pad_mask.to(device),
-            ).cpu().numpy()
+            emb = (
+                model.encode(
+                    seq.to(device),
+                    pad_mask.to(device),
+                )
+                .cpu()
+                .numpy()
+            )
             embs.append(emb)
     return np.concatenate(embs, axis=0).astype(np.float32)
 
 
 def _plot_summary(
-    results: list[PitchTypeMetrics], out_dir: Path,
+    results: list[PitchTypeMetrics],
+    out_dir: Path,
 ) -> None:
     names = [r.name for r in results]
     colors = [COLORS.get(n, "#888") for n in names]
@@ -145,12 +157,12 @@ def _plot_summary(
         bars[best].set_edgecolor("black")
         bars[best].set_linewidth(2)
         for i, v in enumerate(vals):
-            ax.text(i, v, f"{v:.4f}", ha="center", va="bottom",
-                    fontsize=7)
+            ax.text(i, v, f"{v:.4f}", ha="center", va="bottom", fontsize=7)
 
     fig.suptitle(
         "Arsenal-Aware Model Comparison (2025 holdout)",
-        fontsize=14, fontweight="bold",
+        fontsize=14,
+        fontweight="bold",
     )
     fig.tight_layout()
     fig.savefig(out_dir / "arsenal_comparison.png", dpi=150)
@@ -183,8 +195,14 @@ def _plot_accuracy_vs_arsenal_size(
             else:
                 accs.append(0.0)
         offset = (idx - len(results_dict) / 2 + 0.5) * width
-        ax.bar(x + offset, accs, width, label=model_name,
-               color=colors_list[idx % len(colors_list)], alpha=0.85)
+        ax.bar(
+            x + offset,
+            accs,
+            width,
+            label=model_name,
+            color=colors_list[idx % len(colors_list)],
+            alpha=0.85,
+        )
 
     ax.set_xticks(x)
     ax.set_xticklabels([b[2] for b in bins])
@@ -200,10 +218,7 @@ def _plot_accuracy_vs_arsenal_size(
 
 
 def _print_table(results: list[PitchTypeMetrics]) -> None:
-    hdr = (
-        f"{'Model':<25s} | {'Acc':>7s} {'Top2':>7s} "
-        f"{'LogL':>7s} {'ECE':>7s} | {'Time':>7s}"
-    )
+    hdr = f"{'Model':<25s} | {'Acc':>7s} {'Top2':>7s} {'LogL':>7s} {'ECE':>7s} | {'Time':>7s}"
     print("\n" + "=" * len(hdr))
     print(hdr)
     print("-" * len(hdr))
@@ -223,7 +238,8 @@ def main() -> None:
     )
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument(
-        "--out-dir", type=Path,
+        "--out-dir",
+        type=Path,
         default=Path("data/eval/pitch_arsenal"),
     )
     parser.add_argument("--seed", type=int, default=42)
@@ -233,19 +249,22 @@ def main() -> None:
     args = parser.parse_args()
 
     train_years = tuple(
-        y for y in range(args.season_from, args.season_to + 1)
-        if y not in (2024, 2025)
+        y for y in range(args.season_from, args.season_to + 1) if y not in (2024, 2025)
     )
     cfg = ExperimentConfig(
-        seed=args.seed, limit=args.limit, out_dir=args.out_dir,
-        season_from=args.season_from, season_to=args.season_to,
+        seed=args.seed,
+        limit=args.limit,
+        out_dir=args.out_dir,
+        season_from=args.season_from,
+        season_to=args.season_to,
         train_years=train_years,
     )
 
     # --- Load data ---
     print("loading pitch data...")
     raw_df = load_pitch_data(
-        season_from=cfg.season_from, season_to=cfg.season_to,
+        season_from=cfg.season_from,
+        season_to=cfg.season_to,
         limit=cfg.limit,
     )
     print(f"  {len(raw_df)} rows")
@@ -259,10 +278,7 @@ def main() -> None:
     )
     del raw_df
     gc.collect()
-    print(
-        f"  train: {len(train_df)}  val: {len(val_df)}  "
-        f"test: {len(test_df)}"
-    )
+    print(f"  train: {len(train_df)}  val: {len(val_df)}  test: {len(test_df)}")
     if len(test_df) == 0:
         print("ERROR: empty test set.")
         return
@@ -274,23 +290,29 @@ def main() -> None:
     # --- Compute arsenal ---
     print("computing arsenal stats...")
     full_df_for_mask = pd.concat(
-        [train_df, val_df, test_df], ignore_index=False,
+        [train_df, val_df, test_df],
+        ignore_index=False,
     )
     full_train_mask = np.array(
         full_df_for_mask.index.isin(train_df.index),
     )
     arsenal_stats = compute_arsenal_stats(
-        full_df_for_mask, full_train_mask,
+        full_df_for_mask,
+        full_train_mask,
     )
     print(f"  {len(arsenal_stats)} pitchers with arsenal profiles")
 
     print("building arsenal features...")
     arsenal_feats = arsenal_features_for_df(
-        full_df_for_mask, arsenal_stats, full_train_mask,
+        full_df_for_mask,
+        arsenal_stats,
+        full_train_mask,
     )
     # Attach to splits.
     for _df_name, df in [
-        ("train", train_df), ("val", val_df), ("test", test_df),
+        ("train", train_df),
+        ("val", val_df),
+        ("test", test_df),
     ]:
         for col in arsenal_feats.columns:
             df[col] = arsenal_feats.loc[df.index, col].values
@@ -314,7 +336,10 @@ def main() -> None:
         lgbm_p = predict_lgbm(lgbm_b, test_df)
         t1 = time.perf_counter() - t0
         m = compute_pitch_type_metrics(
-            "LightGBM", y_test, lgbm_p.pitch_type_proba, t1,
+            "LightGBM",
+            y_test,
+            lgbm_p.pitch_type_proba,
+            t1,
         )
         all_results.append(m)
         predictions["LightGBM"] = lgbm_p.pitch_type_proba
@@ -331,14 +356,22 @@ def main() -> None:
     train_y = train_df["pitch_type_int"].values.astype(int)
     val_y = val_df["pitch_type_int"].values.astype(int)
     booster_a = _train_lgbm_with_features(
-        train_x, train_y, val_x, val_y, seed=cfg.seed,
+        train_x,
+        train_y,
+        val_x,
+        val_y,
+        seed=cfg.seed,
     )
     proba_a = np.asarray(
-        booster_a.predict(test_x), dtype=np.float32,
+        booster_a.predict(test_x),
+        dtype=np.float32,
     )
     t1 = time.perf_counter() - t0
     m = compute_pitch_type_metrics(
-        "LGBM + Arsenal", y_test, proba_a, t1,
+        "LGBM + Arsenal",
+        y_test,
+        proba_a,
+        t1,
     )
     all_results.append(m)
     predictions["LGBM + Arsenal"] = proba_a
@@ -350,7 +383,10 @@ def main() -> None:
     test_active = test_df[active_cols].values.astype(np.float32)
     proba_hm = apply_hard_mask(proba_a.copy(), test_active)
     m = compute_pitch_type_metrics(
-        "LGBM + Hard Mask", y_test, proba_hm, t1,
+        "LGBM + Hard Mask",
+        y_test,
+        proba_hm,
+        t1,
     )
     all_results.append(m)
     predictions["LGBM + Hard Mask"] = proba_hm
@@ -363,7 +399,10 @@ def main() -> None:
     logits_a = np.log(proba_a + 1e-9)
     proba_sp = apply_soft_prior(logits_a, test_priors, temperature=1.0)
     m = compute_pitch_type_metrics(
-        "LGBM + Soft Prior", y_test, proba_sp, t1,
+        "LGBM + Soft Prior",
+        y_test,
+        proba_sp,
+        t1,
     )
     all_results.append(m)
     predictions["LGBM + Soft Prior"] = proba_sp
@@ -374,11 +413,15 @@ def main() -> None:
     # --- 5. Hybrid (Transformer + LightGBM), no arsenal ---
     print("\n[5] Hybrid (no arsenal)...")
     full_df = pd.concat(
-        [train_df, val_df, test_df], ignore_index=True,
+        [train_df, val_df, test_df],
+        ignore_index=True,
     )
     t0 = time.perf_counter()
     tf_model, tf_index, _ = train_transformer(
-        train_df, val_df, full_df, cfg,
+        train_df,
+        val_df,
+        full_df,
+        cfg,
     )
     train_idx = np.where(
         full_df["season"].isin(cfg.train_years).values,
@@ -391,35 +434,59 @@ def main() -> None:
     )[0].astype(np.int32)
 
     train_emb = _extract_transformer_embeddings(
-        tf_model, tf_index, train_idx, cfg,
+        tf_model,
+        tf_index,
+        train_idx,
+        cfg,
     )
     val_emb = _extract_transformer_embeddings(
-        tf_model, tf_index, val_idx, cfg,
+        tf_model,
+        tf_index,
+        val_idx,
+        cfg,
     )
     test_emb = _extract_transformer_embeddings(
-        tf_model, tf_index, test_idx, cfg,
+        tf_model,
+        tf_index,
+        test_idx,
+        cfg,
     )
 
-    hy_train_x = np.hstack([
-        train_emb, train_df[feat].values.astype(np.float32),
-    ])
-    hy_val_x = np.hstack([
-        val_emb, val_df[feat].values.astype(np.float32),
-    ])
-    hy_test_x = np.hstack([
-        test_emb, test_df[feat].values.astype(np.float32),
-    ])
+    hy_train_x = np.hstack(
+        [
+            train_emb,
+            train_df[feat].values.astype(np.float32),
+        ]
+    )
+    hy_val_x = np.hstack(
+        [
+            val_emb,
+            val_df[feat].values.astype(np.float32),
+        ]
+    )
+    hy_test_x = np.hstack(
+        [
+            test_emb,
+            test_df[feat].values.astype(np.float32),
+        ]
+    )
     hy_booster = _train_lgbm_with_features(
-        hy_train_x, train_y,
-        hy_val_x, val_y,
+        hy_train_x,
+        train_y,
+        hy_val_x,
+        val_y,
         seed=cfg.seed,
     )
     hy_proba = np.asarray(
-        hy_booster.predict(hy_test_x), dtype=np.float32,
+        hy_booster.predict(hy_test_x),
+        dtype=np.float32,
     )
     t1 = time.perf_counter() - t0
     m = compute_pitch_type_metrics(
-        "Hybrid", y_test, hy_proba, t1,
+        "Hybrid",
+        y_test,
+        hy_proba,
+        t1,
     )
     all_results.append(m)
     predictions["Hybrid"] = hy_proba
@@ -428,29 +495,41 @@ def main() -> None:
     # --- 6. Hybrid + Arsenal features ---
     print("\n[6] Hybrid + Arsenal features...")
     t0 = time.perf_counter()
-    ha_train_x = np.hstack([
-        train_emb,
-        train_df[feat_arsenal].values.astype(np.float32),
-    ])
-    ha_val_x = np.hstack([
-        val_emb,
-        val_df[feat_arsenal].values.astype(np.float32),
-    ])
-    ha_test_x = np.hstack([
-        test_emb,
-        test_df[feat_arsenal].values.astype(np.float32),
-    ])
+    ha_train_x = np.hstack(
+        [
+            train_emb,
+            train_df[feat_arsenal].values.astype(np.float32),
+        ]
+    )
+    ha_val_x = np.hstack(
+        [
+            val_emb,
+            val_df[feat_arsenal].values.astype(np.float32),
+        ]
+    )
+    ha_test_x = np.hstack(
+        [
+            test_emb,
+            test_df[feat_arsenal].values.astype(np.float32),
+        ]
+    )
     ha_booster = _train_lgbm_with_features(
-        ha_train_x, train_y,
-        ha_val_x, val_y,
+        ha_train_x,
+        train_y,
+        ha_val_x,
+        val_y,
         seed=cfg.seed,
     )
     ha_proba = np.asarray(
-        ha_booster.predict(ha_test_x), dtype=np.float32,
+        ha_booster.predict(ha_test_x),
+        dtype=np.float32,
     )
     t1_ha = time.perf_counter() - t0 + t1
     m = compute_pitch_type_metrics(
-        "Hybrid + Arsenal", y_test, ha_proba, t1_ha,
+        "Hybrid + Arsenal",
+        y_test,
+        ha_proba,
+        t1_ha,
     )
     all_results.append(m)
     predictions["Hybrid + Arsenal"] = ha_proba
@@ -460,7 +539,10 @@ def main() -> None:
     print("\n[7] Hybrid + Arsenal + Hard Mask...")
     ha_hm = apply_hard_mask(ha_proba.copy(), test_active)
     m = compute_pitch_type_metrics(
-        "Hybrid + Hard Mask", y_test, ha_hm, t1_ha,
+        "Hybrid + Hard Mask",
+        y_test,
+        ha_hm,
+        t1_ha,
     )
     all_results.append(m)
     predictions["Hybrid + Hard Mask"] = ha_hm
@@ -471,7 +553,10 @@ def main() -> None:
     ha_logits = np.log(ha_proba + 1e-9)
     ha_sp = apply_soft_prior(ha_logits, test_priors, temperature=1.0)
     m = compute_pitch_type_metrics(
-        "Hybrid + Soft Prior", y_test, ha_sp, t1_ha,
+        "Hybrid + Soft Prior",
+        y_test,
+        ha_sp,
+        t1_ha,
     )
     all_results.append(m)
     predictions["Hybrid + Soft Prior"] = ha_sp

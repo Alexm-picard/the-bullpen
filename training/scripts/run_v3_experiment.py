@@ -43,10 +43,7 @@ COLORS = ["#2563eb", "#059669", "#d97706", "#dc2626"]
 
 
 def _print_table(results: list[PitchTypeMetrics]) -> None:
-    hdr = (
-        f"{'Model':<30s} | {'Acc':>7s} {'Top2':>7s} "
-        f"{'LogL':>7s} {'ECE':>7s} | {'Time':>7s}"
-    )
+    hdr = f"{'Model':<30s} | {'Acc':>7s} {'Top2':>7s} {'LogL':>7s} {'ECE':>7s} | {'Time':>7s}"
     print("\n" + "=" * len(hdr))
     print(hdr)
     print("-" * len(hdr))
@@ -82,11 +79,11 @@ def _plot(results: list[PitchTypeMetrics], out_dir: Path) -> None:
         bars[best].set_edgecolor("black")
         bars[best].set_linewidth(2)
         for i, v in enumerate(vals):
-            ax.text(i, v, f"{v:.4f}", ha="center", va="bottom",
-                    fontsize=8)
+            ax.text(i, v, f"{v:.4f}", ha="center", va="bottom", fontsize=8)
     fig.suptitle(
         "TransformerV3 — Context-Aware Pitch Prediction (2025)",
-        fontsize=14, fontweight="bold",
+        fontsize=14,
+        fontweight="bold",
     )
     fig.tight_layout()
     fig.savefig(out_dir / "v3_comparison.png", dpi=150)
@@ -100,21 +97,25 @@ def main() -> None:
     )
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument(
-        "--out-dir", type=Path,
+        "--out-dir",
+        type=Path,
         default=Path("data/eval/pitch_v3"),
     )
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
     cfg = ExperimentConfig(
-        seed=args.seed, limit=args.limit, out_dir=args.out_dir,
+        seed=args.seed,
+        limit=args.limit,
+        out_dir=args.out_dir,
     )
     out_dir = cfg.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print("loading pitch data...")
     raw_df = load_pitch_data(
-        season_from=cfg.season_from, season_to=cfg.season_to,
+        season_from=cfg.season_from,
+        season_to=cfg.season_to,
         limit=cfg.limit,
     )
     print(f"  {len(raw_df)} rows")
@@ -127,10 +128,7 @@ def main() -> None:
     )
     del raw_df
     gc.collect()
-    print(
-        f"  train: {len(train_df)}  val: {len(val_df)}  "
-        f"test: {len(test_df)}"
-    )
+    print(f"  train: {len(train_df)}  val: {len(val_df)}  test: {len(test_df)}")
     if len(test_df) == 0:
         print("ERROR: empty test set.")
         return
@@ -140,7 +138,8 @@ def main() -> None:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
     full_df = pd.concat(
-        [train_df, val_df, test_df], ignore_index=True,
+        [train_df, val_df, test_df],
+        ignore_index=True,
     )
     y_test = test_df["pitch_type_int"].values.astype(int)
     results: list[PitchTypeMetrics] = []
@@ -148,16 +147,25 @@ def main() -> None:
     # === 1. V3 with temporal weighting ===
     print("\n[1/3] TransformerV3 (enriched + temporal)...")
     v3_model, v3_index, v3_pm, v3_time = train_transformer_v3(
-        train_df, val_df, full_df, cfg,
+        train_df,
+        val_df,
+        full_df,
+        cfg,
         variant_name="V3",
         use_temporal_weights=True,
     )
     v3_preds = predict_transformer_v3(
-        v3_model, v3_index, v3_pm, full_df, cfg,
+        v3_model,
+        v3_index,
+        v3_pm,
+        full_df,
+        cfg,
     )
     m = compute_pitch_type_metrics(
-        "V3 Enriched+Temporal", y_test,
-        v3_preds.pitch_type_proba, v3_time,
+        "V3 Enriched+Temporal",
+        y_test,
+        v3_preds.pitch_type_proba,
+        v3_time,
     )
     results.append(m)
     print(f"  acc={m.accuracy:.4f}  top2={m.top2_accuracy:.4f}")
@@ -165,16 +173,25 @@ def main() -> None:
     # === 2. V3 without temporal weighting (ablation) ===
     print("\n[2/3] TransformerV3 (enriched, no temporal)...")
     v3b_model, v3b_index, v3b_pm, v3b_time = train_transformer_v3(
-        train_df, val_df, full_df, cfg,
+        train_df,
+        val_df,
+        full_df,
+        cfg,
         variant_name="V3-noTW",
         use_temporal_weights=False,
     )
     v3b_preds = predict_transformer_v3(
-        v3b_model, v3b_index, v3b_pm, full_df, cfg,
+        v3b_model,
+        v3b_index,
+        v3b_pm,
+        full_df,
+        cfg,
     )
     m = compute_pitch_type_metrics(
-        "V3 Enriched (no TW)", y_test,
-        v3b_preds.pitch_type_proba, v3b_time,
+        "V3 Enriched (no TW)",
+        y_test,
+        v3b_preds.pitch_type_proba,
+        v3b_time,
     )
     results.append(m)
     print(f"  acc={m.accuracy:.4f}  top2={m.top2_accuracy:.4f}")
@@ -195,27 +212,51 @@ def main() -> None:
 
     print("  extracting V3 train embeddings...", flush=True)
     train_emb = extract_v3_embeddings(
-        v3_model, v3_index, v3_pm, full_df, train_idx, cfg,
+        v3_model,
+        v3_index,
+        v3_pm,
+        full_df,
+        train_idx,
+        cfg,
     )
     print("  extracting V3 val embeddings...", flush=True)
     val_emb = extract_v3_embeddings(
-        v3_model, v3_index, v3_pm, full_df, val_idx, cfg,
+        v3_model,
+        v3_index,
+        v3_pm,
+        full_df,
+        val_idx,
+        cfg,
     )
     print("  extracting V3 test embeddings...", flush=True)
     test_emb = extract_v3_embeddings(
-        v3_model, v3_index, v3_pm, full_df, test_idx, cfg,
+        v3_model,
+        v3_index,
+        v3_pm,
+        full_df,
+        test_idx,
+        cfg,
     )
 
     feat = list(FEATURE_COLS)
-    train_x = np.hstack([
-        train_emb, train_df[feat].values.astype(np.float32),
-    ])
-    val_x = np.hstack([
-        val_emb, val_df[feat].values.astype(np.float32),
-    ])
-    test_x = np.hstack([
-        test_emb, test_df[feat].values.astype(np.float32),
-    ])
+    train_x = np.hstack(
+        [
+            train_emb,
+            train_df[feat].values.astype(np.float32),
+        ]
+    )
+    val_x = np.hstack(
+        [
+            val_emb,
+            val_df[feat].values.astype(np.float32),
+        ]
+    )
+    test_x = np.hstack(
+        [
+            test_emb,
+            test_df[feat].values.astype(np.float32),
+        ]
+    )
     train_y = train_df["pitch_type_int"].values.astype(int)
     val_y = val_df["pitch_type_int"].values.astype(int)
 
@@ -234,18 +275,25 @@ def main() -> None:
     dt = lgb.Dataset(train_x, label=train_y)
     dv = lgb.Dataset(val_x, label=val_y, reference=dt)
     booster = lgb.train(
-        params, dt, 2000,
-        valid_sets=[dt, dv], valid_names=["t", "v"],
+        params,
+        dt,
+        2000,
+        valid_sets=[dt, dv],
+        valid_names=["t", "v"],
         callbacks=[
             lgb.early_stopping(50, first_metric_only=True, verbose=False),
         ],
     )
     hy_proba = np.asarray(
-        booster.predict(test_x), dtype=np.float32,
+        booster.predict(test_x),
+        dtype=np.float32,
     )
     hy_time = v3_time + (time_mod.perf_counter() - t0)
     m = compute_pitch_type_metrics(
-        "V3 Hybrid (V3+LGBM)", y_test, hy_proba, hy_time,
+        "V3 Hybrid (V3+LGBM)",
+        y_test,
+        hy_proba,
+        hy_time,
     )
     results.append(m)
     print(f"  acc={m.accuracy:.4f}  top2={m.top2_accuracy:.4f}")

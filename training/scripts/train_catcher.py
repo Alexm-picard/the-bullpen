@@ -50,7 +50,8 @@ def main() -> None:
     ap.add_argument("--no-save", action="store_true")
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument(
-        "--skip-base", action="store_true",
+        "--skip-base",
+        action="store_true",
         help="Train only the combined (context) booster, skip the base ablation.",
     )
     args = ap.parse_args()
@@ -70,7 +71,12 @@ def main() -> None:
 
     print("\ntraining catcher-aware transformer (pitcher + catcher embeddings)...")
     model, index, pm, cm, t_time = train_catcher_transformer(
-        train_df, val_df, full_df, cfg, use_catcher=True, variant_name="Catcher",
+        train_df,
+        val_df,
+        full_df,
+        cfg,
+        use_catcher=True,
+        variant_name="Catcher",
     )
     print("extracting catcher-hybrid embeddings...")
     emb_tr = extract_catcher_hybrid_embeddings(model, index, pm, cm, full_df, idx["train"], cfg)
@@ -84,11 +90,16 @@ def main() -> None:
         print("\n[Catcher-Hybrid (base)] training LightGBM (emb + base)...")
         t0 = time.perf_counter()
         b_base = train_lgbm(
-            feature_matrix(emb_tr, train_df, BASE_FEAT), y["train"],
-            feature_matrix(emb_va, val_df, BASE_FEAT), y["val"], cfg,
+            feature_matrix(emb_tr, train_df, BASE_FEAT),
+            y["train"],
+            feature_matrix(emb_va, val_df, BASE_FEAT),
+            y["val"],
+            cfg,
         )
         p = np.asarray(b_base.predict(feature_matrix(emb_te, test_df, BASE_FEAT)), dtype=np.float32)
-        m = compute_pitch_type_metrics("Catcher-Hybrid (base)", y["test"], p, t_time + (time.perf_counter() - t0))
+        m = compute_pitch_type_metrics(
+            "Catcher-Hybrid (base)", y["test"], p, t_time + (time.perf_counter() - t0)
+        )
         print(f"  acc={m.accuracy:.4f}  top2={m.top2_accuracy:.4f}  ece={m.calibration_ece:.4f}")
         results.append(m)
         boosters["catcher_base_lgbm.txt"] = b_base
@@ -96,11 +107,16 @@ def main() -> None:
     print("\n[Catcher-Hybrid + Context] training LightGBM (emb + base + context)...")
     t0 = time.perf_counter()
     b_ctx = train_lgbm(
-        feature_matrix(emb_tr, train_df, ALL_FEAT), y["train"],
-        feature_matrix(emb_va, val_df, ALL_FEAT), y["val"], cfg,
+        feature_matrix(emb_tr, train_df, ALL_FEAT),
+        y["train"],
+        feature_matrix(emb_va, val_df, ALL_FEAT),
+        y["val"],
+        cfg,
     )
     p = np.asarray(b_ctx.predict(feature_matrix(emb_te, test_df, ALL_FEAT)), dtype=np.float32)
-    m = compute_pitch_type_metrics("Catcher-Hybrid + Context", y["test"], p, t_time + (time.perf_counter() - t0))
+    m = compute_pitch_type_metrics(
+        "Catcher-Hybrid + Context", y["test"], p, t_time + (time.perf_counter() - t0)
+    )
     print(f"  acc={m.accuracy:.4f}  top2={m.top2_accuracy:.4f}  ece={m.calibration_ece:.4f}")
     results.append(m)
     boosters["catcher_context_lgbm.txt"] = b_ctx

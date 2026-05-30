@@ -122,23 +122,23 @@ def test_python_pipeline_matches_expected_for_every_row() -> None:
                 raise AssertionError(
                     f"feature[{i}] one-side-NaN on game_id={want['game_id']}: got {g} wanted {w}"
                 )
-            assert (
-                abs(g - w) < tolerance
-            ), f"feature[{i}] drift on game_id={want['game_id']}: got {g} wanted {w}"
+            assert abs(g - w) < tolerance, (
+                f"feature[{i}] drift on game_id={want['game_id']}: got {g} wanted {w}"
+            )
 
         out = session.run(None, {"input": np.array([vector], dtype=np.float32)})
         raw_probs = cast(np.ndarray, out[1] if len(out) > 1 else out[0])[0]
         want_raw = want["raw_probabilities"]
         assert isinstance(want_raw, list)
         for i, (g, w) in enumerate(zip(raw_probs.tolist(), want_raw, strict=True)):
-            assert (
-                abs(g - w) < tolerance
-            ), f"raw_probs[{i}] drift on game_id={want['game_id']}: got {g} wanted {w}"
+            assert abs(g - w) < tolerance, (
+                f"raw_probs[{i}] drift on game_id={want['game_id']}: got {g} wanted {w}"
+            )
 
         calibrated = calibrator.transform(np.array([raw_probs], dtype=np.float64))[0]
         want_cal = want["calibrated_probabilities"]
         assert isinstance(want_cal, list)
         for i, (g, w) in enumerate(zip(calibrated.tolist(), want_cal, strict=True)):
-            assert (
-                abs(g - w) < tolerance
-            ), f"calibrated[{i}] drift on game_id={want['game_id']}: got {g} wanted {w}"
+            assert abs(g - w) < tolerance, (
+                f"calibrated[{i}] drift on game_id={want['game_id']}: got {g} wanted {w}"
+            )

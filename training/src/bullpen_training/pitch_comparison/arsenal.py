@@ -97,7 +97,8 @@ def compute_arsenal_stats(
             ):
                 if len(sub) >= config.min_pitches_context:
                     by_count[(int(b), int(s))] = _compute_mix(
-                        sub["pitch_type_int"], alpha=alpha,
+                        sub["pitch_type_int"],
+                        alpha=alpha,
                     )
 
         # By batter handedness.
@@ -107,7 +108,8 @@ def compute_arsenal_stats(
                 hand = "R" if int(hand_int) == 1 else "L"
                 if len(sub) >= config.min_pitches_context:
                     by_hand[hand] = _compute_mix(
-                        sub["pitch_type_int"], alpha=alpha,
+                        sub["pitch_type_int"],
+                        alpha=alpha,
                     )
 
         # By inning bucket.
@@ -119,7 +121,8 @@ def compute_arsenal_stats(
                 sub = group.loc[bucket_mask]
                 if len(sub) >= config.min_pitches_context:
                     by_inning[bucket_name] = _compute_mix(
-                        sub["pitch_type_int"], alpha=alpha,
+                        sub["pitch_type_int"],
+                        alpha=alpha,
                     )
 
         arsenals[pid] = PitcherArsenal(

@@ -325,18 +325,19 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--verbose-eval", type=int, default=0)
     parser.add_argument(
-        "--parks", nargs="*", default=None,
+        "--parks",
+        nargs="*",
+        default=None,
         help="Subset of park IDs to train (default: all 30).",
     )
     args = parser.parse_args()
 
-    park_ids = (
-        tuple(sorted(args.parks)) if args.parks
-        else tuple(sorted(load_all_parks().keys()))
-    )
+    park_ids = tuple(sorted(args.parks)) if args.parks else tuple(sorted(load_all_parks().keys()))
 
-    print(f"training {len(park_ids)} per-park LightGBM models "
-          f"(seasons {args.train_season_from}-{args.train_season_to})")
+    print(
+        f"training {len(park_ids)} per-park LightGBM models "
+        f"(seasons {args.train_season_from}-{args.train_season_to})"
+    )
 
     train_all_parks(
         park_ids=park_ids,

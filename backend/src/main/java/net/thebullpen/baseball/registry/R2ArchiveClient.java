@@ -125,7 +125,11 @@ public class R2ArchiveClient {
   /** Download a single object. Parent dirs are created as needed. */
   public void downloadFile(String key, Path localTarget) {
     try {
-      Files.createDirectories(localTarget.getParent());
+      Path parent = localTarget.getParent();
+      if (parent == null) {
+        throw new IllegalStateException("download target has no parent directory: " + localTarget);
+      }
+      Files.createDirectories(parent);
       s3.getObject(GetObjectRequest.builder().bucket(bucket).key(key).build(), localTarget);
     } catch (NoSuchKeyException e) {
       throw new SnapshotStorageException("S3 object not found: " + bucket + "/" + key, e);

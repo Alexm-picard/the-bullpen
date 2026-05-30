@@ -50,7 +50,11 @@ public class ClickHouseMigrationRunner {
       ensureTrackingTable(conn);
       Set<String> applied = appliedVersions(conn);
       for (Path script : sortedScripts()) {
-        String version = script.getFileName().toString().replace(".sql", "");
+        Path fileName = script.getFileName();
+        if (fileName == null) {
+          throw new IllegalStateException("migration script path has no file name: " + script);
+        }
+        String version = fileName.toString().replace(".sql", "");
         if (applied.contains(version)) {
           log.debug("clickhouse migration already applied version={}", version);
           continue;
