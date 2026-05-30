@@ -1,0 +1,61 @@
+# Dependency CVE + version monitoring (A2/A3 audit remediation).
+#
+# This is the project's primary dependency-vulnerability mechanism across all four
+# stacks — GitHub raises security PRs here, and the per-stack `audit` steps in the
+# CI workflows are the belt-and-suspenders, non-blocking second signal.
+#
+# Grouped + weekly so the solo-dev cadence isn't drowned in one-PR-per-bump noise.
+version: 2
+updates:
+  # Backend — Gradle (Java 21 / Spring Boot). Dependabot is the backend CVE signal;
+  # the in-CI OWASP dependency-check scan is intentionally NOT run (NVD downloads make
+  # it slow + flaky on shared runners) — security bumps come through here instead.
+  - package-ecosystem: gradle
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      spring:
+        patterns: ["org.springframework*", "io.spring*"]
+      test-and-tooling:
+        patterns: ["org.testcontainers*", "*spotbugs*", "*errorprone*", "*spotless*"]
+    commit-message:
+      prefix: "chore(deps)"
+
+  # Frontend — npm (React 19 / Vite / Mantine).
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      react:
+        patterns: ["react", "react-dom", "@types/react*"]
+      mantine:
+        patterns: ["@mantine/*"]
+      build-tooling:
+        patterns: ["vite", "vitest", "@vitejs/*", "@vitest/*", "eslint*", "typescript*"]
+    commit-message:
+      prefix: "chore(deps)"
+
+  # Training — Python (uv-managed pyproject; pip ecosystem reads the lockfile).
+  - package-ecosystem: pip
+    directory: /training
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+
+  # The CI workflows themselves.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "ci(deps)"

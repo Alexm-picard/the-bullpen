@@ -25,6 +25,12 @@ jobs:
       - name: Lint
         working-directory: frontend
         run: npm run lint
+      # A3: non-blocking CVE signal (Dependabot is the gating mechanism). high+ only.
+      - name: Audit dependencies (npm, non-blocking)
+        if: always()
+        continue-on-error: true
+        working-directory: frontend
+        run: npm audit --audit-level=high
       - name: Unit tests + coverage
         working-directory: frontend
         run: npm run test:coverage
