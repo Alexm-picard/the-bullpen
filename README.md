@@ -128,13 +128,22 @@ pitch_number)` needs the indexed `pitch_id` column to land before the
 
 - **Drift postmortems** land under
   [`docs/postmortems/`](docs/postmortems/) when a model degrades and the
-  human review writes one up. Empty today; first lands mid-season.
+  human review writes one up. First one is a pre-season **induced-drift
+  drill** —
+  [`drill-2026-05-30-induced-battedball-drift.md`](docs/postmortems/drill-2026-05-30-induced-battedball-drift.md)
+  — that injected a 1σ feature shift + over-confidence and walked the real
+  detect → PAGE/NOTICE → human-gated retrain chain end-to-end (PSI 0.912,
+  ECE 0.188). Explicitly synthetic; proves the detector has teeth before
+  the first real in-season event.
 - **Restore + reboot drill reports** under
   [`docs/drills/`](docs/drills/) (rule 8).
-- **Mid-season hardening sweep** (Phase 5.5) — running observations
-  in [`docs/hardening/observations.md`](docs/hardening/observations.md),
-  triaged sweep doc lands as `docs/hardening/YYYY-MM-DD_sweep.md` with
-  before / after metrics per item.
+- **Hardening sweeps** (Phase 5.5) — running observations in
+  [`docs/hardening/observations.md`](docs/hardening/observations.md),
+  triaged into dated sweep docs with measured before/after per item. First
+  one:
+  [`2026-05-30_sweep.md`](docs/hardening/2026-05-30_sweep.md) (11 items —
+  CI red→green, 2 Schemathesis-found 500s→400, TS strict 67→0, raw-SQL
+  leak 1→0, perf baselines, the drift-chain validation).
 - **Hiring readiness** (Phase 6) — deliverables tracked in
   [`docs/hiring/`](docs/hiring/): 60-second verbal pitch, lessons-
   learned doc, OSS contribution targets, recruiter-time-test.
