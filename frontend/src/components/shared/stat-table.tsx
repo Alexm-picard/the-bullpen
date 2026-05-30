@@ -54,6 +54,11 @@ export type StatTableRow = {
   label: string;
   /** Values keyed by column.key. null renders as em-dash. */
   values: Record<string, number | string | null>;
+  /**
+   * Optional DOM id applied to the <tr> element. Enables external
+   * scroll-jump anchors (e.g. switcher → row.scrollIntoView()).
+   */
+  id?: string;
 };
 
 export type StatTableProps = {
@@ -262,7 +267,7 @@ export function StatTable({ columns, rows, caption }: StatTableProps) {
         </thead>
         <tbody>
           {sortedRows.map((row, rowIdx) => (
-            <tr key={row.label + rowIdx}>
+            <tr key={row.label + rowIdx} id={row.id}>
               {/* Row-label cell: silver column */}
               <td style={labelCellStyle}>{row.label}</td>
               {columns.map((col) => {

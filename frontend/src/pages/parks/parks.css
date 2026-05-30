@@ -1,0 +1,74 @@
+/* Scoped responsive + interactive rules for the /parks Park Factors appendix
+ * (Stage 3c, decision [133]). Mirrors the home.css / matchup.css pattern —
+ * pure CSS handles breakpoints so the page never measures the viewport from
+ * JS.
+ *
+ * Colors reach through the Tailwind 4 @theme CSS custom properties declared
+ * in src/design/tokens.css (the only allowlisted hex source). lint:hex-codes
+ * stays clean.
+ *
+ * Breakpoints:
+ *   - 900px : spotlight two-column collapses to one column
+ *   - 600px : masthead h1 down-shifts 64px → 48px, corner shrinks
+ */
+
+.parks__shell {
+  position: relative;
+}
+
+.parks__corner {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 120px;
+  height: 120px;
+  pointer-events: none;
+  opacity: 0.18;
+}
+
+.parks-spotlight__cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+.parks-spotlight__cols > div:first-child {
+  border-right: 1px solid var(--color-bgEmphasis);
+  padding-right: 24px;
+}
+
+/* Park-mini-thumb hover + focus chrome */
+.park-mini-thumb {
+  transition:
+    background-color 200ms cubic-bezier(0.4, 0, 0.2, 1),
+    outline-color 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.park-mini-thumb:hover {
+  background-color: var(--color-bgSubtle) !important;
+}
+.park-mini-thumb:focus-visible {
+  outline: 2px solid var(--color-scarlet) !important;
+  outline-offset: 2px !important;
+}
+
+@media (max-width: 900px) {
+  .parks-spotlight__cols {
+    grid-template-columns: 1fr;
+  }
+  .parks-spotlight__cols > div:first-child {
+    border-right: none;
+    border-bottom: 1px solid var(--color-bgEmphasis);
+    padding-right: 0;
+    padding-bottom: 20px;
+  }
+  .parks__corner {
+    width: 80px;
+    height: 80px;
+  }
+}
+
+@media (max-width: 600px) {
+  .parks__title {
+    font-size: 48px !important;
+  }
+}
