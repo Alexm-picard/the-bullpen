@@ -1,0 +1,75 @@
+name: k6-nightly
+
+# Nightly k6 load test of the prediction hot path (plan S1h). Boots the api
+# profile in CI (ClickHouse disabled, toy model loaded) and drives load against
+# /v1/predict/batted-ball, gating on the design.md SLA: p99 < 50ms (server-side
+# inference latency) and error rate < 0.1%. Informational — a breach pings Discord
+# + annotates rather than failing the build (one-off shared-runner latency spikes
+# shouldn't page). For an over-internet prod load test during the season, run the
+# script manually with BASE_URL=https://api.thebullpen.net P99_MS=500.
+on:
+  schedule:
+    - cron: '30 8 * * *' # 08:30 UTC, just after the JMH nightly
+  workflow_dispatch:
+
+jobs:
+  k6:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - uses: grafana/setup-k6-action@v1
+
+      - name: Generate toy model artifacts
+        working-directory: training
+        run: |
+          uv sync --frozen
+          uv run python -m bullpen_training.battedball.generate_ci_artifacts --write-fixture
+
+      - name: Build bootJar
+        working-directory: backend
+        run: ./gradlew bootJar --no-daemon
+
+      - name: Boot api profile + wait for health
+        working-directory: backend
+        env:
+          THEBULLPEN_ADMIN_BASIC_AUTH: ci:ci
+        run: |
+          JAR="$(ls build/libs/*.jar | grep -v plain | head -1)"
+          java -jar "$JAR" --spring.profiles.active=api \
+            --bullpen.clickhouse.enabled=false --server.port=8080 > /tmp/api.log 2>&1 &
+          echo "API_PID=$!" >> "$GITHUB_ENV"
+          for i in $(seq 1 60); do
+            curl -fsS http://localhost:8080/actuator/health >/dev/null 2>&1 && { echo "up after ${i}s"; exit 0; }
+            sleep 1
+          done
+          echo "API never healthy:"; tail -40 /tmp/api.log; exit 1
+
+      - name: Run k6 (SLA p99<50ms, error<0.1%)
+        id: k6
+        run: |
+          k6 run infra/k6/predict-load.js | tee /tmp/k6.txt || echo "breached=true" >> "$GITHUB_OUTPUT"
+
+      - name: Ping Discord on SLA breach
+        if: steps.k6.outputs.breached == 'true' && env.DISCORD != ''
+        env:
+          DISCORD: ${{ secrets.BULLPEN_DISCORD_WEBHOOK }}
+        run: |
+          SUMMARY="$(grep -E 'http_req_(duration|failed)|✓|✗|threshold' /tmp/k6.txt | tail -10 | sed 's/"/\\"/g')"
+          curl -fsS -H 'Content-Type: application/json' \
+            -d "{\"content\": \"⚠️ Nightly k6 SLA breach on /v1/predict/batted-ball:\n\`\`\`\n${SUMMARY}\n\`\`\`\"}" \
+            "$DISCORD" || true
+
+      - name: API log tail on failure
+        if: failure()
+        run: tail -60 /tmp/api.log || true
+      - name: Stop API
+        if: always()
+        run: kill "${API_PID}" 2>/dev/null || true
