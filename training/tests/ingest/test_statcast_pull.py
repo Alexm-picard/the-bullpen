@@ -94,10 +94,14 @@ def test_normalize_maps_at_bat_number_to_index() -> None:
 
 def test_normalize_drops_extra_columns() -> None:
     row = _fake_statcast_row()
-    row["fielder_2"] = 12345  # extra pybaseball column
+    # A real pybaseball column that is NOT in RAW_STATCAST_COLUMNS — the
+    # normalizer keeps the schema allowlist and drops everything else.
+    # (fielder_2 used to live here, but the 56-column expansion for the
+    # fielder model (decision [132]) promoted it into the kept schema.)
+    row["spin_dir"] = 270  # deprecated pybaseball column, never in our schema
     df = pd.DataFrame([row])
     out = normalize_columns(df)
-    assert "fielder_2" not in out.columns
+    assert "spin_dir" not in out.columns
 
 
 def test_normalize_fills_missing_columns_with_null() -> None:
