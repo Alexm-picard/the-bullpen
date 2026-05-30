@@ -1,0 +1,77 @@
+name: benchmark
+
+# Nightly JMH microbenchmarks for the inference hot path (plan S1g). Compares
+# against backend/benchmarks/baseline.json and flags a >25% regression. NOT a
+# per-PR gate — JMH timing flaps on shared runners — and non-blocking even
+# nightly: it pings + annotates for a human to confirm + re-baseline.
+on:
+  schedule:
+    - cron: '0 8 * * *' # 08:00 UTC ≈ 03:00–04:00 ET, post-game window
+  workflow_dispatch:
+    inputs:
+      rebaseline:
+        description: 'Commit this run as the new baseline.json'
+        type: boolean
+        default: false
+
+jobs:
+  jmh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      # onnxBattedBallPredict needs the toy ONNX artifact present.
+      - name: Generate toy model artifacts
+        working-directory: training
+        run: |
+          uv sync --frozen
+          uv run python -m bullpen_training.battedball.generate_ci_artifacts --write-fixture
+
+      - name: Run JMH
+        working-directory: backend
+        run: ./gradlew jmh --no-daemon
+
+      - name: Compare against baseline (informational)
+        id: compare
+        run: |
+          python3 scripts/check_benchmarks.py \
+            --current backend/build/results/jmh/results.json \
+            --baseline backend/benchmarks/baseline.json \
+            --threshold 0.25 | tee /tmp/bench.txt || echo "regressed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Ping Discord on regression
+        if: steps.compare.outputs.regressed == 'true' && env.DISCORD != ''
+        env:
+          DISCORD: ${{ secrets.BULLPEN_DISCORD_WEBHOOK }}
+        run: |
+          SUMMARY="$(tail -8 /tmp/bench.txt | sed 's/"/\\"/g')"
+          curl -fsS -H 'Content-Type: application/json' \
+            -d "{\"content\": \"⚠️ Nightly JMH regression (>25%) in the inference path:\n\`\`\`\n${SUMMARY}\n\`\`\`\nConfirm + re-baseline from CI if real.\"}" \
+            "$DISCORD" || true
+
+      - name: Upload JMH results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jmh-results
+          path: backend/build/results/jmh/results.json
+
+      # Manual re-baseline: workflow_dispatch with rebaseline=true commits the
+      # CI runner's numbers as the new baseline.
+      - name: Re-baseline (manual dispatch only)
+        if: github.event_name == 'workflow_dispatch' && inputs.rebaseline
+        run: |
+          cp backend/build/results/jmh/results.json backend/benchmarks/baseline.json
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add backend/benchmarks/baseline.json
+          git commit -m "chore(benchmark): re-baseline JMH from CI runner [skip ci]" || echo "no change"
+          git push || echo "push skipped"

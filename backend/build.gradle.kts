@@ -7,6 +7,10 @@ plugins {
     id("com.diffplug.spotless") version "7.0.2"
     id("com.github.spotbugs") version "6.0.27"
     id("net.ltgt.errorprone") version "4.1.0"
+    // JMH microbenchmarks for the inference hot path (S1g). Runs via `./gradlew jmh`,
+    // nightly in CI against a committed baseline (build is NOT gated on it — JMH
+    // timing flaps on shared runners). Creates the `src/jmh/java` source set.
+    id("me.champeau.jmh") version "0.7.2"
 }
 
 group = "net.thebullpen"
@@ -81,6 +85,31 @@ spotless {
 spotbugs {
     excludeFilter.set(file("config/spotbugs/exclude.xml"))
 }
+
+jmh {
+    warmupIterations.set(3)
+    iterations.set(5)
+    fork.set(1)
+    timeUnit.set("us")
+    resultFormat.set("JSON")
+    resultsFile.set(layout.buildDirectory.file("results/jmh/results.json"))
+    includeTests.set(false) // don't generate benchmarks from the test source set
+}
+
+// The JMH fat-jar bundles the full Spring dependency tree, which blows past the
+// 65535-entry zip limit — enable zip64 so the benchmark archive builds.
+tasks.matching { it.name == "jmhJar" }.configureEach {
+    (this as Jar).isZip64 = true
+}
+
+// Benchmarks are not production code — keep the static-analysis gates off the
+// jmh source set (Blackhole patterns + intentional dead returns trip Error Prone
+// / SpotBugs). The `jmh` task still compiles + runs them; `build`/`check` don't
+// depend on it.
+tasks.matching { it.name == "compileJmhJava" }.configureEach {
+    (this as JavaCompile).options.errorprone.isEnabled.set(false)
+}
+tasks.matching { it.name == "spotbugsJmh" }.configureEach { enabled = false }
 
 tasks.named<Test>("test") {
     useJUnitPlatform()

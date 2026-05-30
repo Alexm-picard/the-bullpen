@@ -1,0 +1,172 @@
+[
+    {
+        "jmhVersion" : "1.36",
+        "benchmark" : "net.thebullpen.baseball.bench.InferenceBenchmark.onnxBattedBallPredict",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home/bin/java",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=/Users/alexpicard/Desktop/thebullpen/backend/build/tmp/jmh",
+            "-Duser.country=US",
+            "-Duser.language=en",
+            "-Duser.variant"
+        ],
+        "jdkVersion" : "21.0.9",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.9+10-LTS",
+        "warmupIterations" : 3,
+        "warmupTime" : "10 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "10 s",
+        "measurementBatchSize" : 1,
+        "primaryMetric" : {
+            "score" : 14.053154765437304,
+            "scoreError" : 5.930595819170265,
+            "scoreConfidence" : [
+                8.122558946267038,
+                19.98375058460757
+            ],
+            "scorePercentiles" : {
+                "0.0" : 11.331533335749501,
+                "50.0" : 14.658426245888549,
+                "90.0" : 15.102881989284658,
+                "95.0" : 15.102881989284658,
+                "99.0" : 15.102881989284658,
+                "99.9" : 15.102881989284658,
+                "99.99" : 15.102881989284658,
+                "99.999" : 15.102881989284658,
+                "99.9999" : 15.102881989284658,
+                "100.0" : 15.102881989284658
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    11.331533335749501,
+                    14.438163934284217,
+                    14.658426245888549,
+                    14.7347683219796,
+                    15.102881989284658
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.36",
+        "benchmark" : "net.thebullpen.baseball.bench.InferenceBenchmark.routerAbRouteDecision",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home/bin/java",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=/Users/alexpicard/Desktop/thebullpen/backend/build/tmp/jmh",
+            "-Duser.country=US",
+            "-Duser.language=en",
+            "-Duser.variant"
+        ],
+        "jdkVersion" : "21.0.9",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.9+10-LTS",
+        "warmupIterations" : 3,
+        "warmupTime" : "10 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "10 s",
+        "measurementBatchSize" : 1,
+        "primaryMetric" : {
+            "score" : 0.007376038722214052,
+            "scoreError" : 5.996748879480354E-4,
+            "scoreConfidence" : [
+                0.006776363834266017,
+                0.007975713610162088
+            ],
+            "scorePercentiles" : {
+                "0.0" : 0.00720000930420579,
+                "50.0" : 0.007340327277496704,
+                "90.0" : 0.007544141115008281,
+                "95.0" : 0.007544141115008281,
+                "99.0" : 0.007544141115008281,
+                "99.9" : 0.007544141115008281,
+                "99.99" : 0.007544141115008281,
+                "99.999" : 0.007544141115008281,
+                "99.9999" : 0.007544141115008281,
+                "100.0" : 0.007544141115008281
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    0.007264554430042213,
+                    0.007340327277496704,
+                    0.007544141115008281,
+                    0.007531161484317273,
+                    0.00720000930420579
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.36",
+        "benchmark" : "net.thebullpen.baseball.bench.InferenceBenchmark.routerBucketDecision",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home/bin/java",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=/Users/alexpicard/Desktop/thebullpen/backend/build/tmp/jmh",
+            "-Duser.country=US",
+            "-Duser.language=en",
+            "-Duser.variant"
+        ],
+        "jdkVersion" : "21.0.9",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.9+10-LTS",
+        "warmupIterations" : 3,
+        "warmupTime" : "10 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "10 s",
+        "measurementBatchSize" : 1,
+        "primaryMetric" : {
+            "score" : 0.006534872720493931,
+            "scoreError" : 0.001014821123807185,
+            "scoreConfidence" : [
+                0.005520051596686746,
+                0.007549693844301116
+            ],
+            "scorePercentiles" : {
+                "0.0" : 0.006340679061952088,
+                "50.0" : 0.006380961037344198,
+                "90.0" : 0.006963751384809908,
+                "95.0" : 0.006963751384809908,
+                "99.0" : 0.006963751384809908,
+                "99.9" : 0.006963751384809908,
+                "99.99" : 0.006963751384809908,
+                "99.999" : 0.006963751384809908,
+                "99.9999" : 0.006963751384809908,
+                "100.0" : 0.006963751384809908
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    0.006963751384809908,
+                    0.00661537143224718,
+                    0.006340679061952088,
+                    0.006373600686116282,
+                    0.006380961037344198
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    }
+]
+
+
