@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "artifact_name": "v3_experiment",
+  "models": [
+    {
+      "name": "V3 Enriched+Temporal",
+      "accuracy": 0.4405865001845315,
+      "top2_accuracy": 0.7049567125788485,
+      "logloss": 1.3283007489637593,
+      "calibration_ece": 0.008672054767783871,
+      "train_time_sec": 2266.9659481650015
+    },
+    {
+      "name": "V3 Enriched (no TW)",
+      "accuracy": 0.44280087786270295,
+      "top2_accuracy": 0.7090361259096275,
+      "logloss": 1.3222284917329674,
+      "calibration_ece": 0.007649660161783716,
+      "train_time_sec": 2258.836126855007
+    },
+    {
+      "name": "V3 Hybrid (V3+LGBM)",
+      "accuracy": 0.449253844875237,
+      "top2_accuracy": 0.7232915343721563,
+      "logloss": 1.3211500320214637,
+      "calibration_ece": 0.00718663447534227,
+      "train_time_sec": 3164.0162083920004
+    }
+  ]
+}

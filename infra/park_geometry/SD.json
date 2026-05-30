@@ -6,7 +6,9 @@
   "default_atmosphere": {
     "temp_c": 20.0,
     "pressure_hpa": null,
-    "humidity_pct": 50.0
+    "humidity_pct": 66,
+    "wind_speed_mph": 7,
+    "wind_bearing_deg": 270
   },
   "centerline_bearing_deg": 25.0,
   "fence_polyline": [

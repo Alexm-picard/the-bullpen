@@ -43,7 +43,7 @@ from bullpen_training.battedball.mlp.calibration import (
     save_calibrator,
     transform,
 )
-from bullpen_training.battedball.mlp.dataset import OUTCOME_NAMES, load_rows
+from bullpen_training.battedball.mlp.dataset import OUTCOME_NAMES, load_arrays
 
 
 def _load_scaler(metadata: dict) -> FeatureScaler:
@@ -69,10 +69,9 @@ def _forward_all(
     model.load_state_dict(torch.load(model_dir / "model.pt", weights_only=True))
     model.eval()
 
-    rows = load_rows(season_from=season_from, season_to=season_to, park_order=park_order)
-    ds = BBIPDataset(rows, scaler=scaler)
-    xs = np.stack([ds[i][0] for i in range(len(ds))], axis=0)
-    ys = np.stack([ds[i][1] for i in range(len(ds))], axis=0)
+    feat, lab = load_arrays(season_from=season_from, season_to=season_to, park_order=park_order)
+    xs = scaler.transform(feat)
+    ys = lab
     with torch.no_grad():
         probs = F.softmax(model(torch.from_numpy(xs)), dim=-1).numpy()
     return probs, ys, park_order

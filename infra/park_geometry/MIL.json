@@ -4,9 +4,11 @@
   "name": "American Family Field",
   "altitude_m": 195.0,
   "default_atmosphere": {
-    "temp_c": 20.0,
+    "temp_c": 21.0,
     "pressure_hpa": null,
-    "humidity_pct": 50.0
+    "humidity_pct": 60,
+    "wind_speed_mph": 6,
+    "wind_bearing_deg": 225
   },
   "centerline_bearing_deg": 40.0,
   "fence_polyline": [

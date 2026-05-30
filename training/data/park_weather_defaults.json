@@ -1,0 +1,259 @@
+{
+  "_meta": {
+    "description": "Per-park seasonal weather defaults for the batted-ball physics simulator. Values represent typical game-time conditions (7 PM local first pitch) averaged across the MLB season (April-October). Wind bearing is the direction FROM which prevailing wind blows (compass: 0=N, 90=E, 180=S, 270=W). For domed/retractable-closed parks, wind speed is 0 and bearing is 0 (no wind). Temperature and humidity for closed-roof parks reflect controlled interior conditions.",
+    "schema_version": 1,
+    "compiled": "2026-05-25",
+    "sources": [
+      "NOAA/NWS city climate normals (monthly averages, evening observations)",
+      "The Hardball Times — 'The Physics of Which Way the Wind Blows' (2015 season wind data)",
+      "FanGraphs — 'Move Over, Wrigley: Steinbrenner Field Has the Majors' Wildest Wind'",
+      "The Hardball Times — 'Estimating Wind Effects at SunTrust Park'",
+      "Baseball Almanac — ballpark orientations (AL and NL)",
+      "MLB.com — park roof policies (Chase Field, Minute Maid, Globe Life, loanDepot, Rogers Centre, T-Mobile, American Family Field)",
+      "Fox Weather — retractable roof usage frequency data (2022 season)",
+      "Weather Spark, Current Results, climate-data.org — city climate normals",
+      "CBS News Colorado — Coors Field altitude and wind effects",
+      "Geography Realm — Oracle Park microclimate analysis"
+    ]
+  },
+  "ATH": {
+    "avg_temp_c": 18.0,
+    "avg_humidity_pct": 68,
+    "prevailing_wind_speed_mph": 12,
+    "prevailing_wind_bearing_deg": 270,
+    "is_dome_or_retractable": false,
+    "notes": "Most consistent wind in MLB — blows from west out to right field nearly every game. Bay breeze off San Francisco Bay keeps temperatures mild. Oakland Coliseum / Sutter Health Park (Sacramento temporary home 2025-2027 is warmer and less windy, but park_id maps to the historical Coliseum profile)."
+  },
+  "ATL": {
+    "avg_temp_c": 25.0,
+    "avg_humidity_pct": 68,
+    "prevailing_wind_speed_mph": 6,
+    "prevailing_wind_bearing_deg": 315,
+    "is_dome_or_retractable": false,
+    "notes": "Wind typically blows out to left-center but stadium architecture nullifies gusts. Hot and humid in summer (July-Aug avg highs 33C). Plays roughly neutral; not the launching pad of old Fulton County Stadium."
+  },
+  "AZ": {
+    "avg_temp_c": 23.0,
+    "avg_humidity_pct": 40,
+    "prevailing_wind_speed_mph": 0,
+    "prevailing_wind_bearing_deg": 0,
+    "is_dome_or_retractable": true,
+    "notes": "Retractable roof, closed for most summer games (temps exceed 38C outside). Interior held at ~25C (77F) by HVAC. Roof opened ~22 of 81 home games (2022). Dry desert air inside and out — low humidity year-round."
+  },
+  "BAL": {
+    "avg_temp_c": 23.0,
+    "avg_humidity_pct": 65,
+    "prevailing_wind_speed_mph": 6,
+    "prevailing_wind_bearing_deg": 200,
+    "is_dome_or_retractable": false,
+    "notes": "Chesapeake Bay influence keeps humidity moderate-to-high. Prevailing SSW winds; Camden Yards is somewhat sheltered by the B&O Warehouse in right field. Mid-Atlantic climate — warm summers, cool April/October."
+  },
+  "BOS": {
+    "avg_temp_c": 19.0,
+    "avg_humidity_pct": 64,
+    "prevailing_wind_speed_mph": 10,
+    "prevailing_wind_bearing_deg": 225,
+    "is_dome_or_retractable": false,
+    "notes": "Prevailing SW winds. Fenway's compact dimensions and the Green Monster create distinctive wind funneling. Atlantic proximity drives humidity and keeps early/late season games cool. One of the windier parks in MLB."
+  },
+  "CHC": {
+    "avg_temp_c": 20.0,
+    "avg_humidity_pct": 63,
+    "prevailing_wind_speed_mph": 10,
+    "prevailing_wind_bearing_deg": 45,
+    "is_dome_or_retractable": false,
+    "notes": "Iconic wind park — Lake Michigan is <1 mile east. Wind blows in (NE, off lake) ~45% of games, out (SW) ~38%. In April wind blows out 42% of the time; by May lake breeze dominates (in 64%). 2nd-windiest park in MLB. Scoring swings 42% between wind-in and wind-out games."
+  },
+  "CIN": {
+    "avg_temp_c": 23.0,
+    "avg_humidity_pct": 65,
+    "prevailing_wind_speed_mph": 8,
+    "prevailing_wind_bearing_deg": 225,
+    "is_dome_or_retractable": false,
+    "notes": "Ohio River valley creates a SW-to-NE wind tunnel effect through the gap between upper decks, pushing fly balls toward right field. One of the most HR-friendly parks — cozy dimensions plus favorable wind. Hot, humid Midwest summers."
+  },
+  "CLE": {
+    "avg_temp_c": 20.0,
+    "avg_humidity_pct": 66,
+    "prevailing_wind_speed_mph": 8,
+    "prevailing_wind_bearing_deg": 225,
+    "is_dome_or_retractable": false,
+    "notes": "Lake Erie proximity creates unpredictable winds and lake-effect weather. Prevailing SW winds but highly variable — cold lake breezes in spring/fall can shift rapidly. Progressive Field runs cool in April and October."
+  },
+  "COL": {
+    "avg_temp_c": 21.0,
+    "avg_humidity_pct": 38,
+    "prevailing_wind_speed_mph": 8,
+    "prevailing_wind_bearing_deg": 180,
+    "is_dome_or_retractable": false,
+    "notes": "Altitude 1580m — air density ~17% lower than sea level, adding 5-10% to fly ball distance. Very low humidity (38% avg). Prevailing winds from south but variable; westerly wind component adds ~13ft to avg fly ball. Humidor used since 2002 to counteract dry-ball effects. Altitude dominates all other weather factors here."
+  },
+  "CWS": {
+    "avg_temp_c": 20.0,
+    "avg_humidity_pct": 63,
+    "prevailing_wind_speed_mph": 8,
+    "prevailing_wind_bearing_deg": 225,
+    "is_dome_or_retractable": false,
+    "notes": "South Side Chicago — similar Lake Michigan influence as Wrigley but farther from lake. Wind blows in 42% more often than out (23%). Stadium architecture (billboards, encircling upper deck) mutes heavy winds inside the field of play."
+  },
+  "DET": {
+    "avg_temp_c": 20.0,
+    "avg_humidity_pct": 63,
+    "prevailing_wind_speed_mph": 8,
+    "prevailing_wind_bearing_deg": 225,
+    "is_dome_or_retractable": false,
+    "notes": "Detroit River / Lake St. Clair influence. Prevailing SW winds. Open-air park with spacious dimensions. Great Lakes region climate — warm humid summers, cool spring/fall. Wind patterns less extreme than lakefront parks."
+  },
+  "HOU": {
+    "avg_temp_c": 23.0,
+    "avg_humidity_pct": 50,
+    "prevailing_wind_speed_mph": 0,
+    "prevailing_wind_bearing_deg": 0,
+    "is_dome_or_retractable": true,
+    "notes": "Retractable roof closed ~68% of home games (2000-2019 data). Interior AC'd to ~23C (73F). Roof closed due to extreme humidity (outdoor summer humidity 75-85%) and heat (outdoor July avg 35C). When open, dense Gulf air suppresses fly balls. Interior humidity much lower than outdoor Houston conditions."
+  },
+  "KC": {
+    "avg_temp_c": 23.0,
+    "avg_humidity_pct": 65,
+    "prevailing_wind_speed_mph": 9,
+    "prevailing_wind_bearing_deg": 180,
+    "is_dome_or_retractable": false,
+    "notes": "Great Plains exposure — wind blows predominantly along a S-N line (similar pattern to old Turner Field). Kauffman sits on a plateau with minimal wind shelter. Hot humid summers; cool spring/fall. Fountain features do not meaningfully affect humidity."
+  },
+  "LAA": {
+    "avg_temp_c": 22.0,
+    "avg_humidity_pct": 58,
+    "prevailing_wind_speed_mph": 6,
+    "prevailing_wind_bearing_deg": 225,
+    "is_dome_or_retractable": false,
+    "notes": "Inland Orange County location is warmer than coastal LA. Mediterranean climate with mild winds. Santa Ana wind events (Oct-Apr, from NE deserts) occasionally spike temperatures and drop humidity dramatically but are infrequent during typical game times."
+  },
+  "LAD": {
+    "avg_temp_c": 22.0,
+    "avg_humidity_pct": 48,
+    "prevailing_wind_speed_mph": 5,
+    "prevailing_wind_bearing_deg": 200,
+    "is_dome_or_retractable": false,
+    "notes": "Chavez Ravine topography shelters the field from wind. Consistently light SSW breezes. Semi-arid climate with low humidity. Ranks in top-5 warmest and bottom-5 humidity parks. Afternoon games are warm; night games cool rapidly due to desert-maritime mix."
+  },
+  "MIA": {
+    "avg_temp_c": 24.0,
+    "avg_humidity_pct": 55,
+    "prevailing_wind_speed_mph": 0,
+    "prevailing_wind_bearing_deg": 0,
+    "is_dome_or_retractable": true,
+    "notes": "Retractable roof closed for vast majority of games — only 5 open-roof games in 2021-2022 combined. Tropical climate (outdoor summer humidity 75-85%, temps 32-35C). Roof closed when humidity >70% or temp >27C or rain likely. Interior AC'd to comfortable 24C. When rarely open, heavy tropical air suppresses carry."
+  },
+  "MIL": {
+    "avg_temp_c": 21.0,
+    "avg_humidity_pct": 60,
+    "prevailing_wind_speed_mph": 6,
+    "prevailing_wind_bearing_deg": 225,
+    "is_dome_or_retractable": false,
+    "notes": "Fan-shaped retractable roof — open ~57-65% of games (most open of any retractable park), so treated as outdoor. When open, SW prevailing wind. Lake Michigan ~80mi east has minimal direct effect. Cold April/May, warm humid summers. Roof can't operate in >40 mph wind or <-7C."
+  },
+  "MIN": {
+    "avg_temp_c": 19.0,
+    "avg_humidity_pct": 58,
+    "prevailing_wind_speed_mph": 9,
+    "prevailing_wind_bearing_deg": 180,
+    "is_dome_or_retractable": false,
+    "notes": "Open-air since 2010 (replaced Metrodome). Northern Great Plains exposure — S prevailing wind. Cold April (avg 8C) and October (avg 12C) bracket warm summers (July avg 28C). Target Field has canopy overhangs that partially deflect wind. One of the coldest parks in MLB across a full season."
+  },
+  "NYM": {
+    "avg_temp_c": 20.0,
+    "avg_humidity_pct": 62,
+    "prevailing_wind_speed_mph": 9,
+    "prevailing_wind_bearing_deg": 225,
+    "is_dome_or_retractable": false,
+    "notes": "Flushing, Queens — consistent SW wind direction yields relatively large average wind velocity. Atlantic/Long Island Sound influence keeps humidity steady. Plays as a moderate pitcher's park despite being open and somewhat windy."
+  },
+  "NYY": {
+    "avg_temp_c": 20.0,
+    "avg_humidity_pct": 62,
+    "prevailing_wind_speed_mph": 8,
+    "prevailing_wind_bearing_deg": 225,
+    "is_dome_or_retractable": false,
+    "notes": "South Bronx — Harlem River proximity. Prevailing SW winds similar to Citi Field but park orientation and short RF porch amplify wind-out effect to right field. Known as HR-friendly, partly due to 314ft RF line plus wind patterns."
+  },
+  "PHI": {
+    "avg_temp_c": 21.0,
+    "avg_humidity_pct": 63,
+    "prevailing_wind_speed_mph": 7,
+    "prevailing_wind_bearing_deg": 90,
+    "is_dome_or_retractable": false,
+    "notes": "South Philadelphia near the Delaware River. Light winds generally from east. Stadium oriented S-N. Mid-Atlantic climate — warm humid summers, cool spring/fall. Plays fairly neutral with slight hitter lean."
+  },
+  "PIT": {
+    "avg_temp_c": 20.0,
+    "avg_humidity_pct": 65,
+    "prevailing_wind_speed_mph": 7,
+    "prevailing_wind_bearing_deg": 225,
+    "is_dome_or_retractable": false,
+    "notes": "Allegheny River sits just 443 ft from RF line. River valley geography creates variable winds — SW prevailing but subject to wild fluctuations. Three rivers confluence area creates local microclimate effects. Cool springs, warm humid summers."
+  },
+  "SD": {
+    "avg_temp_c": 20.0,
+    "avg_humidity_pct": 66,
+    "prevailing_wind_speed_mph": 7,
+    "prevailing_wind_bearing_deg": 270,
+    "is_dome_or_retractable": false,
+    "notes": "Consistent onshore W wind from Pacific. Coastal marine layer keeps temperatures remarkably stable (rarely above 25C at game time). Despite mild climate, Petco plays as a strong pitcher's park due to dimensions and marine air density. Santa Ana winds (from desert NE) occasionally override but are rare during games."
+  },
+  "SEA": {
+    "avg_temp_c": 17.0,
+    "avg_humidity_pct": 65,
+    "prevailing_wind_speed_mph": 5,
+    "prevailing_wind_bearing_deg": 200,
+    "is_dome_or_retractable": false,
+    "notes": "Retractable roof covers but does not enclose — open-air even when closed. Roof closed only ~14 of 81 games in 2022 (least of any retractable park), so treated as outdoor. SSW prevailing wind off Puget Sound. Coolest park after Oracle — mild marine climate year-round. Roof primarily deployed for rain, not temperature."
+  },
+  "SF": {
+    "avg_temp_c": 16.0,
+    "avg_humidity_pct": 72,
+    "prevailing_wind_speed_mph": 12,
+    "prevailing_wind_bearing_deg": 270,
+    "is_dome_or_retractable": false,
+    "notes": "Coldest park in MLB — marine layer and fog from San Francisco Bay. Strong W prevailing wind (often >15 mph outside park) but stadium was engineered by wind consultants to minimize internal gusts. Despite wind forecasts showing 'blowing out to CF', flags on McCovey Cove often blow back in. Dense marine air + cool temps suppress fly balls significantly. Night games colder than day games."
+  },
+  "STL": {
+    "avg_temp_c": 23.0,
+    "avg_humidity_pct": 64,
+    "prevailing_wind_speed_mph": 8,
+    "prevailing_wind_bearing_deg": 200,
+    "is_dome_or_retractable": false,
+    "notes": "Mississippi River valley. SSW prevailing wind. Hot humid summers (July avg high 34C) with significant thunderstorm activity. Open stadium with moderate wind exposure. Plays roughly neutral — Gateway Arch area can funnel winds but effect is minor."
+  },
+  "TB": {
+    "avg_temp_c": 22.0,
+    "avg_humidity_pct": 50,
+    "prevailing_wind_speed_mph": 0,
+    "prevailing_wind_bearing_deg": 0,
+    "is_dome_or_retractable": true,
+    "notes": "Fixed dome (Tropicana Field) — only non-retractable dome in MLB. Fully climate-controlled and AC'd year-round. Temperature held at ~22C (72F). Slanted roof designed to reduce interior volume and cooling costs. No wind inside. Outdoor St. Petersburg climate is hot and humid (30C+, 80%+ humidity) but irrelevant to play conditions. Dome roof was destroyed by Hurricane Milton Oct 2024, rebuilt and reopened April 2026."
+  },
+  "TEX": {
+    "avg_temp_c": 22.0,
+    "avg_humidity_pct": 45,
+    "prevailing_wind_speed_mph": 0,
+    "prevailing_wind_bearing_deg": 0,
+    "is_dome_or_retractable": true,
+    "notes": "Retractable roof closed ~80% of home games (4 of 5). Interior held at 72-74F (~22C). Roof closed if temp outside 65-80F range or humidity >50%. North Texas summers reach 40C+ outdoors. When rarely open (pleasant spring/fall days), prevailing S wind ~10 mph. One of the most consistently climate-controlled parks."
+  },
+  "TOR": {
+    "avg_temp_c": 21.0,
+    "avg_humidity_pct": 58,
+    "prevailing_wind_speed_mph": 5,
+    "prevailing_wind_bearing_deg": 245,
+    "is_dome_or_retractable": false,
+    "notes": "Retractable roof closed ~1/3 of games (28 of 81 in 2022) — mostly open in summer, so treated as outdoor. Roof closed below 10C or rain. When open, WSW prevailing wind off Lake Ontario. Toronto spring is cool; summer is warm and humid. Roof selectively closes for worst weather, biasing open-game conditions toward fair weather."
+  },
+  "WSH": {
+    "avg_temp_c": 23.0,
+    "avg_humidity_pct": 64,
+    "prevailing_wind_speed_mph": 7,
+    "prevailing_wind_bearing_deg": 225,
+    "is_dome_or_retractable": false,
+    "notes": "Anacostia River waterfront. Widely varying wind directions (similar to Coors and Wrigley in variability) — SW prevailing but unreliable. Potomac basin humidity. Hot humid summers with frequent afternoon thunderstorms. Gusty conditions possible. Plays offensively neutral."
+  }
+}

@@ -35,6 +35,7 @@ from bullpen_training.battedball.mlp.dataset import (
     OUTCOME_NAMES,
     BBIPDataset,
     FeatureScaler,
+    load_arrays,
     load_rows,
 )
 from bullpen_training.battedball.parks.loader import load_all_parks
@@ -44,11 +45,11 @@ from bullpen_training.battedball.parks.loader import load_all_parks
 # uniform-prior smoothing per the leaf's "Known edge cases" guidance.
 LABEL_SMOOTHING_EPS: float = 0.01
 
-# Default training hyperparameters (from the leaf body).
-DEFAULT_EPOCHS: int = 50
+# Default training hyperparameters.
+DEFAULT_EPOCHS: int = 100
 DEFAULT_BATCH_SIZE: int = 256
-DEFAULT_LR: float = 1e-3
-DEFAULT_WEIGHT_DECAY: float = 1e-5
+DEFAULT_LR: float = 5e-4
+DEFAULT_WEIGHT_DECAY: float = 1e-4
 
 
 @dataclass
@@ -218,8 +219,8 @@ def export_onnx(
     size at inference time. Final shape: ``(N, n_parks, n_outcomes)``.
     """
     feat_count = n_features if n_features is not None else model.n_features
+    model.cpu().eval()
     dummy = torch.zeros((1, feat_count), dtype=torch.float32)
-    model.eval()
     out_path.parent.mkdir(parents=True, exist_ok=True)
     torch.onnx.export(
         model,
@@ -295,27 +296,26 @@ def main() -> None:
 
     park_order = tuple(sorted(load_all_parks().keys()))
     print(f"loading data from CH (seasons {args.train_season_from}-{args.train_season_to})...")
-    train_rows = load_rows(
+    train_feat, train_lab = load_arrays(
         season_from=args.train_season_from,
         season_to=args.train_season_to,
         park_order=park_order,
         limit=args.limit,
     )
-    print(f"  train: {len(train_rows)} BIPs")
-    val_rows: list = []
+    print(f"  train: {train_feat.shape[0]} BIPs")
+    val_feat: np.ndarray | None = None
+    val_lab: np.ndarray | None = None
     if args.val_season is not None:
-        val_rows = load_rows(
+        val_feat, val_lab = load_arrays(
             season_from=args.val_season,
             season_to=args.val_season,
             park_order=park_order,
             limit=args.limit,
         )
-        print(f"  val:   {len(val_rows)} BIPs")
-    # Fit the feature scaler on TRAIN ONLY so val/test see no leakage.
-    raw_train = BBIPDataset(train_rows)
-    scaler = FeatureScaler.fit(raw_train.all_features())
-    train_ds = BBIPDataset(train_rows, scaler=scaler)
-    val_ds = BBIPDataset(val_rows, scaler=scaler) if val_rows else None
+        print(f"  val:   {val_feat.shape[0]} BIPs")
+    scaler = FeatureScaler.fit(train_feat)
+    train_ds = BBIPDataset(train_feat, train_lab, scaler=scaler)
+    val_ds = BBIPDataset(val_feat, val_lab, scaler=scaler) if val_feat is not None else None
 
     model, summary = train_model(
         train_ds,

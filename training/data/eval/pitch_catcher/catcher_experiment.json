@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "artifact_name": "catcher_experiment",
+  "catcher_coverage_test": 1.0,
+  "catcher_accuracy_delta": 0.0019185638662019833,
+  "models": [
+    {
+      "name": "Pitcher only",
+      "accuracy": 0.4400145934813905,
+      "top2_accuracy": 0.7078556879361493,
+      "logloss": 1.3280007438215438,
+      "calibration_ece": 0.011344457979744415
+    },
+    {
+      "name": "Pitcher + Catcher",
+      "accuracy": 0.4419331573475925,
+      "top2_accuracy": 0.7086839666096638,
+      "logloss": 1.3274090449265175,
+      "calibration_ece": 0.006690627708026332
+    }
+  ]
+}

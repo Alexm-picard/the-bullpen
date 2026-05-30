@@ -44,7 +44,21 @@
           "type": ["number", "null"],
           "description": "Sea-level-equivalent pressure in hPa; null means 'let the ISA model derive from altitude_m' (the usual case for an annual default)."
         },
-        "humidity_pct": { "type": "number", "minimum": 0, "maximum": 100 }
+        "humidity_pct": { "type": "number", "minimum": 0, "maximum": 100 },
+        "wind_speed_mph": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 30,
+          "default": 0,
+          "description": "Prevailing wind speed at the park during game time (mph). 0 for domed/closed-roof parks."
+        },
+        "wind_bearing_deg": {
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMaximum": 360,
+          "default": 0,
+          "description": "Compass bearing the prevailing wind blows FROM (meteorological convention: 0=N, 90=E, 180=S, 270=W). Combined with centerline_bearing_deg to project into the stadium xyz frame."
+        }
       },
       "description": "Defaults used when weather_observed has no row for the game. Per-game weather is wired in 2c.4."
     },

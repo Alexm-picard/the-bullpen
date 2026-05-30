@@ -50,6 +50,7 @@ def _query_joined_for_lgbm(
     season_to: int,
     park_filter: tuple[str, ...] | None = None,
     limit: int | None = None,
+    offset: int = 0,
 ) -> str:
     """ClickHouse join query — emits one row per (BIP, park) pair.
 
@@ -62,6 +63,7 @@ def _query_joined_for_lgbm(
         plist = ", ".join(f"'{p}'" for p in park_filter)
         park_clause = f"AND r.park_id IN ({plist})"
     limit_clause = f"LIMIT {limit}" if limit else ""
+    offset_clause = f"OFFSET {offset}" if offset > 0 else ""
     return f"""
     SELECT
       toString(p.launch_speed_mph) AS launch_speed_mph,
@@ -91,7 +93,7 @@ def _query_joined_for_lgbm(
       AND toYear(p.game_date) BETWEEN {season_from} AND {season_to}
       {park_clause}
     ORDER BY p.game_date, p.game_id, p.at_bat_index, p.pitch_number, r.park_id
-    {limit_clause}
+    {limit_clause} {offset_clause}
     FORMAT JSONEachRow
     """
 
@@ -143,6 +145,7 @@ def load_lgbm_dataset(
     park_filter: tuple[str, ...] | None = None,
     limit: int | None = None,
     container: str = "bullpen-clickhouse",
+    chunk_rows: int = 150_000,
 ) -> pd.DataFrame:
     """Pull the joined (BIP, park) rows and return a LightGBM-ready DataFrame.
 
@@ -150,27 +153,59 @@ def load_lgbm_dataset(
     (the argmax 0-4 outcome index). ``park_id`` is a categorical
     pandas column so LightGBM picks it up via
     ``categorical_feature=['park_id']`` at Dataset construction.
+
+    Streams from ClickHouse in chunks to keep peak memory bounded.
     """
-    raw = _run_clickhouse(
-        _query_joined_for_lgbm(
-            season_from=season_from,
-            season_to=season_to,
-            park_filter=park_filter,
-            limit=limit,
-        ),
-        container=container,
-    )
-    records: list[dict[str, object]] = []
-    for line in raw.strip().split("\n"):
-        if not line:
-            continue
-        row = json.loads(line)
-        records.append(_row_to_record(row))
-    df = pd.DataFrame.from_records(records)
-    if df.empty:
-        return df
-    # park_id as categorical so LightGBM treats it correctly + so
-    # train/val splits share the same category dictionary.
+    chunks: list[pd.DataFrame] = []
+    offset = 0
+    total = 0
+    chunk_idx = 0
+
+    while True:
+        effective_limit = chunk_rows
+        if limit is not None:
+            remaining = limit - total
+            if remaining <= 0:
+                break
+            effective_limit = min(chunk_rows, remaining)
+
+        raw = _run_clickhouse(
+            _query_joined_for_lgbm(
+                season_from=season_from,
+                season_to=season_to,
+                park_filter=park_filter,
+                limit=effective_limit,
+                offset=offset,
+            ),
+            container=container,
+        )
+        records: list[dict[str, object]] = []
+        for line in raw.strip().split("\n"):
+            if not line:
+                continue
+            row = json.loads(line)
+            records.append(_row_to_record(row))
+
+        if not records:
+            break
+
+        chunk_df = pd.DataFrame.from_records(records)
+        chunks.append(chunk_df)
+        n = len(records)
+        offset += n
+        total += n
+        chunk_idx += 1
+        if chunk_idx % 5 == 0:
+            print(f"  lgbm dataset: loaded {total} rows so far...", flush=True)
+
+        if n < effective_limit:
+            break
+
+    if not chunks:
+        return pd.DataFrame()
+
+    print(f"  lgbm dataset: {total} rows total, concatenating...", flush=True)
+    df = pd.concat(chunks, ignore_index=True)
     df["park_id"] = df["park_id"].astype("category")
     return df
 

@@ -1,0 +1,25 @@
+{
+  "stage": 2,
+  "streak_models": [
+    {
+      "name": "Context (ref)",
+      "accuracy": 0.45234157761731836,
+      "top2_accuracy": 0.7257045298955073,
+      "logloss": 1.3141360129632687,
+      "calibration_ece": 0.00700350184640897
+    },
+    {
+      "name": "Context + Streak",
+      "accuracy": 0.4543404338039121,
+      "top2_accuracy": 0.7267581905209985,
+      "logloss": 1.3172405235811484,
+      "calibration_ece": 0.007062343532517698
+    }
+  ],
+  "streak_feature_importance": {
+    "repeat_pitch_type": 159415.28658485413,
+    "prev_pitch_type_int": 2617253.756052017,
+    "prev_pitch_result_int": 96702.14782905579
+  },
+  "streak_delta_acc": 0.0019988561865937338
+}

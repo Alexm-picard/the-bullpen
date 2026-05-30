@@ -1,0 +1,16 @@
+[
+  {
+    "name": "Catcher-Hybrid (base)",
+    "accuracy": 0.45227678030612506,
+    "top2_accuracy": 0.7249917594723808,
+    "logloss": 1.317140942195727,
+    "calibration_ece": 0.00723096505527572
+  },
+  {
+    "name": "Catcher-Hybrid + Context",
+    "accuracy": 0.45234157761731836,
+    "top2_accuracy": 0.7257045298955073,
+    "logloss": 1.3141360129632687,
+    "calibration_ece": 0.00700350184640897
+  }
+]

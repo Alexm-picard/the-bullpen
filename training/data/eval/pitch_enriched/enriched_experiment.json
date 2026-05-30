@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "artifact_name": "enriched_experiment",
+  "models": [
+    {
+      "name": "Hybrid (base)",
+      "accuracy": 0.4503737114491214,
+      "top2_accuracy": 0.7238521719776985,
+      "logloss": 1.3252360414137931,
+      "calibration_ece": 0.007965912475199696
+    },
+    {
+      "name": "Hybrid + Context",
+      "accuracy": 0.4513034120010255,
+      "top2_accuracy": 0.7250889554391708,
+      "logloss": 1.3221105694688962,
+      "calibration_ece": 0.007792347150244976
+    }
+  ],
+  "context_feature_importance": {
+    "times_through_order": 151732.14236831665,
+    "score_diff_live": 63288.046102523804,
+    "win_expectancy": 9791.247844696045,
+    "times_faced_today": 157747.80052375793,
+    "at_bat_number_in_game": 185299.60809707642,
+    "pitcher_avg_extension": 11316.382989883423,
+    "pitcher_avg_arm_angle": 140904.4583826065
+  }
+}

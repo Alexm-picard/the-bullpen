@@ -58,7 +58,22 @@ SELECT
     release_spin_rate                          AS spin_rate_rpm,
     spin_axis                                  AS spin_axis_deg,
     release_pos_x                              AS release_pos_x_in,
-    release_pos_z                              AS release_pos_z_in
+    release_pos_z                              AS release_pos_z_in,
+    -- V013 — expanded columns for advanced pitch prediction. NULL for
+    -- partitions ingested before V012 added them to raw_statcast.
+    fielder_2                                  AS catcher_id,
+    n_thruorder_pitcher                        AS times_through_order,
+    at_bat_number                              AS at_bat_number_in_game,
+    n_priorpa_thisgame                         AS times_faced_today,
+    bat_score_diff                             AS score_diff_live,
+    delta_home_win_exp                         AS wpa_delta,
+    home_win_exp                               AS win_expectancy,
+    effective_speed                            AS effective_speed_mph,
+    release_extension                          AS release_extension_ft,
+    arm_angle                                  AS arm_angle_deg,
+    if_fielding_alignment                      AS if_alignment,
+    of_fielding_alignment                      AS of_alignment,
+    zone                                       AS pitch_zone
 FROM raw_statcast
 WHERE toYear(game_date) = :year
   AND game_type = 'R';

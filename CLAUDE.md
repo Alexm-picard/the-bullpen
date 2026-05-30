@@ -64,6 +64,7 @@ approval:
 10. **All rolling/form features computed via streaming temporal cutoff.** Leakage tests in CI are non-negotiable: future contamination, shuffled-target, calendar-date trace, ID consistency.
 11. **Local dev on macOS, prod on the self-hosted Linux desktop. No code edits on the prod box.** SSH / remote-control into prod is read-only (logs, Grafana, ClickHouse queries); writes happen via `git push` + `./deploy.sh` only. See ADR-0006.
 12. **All object storage via S3-compatible client with `S3_ENDPOINT_URL` as the only environment-specific knob.** Prod = Cloudflare R2 (vendor-consolidated with Tunnel + DNS, per decision [128]); offline dev = MinIO on the portable drive. No `file://` paths in storage code, no second abstraction. See ADR-0007.
+13. **2026 season data is holdout-only — never use for training or validation.** The 2026 Statcast pull exists exclusively for post-training, post-validation accuracy testing against unseen data. Models train and validate on 2015–2025 seasons only. Any script or pipeline that accepts season ranges must not include 2026 in a training or validation split.
 
 ## Decision logging discipline — two layers
 

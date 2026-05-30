@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "artifact_name": "pitch_model_comparison",
+  "train_years": [
+    2015,
+    2016,
+    2017,
+    2018,
+    2019,
+    2020,
+    2021,
+    2022,
+    2023
+  ],
+  "val_years": [
+    2024
+  ],
+  "test_years": [
+    2025
+  ],
+  "n_train": 5979313,
+  "n_val": 709224,
+  "n_test": 709906,
+  "models": [
+    {
+      "name": "LightGBM",
+      "pitch_type_accuracy": 0.3846199355971072,
+      "pitch_type_logloss": 1.6956638254151337,
+      "velocity_mae": 4.736494541168213,
+      "velocity_rmse": 5.736849308013916,
+      "outcome_accuracy": 0.3641200384276228,
+      "outcome_logloss": 1.4747456311504212,
+      "ab_count_mae": 1.2200062274932861,
+      "ab_count_rmse": 1.5605087280273438,
+      "train_time_sec": 421.824473655
+    },
+    {
+      "name": "Multi-task MLP",
+      "pitch_type_accuracy": 0.37992353917279187,
+      "pitch_type_logloss": 1.7191922207962635,
+      "velocity_mae": 4.787196636199951,
+      "velocity_rmse": 5.766107082366943,
+      "outcome_accuracy": 0.3635326367152834,
+      "outcome_logloss": 1.4791152230669464,
+      "ab_count_mae": 1.2198486328125,
+      "ab_count_rmse": 1.5630075931549072,
+      "train_time_sec": 473.9256214430002
+    },
+    {
+      "name": "XGBoost",
+      "pitch_type_accuracy": 0.3841973444371508,
+      "pitch_type_logloss": 1.7248574749705514,
+      "velocity_mae": 4.750537872314453,
+      "velocity_rmse": 5.7500901222229,
+      "outcome_accuracy": 0.36426090214760826,
+      "outcome_logloss": 1.474608740072339,
+      "ab_count_mae": 1.2202718257904053,
+      "ab_count_rmse": 1.560599446296692,
+      "train_time_sec": 416.17044190100023
+    },
+    {
+      "name": "Logistic/Ridge",
+      "pitch_type_accuracy": 0.36698943240372667,
+      "pitch_type_logloss": 1.762839553038779,
+      "velocity_mae": 4.810473442077637,
+      "velocity_rmse": 5.798280239105225,
+      "outcome_accuracy": 0.35975889765687286,
+      "outcome_logloss": 1.4860992218635185,
+      "ab_count_mae": 1.2276660203933716,
+      "ab_count_rmse": 1.564979910850525,
+      "train_time_sec": 87.97587259200009
+    }
+  ]
+}
