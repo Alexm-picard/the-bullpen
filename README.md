@@ -136,7 +136,10 @@ Underlying play-by-play data is not redistributed.**
 - Live game polling worker (MLB Stats API client + per-game scheduled
   poll on the worker profile) is wired contractually but not running —
   the controller surface + state machine are in place and tested; the
-  poller is a one-class addition.
+  producer side (client + poller + the `prediction_log` truth-join) is
+  planned in
+  [`docs/runbooks/live-data-setup.md`](docs/runbooks/live-data-setup.md)
+  and tracked in [#1](https://github.com/Alexm-picard/the-bullpen/issues/1).
 - `prediction_log` truth-join to `pitches` by `(game_id, at_bat_index,
 pitch_number)` needs the indexed `pitch_id` column to land before the
   per-player history / calibration views populate fully.
@@ -149,6 +152,8 @@ pitch_number)` needs the indexed `pitch_id` column to land before the
 - 30-park MLP natively serving all-parks predictions
 - Truth-join landing for full calibration + agreement views
 - MLB Stats API poller wired to `GameStateMachine`
+  ([#1](https://github.com/Alexm-picard/the-bullpen/issues/1) ·
+  [runbook](docs/runbooks/live-data-setup.md))
 - Admin override page wrapping the existing `POST /v1/admin/routing`
   slider behind HTTP Basic
 - Hyperparameter search in the retraining job (fixed-HP today per
