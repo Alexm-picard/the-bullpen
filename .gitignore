@@ -5,6 +5,9 @@
 *.iml
 *.swp
 
+# Tool scratch — Playwright MCP console logs + QA screenshots (local only)
+.playwright-mcp/
+
 # Secrets — never commit
 .env
 .env.*
