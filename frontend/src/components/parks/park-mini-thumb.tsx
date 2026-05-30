@@ -15,7 +15,7 @@
  * left in tree as orphaned dead code per the Stage 3c decision).
  */
 
-import { colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/tokens";
 
 export type ParkMiniThumbProps = {
   /** Park id, e.g. "COL". Used by the parent to wire the click handler. */
@@ -87,7 +87,7 @@ export function ParkMiniThumb({
         gap: 4,
         flexShrink: 0,
         scrollSnapAlign: "start",
-        borderRadius: 2,
+        borderRadius: radii.sm,
       }}
     >
       <svg

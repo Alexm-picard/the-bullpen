@@ -16,22 +16,17 @@
  * hover-tip both surface the rule-6 meaning.
  */
 
-import type {
-  RetrainEntry,
-  RetrainStatus,
-  RetrainTrigger,
-} from "../../data/ops-fixtures";
-import { colors, typography } from "../../design/tokens";
+import type { RetrainEntry, RetrainStatus } from "../../data/ops-fixtures";
+import { radii, colors, typography } from "../../design/tokens";
 
 export type RetrainQueueListProps = {
   entries: RetrainEntry[];
 };
 
-function triggerColor(_trigger: RetrainTrigger): string {
-  // All triggers use scarlet for the badge — they're the action color in the
-  // operator's mental model. Different trigger types are distinguished by the
-  // label text, not by hue. (Parameter preserved for future per-trigger
-  // variants without a caller-side change.)
+// All triggers currently share the scarlet badge — the action color in the
+// operator's mental model. If per-trigger hues become needed, reintroduce a
+// trigger argument here and switch callers in one place.
+function triggerColor(): string {
   return colors.scarlet;
 }
 
@@ -53,7 +48,7 @@ export function RetrainQueueList({ entries }: RetrainQueueListProps) {
       style={{
         backgroundColor: colors.bgSheet,
         border: `1px solid ${colors.bgEmphasis}`,
-        borderRadius: 2,
+        borderRadius: radii.sm,
       }}
       aria-labelledby="retrain-queue-header"
     >
@@ -119,10 +114,10 @@ export function RetrainQueueList({ entries }: RetrainQueueListProps) {
                     fontWeight: typography.weights.bold,
                     letterSpacing: "0.06em",
                     textTransform: "uppercase",
-                    color: triggerColor(entry.trigger),
-                    border: `1px solid ${triggerColor(entry.trigger)}`,
+                    color: triggerColor(),
+                    border: `1px solid ${triggerColor()}`,
                     padding: "2px 6px",
-                    borderRadius: 2,
+                    borderRadius: radii.sm,
                     whiteSpace: "nowrap",
                     width: "fit-content",
                   }}

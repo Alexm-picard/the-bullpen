@@ -12,33 +12,12 @@
  *             footer wraps vertically
  */
 
-.about-cover__shell {
-  position: relative;
-}
-
-.about-cover__corner {
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 120px;
-  height: 120px;
-  pointer-events: none;
-  opacity: 0.18;
-}
-
 /* The editorial measure — every prose-heavy block on /about clamps its width
  * to ~62 characters so the body reads as a printed essay column, not a
  * dashboard run. Apply on prose containers via className="about-prose". */
 .about-prose,
 .about-prose > p {
   max-width: 62ch;
-}
-
-@media (max-width: 900px) {
-  .about-cover__corner {
-    width: 80px;
-    height: 80px;
-  }
 }
 
 @media (max-width: 600px) {

@@ -17,7 +17,7 @@
 import { Table } from "@mantine/core";
 
 import type { MatchupPrediction } from "../../data/matchup-fixtures";
-import { colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/tokens";
 
 export type RecentPredictionsTableProps = {
   rows: MatchupPrediction[];
@@ -85,7 +85,7 @@ export function RecentPredictionsTable({
       style={{
         backgroundColor: colors.bgSheet,
         border: `1px solid ${colors.bgEmphasis}`,
-        borderRadius: 2,
+        borderRadius: radii.sm,
         overflowX: "auto",
       }}
     >

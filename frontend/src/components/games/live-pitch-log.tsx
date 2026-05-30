@@ -20,7 +20,7 @@
  */
 
 import type { LivePitchRow } from "../../api/games";
-import { colors } from "../../design/tokens";
+import { radii, colors } from "../../design/tokens";
 import { PitchCard } from "../game/pitch-card";
 
 export type LivePitchLogProps = {
@@ -36,7 +36,7 @@ export function LivePitchLog({ pitches, caption }: LivePitchLogProps) {
         style={{
           backgroundColor: colors.bgSheet,
           border: `1px solid ${colors.bgEmphasis}`,
-          borderRadius: 2,
+          borderRadius: radii.sm,
           padding: 32,
           textAlign: "center",
           fontFamily: "var(--font-body)",

@@ -41,7 +41,7 @@ import { OpsHeader } from "../components/ops/ops-header";
 import { OpsLogTable } from "../components/ops/ops-log-table";
 import { RetrainQueueList } from "../components/ops/retrain-queue-list";
 import { CoverSheetFooter } from "../components/scouting/cover-sheet-footer";
-import { CornerStripes } from "../components/shared/corner-stripes";
+import { ReportSheet } from "../components/shared/report-sheet";
 import { SectionLabel } from "../components/shared/section-label";
 import {
   ECE_BY_OUTPUT,
@@ -53,93 +53,66 @@ import {
   PSI_BY_FEATURE,
   RETRAIN_QUEUE,
 } from "../data/ops-fixtures";
-import { colors, layouts } from "../design/tokens";
 
 import "./ops/ops.css";
 
 export default function OpsPage() {
   return (
-    <div
-      style={{
-        backgroundColor: colors.bgBase,
-        minHeight: "calc(100vh - 56px)",
-        paddingTop: 32,
-        paddingBottom: 64,
-      }}
-    >
-      <div
-        style={{
-          maxWidth: layouts.reportSheetMaxWidth,
-          margin: "0 auto",
-          padding: "0 16px",
-        }}
-      >
-        <div
-          className="ops-cover__shell"
-          style={{
-            backgroundColor: colors.bgSheet,
-            border: `1px solid ${colors.navy}`,
-            borderRadius: 2,
-            padding: 32,
-          }}
-        >
-          <CornerStripes className="ops-cover__corner" />
-          <Stack gap={28}>
-            <OpsHeader
-              issueDate={OPS_META.issueDate}
-              modelCount={OPS_META.modelCount}
-              alertCount={OPS_META.alertCount}
-              awaitingPromotionCount={OPS_META.awaitingPromotionCount}
-              issuedAt={OPS_META.issuedAt}
-              window={OPS_META.window}
-            />
+    <ReportSheet>
+      <Stack gap={28}>
+        <OpsHeader
+          issueDate={OPS_META.issueDate}
+          modelCount={OPS_META.modelCount}
+          alertCount={OPS_META.alertCount}
+          awaitingPromotionCount={OPS_META.awaitingPromotionCount}
+          issuedAt={OPS_META.issuedAt}
+          window={OPS_META.window}
+        />
 
-            <InfraRibbon services={INFRA_SERVICES} />
+        <InfraRibbon services={INFRA_SERVICES} />
 
-            <section aria-labelledby="ops-fleet-section-label">
-              <div id="ops-fleet-section-label">
-                <SectionLabel>
-                  Model Fleet · {OPS_META.modelCount} Registered
-                </SectionLabel>
-              </div>
-              <ModelFleetTable
-                rows={MODEL_FLEET}
-                caption="Registry · state, traffic, 24h drift + p99 latency"
-              />
-            </section>
+        <section aria-labelledby="ops-fleet-section-label">
+          <div id="ops-fleet-section-label">
+            <SectionLabel>
+              Model Fleet · {OPS_META.modelCount} Registered
+            </SectionLabel>
+          </div>
+          <ModelFleetTable
+            rows={MODEL_FLEET}
+            caption="Registry · state, traffic, 24h drift + p99 latency"
+          />
+        </section>
 
-            <DriftSnapshotGrid
-              models={MODEL_FLEET}
-              psiByFeature={PSI_BY_FEATURE}
-              eceByOutput={ECE_BY_OUTPUT}
-            />
+        <DriftSnapshotGrid
+          models={MODEL_FLEET}
+          psiByFeature={PSI_BY_FEATURE}
+          eceByOutput={ECE_BY_OUTPUT}
+        />
 
-            <section aria-labelledby="ops-latency-section-label">
-              <div id="ops-latency-section-label">
-                <SectionLabel>Latency Detail · By Percentile</SectionLabel>
-              </div>
-              <LatencyDetailTable
-                rows={LATENCY_BY_MODEL}
-                caption="Latency by percentile · last 24h · onnxruntime-java in-process"
-              />
-            </section>
+        <section aria-labelledby="ops-latency-section-label">
+          <div id="ops-latency-section-label">
+            <SectionLabel>Latency Detail · By Percentile</SectionLabel>
+          </div>
+          <LatencyDetailTable
+            rows={LATENCY_BY_MODEL}
+            caption="Latency by percentile · last 24h · onnxruntime-java in-process"
+          />
+        </section>
 
-            <RetrainQueueList entries={RETRAIN_QUEUE} />
+        <RetrainQueueList entries={RETRAIN_QUEUE} />
 
-            <section aria-labelledby="ops-log-section-label">
-              <div id="ops-log-section-label">
-                <SectionLabel>Ops Log · Last 24h Window</SectionLabel>
-              </div>
-              <OpsLogTable entries={OPS_LOG} />
-            </section>
+        <section aria-labelledby="ops-log-section-label">
+          <div id="ops-log-section-label">
+            <SectionLabel>Ops Log · Last 24h Window</SectionLabel>
+          </div>
+          <OpsLogTable entries={OPS_LOG} />
+        </section>
 
-            <CoverSheetFooter
-              buildSha={OPS_META.buildSha}
-              buildDate={OPS_META.buildDate}
-            />
-          </Stack>
-        </div>
-      </div>
-    </div>
+        <CoverSheetFooter
+          buildSha={OPS_META.buildSha}
+          buildDate={OPS_META.buildDate}
+        />
+      </Stack>
+    </ReportSheet>
   );
 }

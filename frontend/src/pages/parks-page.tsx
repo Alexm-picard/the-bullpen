@@ -43,7 +43,7 @@ import { ParkSwitcherStrip } from "../components/parks/park-switcher-strip";
 import { ParksHeader } from "../components/parks/parks-header";
 import { ParksMethodology } from "../components/parks/parks-methodology";
 import { CoverSheetFooter } from "../components/scouting/cover-sheet-footer";
-import { CornerStripes } from "../components/shared/corner-stripes";
+import { ReportSheet } from "../components/shared/report-sheet";
 import { SectionLabel } from "../components/shared/section-label";
 import {
   COORS_SPOTLIGHT,
@@ -51,7 +51,6 @@ import {
   PARK_THUMBNAILS,
   PARKS_META,
 } from "../data/parks-fixtures";
-import { colors, layouts } from "../design/tokens";
 
 import "./parks/parks.css";
 
@@ -74,76 +73,48 @@ export default function ParksPage() {
   };
 
   return (
-    <div
-      style={{
-        backgroundColor: colors.bgBase,
-        minHeight: "calc(100vh - 56px)",
-        paddingTop: 32,
-        paddingBottom: 64,
-      }}
-    >
-      <div
-        style={{
-          maxWidth: layouts.reportSheetMaxWidth,
-          margin: "0 auto",
-          padding: "0 16px",
-        }}
-      >
-        <div
-          className="parks__shell"
-          style={{
-            backgroundColor: colors.bgSheet,
-            border: `1px solid ${colors.navy}`,
-            borderRadius: 2,
-            padding: 32,
-          }}
-        >
-          <CornerStripes className="parks__corner" />
-          <Stack gap={28}>
-            <ParksHeader
-              edition={PARKS_META.edition}
-              sampleN={PARKS_META.sampleN}
-              dataWindow={PARKS_META.dataWindow}
-              modelTag={PARKS_META.modelTag}
-            />
+    <ReportSheet>
+      <Stack gap={28}>
+        <ParksHeader
+          edition={PARKS_META.edition}
+          sampleN={PARKS_META.sampleN}
+          dataWindow={PARKS_META.dataWindow}
+          modelTag={PARKS_META.modelTag}
+        />
 
-            <ParksMethodology line={PARKS_META.methodologyLine} />
+        <ParksMethodology line={PARKS_META.methodologyLine} />
 
-            <section aria-labelledby="parks-overview-label">
-              <div id="parks-overview-label">
-                <SectionLabel>Overview &middot; 30 Parks</SectionLabel>
-              </div>
-              <OverviewParksTable rows={PARK_ROWS} />
-            </section>
+        <section aria-labelledby="parks-overview-label">
+          <div id="parks-overview-label">
+            <SectionLabel>Overview &middot; 30 Parks</SectionLabel>
+          </div>
+          <OverviewParksTable rows={PARK_ROWS} />
+        </section>
 
-            <section aria-labelledby="parks-switcher-label">
-              <div id="parks-switcher-label">
-                <SectionLabel>
-                  Park Switcher &middot; Mini Heatmaps
-                </SectionLabel>
-              </div>
-              <ParkSwitcherStrip
-                thumbnails={PARK_THUMBNAILS}
-                rows={PARK_ROWS}
-                activeParkId={activeParkId}
-                onSelect={handleSelect}
-              />
-            </section>
+        <section aria-labelledby="parks-switcher-label">
+          <div id="parks-switcher-label">
+            <SectionLabel>Park Switcher &middot; Mini Heatmaps</SectionLabel>
+          </div>
+          <ParkSwitcherStrip
+            thumbnails={PARK_THUMBNAILS}
+            rows={PARK_ROWS}
+            activeParkId={activeParkId}
+            onSelect={handleSelect}
+          />
+        </section>
 
-            <section aria-labelledby="parks-spotlight-label">
-              <div id="parks-spotlight-label">
-                <SectionLabel>Spotlight &middot; Coors Field</SectionLabel>
-              </div>
-              <ParkSpotlight spotlight={COORS_SPOTLIGHT} />
-            </section>
+        <section aria-labelledby="parks-spotlight-label">
+          <div id="parks-spotlight-label">
+            <SectionLabel>Spotlight &middot; Coors Field</SectionLabel>
+          </div>
+          <ParkSpotlight spotlight={COORS_SPOTLIGHT} />
+        </section>
 
-            <CoverSheetFooter
-              buildSha={PARKS_META.buildSha}
-              buildDate={PARKS_META.buildDate}
-            />
-          </Stack>
-        </div>
-      </div>
-    </div>
+        <CoverSheetFooter
+          buildSha={PARKS_META.buildSha}
+          buildDate={PARKS_META.buildDate}
+        />
+      </Stack>
+    </ReportSheet>
   );
 }

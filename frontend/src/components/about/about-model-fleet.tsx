@@ -13,7 +13,7 @@
  */
 
 import type { FleetRow, FleetRowState } from "../../data/about-fixtures";
-import { colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/tokens";
 
 export type AboutModelFleetProps = {
   paragraphs: string[];
@@ -106,7 +106,7 @@ export function AboutModelFleet({ paragraphs, rows }: AboutModelFleetProps) {
         style={{
           overflowX: "auto",
           border,
-          borderRadius: 2,
+          borderRadius: radii.sm,
           backgroundColor: colors.bgSheet,
         }}
       >

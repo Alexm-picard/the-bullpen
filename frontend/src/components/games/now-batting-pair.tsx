@@ -17,7 +17,7 @@
  */
 
 import type { NowBattingHalf } from "../../data/games-fixtures";
-import { colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/tokens";
 
 export type NowBattingPairProps = {
   batter: NowBattingHalf;
@@ -30,7 +30,7 @@ function Half({ half }: { half: NowBattingHalf }) {
       style={{
         backgroundColor: colors.bgSheet,
         border: `1px solid ${colors.bgEmphasis}`,
-        borderRadius: 2,
+        borderRadius: radii.sm,
         display: "flex",
         flexDirection: "column",
       }}

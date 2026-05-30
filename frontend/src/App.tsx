@@ -27,7 +27,6 @@ import { TokenSampleCard } from "./components/_token-sample";
  */
 const AboutPage = lazy(() => import("./pages/about-page"));
 const ParksPage = lazy(() => import("./pages/parks-page"));
-const ParksToyPage = lazy(() => import("./pages/parks-toy-page"));
 const OpsPage = lazy(() => import("./pages/ops-page"));
 
 const PlayersPage = lazy(() => import("./pages/players-page"));
@@ -100,7 +99,6 @@ export default function App() {
         <Route element={<Layout />}>
           <Route index element={<HomePage />} />
           <Route path="parks" element={<ParksPage />} />
-          <Route path="parks/toy" element={<ParksToyPage />} />
           <Route path="players" element={<PlayersPage />} />
           <Route path="players/:id" element={<PlayerProfilePage />} />
           <Route path="games" element={<GamesPage />} />

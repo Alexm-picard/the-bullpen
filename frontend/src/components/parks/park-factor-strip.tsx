@@ -18,7 +18,7 @@
  */
 
 import { cellColor } from "../../design/cellColor";
-import { colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/tokens";
 import {
   FACTOR_METRIC,
   type ParkSpotlightFactor,
@@ -36,7 +36,7 @@ function NumericBlock({ block }: { block: ParkSpotlightFactor }) {
       style={{
         backgroundColor: bg,
         border: `1px solid ${colors.bgEmphasis}`,
-        borderRadius: 2,
+        borderRadius: radii.sm,
         padding: "12px 16px",
         display: "flex",
         flexDirection: "column",
@@ -89,7 +89,7 @@ function WindBlock({ block }: { block: ParkSpotlightWindBlock }) {
       style={{
         backgroundColor: colors.bgSheet,
         border: `1px solid ${colors.bgEmphasis}`,
-        borderRadius: 2,
+        borderRadius: radii.sm,
         padding: "12px 16px",
         display: "flex",
         flexDirection: "column",

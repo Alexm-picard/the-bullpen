@@ -16,7 +16,7 @@
  * describes the peak location in words.
  */
 
-import { colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/tokens";
 import type { PitchMixRow } from "../../data/matchup-fixtures";
 
 export type PitchLocationHeatmapProps = {
@@ -89,7 +89,7 @@ function Panel({ pitch }: { pitch: PitchMixRow }) {
         gap: 4,
         backgroundColor: colors.bgSheet,
         border: `1px solid ${colors.bgEmphasis}`,
-        borderRadius: 2,
+        borderRadius: radii.sm,
       }}
     >
       <header

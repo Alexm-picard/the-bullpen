@@ -38,7 +38,7 @@ import { PitchLocationHeatmap } from "../components/scouting/pitch-location-heat
 import { PlayerProfileCard } from "../components/scouting/player-profile-card";
 import { RecentPredictionsTable } from "../components/scouting/recent-predictions-table";
 import { SprayChart } from "../components/scouting/spray-chart";
-import { CornerStripes } from "../components/shared/corner-stripes";
+import { ReportSheet } from "../components/shared/report-sheet";
 import { HeroEyebrow } from "../components/shared/hero-eyebrow";
 import { SectionLabel } from "../components/shared/section-label";
 import { StatTable } from "../components/shared/stat-table";
@@ -52,7 +52,7 @@ import {
   type MatchupReport,
   type ScoutingPlayer,
 } from "../data/matchup-fixtures";
-import { colors, layouts, typography } from "../design/tokens";
+import { radii, colors, typography } from "../design/tokens";
 
 import "../components/scouting/matchup.css";
 
@@ -113,7 +113,7 @@ export default function PlayersPage() {
             style={{
               backgroundColor: colors.bgSheet,
               border: `1px solid ${colors.bgEmphasis}`,
-              borderRadius: 2,
+              borderRadius: radii.sm,
               padding: 16,
             }}
           >
@@ -297,71 +297,47 @@ export function PlayerProfilePage() {
   const report = getDefaultMatchup(id);
 
   return (
-    <div
-      style={{
-        backgroundColor: colors.bgBase,
-        minHeight: "calc(100vh - 56px)",
-        paddingTop: 32,
-        paddingBottom: 96,
-      }}
-    >
-      <Container
-        size="lg"
-        px="md"
-        style={{ maxWidth: layouts.reportSheetMaxWidth }}
-      >
-        <div
-          className="matchup-report__shell"
-          style={{
-            backgroundColor: colors.bgSheet,
-            border: `1px solid ${colors.navy}`,
-            borderRadius: 2,
-            padding: 32,
-          }}
-        >
-          <CornerStripes className="matchup-report__corner" />
-          <Stack gap={32}>
-            <MatchupHeader
-              primary={report.primary}
-              opponent={report.opponent}
-              context={report.context}
-            />
+    <ReportSheet>
+      <Stack gap={32}>
+        <MatchupHeader
+          primary={report.primary}
+          opponent={report.opponent}
+          context={report.context}
+        />
 
-            <div className="matchup-report__columns">
-              <PitcherColumn report={report} />
-              <BatterColumn report={report} />
-            </div>
-
-            <section>
-              <SectionLabel>Recent Predictions</SectionLabel>
-              <RecentPredictionsTable
-                rows={report.predictions}
-                caption="Last 12 matchup predictions · model: pitch_outcome_pre v3"
-              />
-            </section>
-
-            <div className="matchup-report__pair">
-              <section>
-                <SectionLabel>Calibration · pitch_outcome_pre</SectionLabel>
-                <div
-                  style={{
-                    backgroundColor: colors.bgSheet,
-                    border: `1px solid ${colors.bgEmphasis}`,
-                    borderRadius: 2,
-                    padding: 12,
-                  }}
-                >
-                  <ReliabilityDiagram
-                    bins={report.calibration}
-                    caption="this matchup · predicted vs. actual frequency"
-                  />
-                </div>
-              </section>
-              <KeyNotes notes={report.keyNotes} />
-            </div>
-          </Stack>
+        <div className="matchup-report__columns">
+          <PitcherColumn report={report} />
+          <BatterColumn report={report} />
         </div>
-      </Container>
-    </div>
+
+        <section>
+          <SectionLabel>Recent Predictions</SectionLabel>
+          <RecentPredictionsTable
+            rows={report.predictions}
+            caption="Last 12 matchup predictions · model: pitch_outcome_pre v3"
+          />
+        </section>
+
+        <div className="matchup-report__pair">
+          <section>
+            <SectionLabel>Calibration · pitch_outcome_pre</SectionLabel>
+            <div
+              style={{
+                backgroundColor: colors.bgSheet,
+                border: `1px solid ${colors.bgEmphasis}`,
+                borderRadius: radii.sm,
+                padding: 12,
+              }}
+            >
+              <ReliabilityDiagram
+                bins={report.calibration}
+                caption="this matchup · predicted vs. actual frequency"
+              />
+            </div>
+          </section>
+          <KeyNotes notes={report.keyNotes} />
+        </div>
+      </Stack>
+    </ReportSheet>
   );
 }

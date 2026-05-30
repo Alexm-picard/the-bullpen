@@ -46,7 +46,7 @@ import { Link } from "react-router-dom";
 import type { TonightMatchup } from "../../data/home-fixtures";
 import { EDGE_METRIC } from "../../data/home-fixtures";
 import { cellColor } from "../../design/cellColor";
-import { colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/tokens";
 
 export type TonightsMatchupsTableProps = {
   matchups: TonightMatchup[];
@@ -118,7 +118,7 @@ export function TonightsMatchupsTable({
       style={{
         overflowX: "auto",
         border: tableBorder,
-        borderRadius: 2,
+        borderRadius: radii.sm,
         backgroundColor: colors.bgSheet,
       }}
     >

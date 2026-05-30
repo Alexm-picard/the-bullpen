@@ -21,7 +21,7 @@
 import { Link } from "react-router-dom";
 
 import type { ScoutingPlayer } from "../../data/matchup-fixtures";
-import { colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/tokens";
 
 export type FeaturedMatchupCardProps = {
   batter: ScoutingPlayer;
@@ -109,7 +109,7 @@ export function FeaturedMatchupCard({
       style={{
         backgroundColor: colors.bgSheet,
         border: `1px solid ${colors.bgEmphasis}`,
-        borderRadius: 2,
+        borderRadius: radii.sm,
       }}
     >
       {/* Navy lower-third header */}
@@ -225,7 +225,7 @@ export function FeaturedMatchupCard({
             fontSize: 14,
             textTransform: "uppercase",
             letterSpacing: "0.08em",
-            borderRadius: 4,
+            borderRadius: radii.sm,
             textDecoration: "none",
           }}
         >

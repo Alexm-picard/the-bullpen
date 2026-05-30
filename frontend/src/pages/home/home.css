@@ -12,20 +12,6 @@
  *   - 600px : footer wraps vertically, masthead h1 down-shifts 64px → 48px
  */
 
-.home-cover__shell {
-  position: relative;
-}
-
-.home-cover__corner {
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 120px;
-  height: 120px;
-  pointer-events: none;
-  opacity: 0.18;
-}
-
 .home-featured__cols {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -60,10 +46,6 @@
     border-bottom: 1px solid var(--color-bgEmphasis);
     padding-right: 0;
     padding-bottom: 20px;
-  }
-  .home-cover__corner {
-    width: 80px;
-    height: 80px;
   }
 }
 

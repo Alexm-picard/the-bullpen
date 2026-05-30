@@ -15,7 +15,7 @@
  * Below 600px, stacks vertically via about.css (.about-cover__footer).
  */
 
-import { colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/tokens";
 
 export type AboutColophonFooterProps = {
   buildSha: string;
@@ -46,7 +46,7 @@ export function AboutColophonFooter({
         justifyContent: "space-between",
         padding: "16px 16px",
         gap: 16,
-        borderRadius: 2,
+        borderRadius: radii.sm,
         flexWrap: "wrap",
       }}
     >

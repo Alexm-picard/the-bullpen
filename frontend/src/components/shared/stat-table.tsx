@@ -27,7 +27,7 @@ import { useState } from "react";
 
 import type { MetricMeta } from "../../design/cellColor";
 import { cellColor } from "../../design/cellColor";
-import { colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/tokens";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -194,7 +194,7 @@ export function StatTable({ columns, rows, caption }: StatTableProps) {
       style={{
         overflowX: "auto",
         border: tableBorder,
-        borderRadius: 2,
+        borderRadius: radii.sm,
         backgroundColor: colors.bgSheet,
       }}
     >

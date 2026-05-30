@@ -17,7 +17,7 @@
  */
 
 import type { OpsLogEntry, OpsLogType } from "../../data/ops-fixtures";
-import { colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/tokens";
 
 export type OpsLogTableProps = {
   entries: OpsLogEntry[];
@@ -82,7 +82,7 @@ export function OpsLogTable({ entries, caption }: OpsLogTableProps) {
       style={{
         overflowX: "auto",
         border: tableBorder,
-        borderRadius: 2,
+        borderRadius: radii.sm,
         backgroundColor: colors.bgSheet,
       }}
     >

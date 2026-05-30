@@ -20,7 +20,7 @@
  */
 
 import type { FactCell } from "../../data/about-fixtures";
-import { colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/tokens";
 
 export type AboutFactsRibbonProps = {
   cells: FactCell[];
@@ -37,7 +37,7 @@ export function AboutFactsRibbon({ cells }: AboutFactsRibbonProps) {
         display: "grid",
         gridTemplateColumns: `repeat(${cells.length}, 1fr)`,
         columnGap: 1,
-        borderRadius: 2,
+        borderRadius: radii.sm,
       }}
     >
       {cells.map((cell, i) => (

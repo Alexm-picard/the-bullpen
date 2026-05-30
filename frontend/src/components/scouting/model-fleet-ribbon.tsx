@@ -20,7 +20,7 @@
 import { Link } from "react-router-dom";
 
 import type { ModelChip, ModelChipState } from "../../data/home-fixtures";
-import { colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/tokens";
 
 export type ModelFleetRibbonProps = {
   chips: ModelChip[];
@@ -46,7 +46,7 @@ export function ModelFleetRibbon({ chips }: ModelFleetRibbonProps) {
         // 1-px column gap using a divider rather than CSS gap so the navy bar
         // reads as a single bar with internal divisions (no visible cream gap).
         columnGap: 1,
-        borderRadius: 2,
+        borderRadius: radii.sm,
       }}
     >
       {chips.map((chip, i) => (
@@ -104,7 +104,7 @@ export function ModelFleetRibbon({ chips }: ModelFleetRibbonProps) {
               color: stateColor(chip.state),
               padding: "2px 6px",
               border: `1px solid ${stateColor(chip.state)}`,
-              borderRadius: 2,
+              borderRadius: radii.sm,
               whiteSpace: "nowrap",
             }}
           >

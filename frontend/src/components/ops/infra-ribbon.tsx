@@ -18,7 +18,7 @@
  */
 
 import type { InfraService, InfraServiceState } from "../../data/ops-fixtures";
-import { colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/tokens";
 
 export type InfraRibbonProps = {
   services: InfraService[];
@@ -40,7 +40,7 @@ export function InfraRibbon({ services }: InfraRibbonProps) {
         display: "grid",
         gridTemplateColumns: `repeat(${services.length}, 1fr)`,
         columnGap: 1,
-        borderRadius: 2,
+        borderRadius: radii.sm,
       }}
     >
       {services.map((svc, i) => (
@@ -94,7 +94,7 @@ export function InfraRibbon({ services }: InfraRibbonProps) {
               color: stateColor(svc.state),
               padding: "2px 6px",
               border: `1px solid ${stateColor(svc.state)}`,
-              borderRadius: 2,
+              borderRadius: radii.sm,
               whiteSpace: "nowrap",
             }}
           >

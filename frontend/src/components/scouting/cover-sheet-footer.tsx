@@ -12,7 +12,7 @@
 
 import { Link } from "react-router-dom";
 
-import { colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/tokens";
 
 export type CoverSheetFooterProps = {
   buildSha: string;
@@ -41,7 +41,7 @@ export function CoverSheetFooter({
         justifyContent: "space-between",
         padding: "10px 16px",
         gap: 16,
-        borderRadius: 2,
+        borderRadius: radii.sm,
         minHeight: 40,
         flexWrap: "wrap",
       }}

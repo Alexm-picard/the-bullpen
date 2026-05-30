@@ -12,7 +12,7 @@
  */
 
 import type { ScoutingPlayer } from "../../data/matchup-fixtures";
-import { colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/tokens";
 
 import { GradeBlock } from "./grade-block";
 
@@ -28,7 +28,7 @@ export function PlayerProfileCard({ player, variant }: PlayerProfileCardProps) {
       style={{
         backgroundColor: colors.bgSheet,
         border: `1px solid ${colors.bgEmphasis}`,
-        borderRadius: 2,
+        borderRadius: radii.sm,
         display: "flex",
         flexDirection: "column",
       }}

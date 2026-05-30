@@ -16,7 +16,7 @@
 import { Link } from "react-router-dom";
 
 import type { OtherGameChip } from "../../data/games-fixtures";
-import { colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/tokens";
 
 export type OtherGamesSwitcherProps = {
   chips: OtherGameChip[];
@@ -29,7 +29,7 @@ export function OtherGamesSwitcher({ chips }: OtherGamesSwitcherProps) {
         style={{
           backgroundColor: colors.bgSheet,
           border: `1px solid ${colors.bgEmphasis}`,
-          borderRadius: 2,
+          borderRadius: radii.sm,
           padding: 16,
           fontFamily: typography.fonts.body,
           fontSize: 13,
@@ -48,7 +48,7 @@ export function OtherGamesSwitcher({ chips }: OtherGamesSwitcherProps) {
       style={{
         backgroundColor: colors.bgSheet,
         border: `1px solid ${colors.bgEmphasis}`,
-        borderRadius: 2,
+        borderRadius: radii.sm,
         padding: 8,
         overflowX: "auto",
         scrollSnapType: "x mandatory",
@@ -65,7 +65,7 @@ export function OtherGamesSwitcher({ chips }: OtherGamesSwitcherProps) {
               flex: "0 0 auto",
               minWidth: 160,
               border: `1px solid ${colors.bgEmphasis}`,
-              borderRadius: 2,
+              borderRadius: radii.sm,
               textDecoration: "none",
               color: colors.textStrong,
               backgroundColor: colors.bgSheet,

@@ -12,7 +12,7 @@
  */
 
 import type { StackRow } from "../../data/about-fixtures";
-import { colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/tokens";
 
 export type AboutStackTableProps = {
   rows: StackRow[];
@@ -83,7 +83,7 @@ export function AboutStackTable({ rows }: AboutStackTableProps) {
       style={{
         overflowX: "auto",
         border,
-        borderRadius: 2,
+        borderRadius: radii.sm,
         backgroundColor: colors.bgSheet,
       }}
     >

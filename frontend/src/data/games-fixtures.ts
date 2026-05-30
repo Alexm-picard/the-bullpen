@@ -383,7 +383,6 @@ if (import.meta.env?.DEV) {
   const slateIds = new Set(TONIGHT_MATCHUPS.map((m) => m.id));
   for (const g of OTHER_GAMES) {
     if (!slateIds.has(g.id)) {
-      // eslint-disable-next-line no-console
       console.warn(
         `[games-fixtures] other-game id ${g.id} not in TONIGHT_MATCHUPS slate`,
       );

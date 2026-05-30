@@ -15,7 +15,7 @@
  */
 
 import type { GameStateCell } from "../../data/games-fixtures";
-import { colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/tokens";
 
 export type GameStateStripProps = {
   cells: GameStateCell[];
@@ -33,7 +33,7 @@ function cellEmphasisStyle(
       color: colors.textOnNavy,
       padding: "2px 8px",
       border: `1px solid ${colors.scarlet}`,
-      borderRadius: 2,
+      borderRadius: radii.sm,
     };
   }
   // Scarlet outline only: hollow pill, scarlet text + border.
@@ -42,7 +42,7 @@ function cellEmphasisStyle(
       color: colors.scarlet,
       padding: "2px 8px",
       border: `1px solid ${colors.scarlet}`,
-      borderRadius: 2,
+      borderRadius: radii.sm,
     };
   }
   // Silver outline: hollow pill, silver text + border.
@@ -50,7 +50,7 @@ function cellEmphasisStyle(
     color: colors.silver,
     padding: "2px 8px",
     border: `1px solid ${colors.silver}`,
-    borderRadius: 2,
+    borderRadius: radii.sm,
   };
 }
 
@@ -65,7 +65,7 @@ export function GameStateStrip({ cells }: GameStateStripProps) {
         display: "grid",
         gridTemplateColumns: `repeat(${cells.length}, 1fr)`,
         columnGap: 1,
-        borderRadius: 2,
+        borderRadius: radii.sm,
       }}
     >
       {cells.map((cell, i) => (

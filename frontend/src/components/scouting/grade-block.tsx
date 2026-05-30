@@ -12,7 +12,7 @@
  */
 
 import { cellColor } from "../../design/cellColor";
-import { colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/tokens";
 import { METRIC_META } from "../../data/matchup-fixtures";
 
 export type GradeBlockProps = {
@@ -70,7 +70,7 @@ export function GradeBlock({ label, value }: GradeBlockProps) {
           height: 8,
           backgroundColor: colors.bgSubtle,
           border: `1px solid ${colors.bgEmphasis}`,
-          borderRadius: 1,
+          borderRadius: radii.sm,
           overflow: "hidden",
         }}
       >

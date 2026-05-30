@@ -10,7 +10,7 @@
  * labels, not links.
  */
 
-import { colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/tokens";
 
 export type AboutRejectedAlternativesProps = {
   paragraph: string;
@@ -56,7 +56,7 @@ export function AboutRejectedAlternatives({
               padding: "4px 8px",
               backgroundColor: colors.bgSubtle,
               border: `1px solid ${colors.bgEmphasis}`,
-              borderRadius: 2,
+              borderRadius: radii.sm,
               display: "inline-flex",
               alignItems: "center",
               gap: 6,

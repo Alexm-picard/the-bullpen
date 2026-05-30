@@ -14,20 +14,6 @@
  *           : OtherGamesSwitcher chip min-width relaxes
  */
 
-.games__shell {
-  position: relative;
-}
-
-.games__corner {
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 120px;
-  height: 120px;
-  pointer-events: none;
-  opacity: 0.18;
-}
-
 .now-batting__pair {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -52,10 +38,6 @@
 @media (max-width: 900px) {
   .now-batting__pair {
     grid-template-columns: 1fr;
-  }
-  .games__corner {
-    width: 80px;
-    height: 80px;
   }
 }
 

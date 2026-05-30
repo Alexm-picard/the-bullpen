@@ -12,7 +12,7 @@
  * aria-labels.
  */
 
-import { colors } from "../../design/tokens";
+import { radii, colors } from "../../design/tokens";
 import { ParkMiniThumb } from "./park-mini-thumb";
 import type { ParkRow, ParkThumbnailDatum } from "../../data/parks-fixtures";
 
@@ -45,7 +45,7 @@ export function ParkSwitcherStrip({
       style={{
         backgroundColor: colors.bgSheet,
         border: `1px solid ${colors.bgEmphasis}`,
-        borderRadius: 2,
+        borderRadius: radii.sm,
         padding: 12,
         overflowX: "auto",
         scrollSnapType: "x mandatory",

@@ -50,7 +50,7 @@ import { AboutOpeningPitch } from "../components/about/about-opening-pitch";
 import { AboutRejectedAlternatives } from "../components/about/about-rejected-alternatives";
 import { AboutRoadmap } from "../components/about/about-roadmap";
 import { AboutStackTable } from "../components/about/about-stack-table";
-import { CornerStripes } from "../components/shared/corner-stripes";
+import { ReportSheet } from "../components/shared/report-sheet";
 import { SectionLabel } from "../components/shared/section-label";
 import {
   ABOUT_META,
@@ -64,104 +64,74 @@ import {
   ROADMAP_PARA,
   STACK_ROWS,
 } from "../data/about-fixtures";
-import { colors, layouts } from "../design/tokens";
 
 import "./about/about.css";
 
 export default function AboutPage() {
   return (
-    <div
-      style={{
-        backgroundColor: colors.bgBase,
-        minHeight: "calc(100vh - 56px)",
-        paddingTop: 32,
-        paddingBottom: 64,
-      }}
-    >
-      <div
-        style={{
-          maxWidth: layouts.reportSheetMaxWidth,
-          margin: "0 auto",
-          padding: "0 16px",
-        }}
-      >
-        <div
-          className="about-cover__shell"
-          style={{
-            backgroundColor: colors.bgSheet,
-            border: `1px solid ${colors.navy}`,
-            borderRadius: 2,
-            padding: 32,
-          }}
-        >
-          <CornerStripes className="about-cover__corner" />
-          <Stack gap={28}>
-            <AboutHeader
-              issueDate={ABOUT_META.issueDate}
-              builtBy={ABOUT_META.builtBy}
-              edition={ABOUT_META.edition}
-              calendar={ABOUT_META.calendar}
-              weeklyHours={ABOUT_META.weeklyHours}
-            />
+    <ReportSheet>
+      <Stack gap={28}>
+        <AboutHeader
+          issueDate={ABOUT_META.issueDate}
+          builtBy={ABOUT_META.builtBy}
+          edition={ABOUT_META.edition}
+          calendar={ABOUT_META.calendar}
+          weeklyHours={ABOUT_META.weeklyHours}
+        />
 
-            <AboutFactsRibbon cells={FACTS_RIBBON} />
+        <AboutFactsRibbon cells={FACTS_RIBBON} />
 
-            <section aria-labelledby="about-opening-pitch-label">
-              <div id="about-opening-pitch-label">
-                <SectionLabel>Opening Pitch</SectionLabel>
-              </div>
-              <AboutOpeningPitch paragraphs={OPENING_PITCH_PARAS} />
-            </section>
+        <section aria-labelledby="about-opening-pitch-label">
+          <div id="about-opening-pitch-label">
+            <SectionLabel>Opening Pitch</SectionLabel>
+          </div>
+          <AboutOpeningPitch paragraphs={OPENING_PITCH_PARAS} />
+        </section>
 
-            <section aria-labelledby="about-stack-label">
-              <div id="about-stack-label">
-                <SectionLabel>The Stack</SectionLabel>
-              </div>
-              <AboutStackTable rows={STACK_ROWS} />
-            </section>
+        <section aria-labelledby="about-stack-label">
+          <div id="about-stack-label">
+            <SectionLabel>The Stack</SectionLabel>
+          </div>
+          <AboutStackTable rows={STACK_ROWS} />
+        </section>
 
-            <section aria-labelledby="about-fleet-label">
-              <div id="about-fleet-label">
-                <SectionLabel>Model Fleet</SectionLabel>
-              </div>
-              <AboutModelFleet
-                paragraphs={MODEL_FLEET_PARAS}
-                rows={FLEET_ROWS}
-              />
-            </section>
+        <section aria-labelledby="about-fleet-label">
+          <div id="about-fleet-label">
+            <SectionLabel>Model Fleet</SectionLabel>
+          </div>
+          <AboutModelFleet paragraphs={MODEL_FLEET_PARAS} rows={FLEET_ROWS} />
+        </section>
 
-            <section aria-labelledby="about-discipline-label">
-              <div id="about-discipline-label">
-                <SectionLabel>Operational Discipline</SectionLabel>
-              </div>
-              <AboutDiscipline notes={DISCIPLINE_NOTES} />
-            </section>
+        <section aria-labelledby="about-discipline-label">
+          <div id="about-discipline-label">
+            <SectionLabel>Operational Discipline</SectionLabel>
+          </div>
+          <AboutDiscipline notes={DISCIPLINE_NOTES} />
+        </section>
 
-            <section aria-labelledby="about-rejected-label">
-              <div id="about-rejected-label">
-                <SectionLabel>Intentionally Not Here</SectionLabel>
-              </div>
-              <AboutRejectedAlternatives
-                paragraph={REJECTED_PARA}
-                tags={REJECTED_TAGS}
-              />
-            </section>
+        <section aria-labelledby="about-rejected-label">
+          <div id="about-rejected-label">
+            <SectionLabel>Intentionally Not Here</SectionLabel>
+          </div>
+          <AboutRejectedAlternatives
+            paragraph={REJECTED_PARA}
+            tags={REJECTED_TAGS}
+          />
+        </section>
 
-            <section aria-labelledby="about-roadmap-label">
-              <div id="about-roadmap-label">
-                <SectionLabel>Roadmap Honesty</SectionLabel>
-              </div>
-              <AboutRoadmap paragraph={ROADMAP_PARA} />
-            </section>
+        <section aria-labelledby="about-roadmap-label">
+          <div id="about-roadmap-label">
+            <SectionLabel>Roadmap Honesty</SectionLabel>
+          </div>
+          <AboutRoadmap paragraph={ROADMAP_PARA} />
+        </section>
 
-            <AboutColophonFooter
-              buildSha={ABOUT_META.buildSha}
-              buildDate={ABOUT_META.buildDate}
-              repoPlaceholder={ABOUT_META.repoPlaceholder}
-            />
-          </Stack>
-        </div>
-      </div>
-    </div>
+        <AboutColophonFooter
+          buildSha={ABOUT_META.buildSha}
+          buildDate={ABOUT_META.buildDate}
+          repoPlaceholder={ABOUT_META.repoPlaceholder}
+        />
+      </Stack>
+    </ReportSheet>
   );
 }

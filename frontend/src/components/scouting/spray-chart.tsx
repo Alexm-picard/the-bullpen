@@ -12,7 +12,7 @@
  */
 
 import type { SprayZone } from "../../data/matchup-fixtures";
-import { colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/tokens";
 
 export type SprayChartProps = {
   zones: SprayZone[];
@@ -103,7 +103,7 @@ export function SprayChart({ zones, caption }: SprayChartProps) {
         style={{
           backgroundColor: colors.bgSheet,
           border: `1px solid ${colors.bgEmphasis}`,
-          borderRadius: 2,
+          borderRadius: radii.sm,
           padding: 8,
         }}
       >

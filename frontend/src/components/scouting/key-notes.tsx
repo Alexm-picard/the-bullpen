@@ -9,7 +9,7 @@
  * but the visual cadence will tighten — the page caps at 3 by convention.
  */
 
-import { colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/tokens";
 
 export type KeyNotesProps = {
   notes: string[];
@@ -21,7 +21,7 @@ export function KeyNotes({ notes }: KeyNotesProps) {
       style={{
         backgroundColor: colors.bgSheet,
         border: `1px solid ${colors.bgEmphasis}`,
-        borderRadius: 2,
+        borderRadius: radii.sm,
       }}
       aria-labelledby="key-notes-header"
     >

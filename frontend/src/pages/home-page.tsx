@@ -32,7 +32,7 @@ import { TonightsMatchupsTable } from "../components/home/tonights-matchups-tabl
 import { CoverSheetFooter } from "../components/scouting/cover-sheet-footer";
 import { CoverSheetHeader } from "../components/scouting/cover-sheet-header";
 import { ModelFleetRibbon } from "../components/scouting/model-fleet-ribbon";
-import { CornerStripes } from "../components/shared/corner-stripes";
+import { ReportSheet } from "../components/shared/report-sheet";
 import { SectionLabel } from "../components/shared/section-label";
 import {
   FEATURED_CONTEXT,
@@ -42,7 +42,6 @@ import {
   TONIGHT_MATCHUPS,
 } from "../data/home-fixtures";
 import { PLAYERS } from "../data/matchup-fixtures";
-import { colors, layouts } from "../design/tokens";
 
 import "./home/home.css";
 
@@ -64,69 +63,42 @@ export default function HomePage() {
   const featuredPitcher = PLAYERS.skubal_tarik;
 
   return (
-    <div
-      style={{
-        backgroundColor: colors.bgBase,
-        minHeight: "calc(100vh - 56px)",
-        paddingTop: 32,
-        paddingBottom: 64,
-      }}
-    >
-      <div
-        style={{
-          maxWidth: layouts.reportSheetMaxWidth,
-          margin: "0 auto",
-          padding: "0 16px",
-        }}
-      >
-        <div
-          className="home-cover__shell"
-          style={{
-            backgroundColor: colors.bgSheet,
-            border: `1px solid ${colors.navy}`,
-            borderRadius: 2,
-            padding: 32,
-          }}
-        >
-          <CornerStripes className="home-cover__corner" />
-          <Stack gap={28}>
-            <CoverSheetHeader
-              issueDate={ISSUE_META.issueDate}
-              matchupCount={TONIGHT_MATCHUPS.length}
-              lhpCount={lhpCount}
-              rhpCount={rhpCount}
-              issuedAt={ISSUE_META.issuedAt}
-              firstPitchWindow={ISSUE_META.firstPitchWindow}
-            />
+    <ReportSheet>
+      <Stack gap={28}>
+        <CoverSheetHeader
+          issueDate={ISSUE_META.issueDate}
+          matchupCount={TONIGHT_MATCHUPS.length}
+          lhpCount={lhpCount}
+          rhpCount={rhpCount}
+          issuedAt={ISSUE_META.issuedAt}
+          firstPitchWindow={ISSUE_META.firstPitchWindow}
+        />
 
-            <ModelFleetRibbon chips={MODEL_CHIPS} />
+        <ModelFleetRibbon chips={MODEL_CHIPS} />
 
-            <section aria-labelledby="slate-section-label">
-              <div id="slate-section-label">
-                <SectionLabel>
-                  Tonight&rsquo;s Matchups &middot; {TONIGHT_MATCHUPS.length}{" "}
-                  Games
-                </SectionLabel>
-              </div>
-              <TonightsMatchupsTable matchups={TONIGHT_MATCHUPS} />
-            </section>
+        <section aria-labelledby="slate-section-label">
+          <div id="slate-section-label">
+            <SectionLabel>
+              Tonight&rsquo;s Matchups &middot; {TONIGHT_MATCHUPS.length} Games
+            </SectionLabel>
+          </div>
+          <TonightsMatchupsTable matchups={TONIGHT_MATCHUPS} />
+        </section>
 
-            <FeaturedMatchupCard
-              batter={featuredBatter}
-              pitcher={featuredPitcher}
-              context={FEATURED_CONTEXT}
-              keyReads={FEATURED_KEY_READS}
-              ctaHref={`/players/${featuredBatter.id}`}
-              ctaLabel="Pull the full report →"
-            />
+        <FeaturedMatchupCard
+          batter={featuredBatter}
+          pitcher={featuredPitcher}
+          context={FEATURED_CONTEXT}
+          keyReads={FEATURED_KEY_READS}
+          ctaHref={`/players/${featuredBatter.id}`}
+          ctaLabel="Pull the full report →"
+        />
 
-            <CoverSheetFooter
-              buildSha={ISSUE_META.buildSha}
-              buildDate={ISSUE_META.buildDate}
-            />
-          </Stack>
-        </div>
-      </div>
-    </div>
+        <CoverSheetFooter
+          buildSha={ISSUE_META.buildSha}
+          buildDate={ISSUE_META.buildDate}
+        />
+      </Stack>
+    </ReportSheet>
   );
 }
