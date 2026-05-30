@@ -51,12 +51,15 @@ jobs:
       # the two suites into separate pytest processes is the future-proof
       # discipline.
       # --cov-append accumulates coverage across the two split pytest processes
-      # into one .coverage file; the gate is enforced in the report step below.
+      # into one .coverage file. --cov-fail-under=0 disables pytest-cov's PER-RUN
+      # threshold check (otherwise the first split would compare its partial
+      # coverage against fail_under and fail before the second run appends) — the
+      # combined gate is evaluated once in the report step below.
       - name: Unit tests — torch path (mlp/parks/retrodict/physics/eval)
         working-directory: training
         run: |
           uv run pytest -x --ignore=tests/leakage \
-            --cov=src/bullpen_training --cov-branch --cov-append \
+            --cov=src/bullpen_training --cov-branch --cov-append --cov-fail-under=0 \
             tests/battedball/mlp tests/battedball/parks \
             tests/battedball/retrodict tests/battedball/physics \
             tests/battedball/eval \
@@ -66,7 +69,7 @@ jobs:
         working-directory: training
         run: |
           uv run pytest -x --ignore=tests/leakage \
-            --cov=src/bullpen_training --cov-branch --cov-append \
+            --cov=src/bullpen_training --cov-branch --cov-append --cov-fail-under=0 \
             tests/pitch tests/eval/test_artifact.py \
             tests/battedball/test_train_toy.py \
             tests/battedball/test_python_java_parity.py \
