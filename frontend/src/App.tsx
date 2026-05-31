@@ -41,6 +41,9 @@ const GamePage = lazy(() =>
   import("./pages/game-page").then((m) => ({ default: m.GamePage })),
 );
 
+// Unlisted in the public nav — operator routing override (B7), reached by URL.
+const AdminRoutingPage = lazy(() => import("./pages/admin-routing-page"));
+
 function Layout() {
   return (
     <AppShell header={{ height: 56 }} padding={0}>
@@ -104,6 +107,7 @@ export default function App() {
           <Route path="games" element={<GamesPage />} />
           <Route path="games/:id" element={<GamePage />} />
           <Route path="ops" element={<OpsPage />} />
+          <Route path="admin/routing" element={<AdminRoutingPage />} />
           <Route path="about" element={<AboutPage />} />
           <Route path="tokens" element={<TokenSampleCard />} />
         </Route>

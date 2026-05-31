@@ -170,8 +170,6 @@ pitch_number)` needs the indexed `pitch_id` column to land before the
 - MLB Stats API poller wired to `GameStateMachine`
   ([#1](https://github.com/Alexm-picard/the-bullpen/issues/1) ·
   [runbook](docs/runbooks/live-data-setup.md))
-- Admin override page wrapping the existing `POST /v1/admin/routing`
-  slider behind HTTP Basic
 - Hyperparameter search in the retraining job (fixed-HP today per
   decision [81])
 - Per-game weather pull replacing the per-park annual default
