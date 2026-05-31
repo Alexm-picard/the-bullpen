@@ -88,16 +88,21 @@ public class DriftMetricsRepository {
    */
   public List<DriftMetric> findRecent(
       String modelName, MetricType metricType, String featureOrSegment, Duration window) {
-    Instant cutoff = Instant.now().minus(window);
+    // Bind the cutoff as epoch SECONDS through ClickHouse's fromUnixTimestamp() rather than as a
+    // JDBC Timestamp: clickhouse-jdbc inlines a Timestamp param into the SQL *unquoted*
+    // (`... >= 2026-05-31 01:32:23.8...`), which is a syntax error (Code 62). A numeric param
+    // inlines cleanly, fromUnixTimestamp() yields a DateTime (exact type match for computed_at),
+    // and epoch is timezone-unambiguous. (Surfaced once DriftMetricsRepositoryIT ran in CI.)
+    long cutoffEpochSeconds = Instant.now().minus(window).getEpochSecond();
     return jdbc.query(
         SELECT_ALL
             + " WHERE model_name = ? AND metric_type = ? AND feature_or_segment = ?"
-            + " AND computed_at >= ? ORDER BY computed_at DESC",
+            + " AND computed_at >= fromUnixTimestamp(?) ORDER BY computed_at DESC",
         DRIFT_METRIC_MAPPER,
         modelName,
         metricType.dbValue(),
         featureOrSegment,
-        Timestamp.from(cutoff));
+        cutoffEpochSeconds);
   }
 
   /** Latest row for one (modelName, metricType, featureOrSegment) triple — empty if none. */
