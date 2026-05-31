@@ -1,4 +1,3 @@
-/// <reference types="vitest/config" />
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
@@ -34,6 +33,9 @@ export default defineConfig({
   // Excludes design-system showcase fixtures + generated/config files from the denominator
   // so the percentage reflects logic, not hand-authored data tables.
   test: {
+    // Scope vitest to src/ so it doesn't try to collect the Playwright specs under e2e/
+    // (which call Playwright's test(), not vitest's). E2E runs via `npm run test:e2e`.
+    include: ["src/**/*.{test,spec}.{ts,tsx}"],
     coverage: {
       provider: "v8",
       reporter: ["text-summary", "json-summary", "html", "lcov"],
