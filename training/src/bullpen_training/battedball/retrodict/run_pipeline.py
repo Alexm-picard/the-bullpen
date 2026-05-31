@@ -36,6 +36,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from bullpen_training.battedball.parks.loader import load_all_parks
+from bullpen_training.battedball.retrodict._atmospheres import load_weather_observed
 from bullpen_training.battedball.retrodict.labels import (
     BBIP,
     DEFAULT_N_MC,
@@ -108,6 +109,18 @@ def _run_clickhouse(query: str, *, container: str = "bullpen-clickhouse") -> str
         text=True,
     )
     return res.stdout
+
+
+def _distinct_game_count(
+    *, season_from: int, season_to: int, container: str = "bullpen-clickhouse"
+) -> int:
+    """Distinct games in ``pitches`` for the season range (weather-coverage denom)."""
+    tsv = _run_clickhouse(
+        "SELECT count(DISTINCT game_id) FROM pitches "
+        f"WHERE toYear(game_date) BETWEEN {season_from} AND {season_to} FORMAT TSV",
+        container=container,
+    ).strip()
+    return int(tsv) if tsv else 0
 
 
 def _spray_deg_from_hc(hc_x: float, hc_y: float) -> float:
@@ -279,13 +292,45 @@ def run_pipeline(
     seed_offset: int = DEFAULT_SEED_OFFSET,
     chunk_size: int = _CHUNK_SIZE,
     dry_run: bool = False,
+    min_weather_coverage: float = 0.0,
     container: str = "bullpen-clickhouse",
 ) -> dict[str, int | float]:
-    """Run the retrodiction pipeline end-to-end. Returns summary stats."""
+    """Run the retrodiction pipeline end-to-end. Returns summary stats.
+
+    Each BIP is retrodicted with its **actual** game-time weather from
+    ``weather_observed`` (the same field-relative wind + temperature applied at
+    all 30 parks); games without a weather row fall back to still air. The
+    fraction of games carrying real weather is the weather coverage —
+    ``min_weather_coverage`` (e.g. 0.9) fails the run fast if the
+    ``weather_observed`` backfill is too sparse, so a half-populated table can't
+    silently emit still-air labels for the whole 2015-2024 re-run.
+    """
     parks = sorted(load_all_parks().keys())
     n_parks = len(parks)
+
+    weather_by_game = load_weather_observed(season_from, season_to, container=container)
+    expected_games = _distinct_game_count(
+        season_from=season_from, season_to=season_to, container=container
+    )
+    coverage = (len(weather_by_game) / expected_games) if expected_games else 0.0
+    print(
+        f"weather_observed: {len(weather_by_game)} games with weather / "
+        f"{expected_games} games in pitches "
+        f"({coverage:.1%} coverage) for seasons {season_from}-{season_to}",
+        flush=True,
+    )
+    if min_weather_coverage > 0.0 and coverage < min_weather_coverage:
+        raise RuntimeError(
+            f"weather coverage {coverage:.1%} < required {min_weather_coverage:.1%}. "
+            "Run the weather backfill first (bullpen_training.ingest.weather_backfill) "
+            "and confirm V016__weather_observed is applied. "
+            "Pass --min-weather-coverage 0 to override (NOT recommended — produces "
+            "still-air labels for uncovered games)."
+        )
+
     total_bips = 0
     total_rows = 0
+    bips_with_weather = 0
     t0 = time.perf_counter()
     for chunk_idx, bbips in enumerate(
         stream_bbips(
@@ -297,8 +342,13 @@ def run_pipeline(
     ):
         results: list[RetrodictionResult] = []
         for bbip in bbips:
+            weather = weather_by_game.get(bbip.game_id)
+            if weather is not None:
+                bips_with_weather += 1
             results.extend(
-                retrodict_bip_at_all_parks(bbip, parks, n_mc=n_mc, seed_offset=seed_offset)
+                retrodict_bip_at_all_parks(
+                    bbip, parks, n_mc=n_mc, seed_offset=seed_offset, weather=weather
+                )
             )
         if not dry_run:
             _insert_results(results, container=container)
@@ -314,10 +364,15 @@ def run_pipeline(
         )
 
     elapsed_total = time.perf_counter() - t0
+    bip_weather_coverage = (bips_with_weather / total_bips) if total_bips else 0.0
     return {
         "n_bbips": total_bips,
         "n_rows": total_rows,
         "n_parks": n_parks,
+        "n_games_with_weather": len(weather_by_game),
+        "n_games_expected": expected_games,
+        "game_weather_coverage": coverage,
+        "bip_weather_coverage": bip_weather_coverage,
         "elapsed_sec": elapsed_total,
         "bbips_per_sec": total_bips / elapsed_total if elapsed_total > 0 else 0.0,
     }
@@ -333,6 +388,15 @@ def main() -> None:
     parser.add_argument("--n-mc", type=int, default=DEFAULT_N_MC)
     parser.add_argument("--chunk-size", type=int, default=_CHUNK_SIZE)
     parser.add_argument("--seed-offset", type=int, default=DEFAULT_SEED_OFFSET)
+    parser.add_argument(
+        "--min-weather-coverage",
+        type=float,
+        default=0.0,
+        help=(
+            "Fail fast if the fraction of games with a weather_observed row is below "
+            "this (e.g. 0.9 for the full re-run). 0 = warn only."
+        ),
+    )
     parser.add_argument("--dry-run", action="store_true", help="Skip the INSERT.")
     parser.add_argument(
         "--report",
@@ -356,6 +420,7 @@ def main() -> None:
         seed_offset=args.seed_offset,
         chunk_size=args.chunk_size,
         dry_run=args.dry_run,
+        min_weather_coverage=args.min_weather_coverage,
     )
     print()
     print("== summary ==")
