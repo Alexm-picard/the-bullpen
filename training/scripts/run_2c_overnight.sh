@@ -29,6 +29,12 @@ MLP_LR="${MLP_LR:-1e-3}"
 DEVICE="${DEVICE:-auto}"
 LGBM_BOOST_ROUND="${LGBM_BOOST_ROUND:-2000}"
 LGBM_EARLY_STOPPING="${LGBM_EARLY_STOPPING:-50}"
+# 2c.4 retrodiction now joins per-game weather (decision [88]). Fail fast if the
+# weather_observed backfill is too sparse, so a missing backfill can't silently
+# produce still-air labels (which scrambles the 2c.7 cross-park HR ranking). Run
+# the backfill first — see docs/runbooks/weather-backfill.md. Set to 0 to bypass
+# (e.g. a smoke season you haven't backfilled).
+MIN_WEATHER_COVERAGE="${MIN_WEATHER_COVERAGE:-0.9}"
 
 LOG_DIR="${LOG_DIR:-logs/2c-overnight}"
 ART_DIR="${ART_DIR:-artifacts}"
@@ -81,6 +87,7 @@ run "2c.4-retrodict" \
     uv run python -m bullpen_training.battedball.retrodict.run_pipeline \
         --season-from "${SEASON_FROM}" --season-to "${SEASON_TO}" \
         --n-mc "${N_MC}" \
+        --min-weather-coverage "${MIN_WEATHER_COVERAGE}" \
         --report "${DATA_DIR}/retrodict_report_${SEASON_FROM}_${SEASON_TO}.json"
 
 # Also run the val season so 2c.5/2c.6 have labelled holdout rows in
@@ -89,6 +96,7 @@ run "2c.4-retrodict-val" \
     uv run python -m bullpen_training.battedball.retrodict.run_pipeline \
         --season "${VAL_SEASON}" \
         --n-mc "${N_MC}" \
+        --min-weather-coverage "${MIN_WEATHER_COVERAGE}" \
         --report "${DATA_DIR}/retrodict_report_${VAL_SEASON}.json"
 
 # --- 2c.5: multi-output MLP training -------------------------------------

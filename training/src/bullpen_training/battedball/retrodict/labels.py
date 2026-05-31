@@ -41,7 +41,12 @@ from bullpen_training.battedball.parks import (
 from bullpen_training.battedball.parks.loader import ParkGeometry
 from bullpen_training.battedball.physics.atmosphere import Atmosphere
 from bullpen_training.battedball.physics.simulator import LaunchParams, simulate_batch
-from bullpen_training.battedball.retrodict._atmospheres import get_atmosphere
+from bullpen_training.battedball.retrodict._atmospheres import (
+    Weather,
+    get_atmosphere,
+    still_air_atmosphere,
+    weather_to_atmosphere,
+)
 
 # Statcast measurement noise + small fielder-positioning randomness (the
 # leaf's "noise model"). Keep these as module constants so the test +
@@ -184,15 +189,24 @@ def retrodict_one(
     *,
     n_mc: int = DEFAULT_N_MC,
     seed_offset: int = DEFAULT_SEED_OFFSET,
+    weather: Weather | None = None,
 ) -> RetrodictionResult:
     """Retrodict one (BIP, park) — N Monte Carlo simulations + classify.
 
     Used by the pipeline for single-park diagnostics and by tests.
     Production callers go through :func:`retrodict_bip_at_all_parks`
     which batches all 30 parks in one ``simulate_batch`` for speed.
+
+    Atmosphere precedence: explicit ``atmosphere`` > ``weather`` (the game's
+    actual conditions projected onto this park) > seasonal default.
     """
     park = load_park_geometry(park_id)
-    atmo = atmosphere or get_atmosphere(park_id)
+    if atmosphere is not None:
+        atmo = atmosphere
+    elif weather is not None:
+        atmo = weather_to_atmosphere(weather, park)
+    else:
+        atmo = get_atmosphere(park_id)
     rng = np.random.default_rng(_seed_for_bbip(bbip.bbip_key, seed_offset))
     launches = _jittered_launches(bbip, n_mc=n_mc, rng=rng)
     trajectories = simulate_batch(launches, [atmo] * n_mc)
@@ -225,12 +239,19 @@ def retrodict_bip_at_all_parks(
     *,
     n_mc: int = DEFAULT_N_MC,
     seed_offset: int = DEFAULT_SEED_OFFSET,
+    weather: Weather | None = None,
 ) -> list[RetrodictionResult]:
     """Retrodict one BIP at every park. Batches all park*MC sims at once.
 
     Sends ``len(park_ids) * n_mc`` trajectories through a single
     ``simulate_batch`` call — this is where the Numba JIT pays off,
     keeping the typical per-BIP work down to ~30-50 ms on warm caches.
+
+    When ``weather`` (the BIP's actual game-time conditions) is supplied, the
+    same field-relative wind + temperature is applied at every park — only
+    per-park altitude/geometry varies, which isolates the park's physical HR
+    factor. With no weather we fall back to still air per park (NOT the seasonal
+    default, which is what scrambled the cross-park ranking).
     """
     rng = np.random.default_rng(_seed_for_bbip(bbip.bbip_key, seed_offset))
     parks: dict[str, ParkGeometry] = {pid: load_park_geometry(pid) for pid in park_ids}
@@ -239,7 +260,12 @@ def retrodict_bip_at_all_parks(
     flat_launches: list[LaunchParams] = []
     flat_atmospheres: list[Atmosphere] = []
     for pid in park_ids:
-        atmo = get_atmosphere(pid)
+        park = parks[pid]
+        atmo = (
+            weather_to_atmosphere(weather, park)
+            if weather is not None
+            else still_air_atmosphere(park)
+        )
         for lp in base_launches:
             flat_launches.append(lp)
             flat_atmospheres.append(atmo)

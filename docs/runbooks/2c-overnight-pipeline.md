@@ -36,6 +36,12 @@
   docker exec -i bullpen-clickhouse clickhouse-client \
       < backend/src/main/resources/db/clickhouse/V011__bbip_retrodicted_labels.sql
   ```
+- **`weather_observed` must be backfilled first** (decision [88] landed —
+  2c.4 now joins per-game weather). Apply `V016__weather_observed.sql` and
+  run the weather backfill **before** this pipeline, or 2c.4 fails fast on
+  the `--min-weather-coverage 0.9` guard. See
+  [`weather-backfill.md`](weather-backfill.md). Bypass for an un-backfilled
+  smoke season with `MIN_WEATHER_COVERAGE=0`.
 - GPU passthrough working (CUDA + `torch.cuda.is_available()` returns
   True). Confirmed in Phase 0; verify with `uv run --project training
 python -c "import torch; print(torch.cuda.is_available())"`.
@@ -184,9 +190,11 @@ restart from a specific stage.
 
 ## When this runbook should change
 
-- If decision [88] (per-game weather pull) lands, 2c.4 gains a
-  weather-join step and the retrodict labels recalibrate — the whole
-  pipeline re-runs.
+- Decision [88] (per-game weather pull, observed leg) **has landed**: 2c.4
+  joins `weather_observed` and the retrodict labels recalibrate against real
+  game-time wind. The weather backfill is now a prerequisite (see
+  [`weather-backfill.md`](weather-backfill.md)). The remaining open piece is
+  the pre-game **forecast** leg + a shared Java/Python wind parser.
 - If the schema_hash in `contracts/feature_pipeline_post.json`
   changes, 2c.5 fails at registration time (rule 7) — update the
   contract first, then re-run.
