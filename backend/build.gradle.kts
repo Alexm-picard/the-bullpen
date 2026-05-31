@@ -138,6 +138,13 @@ tasks.named<Test>("test") {
     // trip the per-IP bucket. RateLimitFilterTest builds its own enabled filter standalone,
     // so it's unaffected by this flag.
     systemProperty("bullpen.ratelimit.enabled", "false")
+    // Forward the Testcontainers gate from the Gradle CLI into the forked test JVM
+    // (a `-D` on the CLI alone doesn't propagate). Defaults to "false" so a local
+    // `./gradlew test` on macOS still SKIPs the @EnabledIfSystemProperty("bullpen.it.docker")
+    // ITs (Docker Desktop on macOS breaks Testcontainers); CI passes -Dbullpen.it.docker=true
+    // so DriftMetricsRepositoryIT / SnapshotStorageIT / PlayerRepositoryIT /
+    // ClickHouseMigrationRunnerIT actually run against ephemeral containers.
+    systemProperty("bullpen.it.docker", System.getProperty("bullpen.it.docker", "false"))
     // A2: every `test` run leaves a fresh coverage report behind so `./gradlew test`
     // alone is enough locally; CI uploads the XML/HTML.
     finalizedBy(tasks.named("jacocoTestReport"))

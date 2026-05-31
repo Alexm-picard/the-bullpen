@@ -41,7 +41,10 @@ jobs:
         working-directory: backend
         # `test` is finalizedBy jacocoTestReport, so the coverage report is
         # produced here without a separate task invocation.
-        run: ./gradlew build test --no-daemon
+        # -Dbullpen.it.docker=true runs the Testcontainers ITs (ClickHouse/MinIO ephemeral
+        # containers) that skip locally on macOS — the runner has Docker. The build.gradle
+        # test task forwards this system property into the forked test JVM.
+        run: ./gradlew build test --no-daemon -Dbullpen.it.docker=true
       - name: Spotless check (format must be clean)
         working-directory: backend
         run: ./gradlew spotlessCheck --no-daemon
