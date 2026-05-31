@@ -1,0 +1,166 @@
+{
+  "title": "Inference path (A8)",
+  "uid": "bullpen-inference",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "description": "Serving-path health from the Micrometer/Prometheus metrics emitted by InferenceMetrics + AsyncPredictionLogger. Drift (PSI / ECE) is a ClickHouse metric, not Prometheus — it is surfaced on the app's /ops dashboard, not here.",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Instances up",
+      "id": 1,
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [{ "expr": "up{job=~\"thebullpen.*\"}", "refId": "A" }]
+    },
+    {
+      "type": "stat",
+      "title": "Predictions / s (last 5m)",
+      "id": 2,
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum(rate(thebullpen_inference_prediction_total{job=~\"thebullpen.*\"}[5m]))",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Prediction-log queue depth",
+      "id": 3,
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 10000 },
+              { "color": "red", "value": 18000 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "thebullpen_prediction_log_queue_depth{job=~\"thebullpen.*\"}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Dropped predictions / s (overload)",
+      "id": 4,
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 0.001 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(thebullpen_prediction_log_dropped_total{job=~\"thebullpen.*\"}[5m]))",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Prediction latency by model (p50 / p95 / p99)",
+      "id": 5,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "thebullpen_inference_prediction_latency_seconds{job=~\"thebullpen.*\", quantile=\"0.5\"}",
+          "legendFormat": "{{model_name}} p50",
+          "refId": "A"
+        },
+        {
+          "expr": "thebullpen_inference_prediction_latency_seconds{job=~\"thebullpen.*\", quantile=\"0.95\"}",
+          "legendFormat": "{{model_name}} p95",
+          "refId": "B"
+        },
+        {
+          "expr": "thebullpen_inference_prediction_latency_seconds{job=~\"thebullpen.*\", quantile=\"0.99\"}",
+          "legendFormat": "{{model_name}} p99",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Prediction throughput by role (req/s)",
+      "id": 6,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by (role) (rate(thebullpen_inference_prediction_total{job=~\"thebullpen.*\"}[5m]))",
+          "legendFormat": "{{role}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Prediction errors by class (errors/s)",
+      "id": 7,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by (error_class) (rate(thebullpen_inference_prediction_errors_total{job=~\"thebullpen.*\"}[5m]))",
+          "legendFormat": "{{error_class}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Prediction-log: enqueued vs dropped vs write-failures (rate)",
+      "id": 8,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum(rate(thebullpen_prediction_log_enqueued_total{job=~\"thebullpen.*\"}[5m]))",
+          "legendFormat": "enqueued",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(thebullpen_prediction_log_dropped_total{job=~\"thebullpen.*\"}[5m]))",
+          "legendFormat": "dropped",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(rate(thebullpen_prediction_log_write_failures_total{job=~\"thebullpen.*\"}[5m]))",
+          "legendFormat": "write-failures",
+          "refId": "C"
+        }
+      ]
+    }
+  ]
+}

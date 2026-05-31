@@ -44,7 +44,8 @@ jobs:
         run: |
           JAR="$(ls build/libs/*.jar | grep -v plain | head -1)"
           java -jar "$JAR" --spring.profiles.active=api \
-            --bullpen.clickhouse.enabled=false --server.port=8080 > /tmp/api.log 2>&1 &
+            --bullpen.clickhouse.enabled=false --bullpen.ratelimit.enabled=false \
+            --server.port=8080 > /tmp/api.log 2>&1 &
           echo "API_PID=$!" >> "$GITHUB_ENV"
           for i in $(seq 1 60); do
             curl -fsS http://localhost:8080/actuator/health >/dev/null 2>&1 && { echo "up after ${i}s"; exit 0; }

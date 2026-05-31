@@ -3,6 +3,8 @@ package net.thebullpen.baseball.api.admin;
 import jakarta.validation.Valid;
 import java.util.List;
 import net.thebullpen.baseball.api.admin.dto.PromoteRequest;
+import net.thebullpen.baseball.api.dto.OpsEventType;
+import net.thebullpen.baseball.data.OpsEventsRepository;
 import net.thebullpen.baseball.registry.RegistryException;
 import net.thebullpen.baseball.registry.RegistryService;
 import net.thebullpen.baseball.registry.dto.ModelVersion;
@@ -62,9 +64,20 @@ public class RegistryAdminController {
   private static final Logger log = LoggerFactory.getLogger(RegistryAdminController.class);
 
   private final RegistryService registry;
+  private final OpsEventsRepository opsEvents;
 
-  public RegistryAdminController(RegistryService registry) {
+  public RegistryAdminController(RegistryService registry, OpsEventsRepository opsEvents) {
     this.registry = registry;
+    this.opsEvents = opsEvents;
+  }
+
+  /** Best-effort ops-log emit — an event-log failure must never break a registry operation. */
+  private void emit(OpsEventType type, String detail) {
+    try {
+      opsEvents.record(type, detail);
+    } catch (RuntimeException e) {
+      log.warn("ops-event emit failed (type={}): {}", type, e.toString());
+    }
   }
 
   @GetMapping("/{modelName}")
@@ -86,6 +99,9 @@ public class RegistryAdminController {
     try {
       ModelVersion mv = registry.register(req);
       log.info("admin: registered {}/{} (id={})", mv.modelName(), mv.version(), mv.id());
+      emit(
+          OpsEventType.REGISTER,
+          mv.modelName() + " " + mv.version() + " registered as " + mv.stage());
       return mv;
     } catch (RegistryException.ArtifactMissing e) {
       throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, e.getMessage(), e);
@@ -138,6 +154,15 @@ public class RegistryAdminController {
           current.stage(),
           after.stage(),
           req.reason());
+      emit(
+          OpsEventType.PROMOTE,
+          after.modelName()
+              + " "
+              + after.version()
+              + " "
+              + current.stage()
+              + " → "
+              + after.stage());
       return after;
     } catch (RegistryException.IllegalTransition | RegistryException.PromotionCriteriaMissing e) {
       throw new ResponseStatusException(HttpStatus.CONFLICT, e.getMessage(), e);

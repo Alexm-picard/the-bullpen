@@ -10,6 +10,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.time.Instant;
 import java.util.List;
 import net.thebullpen.baseball.api.ApiErrorAdvice;
+import net.thebullpen.baseball.api.dto.OpsEvent;
+import net.thebullpen.baseball.api.dto.OpsEventType;
+import net.thebullpen.baseball.data.OpsEventsRepository;
 import net.thebullpen.baseball.drift.DriftMetric;
 import net.thebullpen.baseball.drift.DriftMetricsRepository;
 import net.thebullpen.baseball.drift.MetricType;
@@ -34,6 +37,7 @@ class OpsControllerTest {
   private RoutingRepository routingRepo;
   private RetrainingQueueService retrain;
   private RegistryService registry;
+  private OpsEventsRepository opsEvents;
   private MockMvc mvc;
 
   @BeforeEach
@@ -42,9 +46,10 @@ class OpsControllerTest {
     routingRepo = mock(RoutingRepository.class);
     retrain = mock(RetrainingQueueService.class);
     registry = mock(RegistryService.class);
+    opsEvents = mock(OpsEventsRepository.class);
     mvc =
         MockMvcBuilders.standaloneSetup(
-                new OpsController(driftRepo, routingRepo, retrain, registry))
+                new OpsController(driftRepo, routingRepo, retrain, registry, opsEvents))
             .setControllerAdvice(new ApiErrorAdvice())
             .build();
   }
@@ -92,10 +97,34 @@ class OpsControllerTest {
   @Test
   void drift_returns_empty_when_repo_bean_is_absent() throws Exception {
     MockMvc m =
-        MockMvcBuilders.standaloneSetup(new OpsController(null, routingRepo, retrain, registry))
+        MockMvcBuilders.standaloneSetup(
+                new OpsController(null, routingRepo, retrain, registry, opsEvents))
             .setControllerAdvice(new ApiErrorAdvice())
             .build();
     m.perform(get("/v1/ops/drift").param("model", "any")).andExpect(status().isOk());
+  }
+
+  @Test
+  void events_returns_recent_ops_log_newest_first() throws Exception {
+    when(opsEvents.findRecent(20))
+        .thenReturn(
+            List.of(
+                new OpsEvent(
+                    2L,
+                    Instant.parse("2026-05-30T19:00:00Z"),
+                    OpsEventType.PROMOTE,
+                    "pitch_outcome_pre v3.3 SHADOW → CHAMPION"),
+                new OpsEvent(
+                    1L,
+                    Instant.parse("2026-05-30T14:00:00Z"),
+                    OpsEventType.REGISTER,
+                    "batted_ball v1.5 registered as SHADOW")));
+
+    mvc.perform(get("/v1/ops/events"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].type").value("PROMOTE"))
+        .andExpect(jsonPath("$[0].detail").value("pitch_outcome_pre v3.3 SHADOW → CHAMPION"))
+        .andExpect(jsonPath("$[1].type").value("REGISTER"));
   }
 
   @Test

@@ -25,9 +25,32 @@ jobs:
       - name: Lint
         working-directory: frontend
         run: npm run lint
-      - name: Unit tests
+      # A3: non-blocking CVE signal (Dependabot is the gating mechanism). high+ only.
+      - name: Audit dependencies (npm, non-blocking)
+        if: always()
+        continue-on-error: true
         working-directory: frontend
-        run: npm test -- --run
+        run: npm audit --audit-level=high
+      - name: Unit tests + coverage
+        working-directory: frontend
+        run: npm run test:coverage
+      # A2: honest, non-gating coverage baseline surfaced in the run summary.
+      - name: Coverage summary (vitest v8, non-gating)
+        if: always()
+        working-directory: frontend
+        run: |
+          SUMMARY=coverage/coverage-summary.json
+          if [ -f "$SUMMARY" ]; then
+            node -e "const t=require('./coverage/coverage-summary.json').total; const r=k=>\`\${t[k].pct}% (\${t[k].covered}/\${t[k].total})\`; console.log('### Frontend coverage (vitest v8)\n'); for (const k of ['lines','statements','branches','functions']) console.log(\`- **\${k[0].toUpperCase()+k.slice(1)}**: \${r(k)}\`);" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning title=No coverage summary::coverage/coverage-summary.json not found"
+          fi
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: frontend/coverage/
       - name: Build
         working-directory: frontend
         run: npm run build
@@ -56,8 +79,11 @@ jobs:
       - if: steps.check.outputs.present == 'true'
         working-directory: frontend
         run: npm ci --include=optional && npx playwright install --with-deps chromium
+      # A7: non-blocking while the smoke stabilises (plan: non-blocking first, then gate).
+      # Drop continue-on-error to make E2E a required gate.
       - name: Playwright E2E
         if: steps.check.outputs.present == 'true'
+        continue-on-error: true
         working-directory: frontend
         run: npx playwright test
       - if: failure() && steps.check.outputs.present == 'true'

@@ -4,10 +4,17 @@ A self-hosted baseball-analytics platform built primarily as a serving
 wrapper around three calibrated models. Operates through at least one MLB
 season for a real drift postmortem.
 
-- **Live frontend**: https://thebullpen.net/
-- **Live Ops dashboard**: https://thebullpen.net/ops
+- **Live site**: https://thebullpen.net/
+- **Ops dashboard**: https://thebullpen.net/ops
 - **About + methodology**: https://thebullpen.net/about
 - **Repo**: https://github.com/Alexm-picard/the-bullpen
+
+> **What's live vs. showcase (v1):** the per-game detail view (`/games/:id`) and the
+> player lookup pull real data from the Spring backend. The home slate, park explorer,
+> Ops dashboard, and About page currently render from committed fixtures — they exercise
+> the full design system and component layer while the live MLB poller and the Ops
+> aggregation endpoints land (see _Known limitations_ and the roadmap). The wiring is a
+> localized page-level swap, not a rewrite.
 
 ## What's interesting about it
 
@@ -24,8 +31,12 @@ season for a real drift postmortem.
   a logistic-regression baseline to bound the neural model's lift.
 - Mid-season **drift postmortems** when a model degrades — automated
   trigger, human promotion gate (decision [44] / rule 6).
-- ~95 % test coverage at this writing: backend 376 tests, frontend 93;
-  every commit gates on lint, hex-codes, bundle-budget, static a11y.
+- **Measured test coverage**, not a vibe: 379 backend tests (JaCoCo report in
+  CI), 399 frontend tests (vitest v8 — ~79 % lines / ~67 % branches at this
+  writing), plus the training suite with its four required temporal-leakage
+  tests. Coverage is published as a non-gating baseline today and ratchets up.
+  Every commit also gates on lint, hex-codes, bundle-budget, static a11y, and a
+  Schemathesis API-contract check.
 
 ## How to try it
 
@@ -129,6 +140,11 @@ Underlying play-by-play data is not redistributed.**
 
 ## Known limitations
 
+- **Most pages render from committed fixtures, not live data** (v1). Only
+  `/games/:id` and the player lookup hit the backend today; the home slate,
+  park explorer, Ops dashboard, and About page are design-system showcases
+  wired to `frontend/src/data/*-fixtures.ts`. Going live is gated on the MLB
+  poller (below) plus the Ops aggregation endpoints, and is a page-level swap.
 - The 30-park batted-ball MLP that natively emits 30 outputs in one ONNX
   call is Phase 2c.5 work — until it lands, `/v1/predict/batted-ball
 /all-parks` loops the toy inference 30 times (~300 μs total, still well
@@ -154,8 +170,6 @@ pitch_number)` needs the indexed `pitch_id` column to land before the
 - MLB Stats API poller wired to `GameStateMachine`
   ([#1](https://github.com/Alexm-picard/the-bullpen/issues/1) ·
   [runbook](docs/runbooks/live-data-setup.md))
-- Admin override page wrapping the existing `POST /v1/admin/routing`
-  slider behind HTTP Basic
 - Hyperparameter search in the retraining job (fixed-HP today per
   decision [81])
 - Per-game weather pull replacing the per-park annual default

@@ -2,6 +2,7 @@ import net.ltgt.gradle.errorprone.errorprone
 
 plugins {
     java
+    jacoco
     id("org.springframework.boot") version "3.5.4"
     id("io.spring.dependency-management") version "1.1.7"
     id("com.diffplug.spotless") version "7.0.2"
@@ -41,6 +42,13 @@ dependencies {
     runtimeOnly("io.micrometer:micrometer-registry-prometheus")
 
     implementation("net.logstash.logback:logstash-logback-encoder:8.0")
+
+    // A6 (ADR-0008): error tracking via the Sentry SDK, reporting to a self-hosted
+    // GlitchTip (Sentry wire-compatible). BOM keeps the starter + logback appender
+    // aligned. Disabled automatically when sentry.dsn is blank (dev/CI/tests).
+    implementation(platform("io.sentry:sentry-bom:7.18.0"))
+    implementation("io.sentry:sentry-spring-boot-starter-jakarta")
+    implementation("io.sentry:sentry-logback")
 
     // ADR-0007: single S3-compatible client across prod (Cloudflare R2) and offline dev (MinIO).
     // bom keeps the s3 + apache-client + sts versions aligned without listing each explicitly.
@@ -126,4 +134,34 @@ tasks.named<Test>("test") {
     // (ApplicationTests + the predict-controller suites) from hitting SecurityConfig's
     // blank-value IllegalStateException during context bring-up.
     systemProperty("THEBULLPEN_ADMIN_BASIC_AUTH", "test-admin:test-password")
+    // A4: rate limiting off by default in the suite so a chatty @SpringBootTest can't
+    // trip the per-IP bucket. RateLimitFilterTest builds its own enabled filter standalone,
+    // so it's unaffected by this flag.
+    systemProperty("bullpen.ratelimit.enabled", "false")
+    // Forward the Testcontainers gate from the Gradle CLI into the forked test JVM
+    // (a `-D` on the CLI alone doesn't propagate). Defaults to "false" so a local
+    // `./gradlew test` on macOS still SKIPs the @EnabledIfSystemProperty("bullpen.it.docker")
+    // ITs (Docker Desktop on macOS breaks Testcontainers); CI passes -Dbullpen.it.docker=true
+    // so DriftMetricsRepositoryIT / SnapshotStorageIT / PlayerRepositoryIT /
+    // ClickHouseMigrationRunnerIT actually run against ephemeral containers.
+    systemProperty("bullpen.it.docker", System.getProperty("bullpen.it.docker", "false"))
+    // A2: every `test` run leaves a fresh coverage report behind so `./gradlew test`
+    // alone is enough locally; CI uploads the XML/HTML.
+    finalizedBy(tasks.named("jacocoTestReport"))
+}
+
+// A2 — coverage measurement (audit remediation). The number is left UNGATED for now
+// (matching training.yml's "report-the-gap, don't fail-the-build" posture) so we publish
+// an honest baseline before ratcheting a floor in. No class exclusions: the denominator
+// is the whole main source set, so the percentage isn't quietly massaged.
+jacoco {
+    toolVersion = "0.8.12"
+}
+
+tasks.jacocoTestReport {
+    dependsOn(tasks.test)
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+    }
 }

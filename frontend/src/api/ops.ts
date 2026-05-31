@@ -7,6 +7,8 @@
  */
 import { useQuery } from "@tanstack/react-query";
 
+import type { OpsLogEntry, OpsLogType } from "../data/ops-fixtures";
+
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8080";
 
 export type ModelVersion = {
@@ -165,4 +167,49 @@ export function useCalibrationSummary() {
     queryFn: fetchCalibrationSummary,
     staleTime: 60_000,
   });
+}
+
+// --- B3: ops-event log (live Ops Log) -----------------------------------
+
+/** One row from {@code GET /v1/ops/events}. {@code type} is the backend enum name. */
+export type OpsEvent = {
+  id: number;
+  occurredAt: string; // ISO-8601
+  type: string; // e.g. "PROMOTE", "REGISTER", "DRIFT_OK"
+  detail: string;
+};
+
+export const fetchOpsEvents = (limit = 20) =>
+  get<OpsEvent[]>(`/v1/ops/events?limit=${limit}`);
+
+export function useOpsEvents(limit = 20) {
+  return useQuery<OpsEvent[], OpsApiError>({
+    queryKey: ["ops", "events", limit],
+    queryFn: () => fetchOpsEvents(limit),
+    staleTime: 30_000,
+    refetchInterval: 30_000,
+  });
+}
+
+const OPS_EVENT_ET_FMT = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+  hour12: false,
+  timeZone: "America/New_York",
+});
+
+/**
+ * Map a backend {@link OpsEvent} to the {@link OpsLogEntry} shape the OpsLogTable renders. Backend
+ * underscore type names become the frontend's hyphenated display labels (DRIFT_OK → DRIFT-OK), and
+ * the ISO instant becomes a short ET display string.
+ */
+export function opsEventToLogEntry(e: OpsEvent): OpsLogEntry {
+  return {
+    id: `oe-${e.id}`,
+    timestamp: `${OPS_EVENT_ET_FMT.format(new Date(e.occurredAt))} ET`,
+    type: e.type.replace(/_/g, "-") as OpsLogType,
+    detail: e.detail,
+  };
 }

@@ -27,6 +27,12 @@ jobs:
       - name: Pyright
         working-directory: training
         run: uv run pyright
+      # A3: non-blocking CVE signal over the actually-synced env (Dependabot gates).
+      - name: Audit dependencies (pip-audit, non-blocking)
+        if: always()
+        continue-on-error: true
+        working-directory: training
+        run: uv run --with pip-audit pip-audit
 
   unit-tests:
     runs-on: ubuntu-latest

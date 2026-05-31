@@ -2,6 +2,8 @@ package net.thebullpen.baseball.api.ops;
 
 import java.util.List;
 import java.util.Map;
+import net.thebullpen.baseball.api.dto.OpsEvent;
+import net.thebullpen.baseball.data.OpsEventsRepository;
 import net.thebullpen.baseball.drift.DriftMetric;
 import net.thebullpen.baseball.drift.DriftMetricsRepository;
 import net.thebullpen.baseball.inference.routing.RoutingConfig;
@@ -45,16 +47,19 @@ public class OpsController {
   private final RoutingRepository routingRepo;
   private final RetrainingQueueService retrain;
   private final RegistryService registry;
+  private final OpsEventsRepository opsEvents;
 
   public OpsController(
       @Autowired(required = false) DriftMetricsRepository driftRepo,
       RoutingRepository routingRepo,
       RetrainingQueueService retrain,
-      RegistryService registry) {
+      RegistryService registry,
+      OpsEventsRepository opsEvents) {
     this.driftRepo = driftRepo;
     this.routingRepo = routingRepo;
     this.retrain = retrain;
     this.registry = registry;
+    this.opsEvents = opsEvents;
   }
 
   /**
@@ -88,6 +93,17 @@ public class OpsController {
       return retrain.findAllQueued();
     }
     return retrain.findByModel(modelName);
+  }
+
+  /**
+   * B3: most-recent ops events (registrations, promotions, deploys, drift alerts, retrain
+   * completions, restore drills) for the dashboard's Ops Log. {@code limit} defaults to 20, capped
+   * at 200 by the repository. Empty list on a fresh DB — the UI then falls back to its showcase
+   * fixtures.
+   */
+  @GetMapping("/events")
+  public List<OpsEvent> events(@RequestParam(name = "limit", defaultValue = "20") int limit) {
+    return opsEvents.findRecent(limit);
   }
 
   /**

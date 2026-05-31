@@ -28,7 +28,10 @@ public class CorsConfig {
         registry
             .addMapping("/**")
             .allowedOrigins(allowedOrigins)
-            .allowedMethods("GET", "POST", "OPTIONS")
+            // DELETE added for the admin routing UI's clear-challenger
+            // (DELETE /v1/admin/routing/{name}/challenger). Authorization (HTTP Basic)
+            // rides the allowedHeaders("*") preflight allowance.
+            .allowedMethods("GET", "POST", "DELETE", "OPTIONS")
             .allowedHeaders("*")
             .exposedHeaders("X-Correlation-Id")
             .maxAge(3600);
