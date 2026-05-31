@@ -24,15 +24,19 @@
  * tabs (drift / registry / reliability / retrain-queue / routing) have been
  * removed — they were the only consumers of api/ops.ts on this page.
  *
+ * B3 (Phase B) wires the **Ops Log** section to live data (GET /v1/ops/events) with a
+ * fixture fallback — the first section to go live. The fleet / drift / latency / retrain
+ * sections remain fixture-driven until their aggregation endpoints land.
+ *
  * Constraints honored:
  *   - One <Title order={1}> only (the masthead h1).
  *   - No hex codes — every color via tokens or CSS-var utilities.
- *   - No live data fetches; the page is a design-system showcase in v1.
  *   - Reuses CornerStripes + SectionLabel + CoverSheetFooter from shared/.
  */
 
 import { Stack } from "@mantine/core";
 
+import { useOpsEvents, opsEventToLogEntry } from "../api/ops";
 import { DriftSnapshotGrid } from "../components/ops/drift-snapshot-grid";
 import { InfraRibbon } from "../components/ops/infra-ribbon";
 import { LatencyDetailTable } from "../components/ops/latency-detail-table";
@@ -57,6 +61,13 @@ import {
 import "./ops/ops.css";
 
 export default function OpsPage() {
+  // B3: the Ops Log is the first section on live data; empty/loading/error falls back
+  // to the showcase fixtures so the page always reads.
+  const opsEvents = useOpsEvents();
+  const opsLog =
+    opsEvents.data && opsEvents.data.length > 0
+      ? opsEvents.data.map(opsEventToLogEntry)
+      : OPS_LOG;
   return (
     <ReportSheet>
       <Stack gap={28}>
@@ -105,7 +116,7 @@ export default function OpsPage() {
           <div id="ops-log-section-label">
             <SectionLabel>Ops Log · Last 24h Window</SectionLabel>
           </div>
-          <OpsLogTable entries={OPS_LOG} />
+          <OpsLogTable entries={opsLog} />
         </section>
 
         <CoverSheetFooter
