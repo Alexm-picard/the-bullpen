@@ -8,8 +8,11 @@
 # dedupes by natural key for 2c.4; artifact writers overwrite in place
 # for 2c.5-2c.9).
 #
-# Expected wall-time on the desktop's 16 cores + GPU: ~8-12 h total.
-# Mac dev box for reference: 2c.4 alone is ~5.8 h single-process.
+# Expected wall-time on the desktop's 16 cores + GPU: ~8-12 h total, with 2c.4
+# now on the GPU-B fused integrate+classify kernel (DEVICE=auto -> CUDA) — that
+# stage dropped from the historical ~5.8 h CPU run toward minutes. Re-validate
+# the calibration gate (decision [131]) on the float32 GPU output before trusting
+# a full relabel; set DEVICE=cpu to fall back to the njit/prange path.
 #
 # Usage (from the training/ directory):
 #   bash scripts/run_2c_overnight.sh                 # full 2015-2024 train, 2025 val
@@ -83,10 +86,13 @@ echo "  log dir: ${LOG_DIR}"
 echo "  artifact dir: ${ART_DIR}"
 
 # --- 2c.4: retrodiction labeling pipeline --------------------------------
+# The fused integrate+classify kernel (GPU-B) runs on ${DEVICE}: 'auto' picks
+# the GPU when CUDA is present (the desktop), else the njit/prange CPU fallback.
 run "2c.4-retrodict" \
     uv run python -m bullpen_training.battedball.retrodict.run_pipeline \
         --season-from "${SEASON_FROM}" --season-to "${SEASON_TO}" \
         --n-mc "${N_MC}" \
+        --device "${DEVICE}" \
         --min-weather-coverage "${MIN_WEATHER_COVERAGE}" \
         --report "${DATA_DIR}/retrodict_report_${SEASON_FROM}_${SEASON_TO}.json"
 
@@ -96,6 +102,7 @@ run "2c.4-retrodict-val" \
     uv run python -m bullpen_training.battedball.retrodict.run_pipeline \
         --season "${VAL_SEASON}" \
         --n-mc "${N_MC}" \
+        --device "${DEVICE}" \
         --min-weather-coverage "${MIN_WEATHER_COVERAGE}" \
         --report "${DATA_DIR}/retrodict_report_${VAL_SEASON}.json"
 

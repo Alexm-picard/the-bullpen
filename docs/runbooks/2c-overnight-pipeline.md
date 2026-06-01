@@ -45,6 +45,14 @@
 - GPU passthrough working (CUDA + `torch.cuda.is_available()` returns
   True). Confirmed in Phase 0; verify with `uv run --project training
 python -c "import torch; print(torch.cuda.is_available())"`.
+- **2c.4 now runs the GPU-B fused integrate+classify kernel on the GPU via
+  `numba.cuda`** (not just torch). Verify the numba CUDA path too:
+  `uv run --project training python -c "from numba import cuda; print(cuda.is_available())"`.
+  If it prints `False`, `--device auto` silently falls back to the njit/prange
+  CPU path (~hours, not minutes) — pass `DEVICE=cuda` to fail loud instead.
+  The kernel runs **float32** (decision: GPU-B precision): re-validate the
+  decision [131] calibration gate on the GPU output before trusting a full
+  relabel (the 2c.7 cross-park sanity gate is the in-pipeline guard).
 - ~10 GB free disk for logs + artifacts (the LightGBM `model.txt`
   alone is ~3 MB on the full 1.5 M-row dataset).
 
@@ -81,13 +89,18 @@ Breakdown (rough estimates from Mac smoke numbers + Linux speedups):
 
 | Stage              | Mac (single-process) | Desktop (16 cores + GPU) |
 | ------------------ | -------------------- | ------------------------ |
-| 2c.4 retrodict     | ~5.8 h (1.5 M BIPs)  | ~1-2 h                   |
-| 2c.4 retrodict val | ~0.5 h               | ~10 min                  |
+| 2c.4 retrodict     | ~5.8 h (1.5 M BIPs)  | minutes (GPU-B fused)\*  |
+| 2c.4 retrodict val | ~0.5 h               | ~1-2 min (GPU-B)\*       |
 | 2c.5 MLP train     | not run (GPU needed) | ~30 min (50 epochs)      |
 | 2c.6 calibrators   | ~1 s smoke           | ~2 min                   |
 | 2c.7 sanity gate   | <1 s                 | <1 s                     |
 | 2c.8 LGBM train    | ~4 s smoke           | ~15-30 min               |
 | 2c.9 comparison    | <30 s                | ~1 min                   |
+
+\* 2c.4 timings are post-GPU-B (fused integrate+classify, float32, on `DEVICE=auto`
+→ CUDA). The historical ~1-2 h figure was the pre-GPU-B Numba-CPU path; if numba
+CUDA isn't available the run falls back to that path, so confirm the prereq above.
+With 2c.4 off the critical path, total wall-time is now dominated by 2c.5/2c.8.
 
 ### 3. Monitor progress
 
@@ -131,21 +144,21 @@ in the failing assertion message + the saved
 
 Environment variable overrides (all optional):
 
-| Var                   | Default             | Meaning                                                                           |
-| --------------------- | ------------------- | --------------------------------------------------------------------------------- |
-| `SEASON_FROM`         | `2015`              | First training season (inclusive).                                                |
-| `SEASON_TO`           | `2024`              | Last training season (inclusive).                                                 |
-| `VAL_SEASON`          | `2025`              | Single season held out for val + calibrator fit + sanity gate + comparison.       |
-| `N_MC`                | `10`                | 2c.4 Monte Carlo samples per BIP. `10` matches the leaf spec.                     |
-| `MLP_EPOCHS`          | `50`                | 2c.5 epochs (cosine LR over this number).                                         |
-| `MLP_BATCH_SIZE`      | `256`               |                                                                                   |
-| `MLP_LR`              | `1e-3`              |                                                                                   |
-| `DEVICE`              | `auto`              | `cuda` / `cpu` / `auto`. Force `cuda` if you want the run to fail loud on no-GPU. |
-| `LGBM_BOOST_ROUND`    | `2000`              | 2c.8 boost rounds.                                                                |
-| `LGBM_EARLY_STOPPING` | `50`                |                                                                                   |
-| `LOG_DIR`             | `logs/2c-overnight` |                                                                                   |
-| `ART_DIR`             | `artifacts`         |                                                                                   |
-| `DATA_DIR`            | `data`              |                                                                                   |
+| Var                   | Default             | Meaning                                                                                                                                                                         |
+| --------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SEASON_FROM`         | `2015`              | First training season (inclusive).                                                                                                                                              |
+| `SEASON_TO`           | `2024`              | Last training season (inclusive).                                                                                                                                               |
+| `VAL_SEASON`          | `2025`              | Single season held out for val + calibrator fit + sanity gate + comparison.                                                                                                     |
+| `N_MC`                | `10`                | 2c.4 Monte Carlo samples per BIP. `10` matches the leaf spec.                                                                                                                   |
+| `MLP_EPOCHS`          | `50`                | 2c.5 epochs (cosine LR over this number).                                                                                                                                       |
+| `MLP_BATCH_SIZE`      | `256`               |                                                                                                                                                                                 |
+| `MLP_LR`              | `1e-3`              |                                                                                                                                                                                 |
+| `DEVICE`              | `auto`              | `cuda` / `cpu` / `auto`. Drives **both** the 2c.4 GPU-B fused kernel and 2c.5 MLP training. Force `cuda` to fail loud on no-GPU (avoids a silent CPU fallback for the relabel). |
+| `LGBM_BOOST_ROUND`    | `2000`              | 2c.8 boost rounds.                                                                                                                                                              |
+| `LGBM_EARLY_STOPPING` | `50`                |                                                                                                                                                                                 |
+| `LOG_DIR`             | `logs/2c-overnight` |                                                                                                                                                                                 |
+| `ART_DIR`             | `artifacts`         |                                                                                                                                                                                 |
+| `DATA_DIR`            | `data`              |                                                                                                                                                                                 |
 
 Smoke run on a single season (validates the orchestration, ~30 min wall time):
 
