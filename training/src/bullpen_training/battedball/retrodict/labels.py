@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Final
 
 import numpy as np
@@ -39,7 +40,21 @@ from bullpen_training.battedball.parks import (
     load_park_geometry,
 )
 from bullpen_training.battedball.parks.loader import ParkGeometry
-from bullpen_training.battedball.physics.atmosphere import Atmosphere
+from bullpen_training.battedball.physics._constants import (
+    DEG_TO_RAD,
+    MPH_TO_M_S,
+    RPM_TO_RAD_S,
+)
+from bullpen_training.battedball.physics._fused import (
+    DOUBLE_CODE,
+    HR_CODE,
+    OUT_CODE,
+    SINGLE_CODE,
+    TRAJ_IN_COLS,
+    TRIPLE_CODE,
+    simulate_classify_batch,
+)
+from bullpen_training.battedball.physics.atmosphere import Atmosphere, air_density
 from bullpen_training.battedball.physics.simulator import LaunchParams, simulate_batch
 from bullpen_training.battedball.retrodict._atmospheres import (
     Weather,
@@ -297,6 +312,194 @@ def retrodict_bip_at_all_parks(
     return results
 
 
+# --- bulk fused integrate+classify (GPU-B production path) -----------------
+
+
+@lru_cache(maxsize=8)
+def _build_fence_arrays(
+    park_ids: tuple[str, ...],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Padded per-park fence polylines for the fused kernel.
+
+    Returns ``(angles, distances, heights)`` each shape ``(P, K)`` float32 plus
+    ``counts`` ``(P,)`` int32, where ``P = len(park_ids)`` and ``K`` is the
+    longest polyline. Rows are padded with the last real point; ``counts`` tells
+    the kernel how many entries are real so padding is never interpolated into.
+    Cached because the geometry is static across the whole pipeline run.
+    """
+    geoms = [load_park_geometry(pid) for pid in park_ids]
+    k = max(len(g.fence_polyline) for g in geoms)
+    p = len(geoms)
+    angles = np.zeros((p, k), dtype=np.float32)
+    dists = np.zeros((p, k), dtype=np.float32)
+    heights = np.zeros((p, k), dtype=np.float32)
+    counts = np.zeros(p, dtype=np.int32)
+    for i, g in enumerate(geoms):
+        poly = g.fence_polyline  # already sorted by angle in the loader
+        counts[i] = len(poly)
+        for j in range(k):
+            pt = poly[j] if j < len(poly) else poly[-1]
+            angles[i, j] = pt.angle_from_centerline_deg
+            dists[i, j] = pt.distance_ft
+            heights[i, j] = pt.height_ft
+    return angles, dists, heights, counts
+
+
+def _bbip_velocities(
+    bbip: BBIP, n_mc: int, rng: np.random.Generator
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Jittered initial velocities (m/s) + contact height for one BIP's n_mc draws.
+
+    Reproduces ``_jittered_launches`` + ``simulator._initial_state`` exactly —
+    same RNG draw order (speed, angle, spray) — but skips the LaunchParams
+    objects and emits the ``(vx, vy, vz, height)`` the kernel consumes directly.
+    Keeping the draw sequence identical preserves the per-BIP seeded idempotency
+    the reference path relies on (ReplacingMergeTree dedupe).
+    """
+    speed_jit = rng.normal(0.0, LAUNCH_SPEED_SIGMA_MPH, size=n_mc)
+    angle_jit = rng.normal(0.0, LAUNCH_ANGLE_SIGMA_DEG, size=n_mc)
+    spray_jit = rng.normal(0.0, SPRAY_ANGLE_SIGMA_DEG, size=n_mc)
+    v = (bbip.launch_speed_mph + speed_jit) * MPH_TO_M_S
+    la = (bbip.launch_angle_deg + angle_jit) * DEG_TO_RAD
+    sa = (bbip.spray_angle_deg + spray_jit) * DEG_TO_RAD
+    vx = v * np.cos(la) * np.cos(sa)
+    vy = v * np.cos(la) * np.sin(sa)
+    vz = v * np.sin(la)
+    height = np.full(n_mc, 1.0)  # initial_height_m default
+    return vx, vy, vz, height
+
+
+def retrodict_bips_batch(
+    bbips: list[BBIP],
+    park_ids: list[str],
+    *,
+    n_mc: int = DEFAULT_N_MC,
+    seed_offset: int = DEFAULT_SEED_OFFSET,
+    weather_by_game: dict[int, Weather] | None = None,
+    device: str = "auto",
+) -> list[RetrodictionResult]:
+    """Retrodict many BIPs at all parks in one fused integrate+classify call.
+
+    The GPU-B production path used by the pipeline. Builds a flat
+    ``(n_bbip * n_parks * n_mc, TRAJ_IN_COLS)`` trajectory-input matrix on the
+    host, runs the fused kernel once (GPU when available, else the njit/prange
+    CPU fallback — ``device``), and reduces the per-trajectory outcome codes into
+    5-class probability rows. Results are ordered ``[bbip0 @ all parks, bbip1 @
+    all parks, ...]`` — the same order as looping ``retrodict_bip_at_all_parks``.
+
+    Per-BIP weather (the game's actual conditions, ``weather_by_game[game_id]``)
+    is applied identically at all parks (field-relative wind + temperature; only
+    per-park altitude/geometry varies). Games without a row fall back to still
+    air per park — matching ``retrodict_bip_at_all_parks``'s no-weather policy
+    (NOT the seasonal default, which scrambled the cross-park ranking).
+
+    This is the float32 path (decision: GPU-B runs float32); it does not reproduce
+    the float64 reference bit-for-bit. ``test_fused_parity.py`` pins the
+    outcome-agreement rate vs the reference, and the calibration gate (decision
+    [131]) is re-validated on the desktop before any full relabel.
+    """
+    weather_by_game = weather_by_game or {}
+    n_bbip = len(bbips)
+    n_parks = len(park_ids)
+    if n_bbip == 0:
+        return []
+
+    parks = [load_park_geometry(pid) for pid in park_ids]
+    fence_angle, fence_dist, fence_height, fence_n = _build_fence_arrays(tuple(park_ids))
+
+    # Per-park static atmosphere inputs.
+    alt = np.array([p.altitude_m for p in parks], dtype=np.float64)  # (P,)
+    hum = np.array([p.default_atmosphere.humidity_pct for p in parks], dtype=np.float64)
+    def_temp = np.array([p.default_atmosphere.temp_c for p in parks], dtype=np.float64)
+
+    # Per-BIP weather: temperature (NaN => use the target park's default) + wind.
+    # Wind is field-relative so it is the same vector at every park.
+    temp_bbip = np.full(n_bbip, np.nan)
+    wind_x = np.zeros(n_bbip)
+    wind_y = np.zeros(n_bbip)
+    for b, bbip in enumerate(bbips):
+        w = weather_by_game.get(bbip.game_id)
+        if w is not None:
+            if w.temp_c is not None:
+                temp_bbip[b] = w.temp_c
+            wind_x[b] = w.wind_speed_m_s * w.wind_out_x
+            wind_y[b] = w.wind_speed_m_s * w.wind_out_y
+
+    # Air density per (bbip, park): game temp where present else park default,
+    # ISA pressure at the park's altitude, park seasonal humidity. Vectorised.
+    temp_mat = np.where(np.isnan(temp_bbip)[:, None], def_temp[None, :], temp_bbip[:, None])
+    rho_mat = np.asarray(
+        air_density(temp_mat, None, alt[None, :], hum[None, :]), dtype=np.float64
+    )  # (B, P)
+
+    # Per-BIP jittered velocities (seeded per BIP) + spin axis/rate.
+    vel = np.zeros((n_bbip, n_mc, 4))  # vx, vy, vz, height
+    spin = np.zeros((n_bbip, 4))  # sx, sy, sz, spin_rate
+    for b, bbip in enumerate(bbips):
+        rng = np.random.default_rng(_seed_for_bbip(bbip.bbip_key, seed_offset))
+        vx, vy, vz, height = _bbip_velocities(bbip, n_mc, rng)
+        vel[b, :, 0] = vx
+        vel[b, :, 1] = vy
+        vel[b, :, 2] = vz
+        vel[b, :, 3] = height
+        a = bbip.spin_axis_tilt_deg * DEG_TO_RAD
+        spin[b, 1] = np.cos(a)
+        spin[b, 2] = np.sin(a)
+        spin[b, 3] = bbip.spin_rate_rpm * RPM_TO_RAD_S
+
+    # Assemble (n_bbip, n_parks, n_mc, TRAJ_IN_COLS) via broadcasting, then flatten.
+    traj = np.zeros((n_bbip, n_parks, n_mc, TRAJ_IN_COLS), dtype=np.float32)
+    traj[..., 0] = vel[:, None, :, 0]
+    traj[..., 1] = vel[:, None, :, 1]
+    traj[..., 2] = vel[:, None, :, 2]
+    traj[..., 3] = vel[:, None, :, 3]
+    traj[..., 4] = spin[:, None, None, 0]
+    traj[..., 5] = spin[:, None, None, 1]
+    traj[..., 6] = spin[:, None, None, 2]
+    traj[..., 7] = spin[:, None, None, 3]
+    traj[..., 8] = rho_mat[:, :, None]
+    traj[..., 9] = wind_x[:, None, None]
+    traj[..., 10] = wind_y[:, None, None]
+    # column 11 (wind_z) stays 0.0
+
+    park_idx_grid = np.broadcast_to(
+        np.arange(n_parks, dtype=np.int32)[None, :, None], (n_bbip, n_parks, n_mc)
+    )
+
+    codes = simulate_classify_batch(
+        traj.reshape(-1, TRAJ_IN_COLS),
+        np.ascontiguousarray(park_idx_grid).reshape(-1),
+        fence_angle,
+        fence_dist,
+        fence_height,
+        fence_n,
+        device=device,
+    ).reshape(n_bbip, n_parks, n_mc)
+
+    total = float(n_mc)
+    results: list[RetrodictionResult] = []
+    for b, bbip in enumerate(bbips):
+        for pk, pid in enumerate(park_ids):
+            sl = codes[b, pk]
+            is_home = pid == bbip.home_park_id
+            observed = event_to_outcome(bbip.observed_event) if is_home else None
+            results.append(
+                RetrodictionResult(
+                    bbip=bbip,
+                    park_id=pid,
+                    is_home_park=is_home,
+                    prob_out=int(np.count_nonzero(sl == OUT_CODE)) / total,
+                    prob_1b=int(np.count_nonzero(sl == SINGLE_CODE)) / total,
+                    prob_2b=int(np.count_nonzero(sl == DOUBLE_CODE)) / total,
+                    prob_3b=int(np.count_nonzero(sl == TRIPLE_CODE)) / total,
+                    prob_hr=int(np.count_nonzero(sl == HR_CODE)) / total,
+                    observed_outcome=observed,
+                    n_mc=n_mc,
+                )
+            )
+    return results
+
+
 __all__ = (
     "BBIP",
     "DEFAULT_N_MC",
@@ -307,5 +510,6 @@ __all__ = (
     "RetrodictionResult",
     "event_to_outcome",
     "retrodict_bip_at_all_parks",
+    "retrodict_bips_batch",
     "retrodict_one",
 )

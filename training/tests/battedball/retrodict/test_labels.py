@@ -10,6 +10,7 @@ from bullpen_training.battedball.retrodict.labels import (
     _seed_for_bbip,
     event_to_outcome,
     retrodict_bip_at_all_parks,
+    retrodict_bips_batch,
     retrodict_one,
 )
 
@@ -129,9 +130,9 @@ def test_same_hr_launch_lower_hr_probability_at_deeper_park() -> None:
     bbip = _hr_bbip("NYY")
     nyy = retrodict_one(bbip, "NYY")
     sf = retrodict_one(bbip, "SF")
-    assert sf.prob_hr <= nyy.prob_hr, (
-        f"expected SF HR prob <= NYY's; got SF={sf.prob_hr:.2f} NYY={nyy.prob_hr:.2f}"
-    )
+    assert (
+        sf.prob_hr <= nyy.prob_hr
+    ), f"expected SF HR prob <= NYY's; got SF={sf.prob_hr:.2f} NYY={nyy.prob_hr:.2f}"
 
 
 def test_observed_outcome_only_populated_on_home_park() -> None:
@@ -183,3 +184,69 @@ def test_retrodict_n_mc_field_propagates() -> None:
     assert r.n_mc == DEFAULT_N_MC
     r5 = retrodict_one(bbip, "NYY", n_mc=5)
     assert r5.n_mc == 5
+
+
+# --- bulk fused batch path (GPU-B; CPU fallback exercised here) ------------
+
+
+def test_retrodict_bips_batch_shape_and_ordering() -> None:
+    bbips = [_hr_bbip("NYY"), _liner_bbip("STL")]
+    parks = ["NYY", "COL", "SF", "STL"]
+    results = retrodict_bips_batch(bbips, parks, device="cpu")
+    # One row per (bbip, park), ordered [bbip0 @ all parks, bbip1 @ all parks].
+    assert len(results) == len(bbips) * len(parks)
+    assert [r.park_id for r in results[: len(parks)]] == parks
+    # Each bbip has exactly one home-park row.
+    for b in range(len(bbips)):
+        rows = results[b * len(parks) : (b + 1) * len(parks)]
+        assert sum(1 for r in rows if r.is_home_park) == 1
+
+
+def test_retrodict_bips_batch_probabilities_sum_to_one() -> None:
+    results = retrodict_bips_batch([_hr_bbip("NYY")], ["NYY", "COL", "SF"], device="cpu")
+    for r in results:
+        total = r.prob_out + r.prob_1b + r.prob_2b + r.prob_3b + r.prob_hr
+        assert total == pytest.approx(1.0, abs=1e-6)
+
+
+def test_retrodict_bips_batch_is_deterministic_under_fixed_seed() -> None:
+    bbips = [_hr_bbip("NYY")]
+    a = retrodict_bips_batch(bbips, ["NYY", "COL"], seed_offset=777, device="cpu")
+    b = retrodict_bips_batch(bbips, ["NYY", "COL"], seed_offset=777, device="cpu")
+    assert [r.prob_hr for r in a] == [r.prob_hr for r in b]
+
+
+def test_retrodict_bips_batch_home_park_carries_observed_only_there() -> None:
+    results = retrodict_bips_batch([_hr_bbip("NYY")], ["NYY", "COL"], device="cpu")
+    home = next(r for r in results if r.park_id == "NYY")
+    away = next(r for r in results if r.park_id == "COL")
+    assert home.is_home_park is True
+    assert home.observed_outcome == "hr"
+    assert away.is_home_park is False
+    assert away.observed_outcome is None
+
+
+def test_batch_matches_reference_within_tolerance() -> None:
+    """The fused CPU batch (no weather -> still air per park) should track the
+    float64 reference ``retrodict_bip_at_all_parks`` (also still air, same
+    per-BIP seed -> same jitter). float32 + the fence-crossing-spray
+    approximation can flip the odd MC draw, so we require close probabilities
+    and matching dominant outcomes, not bit-equality."""
+    bbips = [_hr_bbip("NYY"), _liner_bbip("STL")]
+    parks = ["NYY", "COL", "SF", "BOS", "STL"]
+    batched = retrodict_bips_batch(bbips, parks, seed_offset=999, device="cpu")
+    by_key = {(r.bbip.bbip_key, r.park_id): r for r in batched}
+    max_abs = 0.0
+    dominant_agree = 0
+    total = 0
+    for bbip in bbips:
+        for r_ref in retrodict_bip_at_all_parks(bbip, parks, seed_offset=999):
+            r_bat = by_key[(bbip.bbip_key, r_ref.park_id)]
+            ref_vec = (r_ref.prob_out, r_ref.prob_1b, r_ref.prob_2b, r_ref.prob_3b, r_ref.prob_hr)
+            bat_vec = (r_bat.prob_out, r_bat.prob_1b, r_bat.prob_2b, r_bat.prob_3b, r_bat.prob_hr)
+            max_abs = max(max_abs, max(abs(a - b) for a, b in zip(ref_vec, bat_vec, strict=False)))
+            if ref_vec.index(max(ref_vec)) == bat_vec.index(max(bat_vec)):
+                dominant_agree += 1
+            total += 1
+    assert max_abs <= 0.3, f"max per-class prob gap {max_abs:.2f} too large"
+    assert dominant_agree / total >= 0.9, f"dominant-class agreement {dominant_agree}/{total}"

@@ -42,7 +42,7 @@ from bullpen_training.battedball.retrodict.labels import (
     DEFAULT_N_MC,
     DEFAULT_SEED_OFFSET,
     RetrodictionResult,
-    retrodict_bip_at_all_parks,
+    retrodict_bips_batch,
 )
 
 # Default spin priors when Statcast didn't measure batted-ball spin
@@ -53,7 +53,11 @@ from bullpen_training.battedball.retrodict.labels import (
 DEFAULT_SPIN_RATE_RPM: float = 1800.0
 DEFAULT_SPIN_AXIS_TILT_DEG: float = 180.0  # backspin around -y axis
 
-_CHUNK_SIZE: int = 1000
+# Chunk size doubles as the GPU batch size: each chunk's BIPs become one fused
+# kernel launch of chunk_size * 30 parks * n_mc trajectories. Larger chunks also
+# cut the number of OFFSET-paged ClickHouse reads (fewer, bigger queries). 20k
+# BIPs ~= 6M trajectories/launch at n_mc=10 — good GPU occupancy, ~300 MB host.
+_CHUNK_SIZE: int = 20_000
 
 
 def _pitches_query(
@@ -294,6 +298,7 @@ def run_pipeline(
     dry_run: bool = False,
     min_weather_coverage: float = 0.0,
     container: str = "bullpen-clickhouse",
+    device: str = "auto",
 ) -> dict[str, int | float]:
     """Run the retrodiction pipeline end-to-end. Returns summary stats.
 
@@ -304,6 +309,11 @@ def run_pipeline(
     ``min_weather_coverage`` (e.g. 0.9) fails the run fast if the
     ``weather_observed`` backfill is too sparse, so a half-populated table can't
     silently emit still-air labels for the whole 2015-2024 re-run.
+
+    ``device`` selects the fused integrate+classify backend: ``"auto"`` (GPU if
+    a CUDA device is present, else CPU), ``"cuda"``, or ``"cpu"``. Each chunk's
+    BIPs become one batched kernel launch (GPU-B) — the kernel emits one outcome
+    code per trajectory with no trajectory history materialised.
     """
     parks = sorted(load_all_parks().keys())
     n_parks = len(parks)
@@ -340,16 +350,15 @@ def run_pipeline(
             chunk_size=chunk_size,
         )
     ):
-        results: list[RetrodictionResult] = []
-        for bbip in bbips:
-            weather = weather_by_game.get(bbip.game_id)
-            if weather is not None:
-                bips_with_weather += 1
-            results.extend(
-                retrodict_bip_at_all_parks(
-                    bbip, parks, n_mc=n_mc, seed_offset=seed_offset, weather=weather
-                )
-            )
+        bips_with_weather += sum(1 for b in bbips if b.game_id in weather_by_game)
+        results: list[RetrodictionResult] = retrodict_bips_batch(
+            bbips,
+            parks,
+            n_mc=n_mc,
+            seed_offset=seed_offset,
+            weather_by_game=weather_by_game,
+            device=device,
+        )
         if not dry_run:
             _insert_results(results, container=container)
         total_bips += len(bbips)
@@ -399,6 +408,16 @@ def main() -> None:
     )
     parser.add_argument("--dry-run", action="store_true", help="Skip the INSERT.")
     parser.add_argument(
+        "--device",
+        choices=("auto", "cpu", "cuda"),
+        default="auto",
+        help=(
+            "Fused integrate+classify backend. 'auto' uses the GPU when a CUDA "
+            "device is present (the desktop), else the njit/prange CPU fallback "
+            "(macOS dev, per ADR-0006). 'cuda' forces GPU; 'cpu' forces CPU."
+        ),
+    )
+    parser.add_argument(
         "--report",
         type=Path,
         default=None,
@@ -421,6 +440,7 @@ def main() -> None:
         chunk_size=args.chunk_size,
         dry_run=args.dry_run,
         min_weather_coverage=args.min_weather_coverage,
+        device=args.device,
     )
     print()
     print("== summary ==")
