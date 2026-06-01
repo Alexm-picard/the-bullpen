@@ -58,8 +58,11 @@ from bullpen_training.battedball.mlp.sanity import (
     load_published_factors,
 )
 
-_DEFAULT_MODEL_DIR = Path("artifacts/battedball_mlp_v1")
-_DEFAULT_FACTORS = Path("training/data/published_hr_factors.json")
+# Resolve defaults relative to this file (training/), not the cwd, so the
+# script works whether it's launched from training/ or the repo root.
+_TRAINING_ROOT = Path(__file__).resolve().parents[1]
+_DEFAULT_MODEL_DIR = _TRAINING_ROOT / "artifacts" / "battedball_mlp_v1"
+_DEFAULT_FACTORS = _TRAINING_ROOT / "data" / "published_hr_factors.json"
 
 
 def _ranks(values: dict[str, float]) -> dict[str, int]:
