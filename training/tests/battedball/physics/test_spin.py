@@ -6,7 +6,6 @@ import json
 
 import numpy as np
 import pytest
-
 from bullpen_training.battedball.physics.spin import (
     DEFAULT_CALIBRATION,
     DEFAULT_COEFFS,
@@ -43,7 +42,11 @@ def test_physics_calibration_roundtrip(tmp_path) -> None:
     p = tmp_path / "physics_calibration.json"
     p.write_text(json.dumps(c.to_dict()))
     assert load_physics_calibration(p) == c
-    assert load_physics_calibration(None) == DEFAULT_CALIBRATION
+    # path=None loads the committed artifact: physics-prior spin + a physical cd_scale.
+    committed = load_physics_calibration(None)
+    assert committed.spin == PHYSICS_PRIOR_COEFFS
+    assert 0.85 <= committed.cd_scale <= 1.20
+    # absent explicit path falls back to the legacy default.
     assert load_physics_calibration(tmp_path / "missing.json") == DEFAULT_CALIBRATION
 
 

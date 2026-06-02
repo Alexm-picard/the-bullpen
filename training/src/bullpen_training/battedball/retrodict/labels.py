@@ -56,6 +56,11 @@ from bullpen_training.battedball.physics._fused import (
 )
 from bullpen_training.battedball.physics.atmosphere import Atmosphere, air_density
 from bullpen_training.battedball.physics.simulator import LaunchParams, simulate_batch
+from bullpen_training.battedball.physics.spin import (
+    PhysicsCalibration,
+    batted_ball_spin,
+    load_physics_calibration,
+)
 from bullpen_training.battedball.retrodict._atmospheres import (
     Weather,
     get_atmosphere,
@@ -347,26 +352,30 @@ def _build_fence_arrays(
 
 def _bbip_velocities(
     bbip: BBIP, n_mc: int, rng: np.random.Generator
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Jittered initial velocities (m/s) + contact height for one BIP's n_mc draws.
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Jittered initial velocities (m/s) + height + the jittered launch params.
 
     Reproduces ``_jittered_launches`` + ``simulator._initial_state`` exactly —
     same RNG draw order (speed, angle, spray) — but skips the LaunchParams
-    objects and emits the ``(vx, vy, vz, height)`` the kernel consumes directly.
-    Keeping the draw sequence identical preserves the per-BIP seeded idempotency
-    the reference path relies on (ReplacingMergeTree dedupe).
+    objects and emits the ``(vx, vy, vz, height)`` the kernel consumes directly,
+    plus the jittered ``(ev_mph, la_deg, spray_deg)`` so the spin model can be
+    evaluated per draw. Keeping the draw sequence identical preserves the
+    per-BIP seeded idempotency the reference path relies on.
     """
     speed_jit = rng.normal(0.0, LAUNCH_SPEED_SIGMA_MPH, size=n_mc)
     angle_jit = rng.normal(0.0, LAUNCH_ANGLE_SIGMA_DEG, size=n_mc)
     spray_jit = rng.normal(0.0, SPRAY_ANGLE_SIGMA_DEG, size=n_mc)
-    v = (bbip.launch_speed_mph + speed_jit) * MPH_TO_M_S
-    la = (bbip.launch_angle_deg + angle_jit) * DEG_TO_RAD
-    sa = (bbip.spray_angle_deg + spray_jit) * DEG_TO_RAD
+    ev_mph = bbip.launch_speed_mph + speed_jit
+    la_deg = bbip.launch_angle_deg + angle_jit
+    spray_deg = bbip.spray_angle_deg + spray_jit
+    v = ev_mph * MPH_TO_M_S
+    la = la_deg * DEG_TO_RAD
+    sa = spray_deg * DEG_TO_RAD
     vx = v * np.cos(la) * np.cos(sa)
     vy = v * np.cos(la) * np.sin(sa)
     vz = v * np.sin(la)
     height = np.full(n_mc, 1.0)  # initial_height_m default
-    return vx, vy, vz, height
+    return vx, vy, vz, height, ev_mph, la_deg, spray_deg
 
 
 def retrodict_bips_batch(
@@ -377,6 +386,7 @@ def retrodict_bips_batch(
     seed_offset: int = DEFAULT_SEED_OFFSET,
     weather_by_game: dict[int, Weather] | None = None,
     device: str = "auto",
+    calibration: PhysicsCalibration | None = None,
 ) -> list[RetrodictionResult]:
     """Retrodict many BIPs at all parks in one fused integrate+classify call.
 
@@ -399,6 +409,7 @@ def retrodict_bips_batch(
     [131]) is re-validated on the desktop before any full relabel.
     """
     weather_by_game = weather_by_game or {}
+    calib = calibration if calibration is not None else load_physics_calibration()
     n_bbip = len(bbips)
     n_parks = len(park_ids)
     if n_bbip == 0:
@@ -432,20 +443,24 @@ def retrodict_bips_batch(
         air_density(temp_mat, None, alt[None, :], hum[None, :]), dtype=np.float64
     )  # (B, P)
 
-    # Per-BIP jittered velocities (seeded per BIP) + spin axis/rate.
+    # Per-BIP jittered velocities (seeded per BIP) + per-draw spin from the
+    # calibrated spin model (computed from each jittered EV/LA/spray, NOT the
+    # BBIP's fixed prior — that's the Phase-1 physics overhaul). spin axis tilts
+    # off pure backspin with spray; spin_rate in rad/s for the kernel.
     vel = np.zeros((n_bbip, n_mc, 4))  # vx, vy, vz, height
-    spin = np.zeros((n_bbip, 4))  # sx, sy, sz, spin_rate
+    spin = np.zeros((n_bbip, n_mc, 4))  # sx, sy, sz, spin_rate (per draw)
     for b, bbip in enumerate(bbips):
         rng = np.random.default_rng(_seed_for_bbip(bbip.bbip_key, seed_offset))
-        vx, vy, vz, height = _bbip_velocities(bbip, n_mc, rng)
+        vx, vy, vz, height, ev_mph, la_deg, spray_deg = _bbip_velocities(bbip, n_mc, rng)
         vel[b, :, 0] = vx
         vel[b, :, 1] = vy
         vel[b, :, 2] = vz
         vel[b, :, 3] = height
-        a = bbip.spin_axis_tilt_deg * DEG_TO_RAD
-        spin[b, 1] = np.cos(a)
-        spin[b, 2] = np.sin(a)
-        spin[b, 3] = bbip.spin_rate_rpm * RPM_TO_RAD_S
+        rate_rpm, tilt_deg = batted_ball_spin(ev_mph, la_deg, spray_deg, calib.spin)
+        a = np.asarray(tilt_deg) * DEG_TO_RAD
+        spin[b, :, 1] = np.cos(a)
+        spin[b, :, 2] = np.sin(a)
+        spin[b, :, 3] = np.asarray(rate_rpm) * RPM_TO_RAD_S
 
     # Assemble (n_bbip, n_parks, n_mc, TRAJ_IN_COLS) via broadcasting, then flatten.
     traj = np.zeros((n_bbip, n_parks, n_mc, TRAJ_IN_COLS), dtype=np.float32)
@@ -453,10 +468,10 @@ def retrodict_bips_batch(
     traj[..., 1] = vel[:, None, :, 1]
     traj[..., 2] = vel[:, None, :, 2]
     traj[..., 3] = vel[:, None, :, 3]
-    traj[..., 4] = spin[:, None, None, 0]
-    traj[..., 5] = spin[:, None, None, 1]
-    traj[..., 6] = spin[:, None, None, 2]
-    traj[..., 7] = spin[:, None, None, 3]
+    traj[..., 4] = spin[:, None, :, 0]
+    traj[..., 5] = spin[:, None, :, 1]
+    traj[..., 6] = spin[:, None, :, 2]
+    traj[..., 7] = spin[:, None, :, 3]
     traj[..., 8] = rho_mat[:, :, None]
     traj[..., 9] = wind_x[:, None, None]
     traj[..., 10] = wind_y[:, None, None]
@@ -474,6 +489,7 @@ def retrodict_bips_batch(
         fence_height,
         fence_n,
         device=device,
+        cd_scale=calib.cd_scale,
     ).reshape(n_bbip, n_parks, n_mc)
 
     total = float(n_mc)

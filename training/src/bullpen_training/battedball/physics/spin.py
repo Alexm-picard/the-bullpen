@@ -187,12 +187,21 @@ class PhysicsCalibration:
 
 DEFAULT_CALIBRATION = PhysicsCalibration()
 
+# Canonical committed calibration artifact (written by scripts/calibrate_spin.py,
+# read by retrodiction / fixtures / validate). Resolved relative to this file so
+# it works under any cwd / packaging.
+DEFAULT_CALIBRATION_PATH = Path(__file__).resolve().parents[4] / "data" / "physics_calibration.json"
 
-def load_physics_calibration(path: Path | str | None) -> PhysicsCalibration:
-    """Load the joint spin+drag calibration, or the legacy-physics default if absent."""
-    if path is None:
-        return DEFAULT_CALIBRATION
-    p = Path(path)
+
+def load_physics_calibration(path: Path | str | None = None) -> PhysicsCalibration:
+    """Load the joint spin+drag calibration.
+
+    ``path=None`` uses the canonical committed artifact
+    (``DEFAULT_CALIBRATION_PATH``); if that file is absent (e.g. before the first
+    calibration), falls back to ``DEFAULT_CALIBRATION`` (legacy physics) so every
+    caller can load unconditionally and stay a no-op until the artifact lands.
+    """
+    p = Path(path) if path is not None else DEFAULT_CALIBRATION_PATH
     if not p.exists():
         return DEFAULT_CALIBRATION
     return PhysicsCalibration.from_dict(json.loads(p.read_text()))

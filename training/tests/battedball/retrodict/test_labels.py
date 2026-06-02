@@ -130,9 +130,9 @@ def test_same_hr_launch_lower_hr_probability_at_deeper_park() -> None:
     bbip = _hr_bbip("NYY")
     nyy = retrodict_one(bbip, "NYY")
     sf = retrodict_one(bbip, "SF")
-    assert sf.prob_hr <= nyy.prob_hr, (
-        f"expected SF HR prob <= NYY's; got SF={sf.prob_hr:.2f} NYY={nyy.prob_hr:.2f}"
-    )
+    assert (
+        sf.prob_hr <= nyy.prob_hr
+    ), f"expected SF HR prob <= NYY's; got SF={sf.prob_hr:.2f} NYY={nyy.prob_hr:.2f}"
 
 
 def test_observed_outcome_only_populated_on_home_park() -> None:
@@ -227,14 +227,19 @@ def test_retrodict_bips_batch_home_park_carries_observed_only_there() -> None:
 
 
 def test_batch_matches_reference_within_tolerance() -> None:
-    """The fused CPU batch (no weather -> still air per park) should track the
-    float64 reference ``retrodict_bip_at_all_parks`` (also still air, same
-    per-BIP seed -> same jitter). float32 + the fence-crossing-spray
-    approximation can flip the odd MC draw, so we require close probabilities
-    and matching dominant outcomes, not bit-equality."""
+    """The fused CPU batch should track the float64 reference
+    ``retrodict_bip_at_all_parks`` (same per-BIP seed -> same jitter) when both
+    use the SAME (legacy) physics — so we pin the batch to DEFAULT_CALIBRATION
+    (flat 1800 rpm, cd_scale 1.0) to isolate the float32 + fence-crossing-spray
+    approximation from the Phase-1 spin/drag changes. Close probabilities +
+    matching dominant outcomes, not bit-equality."""
+    from bullpen_training.battedball.physics.spin import DEFAULT_CALIBRATION
+
     bbips = [_hr_bbip("NYY"), _liner_bbip("STL")]
     parks = ["NYY", "COL", "SF", "BOS", "STL"]
-    batched = retrodict_bips_batch(bbips, parks, seed_offset=999, device="cpu")
+    batched = retrodict_bips_batch(
+        bbips, parks, seed_offset=999, device="cpu", calibration=DEFAULT_CALIBRATION
+    )
     by_key = {(r.bbip.bbip_key, r.park_id): r for r in batched}
     max_abs = 0.0
     dominant_agree = 0
