@@ -8,15 +8,30 @@ don't silently break the canonical numbers downstream code relies on
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from bullpen_training.battedball.parks.loader import (
+    _DEFAULT_GEOMETRY_DIR,
     ParkGeometryError,
+    _resolve_geometry_dir,
     fence_distance_at_spray_deg,
     fence_height_at_spray_deg,
     load_all_parks,
     load_park_geometry,
 )
+
+
+def test_geometry_dir_defaults_without_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("BULLPEN_PARK_GEOMETRY_DIR", raising=False)
+    assert _resolve_geometry_dir() == _DEFAULT_GEOMETRY_DIR
+
+
+def test_geometry_dir_honors_env_override(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("BULLPEN_PARK_GEOMETRY_DIR", str(tmp_path))
+    assert _resolve_geometry_dir() == tmp_path.resolve()
+
 
 # All 30 MLB parks (matching the abbreviations used in pitches.park_id —
 # Arizona is AZ in the Statcast feed, not ARI; Athletics is ATH). If

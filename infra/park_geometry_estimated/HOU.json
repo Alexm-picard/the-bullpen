@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "park_id": "HOU",
+  "name": "Minute Maid Park",
+  "altitude_m": 7.0,
+  "default_atmosphere": {
+    "temp_c": 23.0,
+    "pressure_hpa": null,
+    "humidity_pct": 50,
+    "wind_speed_mph": 0,
+    "wind_bearing_deg": 0
+  },
+  "centerline_bearing_deg": 0.0,
+  "fence_polyline": [
+    {
+      "angle_from_centerline_deg": -45.0,
+      "distance_ft": 331.0,
+      "height_ft": 7.0
+    },
+    {
+      "angle_from_centerline_deg": -40.0,
+      "distance_ft": 335.0,
+      "height_ft": 7.2
+    },
+    {
+      "angle_from_centerline_deg": -35.0,
+      "distance_ft": 341.0,
+      "height_ft": 7.4
+    },
+    {
+      "angle_from_centerline_deg": -30.0,
+      "distance_ft": 352.2,
+      "height_ft": 7.7
+    },
+    {
+      "angle_from_centerline_deg": -25.0,
+      "distance_ft": 360.0,
+      "height_ft": 7.9
+    },
+    {
+      "angle_from_centerline_deg": -20.0,
+      "distance_ft": 375.0,
+      "height_ft": 8.1
+    },
+    {
+      "angle_from_centerline_deg": -15.0,
+      "distance_ft": 386.0,
+      "height_ft": 8.3
+    },
+    {
+      "angle_from_centerline_deg": -10.0,
+      "distance_ft": 393.0,
+      "height_ft": 8.6
+    },
+    {
+      "angle_from_centerline_deg": -5.0,
+      "distance_ft": 399.0,
+      "height_ft": 8.8
+    },
+    {
+      "angle_from_centerline_deg": 0.0,
+      "distance_ft": 398.0,
+      "height_ft": 9.0
+    },
+    {
+      "angle_from_centerline_deg": 5.0,
+      "distance_ft": 398.0,
+      "height_ft": 8.8
+    },
+    {
+      "angle_from_centerline_deg": 10.0,
+      "distance_ft": 391.0,
+      "height_ft": 8.6
+    },
+    {
+      "angle_from_centerline_deg": 15.0,
+      "distance_ft": 388.0,
+      "height_ft": 8.3
+    },
+    {
+      "angle_from_centerline_deg": 20.0,
+      "distance_ft": 377.0,
+      "height_ft": 8.1
+    },
+    {
+      "angle_from_centerline_deg": 25.0,
+      "distance_ft": 357.8,
+      "height_ft": 9.2
+    },
+    {
+      "angle_from_centerline_deg": 30.0,
+      "distance_ft": 337.0,
+      "height_ft": 11.7
+    },
+    {
+      "angle_from_centerline_deg": 35.0,
+      "distance_ft": 340.0,
+      "height_ft": 14.1
+    },
+    {
+      "angle_from_centerline_deg": 40.0,
+      "distance_ft": 329.0,
+      "height_ft": 16.6
+    },
+    {
+      "angle_from_centerline_deg": 45.0,
+      "distance_ft": 326.0,
+      "height_ft": 19.0
+    }
+  ],
+  "behind_fence_stand_height_ft": 25.0,
+  "foul_territory_sqft": 22000,
+  "geometry_source": "empirical fence distances (Statcast wall-ball p90, 2015-2025); documented fallback + height overlay"
+}

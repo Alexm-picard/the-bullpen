@@ -15,6 +15,7 @@ Coordinates / units convention (matches the simulator):
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -24,11 +25,26 @@ from typing import Any
 # in the contracts validator so it's not new.
 import jsonschema
 
-# Repo-relative path to the park-geometry tree. The loader resolves it
+# Repo-relative path to the canonical (prod) park-geometry tree. Resolved
 # from this file's location so it works under pytest cwd, the worker JAR
 # packaging, and bare `python -m` invocations the same way.
-_GEOMETRY_DIR = Path(__file__).resolve().parents[5] / "infra" / "park_geometry"
-_SCHEMA_PATH = _GEOMETRY_DIR / "_schema.json"
+_DEFAULT_GEOMETRY_DIR = Path(__file__).resolve().parents[5] / "infra" / "park_geometry"
+
+
+def _resolve_geometry_dir() -> Path:
+    """Park-file directory: ``BULLPEN_PARK_GEOMETRY_DIR`` override else the default.
+
+    The override lets the retrodiction pipeline read a *staged* high-res geometry
+    set (e.g. the empirical-fence estimator's output) without overwriting the
+    committed prod JSONs — so a geometry experiment is reversible (decision [52]
+    2c.7 work). The schema always loads from the canonical dir.
+    """
+    env = os.environ.get("BULLPEN_PARK_GEOMETRY_DIR")
+    return Path(env).resolve() if env else _DEFAULT_GEOMETRY_DIR
+
+
+_GEOMETRY_DIR = _resolve_geometry_dir()
+_SCHEMA_PATH = _DEFAULT_GEOMETRY_DIR / "_schema.json"
 
 
 class ParkGeometryError(RuntimeError):

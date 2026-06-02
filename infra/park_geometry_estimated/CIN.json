@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "park_id": "CIN",
+  "name": "Great American Ball Park",
+  "altitude_m": 150.0,
+  "default_atmosphere": {
+    "temp_c": 23.0,
+    "pressure_hpa": null,
+    "humidity_pct": 65,
+    "wind_speed_mph": 8,
+    "wind_bearing_deg": 225
+  },
+  "centerline_bearing_deg": 30.0,
+  "fence_polyline": [
+    {
+      "angle_from_centerline_deg": -45.0,
+      "distance_ft": 331.0,
+      "height_ft": 12.0
+    },
+    {
+      "angle_from_centerline_deg": -40.0,
+      "distance_ft": 333.6,
+      "height_ft": 12.0
+    },
+    {
+      "angle_from_centerline_deg": -35.0,
+      "distance_ft": 345.0,
+      "height_ft": 12.0
+    },
+    {
+      "angle_from_centerline_deg": -30.0,
+      "distance_ft": 351.0,
+      "height_ft": 12.0
+    },
+    {
+      "angle_from_centerline_deg": -25.0,
+      "distance_ft": 360.0,
+      "height_ft": 12.0
+    },
+    {
+      "angle_from_centerline_deg": -20.0,
+      "distance_ft": 365.5,
+      "height_ft": 12.0
+    },
+    {
+      "angle_from_centerline_deg": -15.0,
+      "distance_ft": 372.0,
+      "height_ft": 12.0
+    },
+    {
+      "angle_from_centerline_deg": -10.0,
+      "distance_ft": 382.0,
+      "height_ft": 12.0
+    },
+    {
+      "angle_from_centerline_deg": -5.0,
+      "distance_ft": 390.0,
+      "height_ft": 12.0
+    },
+    {
+      "angle_from_centerline_deg": 0.0,
+      "distance_ft": 395.0,
+      "height_ft": 12.0
+    },
+    {
+      "angle_from_centerline_deg": 5.0,
+      "distance_ft": 389.5,
+      "height_ft": 12.0
+    },
+    {
+      "angle_from_centerline_deg": 10.0,
+      "distance_ft": 385.3,
+      "height_ft": 12.0
+    },
+    {
+      "angle_from_centerline_deg": 15.0,
+      "distance_ft": 382.2,
+      "height_ft": 12.0
+    },
+    {
+      "angle_from_centerline_deg": 20.0,
+      "distance_ft": 370.0,
+      "height_ft": 12.0
+    },
+    {
+      "angle_from_centerline_deg": 25.0,
+      "distance_ft": 363.0,
+      "height_ft": 12.0
+    },
+    {
+      "angle_from_centerline_deg": 30.0,
+      "distance_ft": 350.0,
+      "height_ft": 12.0
+    },
+    {
+      "angle_from_centerline_deg": 35.0,
+      "distance_ft": 345.0,
+      "height_ft": 12.0
+    },
+    {
+      "angle_from_centerline_deg": 40.0,
+      "distance_ft": 337.4,
+      "height_ft": 12.0
+    },
+    {
+      "angle_from_centerline_deg": 45.0,
+      "distance_ft": 336.1,
+      "height_ft": 12.0
+    }
+  ],
+  "behind_fence_stand_height_ft": 25.0,
+  "foul_territory_sqft": 22000,
+  "geometry_source": "empirical fence distances (Statcast wall-ball p90, 2015-2025); documented fallback + height overlay"
+}

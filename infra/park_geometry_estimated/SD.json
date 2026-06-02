@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "park_id": "SD",
+  "name": "Petco Park",
+  "altitude_m": 17.0,
+  "default_atmosphere": {
+    "temp_c": 20.0,
+    "pressure_hpa": null,
+    "humidity_pct": 66,
+    "wind_speed_mph": 7,
+    "wind_bearing_deg": 270
+  },
+  "centerline_bearing_deg": 25.0,
+  "fence_polyline": [
+    {
+      "angle_from_centerline_deg": -45.0,
+      "distance_ft": 327.2,
+      "height_ft": 11.0
+    },
+    {
+      "angle_from_centerline_deg": -40.0,
+      "distance_ft": 346.0,
+      "height_ft": 11.0
+    },
+    {
+      "angle_from_centerline_deg": -35.0,
+      "distance_ft": 352.0,
+      "height_ft": 11.0
+    },
+    {
+      "angle_from_centerline_deg": -30.0,
+      "distance_ft": 358.0,
+      "height_ft": 11.0
+    },
+    {
+      "angle_from_centerline_deg": -25.0,
+      "distance_ft": 369.0,
+      "height_ft": 11.0
+    },
+    {
+      "angle_from_centerline_deg": -20.0,
+      "distance_ft": 380.0,
+      "height_ft": 11.0
+    },
+    {
+      "angle_from_centerline_deg": -15.0,
+      "distance_ft": 385.0,
+      "height_ft": 11.0
+    },
+    {
+      "angle_from_centerline_deg": -10.0,
+      "distance_ft": 388.0,
+      "height_ft": 11.0
+    },
+    {
+      "angle_from_centerline_deg": -5.0,
+      "distance_ft": 387.0,
+      "height_ft": 11.0
+    },
+    {
+      "angle_from_centerline_deg": 0.0,
+      "distance_ft": 389.0,
+      "height_ft": 11.0
+    },
+    {
+      "angle_from_centerline_deg": 5.0,
+      "distance_ft": 386.2,
+      "height_ft": 11.0
+    },
+    {
+      "angle_from_centerline_deg": 10.0,
+      "distance_ft": 387.0,
+      "height_ft": 11.0
+    },
+    {
+      "angle_from_centerline_deg": 15.0,
+      "distance_ft": 377.0,
+      "height_ft": 11.0
+    },
+    {
+      "angle_from_centerline_deg": 20.0,
+      "distance_ft": 368.0,
+      "height_ft": 11.0
+    },
+    {
+      "angle_from_centerline_deg": 25.0,
+      "distance_ft": 360.4,
+      "height_ft": 11.0
+    },
+    {
+      "angle_from_centerline_deg": 30.0,
+      "distance_ft": 355.0,
+      "height_ft": 11.0
+    },
+    {
+      "angle_from_centerline_deg": 35.0,
+      "distance_ft": 344.0,
+      "height_ft": 11.0
+    },
+    {
+      "angle_from_centerline_deg": 40.0,
+      "distance_ft": 340.0,
+      "height_ft": 11.0
+    },
+    {
+      "angle_from_centerline_deg": 45.0,
+      "distance_ft": 333.0,
+      "height_ft": 11.0
+    }
+  ],
+  "behind_fence_stand_height_ft": 25.0,
+  "foul_territory_sqft": 24000,
+  "geometry_source": "empirical fence distances (Statcast wall-ball p90, 2015-2025); documented fallback + height overlay"
+}

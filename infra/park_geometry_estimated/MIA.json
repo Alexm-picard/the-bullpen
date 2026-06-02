@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "park_id": "MIA",
+  "name": "loanDepot park",
+  "altitude_m": 2.0,
+  "default_atmosphere": {
+    "temp_c": 24.0,
+    "pressure_hpa": null,
+    "humidity_pct": 55,
+    "wind_speed_mph": 0,
+    "wind_bearing_deg": 0
+  },
+  "centerline_bearing_deg": 30.0,
+  "fence_polyline": [
+    {
+      "angle_from_centerline_deg": -45.0,
+      "distance_ft": 330.2,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": -40.0,
+      "distance_ft": 340.5,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": -35.0,
+      "distance_ft": 349.1,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": -30.0,
+      "distance_ft": 359.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": -25.0,
+      "distance_ft": 367.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": -20.0,
+      "distance_ft": 379.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": -15.0,
+      "distance_ft": 384.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": -10.0,
+      "distance_ft": 386.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": -5.0,
+      "distance_ft": 391.9,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 0.0,
+      "distance_ft": 394.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 5.0,
+      "distance_ft": 395.3,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 10.0,
+      "distance_ft": 391.8,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 15.0,
+      "distance_ft": 389.3,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 20.0,
+      "distance_ft": 381.5,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 25.0,
+      "distance_ft": 369.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 30.0,
+      "distance_ft": 364.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 35.0,
+      "distance_ft": 357.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 40.0,
+      "distance_ft": 355.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 45.0,
+      "distance_ft": 346.0,
+      "height_ft": 8.0
+    }
+  ],
+  "behind_fence_stand_height_ft": 25.0,
+  "foul_territory_sqft": 23000,
+  "geometry_source": "empirical fence distances (Statcast wall-ball p90, 2015-2025); documented fallback + height overlay"
+}

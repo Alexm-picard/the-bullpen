@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "park_id": "PIT",
+  "name": "PNC Park",
+  "altitude_m": 215.0,
+  "default_atmosphere": {
+    "temp_c": 20.0,
+    "pressure_hpa": null,
+    "humidity_pct": 65,
+    "wind_speed_mph": 7,
+    "wind_bearing_deg": 225
+  },
+  "centerline_bearing_deg": 40.0,
+  "fence_polyline": [
+    {
+      "angle_from_centerline_deg": -45.0,
+      "distance_ft": 335.0,
+      "height_ft": 21.0
+    },
+    {
+      "angle_from_centerline_deg": -40.0,
+      "distance_ft": 342.7,
+      "height_ft": 21.0
+    },
+    {
+      "angle_from_centerline_deg": -35.0,
+      "distance_ft": 353.4,
+      "height_ft": 21.0
+    },
+    {
+      "angle_from_centerline_deg": -30.0,
+      "distance_ft": 362.0,
+      "height_ft": 21.0
+    },
+    {
+      "angle_from_centerline_deg": -25.0,
+      "distance_ft": 369.0,
+      "height_ft": 21.0
+    },
+    {
+      "angle_from_centerline_deg": -20.0,
+      "distance_ft": 374.0,
+      "height_ft": 19.8
+    },
+    {
+      "angle_from_centerline_deg": -15.0,
+      "distance_ft": 381.2,
+      "height_ft": 17.3
+    },
+    {
+      "angle_from_centerline_deg": -10.0,
+      "distance_ft": 387.9,
+      "height_ft": 14.9
+    },
+    {
+      "angle_from_centerline_deg": -5.0,
+      "distance_ft": 389.0,
+      "height_ft": 12.4
+    },
+    {
+      "angle_from_centerline_deg": 0.0,
+      "distance_ft": 391.0,
+      "height_ft": 10.0
+    },
+    {
+      "angle_from_centerline_deg": 5.0,
+      "distance_ft": 390.0,
+      "height_ft": 9.6
+    },
+    {
+      "angle_from_centerline_deg": 10.0,
+      "distance_ft": 388.0,
+      "height_ft": 9.1
+    },
+    {
+      "angle_from_centerline_deg": 15.0,
+      "distance_ft": 389.6,
+      "height_ft": 8.7
+    },
+    {
+      "angle_from_centerline_deg": 20.0,
+      "distance_ft": 386.0,
+      "height_ft": 8.2
+    },
+    {
+      "angle_from_centerline_deg": 25.0,
+      "distance_ft": 376.0,
+      "height_ft": 7.8
+    },
+    {
+      "angle_from_centerline_deg": 30.0,
+      "distance_ft": 371.0,
+      "height_ft": 7.3
+    },
+    {
+      "angle_from_centerline_deg": 35.0,
+      "distance_ft": 368.0,
+      "height_ft": 6.9
+    },
+    {
+      "angle_from_centerline_deg": 40.0,
+      "distance_ft": 347.2,
+      "height_ft": 6.4
+    },
+    {
+      "angle_from_centerline_deg": 45.0,
+      "distance_ft": 333.0,
+      "height_ft": 6.0
+    }
+  ],
+  "behind_fence_stand_height_ft": 25.0,
+  "foul_territory_sqft": 22000,
+  "geometry_source": "empirical fence distances (Statcast wall-ball p90, 2015-2025); documented fallback + height overlay"
+}

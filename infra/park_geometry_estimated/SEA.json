@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "park_id": "SEA",
+  "name": "T-Mobile Park",
+  "altitude_m": 60.0,
+  "default_atmosphere": {
+    "temp_c": 17.0,
+    "pressure_hpa": null,
+    "humidity_pct": 65,
+    "wind_speed_mph": 5,
+    "wind_bearing_deg": 200
+  },
+  "centerline_bearing_deg": 60.0,
+  "fence_polyline": [
+    {
+      "angle_from_centerline_deg": -45.0,
+      "distance_ft": 328.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": -40.0,
+      "distance_ft": 332.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": -35.0,
+      "distance_ft": 340.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": -30.0,
+      "distance_ft": 350.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": -25.0,
+      "distance_ft": 363.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": -20.0,
+      "distance_ft": 376.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": -15.0,
+      "distance_ft": 376.7,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": -10.0,
+      "distance_ft": 379.4,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": -5.0,
+      "distance_ft": 387.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 0.0,
+      "distance_ft": 391.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 5.0,
+      "distance_ft": 392.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 10.0,
+      "distance_ft": 387.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 15.0,
+      "distance_ft": 380.7,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 20.0,
+      "distance_ft": 375.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 25.0,
+      "distance_ft": 363.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 30.0,
+      "distance_ft": 353.2,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 35.0,
+      "distance_ft": 344.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 40.0,
+      "distance_ft": 339.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 45.0,
+      "distance_ft": 333.9,
+      "height_ft": 8.0
+    }
+  ],
+  "behind_fence_stand_height_ft": 25.0,
+  "foul_territory_sqft": 23000,
+  "geometry_source": "empirical fence distances (Statcast wall-ball p90, 2015-2025); documented fallback + height overlay"
+}
