@@ -32,7 +32,20 @@ proxy looks good (the MLP faithfully distills the labels — proven at 0.49 ≥
 
 ---
 
-## Phase 0 — Empirical geometry (RUNNING NOW)
+## Phase 0 RESULT — geometry WORKS → Branch A active
+
+Re-retrodict with the staged empirical fences moved `physics vs observed_norm`
+**0.294 → 0.588** (doubled). Bandboxes rose as predicted (CIN #13→#4, MIL
+#15→#7; NYY #26→#20 and PHI #16→#10 _partially_). COL/ATH/DET stay over-ranked
+(their non-geometry levers). The _partial_ NYY/PHI recovery is the [132]
+HR-margin coupling (Branch B suspect 1) confirmed: the shorter porch fence
+can't fully express because `landing > fence + 45 ft` caps it → **fielder-margin
+recalibration (D5) is now the evidence-backed top remaining bandbox lever.**
+Remaining gap: 0.588 vs the 0.935 ceiling; remaining mis-ranks map to D3
+(humidor/COL), D4 (foul/ATH), D5 (fielder/NYY,PHI), + data-correctness audits
+(DET deep-fence, SD/MIA marine-layer/roof).
+
+## Phase 0 — Empirical geometry (DONE — worked)
 
 Re-retrodict with the staged per-park empirical fences
 (`infra/park_geometry_estimated/`, via `BULLPEN_PARK_GEOMETRY_DIR`) layered on
