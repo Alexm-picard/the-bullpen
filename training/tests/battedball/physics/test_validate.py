@@ -24,6 +24,7 @@ from bullpen_training.battedball.physics.validate import (
     _DISTANCE_TOL_FT_ABS,
     _DISTANCE_TOL_PCT,
     _evaluate_fixture,
+    _fixture_atmosphere,
     assert_gate,
     run_validation,
 )
@@ -67,7 +68,7 @@ def test_validation_subset_each_fixture_passes(all_fixtures: list[dict]) -> None
     assert subset, "physics fixture subset is empty"
     failures: list[str] = []
     for fx in subset:
-        r = _evaluate_fixture(fx)
+        r = _evaluate_fixture(fx, _fixture_atmosphere(fx, None))
         if not r.pass_distance:
             failures.append(
                 f"{r.fixture_id} @{r.park_id} obs={r.observed_distance_ft:.0f} "

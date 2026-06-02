@@ -33,6 +33,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from bullpen_training.battedball.physics.atmosphere import Atmosphere
 from bullpen_training.battedball.physics.parks import park_atmosphere
 from bullpen_training.battedball.physics.simulator import LaunchParams, simulate
 
@@ -59,10 +60,39 @@ class FixtureResult:
     pass_distance: bool
 
 
-def _evaluate_fixture(fixture: dict[str, Any]) -> FixtureResult:
-    """Simulate one fixture and score it against observed."""
+def _fixture_atmosphere(
+    fixture: dict[str, Any], weather_by_game: dict[int, Any] | None
+) -> Atmosphere:
+    """Atmosphere for one fixture.
+
+    With ``weather_by_game`` (``--weather`` mode), use the HR's *actual* game
+    conditions via the same path the retrodiction labels use
+    (``weather_to_atmosphere``; still-air fallback when a game has no row) — so
+    the harness validates carry under real wind/temp instead of the no-wind/20C
+    park default that decision [131] flagged as a +12 ft over-bias. Without it,
+    the legacy park-default behaviour (CI / offline).
+    """
+    park_id = fixture["park_id"]
+    if weather_by_game is None:
+        return park_atmosphere(park_id)
+    # Lazy import: keeps the default (offline/CI) path free of the ClickHouse +
+    # retrodict coupling, and avoids a physics->retrodict layering import at load.
+    from bullpen_training.battedball.parks.loader import load_park_geometry
+    from bullpen_training.battedball.retrodict._atmospheres import (
+        still_air_atmosphere,
+        weather_to_atmosphere,
+    )
+
+    park = load_park_geometry(park_id)
+    weather = weather_by_game.get(int(fixture.get("game_id", 0)))
+    return (
+        weather_to_atmosphere(weather, park) if weather is not None else still_air_atmosphere(park)
+    )
+
+
+def _evaluate_fixture(fixture: dict[str, Any], atmo: Atmosphere) -> FixtureResult:
+    """Simulate one fixture under ``atmo`` and score it against observed."""
     launch = LaunchParams(**fixture["launch"])
-    atmo = park_atmosphere(fixture["park_id"])
     traj = simulate(launch, atmo)
     pred_distance_ft = traj.distance_ft
     observed = float(fixture["observed_distance_ft"])
@@ -83,11 +113,32 @@ def _evaluate_fixture(fixture: dict[str, Any]) -> FixtureResult:
     )
 
 
-def run_validation(fixtures_path: Path) -> dict[str, Any]:
-    """Run the harness on a fixtures JSON, return the aggregate report."""
+def run_validation(
+    fixtures_path: Path, *, use_weather: bool = False, container: str = "bullpen-clickhouse"
+) -> dict[str, Any]:
+    """Run the harness on a fixtures JSON, return the aggregate report.
+
+    ``use_weather`` joins per-game ``weather_observed`` (the desktop re-baseline);
+    requires fixtures carrying ``game_id`` + a populated weather table. Default
+    False keeps the legacy no-wind park-default behaviour (CI / offline).
+    """
     data = json.loads(fixtures_path.read_text())
     fixtures: list[dict[str, Any]] = data["fixtures"]
-    results = [_evaluate_fixture(fx) for fx in fixtures]
+
+    weather_by_game: dict[int, Any] | None = None
+    if use_weather:
+        from bullpen_training.battedball.retrodict._atmospheres import load_weather_observed
+
+        seasons = [int(fx["game_date"][:4]) for fx in fixtures if fx.get("game_date")]
+        sf, st = (min(seasons), max(seasons)) if seasons else (2024, 2024)
+        weather_by_game = load_weather_observed(sf, st, container=container)
+        covered = sum(1 for fx in fixtures if int(fx.get("game_id", 0)) in weather_by_game)
+        print(
+            f"weather mode: {len(weather_by_game)} games loaded; "
+            f"{covered}/{len(fixtures)} fixtures covered"
+        )
+
+    results = [_evaluate_fixture(fx, _fixture_atmosphere(fx, weather_by_game)) for fx in fixtures]
     n = len(results)
     pass_rate = sum(r.pass_distance for r in results) / n if n else 0.0
     mae_ft = sum(abs(r.err_distance_ft) for r in results) / n if n else 0.0
@@ -108,6 +159,7 @@ def run_validation(fixtures_path: Path) -> dict[str, Any]:
     return {
         "schema_version": 1,
         "n_fixtures": n,
+        "weather_mode": use_weather,
         "pass_rate_distance": round(pass_rate, 4),
         "mae_distance_ft": round(mae_ft, 2),
         "bias_distance_ft": round(bias_ft, 2),
@@ -183,9 +235,19 @@ def main() -> None:
         action="store_true",
         help="Exit non-zero if the gate fails (use in CI; default: report and exit 0).",
     )
+    parser.add_argument(
+        "--weather",
+        action="store_true",
+        help=(
+            "Score each fixture under its game's actual weather_observed conditions "
+            "(removes the no-wind/20C +12 ft bias). Requires fixtures with game_id and a "
+            "populated weather_observed table (desktop). Default: legacy park-default."
+        ),
+    )
+    parser.add_argument("--container", default="bullpen-clickhouse")
     args = parser.parse_args()
 
-    report = run_validation(args.fixtures)
+    report = run_validation(args.fixtures, use_weather=args.weather, container=args.container)
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(report, indent=2))
     _print_summary(report, report["failures"])
