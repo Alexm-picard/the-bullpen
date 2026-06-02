@@ -70,23 +70,26 @@ DEFAULT_SPRINT_SPEED_FPS = 27.0
 # Fielder model — a ball must clear the fence by some margin (in distance
 # AND height) before it's called HR, with near-misses splitting into
 # warning-track OUTs (long hang) and wall-banger DOUBLES (short). The
-# margin stands in for (a) residual carry slack and (b) outfielders robbing
-# borderline HRs at the wall.
+# margins stand in for (a) residual carry/crossing slack, (b) the sim's lack
+# of wall-collision (a low fence-crosser is a wall-ball in reality, not a HR)
+# and (c) outfielders robbing borderline HRs at the wall.
 #
-# Decision [132] originally set the distance margin to 45 ft, tuned to land
-# the league HR rate at ~4.2 % — but that value was inflated to offset the
-# simulator's no-wind over-carry (the +13/+21 ft bias of [131]). Phase 1
-# removed that over-carry (physical batted-ball spin + calibrated cd_scale
-# with real per-game weather), so +45 ft became badly over-conservative:
-# it capped short-porch parks (NYY/PHI) from expressing their geometry and
-# crushed the cross-park ranking (gate [52]). Re-tuned via
-# scripts/calibrate_fielder.py on 8000 BIPs (2015-2025, empirical fences,
-# Phase-1 physics): the 45 ft margin predicts 2.85 % HR vs ~4.6 % observed;
-# 15 ft lands it at 4.19 % (= the [132] 4.2 % target) while letting the
-# porches express. The height margin (25 ft) is unchanged — a secondary,
-# unswept knob that becomes binding below ~15 ft distance.
-DEFAULT_HR_MIN_DIST_PAST_FENCE_FT = 15.0
-DEFAULT_HR_MIN_HEIGHT_OVER_FENCE_FT = 25.0
+# Decision [132] set (dist=45, height=25), tuned to a ~4.2 % HR rate — but
+# both were inflated to offset the simulator's no-wind over-carry (the
+# +13/+21 ft bias of [131]). Phase 1 removed that over-carry (physical
+# batted-ball spin + calibrated cd_scale with real per-game weather), so the
+# [132] margins became over-conservative — and asymmetrically: the distance
+# gate is a pure carry fudge (now obsolete: a ball landing past the fence IS
+# a HR), while the height gate does real work (it stands in for the missing
+# wall-collision + robbery). Re-tuned via the 2-D scripts/calibrate_fielder.py
+# sweep on 30000 BIPs (2015-2025, empirical fences, Phase-1 physics): the
+# height-dominated shape (dist=0, height=20) lands the global rate at 4.97 %
+# (vs 4.65 % observed) with the best per-park rank fidelity on the realistic
+# iso-rate curve (rho +0.54 vs +0.38 for the old distance-dominated shape).
+# Distance is near-irrelevant once height binds, so dist=0 is both the
+# calibrated and the physically-correct value.
+DEFAULT_HR_MIN_DIST_PAST_FENCE_FT = 0.0
+DEFAULT_HR_MIN_HEIGHT_OVER_FENCE_FT = 20.0
 DEFAULT_WALL_HANG_CUTOFF_S = 4.5
 
 

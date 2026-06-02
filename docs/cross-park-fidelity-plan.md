@@ -90,11 +90,38 @@ confirms on the roster-stripped counterfactual). Expectation: the height margin
 drops to a physical few-ft (a leaping fielder robs ~3–5 ft over the wall), with
 distance rising to hold the rate — redistributing HR credit toward the porches.
 
-**Morning sequence:** (1) run the 2-D `calibrate_fielder` → recommended
-(dist, height); (2) set BOTH constants in `parks/_classify.py`; (3) re-retrodict
-(geometry override set); (4) `compare_park_factors`. NYY/PHI should climb and
-`physics vs observed_norm` should rise off 0.588. Ranking, not the absolute
-rate, is the gate.
+### D5 RESULT (2-D) — applied (dist=0, height=20); shape confirmed, gain bounded
+
+The 2-D sweep (30000 BIPs, observed global 4.65 %) confirmed the thesis **and**
+its ceiling:
+
+- **Shape matters, height-dominated wins.** Moving from the old distance-
+  dominated corner (`dist≈35, height≈0`, rho **+0.38**) to height-dominated
+  (`dist=0, height=20`, rho **+0.54**) improves per-park rank fidelity at the
+  same global rate. Distance is near-irrelevant once height binds (the whole
+  `dist 0-25, height 20` band is flat at 4.97 %/+0.54). Applied **(0, 20)** in
+  `parks/_classify.py` — `dist=0` is also the physically-correct value now that
+  carry is calibrated (a ball landing past the fence IS a HR).
+- **But the gain is bounded by a real rate↔rank tension.** The _highest_ rho
+  (+0.62 … +0.69) lives at `height ≥ 25`, which under-predicts the global rate
+  (2.7–4.1 %). The rate constraint caps the feasible home-rho at ~+0.54. **Two
+  global knobs cannot fully fix the ranking** — the residual is per-park
+  effects (D3 humidor / D4 marine-layer), not the fielder model. Expect the
+  re-retrodict to lift `physics vs observed_norm` off 0.588 _modestly_, not to
+  the ceiling.
+- Also surfaced: `height=20` (not the ~5 ft pure-robbery guess) is needed
+  because the sim has **no wall-collision** — the height margin doubles as a
+  wall-ball proxy (a low fence-crosser hits the wall in reality). A real
+  wall-collision model is a candidate future lever.
+
+One fused-parity boundary case (barreled shot @ SF's deep CF) moved to a 3/10-MC
+split (dominant class still HR); tolerance bumped 0.3 → 0.35, documented.
+
+**Morning sequence (code now applied):** (1) re-retrodict (geometry override
+set) so the labels pick up (0, 20); (2) `compare_park_factors`. NYY/PHI should
+climb and `physics vs observed_norm` rise off 0.588 (modestly — see tension
+above). Then on to **D3/D4** (the over-ranked side), which need `/decide` on a
+_physical_ (non-circular) approach. Ranking, not the absolute rate, is the gate.
 
 ## Phase 0 — Empirical geometry (DONE — worked)
 
