@@ -62,12 +62,39 @@ The +45 margin over-suppressed badly (2.85 % vs the [132] **4.2 %** target) —
 the carry it offset is gone. Recommendation **floored at 15** (4.19 % ≈ the
 4.2 % league target; the sample's 4.61 % skews high on era-mix). Applied
 `DEFAULT_HR_MIN_DIST_PAST_FENCE_FT = 15.0` in `parks/_classify.py` (which
-`_fused` imports). **Caveat:** the height margin (`hr_min_height_over_fence_ft
-= 25`, unswept) becomes the binding knob below ~15 ft — revisit only if the
-re-retrodict ranking wants more porch expression. **Morning check:** re-retrodict
-(geometry override still set) → `compare_park_factors`; NYY/PHI should climb
-past their _partial_ 0.588 recovery, and `physics vs observed_norm` should rise.
-Ranking, not the absolute rate, is the gate.
+`_fused` imports).
+
+### D5 UPDATE — distance-only is insufficient; the HEIGHT margin is the porch lever
+
+A `compare_park_factors` run after the distance change came back **flat**
+(`physics vs observed_norm` 0.585 ≈ the 0.588 geometry baseline). Two findings:
+
+1. **Those labels were stale** — the `physics` column averaged **~2.75 %** HR,
+   the margin-45 rate (calibrate_fielder: 45 → 2.85 %), not the ~4.2 % margin-15
+   produces. The re-retrodiction hadn't run; the compare read the old
+   geometry-run labels. (Tell: the counterfactual grand-mean prob_hr ≈ the home
+   HR rate when calibrated; 2.75 % ⇒ margin 45.)
+2. **The 25 ft _height_ margin is the binding constraint on short porches.** The
+   classifier needs `z_at_fence > fence_h + 25` AND `landing > fence + dist`. A
+   liner clearing NYY's ~8 ft RF wall at 20 ft of height is a real HR but fails
+   `20 > 8+25`. **Lowering distance alone can't free the porches** — the height
+   gate still rejects their characteristic low line-drive HRs. The two margins
+   were both inflated by [131]'s no-wind over-carry, but **asymmetrically**: the
+   height gate is what suppresses the short-porch signal the gate [52] needs.
+
+**Fix:** `calibrate_fielder.py` upgraded to a **2-D (dist × height) sweep**
+(commit pending) that holds the global rate at observed while picking the
+fielder _shape_ that best reproduces per-park reality (max Spearman of per-park
+predicted vs observed home HR rate — an in-sample proxy; `compare_park_factors`
+confirms on the roster-stripped counterfactual). Expectation: the height margin
+drops to a physical few-ft (a leaping fielder robs ~3–5 ft over the wall), with
+distance rising to hold the rate — redistributing HR credit toward the porches.
+
+**Morning sequence:** (1) run the 2-D `calibrate_fielder` → recommended
+(dist, height); (2) set BOTH constants in `parks/_classify.py`; (3) re-retrodict
+(geometry override set); (4) `compare_park_factors`. NYY/PHI should climb and
+`physics vs observed_norm` should rise off 0.588. Ranking, not the absolute
+rate, is the gate.
 
 ## Phase 0 — Empirical geometry (DONE — worked)
 
