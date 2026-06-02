@@ -45,6 +45,30 @@ Remaining gap: 0.588 vs the 0.935 ceiling; remaining mis-ranks map to D3
 (humidor/COL), D4 (foul/ATH), D5 (fielder/NYY,PHI), + data-correctness audits
 (DET deep-fence, SD/MIA marine-layer/roof).
 
+## D5 RESULT — fielder margin re-tuned 45 → 15 ft (applied, code-side)
+
+`scripts/calibrate_fielder.py --sample 8000` on the desktop (2015-2025,
+empirical fences via `BULLPEN_PARK_GEOMETRY_DIR`, Phase-1 physics) swept
+`hr_min_dist_past_fence_ft` against the sample's observed HR rate (4.61 %):
+
+| margin (ft) | pred HR rate |
+| ----------- | ------------ |
+| 45 ([132])  | 2.85 %       |
+| 30          | 3.98 %       |
+| 20          | 4.16 %       |
+| **15**      | **4.19 %**   |
+
+The +45 margin over-suppressed badly (2.85 % vs the [132] **4.2 %** target) —
+the carry it offset is gone. Recommendation **floored at 15** (4.19 % ≈ the
+4.2 % league target; the sample's 4.61 % skews high on era-mix). Applied
+`DEFAULT_HR_MIN_DIST_PAST_FENCE_FT = 15.0` in `parks/_classify.py` (which
+`_fused` imports). **Caveat:** the height margin (`hr_min_height_over_fence_ft
+= 25`, unswept) becomes the binding knob below ~15 ft — revisit only if the
+re-retrodict ranking wants more porch expression. **Morning check:** re-retrodict
+(geometry override still set) → `compare_park_factors`; NYY/PHI should climb
+past their _partial_ 0.588 recovery, and `physics vs observed_norm` should rise.
+Ranking, not the absolute rate, is the gate.
+
 ## Phase 0 — Empirical geometry (DONE — worked)
 
 Re-retrodict with the staged per-park empirical fences

@@ -17,7 +17,6 @@ import math
 
 import numpy as np
 import pytest
-
 from bullpen_training.battedball.parks import Outcome, classify_outcome, load_park_geometry
 from bullpen_training.battedball.physics._constants import M_TO_FT
 from bullpen_training.battedball.physics.simulator import Trajectory
@@ -111,9 +110,9 @@ def _make_traj(
 def test_dead_pull_hr_at_yankee_short_porch() -> None:
     """A ball that lands at 380 ft, -45 deg (RF foul pole) with 40 ft
     of height when it crosses NYY's 314 ft RF foul-pole fence is a HR.
-    Margins set well past the decision-[132] HR thresholds
-    (45 ft past fence + 25 ft above wall) so the test pins HR semantics
-    rather than the exact threshold values."""
+    Margins set well past the fielder-model HR thresholds
+    (15 ft past fence after the D5 re-tune + 25 ft above wall) so the
+    test pins HR semantics rather than the exact threshold values."""
     park = load_park_geometry("NYY")
     traj = _make_traj(
         landing_dist_ft=380.0,
@@ -142,12 +141,15 @@ def test_moon_shot_to_cf_at_coors() -> None:
 
 
 def test_borderline_shot_clears_nyy_but_not_comerica() -> None:
-    """A 460 ft shot to CF clears Yankee Stadium (CF 408, 460-408=52 >
-    45 ft HR margin) but NOT Comerica (CF 420, 460-420=40 < 45). Same
+    """A 430 ft shot to CF clears Yankee Stadium (CF 408, 430-408=22 >
+    15 ft HR margin) but NOT Comerica (CF 420, 430-420=10 < 15). Same
     trajectory, different parks — the headline geometry case from the
-    leaf, retuned for the decision [132] thresholds."""
+    leaf. The D5-retuned 15 ft margin (was 45 under [132], inflated to
+    offset the no-wind over-carry Phase 1 removed) is now tight enough
+    that a 12 ft fence difference flips the call — exactly the per-park
+    expressiveness D5 was restoring for the cross-park gate [52]."""
     traj = _make_traj(
-        landing_dist_ft=460.0,
+        landing_dist_ft=430.0,
         spray_deg=0.0,
         apex_ft=110.0,
         hang_time_s=5.0,

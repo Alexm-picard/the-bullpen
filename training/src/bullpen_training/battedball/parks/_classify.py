@@ -67,16 +67,25 @@ _FOUL_LINE_DEG = 45.0
 # turn doubles into triples more often).
 DEFAULT_SPRINT_SPEED_FPS = 27.0
 
-# Fielder model (decision [132]) — the pure "ball clears the wall in
-# vacuum" check predicts 12 % HR rate on real BIPs vs the observed
-# ~4 % because (a) the simulator over-predicts carry without per-game
-# wind (the same +13 ft bias documented in decision [131] for 2c.2) and
-# (b) outfielders rob borderline HRs at the wall. These thresholds
-# require a substantial margin past the fence AND above the wall before
-# calling HR; flies that fail this check but reach the wall area split
-# into warning-track OUTs (long hang) and wall-banger DOUBLES (short).
-# Tuned on 500 2024-season BIPs to land HR rate at 4.20 % (= observed).
-DEFAULT_HR_MIN_DIST_PAST_FENCE_FT = 45.0
+# Fielder model — a ball must clear the fence by some margin (in distance
+# AND height) before it's called HR, with near-misses splitting into
+# warning-track OUTs (long hang) and wall-banger DOUBLES (short). The
+# margin stands in for (a) residual carry slack and (b) outfielders robbing
+# borderline HRs at the wall.
+#
+# Decision [132] originally set the distance margin to 45 ft, tuned to land
+# the league HR rate at ~4.2 % — but that value was inflated to offset the
+# simulator's no-wind over-carry (the +13/+21 ft bias of [131]). Phase 1
+# removed that over-carry (physical batted-ball spin + calibrated cd_scale
+# with real per-game weather), so +45 ft became badly over-conservative:
+# it capped short-porch parks (NYY/PHI) from expressing their geometry and
+# crushed the cross-park ranking (gate [52]). Re-tuned via
+# scripts/calibrate_fielder.py on 8000 BIPs (2015-2025, empirical fences,
+# Phase-1 physics): the 45 ft margin predicts 2.85 % HR vs ~4.6 % observed;
+# 15 ft lands it at 4.19 % (= the [132] 4.2 % target) while letting the
+# porches express. The height margin (25 ft) is unchanged — a secondary,
+# unswept knob that becomes binding below ~15 ft distance.
+DEFAULT_HR_MIN_DIST_PAST_FENCE_FT = 15.0
 DEFAULT_HR_MIN_HEIGHT_OVER_FENCE_FT = 25.0
 DEFAULT_WALL_HANG_CUTOFF_S = 4.5
 
