@@ -99,6 +99,10 @@
       "minimum": 10000,
       "maximum": 50000,
       "description": "Total foul-territory square footage (publicly reported per park). Reserved for v1.5 foul-out modelling."
+    },
+    "geometry_source": {
+      "type": "string",
+      "description": "Optional provenance for the fence_polyline (e.g. 'empirical Statcast wall-ball estimate' vs the curated default). Absent on the hand-curated builder output."
     }
   }
 }
