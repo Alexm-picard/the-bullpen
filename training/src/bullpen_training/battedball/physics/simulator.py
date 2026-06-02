@@ -104,6 +104,7 @@ def simulate(
     *,
     n_steps_max: int = _DEFAULT_N_STEPS_MAX,
     dt: float = _BASE_DT_S,
+    cd_scale: float = 1.0,
 ) -> Trajectory:
     """Integrate one batted-ball trajectory.
 
@@ -111,6 +112,9 @@ def simulate(
     steps, whichever comes first. The ``landed`` flag distinguishes the
     two cases; non-landed trajectories don't have meaningful
     distance/hang_time but the time series is still valid.
+
+    ``cd_scale`` is the calibrated global drag multiplier (Phase 1); 1.0 = raw
+    Nathan CD curve.
     """
     atmo = atmosphere or _STANDARD_ATMOSPHERE
     state0 = _initial_state(launch)
@@ -119,7 +123,16 @@ def simulate(
     wind = atmo.wind_vec_m_s.astype(np.float64)
 
     states, landing_step = integrate_single(
-        state0, dt, n_steps_max, spin_axis, spin_rate, float(atmo.density), wind, _CD_X, _CD_Y
+        state0,
+        dt,
+        n_steps_max,
+        spin_axis,
+        spin_rate,
+        float(atmo.density),
+        wind,
+        _CD_X,
+        _CD_Y,
+        cd_scale,
     )
     t = np.arange(states.shape[0], dtype=np.float64) * dt
     return _trajectory_from_states(states, t, int(landing_step))
@@ -131,6 +144,7 @@ def simulate_batch(
     *,
     n_steps_max: int = _DEFAULT_N_STEPS_MAX,
     dt: float = _BASE_DT_S,
+    cd_scale: float = 1.0,
 ) -> list[Trajectory]:
     """Vectorised N-trajectory integration.
 
@@ -158,7 +172,7 @@ def simulate_batch(
     winds = np.stack([a.wind_vec_m_s for a in atmospheres], axis=0).astype(np.float64)  # (N, 3)
 
     states_history, landing_steps = integrate_batch(
-        states0, dt, n_steps_max, spin_axes, spin_rates, rhos, winds, _CD_X, _CD_Y
+        states0, dt, n_steps_max, spin_axes, spin_rates, rhos, winds, _CD_X, _CD_Y, cd_scale
     )
     # states_history is (N, n_steps_max+1, 6); for the Python-facing Trajectory we
     # truncate each per-trajectory series at its landing step (so distance_ft etc.

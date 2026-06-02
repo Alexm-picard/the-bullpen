@@ -136,4 +136,59 @@ def load_spin_coeffs(path: Path | str | None) -> SpinCoeffs:
     return SpinCoeffs.from_dict(json.loads(p.read_text()))
 
 
-__all__ = ("DEFAULT_COEFFS", "SpinCoeffs", "batted_ball_spin", "load_spin_coeffs")
+@dataclass(frozen=True)
+class PhysicsCalibration:
+    """The calibrated physics knobs: spin model + global drag (CD) scale.
+
+    Phase 1 jointly fits both — drag absorbs the systematic carry bias (its
+    physically-correct owner; the Nathan CD curve has digitisation slack), spin
+    stays physical and captures the EV/LA/spray variance. Defaults reproduce the
+    legacy physics (flat 1800 rpm, raw CD) so wiring it in is a no-op until the
+    desktop calibration writes a file.
+    """
+
+    spin: SpinCoeffs = DEFAULT_COEFFS
+    cd_scale: float = 1.0
+
+    def to_dict(self) -> dict[str, object]:
+        spin_d = {k: v for k, v in self.spin.to_dict().items() if k != "schema_version"}
+        return {"schema_version": _SCHEMA_VERSION, "cd_scale": self.cd_scale, "spin": spin_d}
+
+    @classmethod
+    def from_dict(cls, d: dict[str, object]) -> PhysicsCalibration:
+        if int(d.get("schema_version", _SCHEMA_VERSION)) != _SCHEMA_VERSION:  # type: ignore[arg-type]
+            raise ValueError(
+                f"unknown physics-calibration schema_version: {d.get('schema_version')}"
+            )
+        spin_raw = d["spin"]
+        if not isinstance(spin_raw, dict):
+            raise ValueError("physics-calibration 'spin' must be an object")
+        spin_d: dict[str, object] = {**spin_raw, "schema_version": _SCHEMA_VERSION}
+        return cls(
+            spin=SpinCoeffs.from_dict(spin_d),  # type: ignore[arg-type]
+            cd_scale=float(d.get("cd_scale", 1.0)),  # type: ignore[arg-type]
+        )
+
+
+DEFAULT_CALIBRATION = PhysicsCalibration()
+
+
+def load_physics_calibration(path: Path | str | None) -> PhysicsCalibration:
+    """Load the joint spin+drag calibration, or the legacy-physics default if absent."""
+    if path is None:
+        return DEFAULT_CALIBRATION
+    p = Path(path)
+    if not p.exists():
+        return DEFAULT_CALIBRATION
+    return PhysicsCalibration.from_dict(json.loads(p.read_text()))
+
+
+__all__ = (
+    "DEFAULT_CALIBRATION",
+    "DEFAULT_COEFFS",
+    "PhysicsCalibration",
+    "SpinCoeffs",
+    "batted_ball_spin",
+    "load_physics_calibration",
+    "load_spin_coeffs",
+)

@@ -12,18 +12,20 @@ Procedure:
      the gate stays a held-out test.
   2. Join per-game ``weather_observed`` -> per-HR atmosphere (still-air fallback),
      the same path retrodiction + the Phase-0 harness use.
-  3. Minimise mean |sim_carry - observed| over the 5 coefficients
-     (b0, b1_ev, b2_la, b3_la2, k_side) with Nelder-Mead; spin is re-derived each
-     eval and the batch is re-simulated.
-  4. Write the fitted coefficients to ``--out`` (default
-     training/artifacts/spin_model.json); print before/after MAE + bias.
+  3. Minimise mean |sim_carry - observed| over 5 spin coeffs
+     (b0, b1_ev, b2_la, b3_la2, k_side) PLUS a global drag scale (cd_scale),
+     BOUNDED so spin stays physical and drag absorbs the systematic carry bias.
+     differential_evolution (robust to the parameter scaling that made an
+     unbounded Nelder-Mead fit collapse to a degenerate flat 761 rpm).
+  4. Write the fitted PhysicsCalibration (spin + cd_scale) to ``--out``
+     (default training/artifacts/physics_calibration.json); print before/after.
 
 Desktop-only (needs ``weather_observed``). Author on the Mac (ADR-0006), run:
 
-    uv run python scripts/calibrate_spin.py --sample 4000 --out artifacts/spin_model.json
+    uv run python scripts/calibrate_spin.py --sample 4000 --out artifacts/physics_calibration.json
 
-Then re-run the Phase-0 gate with --weather and re-retrodict so the labels pick
-up the fitted spin (wiring step, after this lands).
+Then re-run the Phase-0 gate with --weather and wire load_physics_calibration
+into the fixtures + retrodiction, then re-retrodict (wiring step, after this).
 """
 
 from __future__ import annotations
@@ -34,12 +36,17 @@ import subprocess
 from pathlib import Path
 
 import numpy as np
-from scipy.optimize import minimize
+from scipy.optimize import differential_evolution
 
 from bullpen_training.battedball.features_shared import hc_to_spray_deg
 from bullpen_training.battedball.parks.loader import load_park_geometry
 from bullpen_training.battedball.physics.simulator import LaunchParams, simulate_batch
-from bullpen_training.battedball.physics.spin import DEFAULT_COEFFS, SpinCoeffs, batted_ball_spin
+from bullpen_training.battedball.physics.spin import (
+    DEFAULT_COEFFS,
+    PhysicsCalibration,
+    SpinCoeffs,
+    batted_ball_spin,
+)
 from bullpen_training.battedball.retrodict._atmospheres import (
     load_weather_observed,
     still_air_atmosphere,
@@ -47,7 +54,7 @@ from bullpen_training.battedball.retrodict._atmospheres import (
 )
 
 _TRAINING_ROOT = Path(__file__).resolve().parents[1]
-_DEFAULT_OUT = _TRAINING_ROOT / "artifacts" / "spin_model.json"
+_DEFAULT_OUT = _TRAINING_ROOT / "artifacts" / "physics_calibration.json"
 _FIXTURES = _TRAINING_ROOT / "data" / "physics_validation_fixtures.json"
 _HOLDOUT_YEAR = 2026
 
@@ -116,9 +123,10 @@ def _atmospheres(data: dict[str, np.ndarray], weather_by_game: dict) -> list:
 
 
 def _carry_mae_bias(
-    data: dict[str, np.ndarray], atmos: list, coeffs: SpinCoeffs
+    data: dict[str, np.ndarray], atmos: list, coeffs: SpinCoeffs, cd_scale: float
 ) -> tuple[float, float]:
     rate, tilt = batted_ball_spin(data["ev"], data["la"], data["spray"], coeffs)
+    rate, tilt = np.asarray(rate), np.asarray(tilt)
     launches = [
         LaunchParams(
             launch_speed_mph=float(data["ev"][i]),
@@ -129,7 +137,7 @@ def _carry_mae_bias(
         )
         for i in range(len(data["ev"]))
     ]
-    trajs = simulate_batch(launches, atmos)
+    trajs = simulate_batch(launches, atmos, cd_scale=cd_scale)
     pred = np.array([t.distance_ft if t.landed else np.nan for t in trajs])
     err = pred - data["obs"]
     err = err[np.isfinite(err)]
@@ -156,30 +164,44 @@ def main() -> None:
     atmos = _atmospheres(data, weather_by_game)
     print(f"calibrating on {len(data['ev'])} HRs under real weather ...")
 
-    base_mae, base_bias = _carry_mae_bias(data, atmos, DEFAULT_COEFFS)
-    print(f"  baseline (flat 1800): MAE={base_mae:.2f} ft  bias={base_bias:+.2f} ft")
+    base_mae, base_bias = _carry_mae_bias(data, atmos, DEFAULT_COEFFS, 1.0)
+    print(f"  baseline (flat 1800, cd=1.00): MAE={base_mae:.2f} ft  bias={base_bias:+.2f} ft")
+
+    # Jointly fit 5 spin coeffs + the global drag scale, BOUNDED so spin stays
+    # physical (~1500-2500 backspin) and drag (not unphysical spin) absorbs the
+    # systematic carry bias. differential_evolution is robust to the parameter
+    # scaling that made the unbounded Nelder-Mead fit collapse to a degenerate
+    # flat 761 rpm. Order: [b0, b1_ev, b2_la, b3_la2, k_side, cd_scale].
+    bounds = [(1400.0, 2600.0), (0.0, 25.0), (-30.0, 60.0), (-1.0, 1.0), (-3.0, 3.0), (0.85, 1.20)]
 
     def loss(v: np.ndarray) -> float:
-        mae, _ = _carry_mae_bias(data, atmos, SpinCoeffs.from_vector(v))
+        mae, _ = _carry_mae_bias(data, atmos, SpinCoeffs.from_vector(v[:5]), float(v[5]))
         return mae
 
-    res = minimize(
+    res = differential_evolution(
         loss,
-        DEFAULT_COEFFS.as_vector(),
-        method="Nelder-Mead",
-        options={"xatol": 1.0, "fatol": 0.05, "maxiter": 600},
+        bounds,
+        maxiter=40,
+        popsize=12,
+        tol=0.01,
+        mutation=(0.5, 1.0),
+        recombination=0.7,
+        rng=0,
+        polish=True,
     )
-    fitted = SpinCoeffs.from_vector(np.asarray(res.x, dtype=np.float64))
-    fit_mae, fit_bias = _carry_mae_bias(data, atmos, fitted)
-    print(f"  fitted:               MAE={fit_mae:.2f} ft  bias={fit_bias:+.2f} ft")
-    print(f"  coeffs: {fitted.to_dict()}")
+    fitted_spin = SpinCoeffs.from_vector(np.asarray(res.x[:5], dtype=np.float64))
+    cd_scale = float(res.x[5])
+    fit_mae, fit_bias = _carry_mae_bias(data, atmos, fitted_spin, cd_scale)
+    calib = PhysicsCalibration(spin=fitted_spin, cd_scale=cd_scale)
+    print(f"  fitted (spin+drag):            MAE={fit_mae:.2f} ft  bias={fit_bias:+.2f} ft")
+    print(f"  cd_scale={cd_scale:.4f}  spin={fitted_spin.to_dict()}")
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps(fitted.to_dict(), indent=2) + "\n")
+    args.out.write_text(json.dumps(calib.to_dict(), indent=2) + "\n")
     print(f"wrote {args.out}")
     print(
-        "Next: re-run `validate.py --weather` (gate) and wire load_spin_coeffs into "
-        "retrodiction + fixtures, then re-retrodict."
+        "Next: re-run `validate.py --weather` (gate) and wire load_physics_calibration "
+        "into the fixtures + retrodiction, then re-retrodict."
     )
 
 

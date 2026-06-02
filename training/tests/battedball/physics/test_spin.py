@@ -8,11 +8,38 @@ import numpy as np
 import pytest
 
 from bullpen_training.battedball.physics.spin import (
+    DEFAULT_CALIBRATION,
     DEFAULT_COEFFS,
+    PhysicsCalibration,
     SpinCoeffs,
     batted_ball_spin,
+    load_physics_calibration,
     load_spin_coeffs,
 )
+
+
+def test_physics_calibration_default_is_legacy() -> None:
+    assert DEFAULT_CALIBRATION.cd_scale == 1.0
+    assert DEFAULT_CALIBRATION.spin == DEFAULT_COEFFS
+
+
+def test_physics_calibration_roundtrip(tmp_path) -> None:
+    c = PhysicsCalibration(
+        spin=SpinCoeffs(b0=2000.0, b1_ev=8.0, b2_la=15.0, b3_la2=-0.3, k_side=0.5), cd_scale=1.06
+    )
+    assert PhysicsCalibration.from_dict(c.to_dict()) == c
+    p = tmp_path / "physics_calibration.json"
+    p.write_text(json.dumps(c.to_dict()))
+    assert load_physics_calibration(p) == c
+    assert load_physics_calibration(None) == DEFAULT_CALIBRATION
+    assert load_physics_calibration(tmp_path / "missing.json") == DEFAULT_CALIBRATION
+
+
+def test_physics_calibration_rejects_unknown_schema() -> None:
+    with pytest.raises(ValueError, match="schema_version"):
+        PhysicsCalibration.from_dict(
+            {"schema_version": 999, "cd_scale": 1.0, "spin": DEFAULT_COEFFS.to_dict()}
+        )
 
 
 def test_default_coeffs_reproduce_legacy_flat_backspin() -> None:

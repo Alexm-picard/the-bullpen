@@ -75,6 +75,7 @@ def _accel_scalar(
     rho: float,
     cd_x: np.ndarray,
     cd_y: np.ndarray,
+    cd_scale: float = 1.0,
 ) -> tuple[float, float, float]:
     """Return (ax, ay, az) for one velocity sample.
 
@@ -84,7 +85,10 @@ def _accel_scalar(
     cd_x/cd_y are accepted for API symmetry with the Python equations but
     not used — the inner loop calls ``_cd_interp`` instead (hardcoded
     branches over the Nathan 2008 5-point table — faster than np.interp
-    inside the JIT)."""
+    inside the JIT).
+
+    ``cd_scale`` is the calibrated global drag multiplier (Phase 1 physics
+    overhaul); 1.0 = the raw Nathan CD curve (default keeps parity)."""
     # Wind-relative velocity
     rx = vx - wind_x
     ry = vy - wind_y
@@ -96,8 +100,8 @@ def _accel_scalar(
 
     speed = np.sqrt(speed_sq)
 
-    # Drag: -0.5 * rho * CD * A * speed * v_rel / m
-    cd = _cd_interp(speed)
+    # Drag: -0.5 * rho * CD * A * speed * v_rel / m (CD scaled by the calibrated cd_scale)
+    cd = _cd_interp(speed) * cd_scale
     drag_coef = -0.5 * rho * cd * BALL_AREA_M2 * speed / BALL_MASS_KG
     a_drag_x = drag_coef * rx
     a_drag_y = drag_coef * ry
@@ -140,6 +144,7 @@ def _integrate_into(
     wind: np.ndarray,
     cd_x: np.ndarray,
     cd_y: np.ndarray,
+    cd_scale: float = 1.0,
 ) -> int:
     """Run one trajectory writing into a pre-allocated ``states`` buffer.
 
@@ -172,28 +177,28 @@ def _integrate_into(
 
         # k1
         a1x, a1y, a1z = _accel_scalar(
-            vx, vy, vz, wx, wy, wz, sx, sy, sz, spin_rate, rho, cd_x, cd_y
+            vx, vy, vz, wx, wy, wz, sx, sy, sz, spin_rate, rho, cd_x, cd_y, cd_scale
         )
         # k2 (midpoint with k1)
         vx2 = vx + 0.5 * dt * a1x
         vy2 = vy + 0.5 * dt * a1y
         vz2 = vz + 0.5 * dt * a1z
         a2x, a2y, a2z = _accel_scalar(
-            vx2, vy2, vz2, wx, wy, wz, sx, sy, sz, spin_rate, rho, cd_x, cd_y
+            vx2, vy2, vz2, wx, wy, wz, sx, sy, sz, spin_rate, rho, cd_x, cd_y, cd_scale
         )
         # k3 (midpoint with k2)
         vx3 = vx + 0.5 * dt * a2x
         vy3 = vy + 0.5 * dt * a2y
         vz3 = vz + 0.5 * dt * a2z
         a3x, a3y, a3z = _accel_scalar(
-            vx3, vy3, vz3, wx, wy, wz, sx, sy, sz, spin_rate, rho, cd_x, cd_y
+            vx3, vy3, vz3, wx, wy, wz, sx, sy, sz, spin_rate, rho, cd_x, cd_y, cd_scale
         )
         # k4 (full step with k3)
         vx4 = vx + dt * a3x
         vy4 = vy + dt * a3y
         vz4 = vz + dt * a3z
         a4x, a4y, a4z = _accel_scalar(
-            vx4, vy4, vz4, wx, wy, wz, sx, sy, sz, spin_rate, rho, cd_x, cd_y
+            vx4, vy4, vz4, wx, wy, wz, sx, sy, sz, spin_rate, rho, cd_x, cd_y, cd_scale
         )
 
         sixth = dt / 6.0
@@ -238,6 +243,7 @@ def integrate_single(
     wind: np.ndarray,
     cd_x: np.ndarray,
     cd_y: np.ndarray,
+    cd_scale: float = 1.0,
 ) -> tuple[np.ndarray, int]:
     """Run a single trajectory through RK4 until landing or n_steps_max.
 
@@ -247,7 +253,7 @@ def integrate_single(
     """
     states = np.empty((n_steps_max + 1, 6), dtype=np.float64)
     ls = _integrate_into(
-        states, state0, dt, n_steps_max, spin_axis, spin_rate, rho, wind, cd_x, cd_y
+        states, state0, dt, n_steps_max, spin_axis, spin_rate, rho, wind, cd_x, cd_y, cd_scale
     )
     final_len = ls + 1 if ls >= 0 else n_steps_max + 1
     return states[:final_len], ls
@@ -264,6 +270,7 @@ def integrate_batch(
     winds: np.ndarray,
     cd_x: np.ndarray,
     cd_y: np.ndarray,
+    cd_scale: float = 1.0,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Run N trajectories in parallel.
 
@@ -297,6 +304,7 @@ def integrate_batch(
             winds[i],
             cd_x,
             cd_y,
+            cd_scale,
         )
         landing_steps[i] = ls
     return states_history, landing_steps
