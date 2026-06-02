@@ -10,12 +10,24 @@ import pytest
 from bullpen_training.battedball.physics.spin import (
     DEFAULT_CALIBRATION,
     DEFAULT_COEFFS,
+    PHYSICS_PRIOR_COEFFS,
     PhysicsCalibration,
     SpinCoeffs,
     batted_ball_spin,
     load_physics_calibration,
     load_spin_coeffs,
 )
+
+
+def test_physics_prior_is_physical_across_launch_angles() -> None:
+    """The fixed physics-prior spin must stay in a realistic backspin band over
+    the HR launch-angle range (no flooring to the clamp), rising then levelling."""
+    rates = {
+        la: batted_ball_spin(103.0, float(la), 0.0, PHYSICS_PRIOR_COEFFS)[0] for la in (15, 25, 35)
+    }
+    for la, r in rates.items():
+        assert 1500.0 <= r <= 2400.0, f"LA={la} backspin {r:.0f} outside physical band"
+    assert rates[25] > rates[15], "backspin should rise from LA 15 to 25"
 
 
 def test_physics_calibration_default_is_legacy() -> None:

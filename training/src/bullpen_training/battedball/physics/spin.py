@@ -96,6 +96,21 @@ class SpinCoeffs:
 
 DEFAULT_COEFFS = SpinCoeffs()
 
+# Physics-prior spin coefficients (NOT fit to carry — HR carry can't identify
+# spin separately from drag; both scale carry). Sourced from batted-ball physics
+# (Nathan/Kagan) + the fixtures' literature buckets: backspin rises with launch
+# angle, peaking ~35 deg with a mild falloff, plus a small EV term and modest
+# spray-driven sidespin. The quadratic was fit through (LA,bs) = (10,1500),
+# (25,2000), (40,2150) rpm; b1_ev ~ +5 rpm/mph; k_side modest. The Statcast-
+# calibrated knob is the drag scale (cd_scale), not these.
+PHYSICS_PRIOR_COEFFS = SpinCoeffs(
+    b0=973.0,
+    b1_ev=5.0,
+    b2_la=60.5,
+    b3_la2=-0.78,
+    k_side=0.4,
+)
+
 
 def batted_ball_spin(
     ev_mph: float | np.ndarray,
@@ -186,6 +201,7 @@ def load_physics_calibration(path: Path | str | None) -> PhysicsCalibration:
 __all__ = (
     "DEFAULT_CALIBRATION",
     "DEFAULT_COEFFS",
+    "PHYSICS_PRIOR_COEFFS",
     "PhysicsCalibration",
     "SpinCoeffs",
     "batted_ball_spin",

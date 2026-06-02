@@ -12,13 +12,13 @@ Procedure:
      the gate stays a held-out test.
   2. Join per-game ``weather_observed`` -> per-HR atmosphere (still-air fallback),
      the same path retrodiction + the Phase-0 harness use.
-  3. Minimise mean |sim_carry - observed| over 5 spin coeffs
-     (b0, b1_ev, b2_la, b3_la2, k_side) PLUS a global drag scale (cd_scale),
-     BOUNDED so spin stays physical and drag absorbs the systematic carry bias.
-     differential_evolution (robust to the parameter scaling that made an
-     unbounded Nelder-Mead fit collapse to a degenerate flat 761 rpm).
-  4. Write the fitted PhysicsCalibration (spin + cd_scale) to ``--out``
-     (default training/artifacts/physics_calibration.json); print before/after.
+  3. Fit ONLY the global drag scale cd_scale (1-D, minimize_scalar) to minimise
+     mean |sim_carry - observed|, with spin FIXED at PHYSICS_PRIOR_COEFFS. HR
+     carry can't identify spin separately from drag (both scale carry; two prior
+     joint fits collapsed spin to its clamp), so spin is set from physics and
+     drag is the single identifiable, Statcast-calibrated knob.
+  4. Write the fitted PhysicsCalibration (physics-prior spin + fitted cd_scale)
+     to ``--out`` (default training/artifacts/physics_calibration.json).
 
 Desktop-only (needs ``weather_observed``). Author on the Mac (ADR-0006), run:
 
@@ -36,13 +36,13 @@ import subprocess
 from pathlib import Path
 
 import numpy as np
-from scipy.optimize import differential_evolution
+from scipy.optimize import minimize_scalar
 
 from bullpen_training.battedball.features_shared import hc_to_spray_deg
 from bullpen_training.battedball.parks.loader import load_park_geometry
 from bullpen_training.battedball.physics.simulator import LaunchParams, simulate_batch
 from bullpen_training.battedball.physics.spin import (
-    DEFAULT_COEFFS,
+    PHYSICS_PRIOR_COEFFS,
     PhysicsCalibration,
     SpinCoeffs,
     batted_ball_spin,
@@ -164,37 +164,28 @@ def main() -> None:
     atmos = _atmospheres(data, weather_by_game)
     print(f"calibrating on {len(data['ev'])} HRs under real weather ...")
 
-    base_mae, base_bias = _carry_mae_bias(data, atmos, DEFAULT_COEFFS, 1.0)
-    print(f"  baseline (flat 1800, cd=1.00): MAE={base_mae:.2f} ft  bias={base_bias:+.2f} ft")
+    # Spin is FIXED at the physics prior — HR carry can't identify spin separately
+    # from drag (both scale carry; two prior fits collapsed spin to its clamp).
+    # We calibrate ONLY the global drag scale cd_scale (the single identifiable
+    # carry knob); the physical spin supplies the EV/LA/spray shape.
+    spin = PHYSICS_PRIOR_COEFFS
+    base_mae, base_bias = _carry_mae_bias(data, atmos, spin, 1.0)
+    print(
+        f"  baseline (physics-prior spin, cd=1.00): MAE={base_mae:.2f} ft  bias={base_bias:+.2f} ft"
+    )
 
-    # Jointly fit 5 spin coeffs + the global drag scale, BOUNDED so spin stays
-    # physical (~1500-2500 backspin) and drag (not unphysical spin) absorbs the
-    # systematic carry bias. differential_evolution is robust to the parameter
-    # scaling that made the unbounded Nelder-Mead fit collapse to a degenerate
-    # flat 761 rpm. Order: [b0, b1_ev, b2_la, b3_la2, k_side, cd_scale].
-    bounds = [(1400.0, 2600.0), (0.0, 25.0), (-30.0, 60.0), (-1.0, 1.0), (-3.0, 3.0), (0.85, 1.20)]
-
-    def loss(v: np.ndarray) -> float:
-        mae, _ = _carry_mae_bias(data, atmos, SpinCoeffs.from_vector(v[:5]), float(v[5]))
+    def loss(cd: float) -> float:
+        mae, _ = _carry_mae_bias(data, atmos, spin, cd)
         return mae
 
-    res = differential_evolution(
-        loss,
-        bounds,
-        maxiter=40,
-        popsize=12,
-        tol=0.01,
-        mutation=(0.5, 1.0),
-        recombination=0.7,
-        rng=0,
-        polish=True,
+    res = minimize_scalar(loss, bounds=(0.85, 1.20), method="bounded")
+    cd_scale = float(res.x)  # type: ignore[attr-defined]  # OptimizeResult stubbed as object
+    fit_mae, fit_bias = _carry_mae_bias(data, atmos, spin, cd_scale)
+    calib = PhysicsCalibration(spin=spin, cd_scale=cd_scale)
+    print(
+        f"  fitted (cd_scale only):                 MAE={fit_mae:.2f} ft  bias={fit_bias:+.2f} ft"
     )
-    fitted_spin = SpinCoeffs.from_vector(np.asarray(res.x[:5], dtype=np.float64))
-    cd_scale = float(res.x[5])
-    fit_mae, fit_bias = _carry_mae_bias(data, atmos, fitted_spin, cd_scale)
-    calib = PhysicsCalibration(spin=fitted_spin, cd_scale=cd_scale)
-    print(f"  fitted (spin+drag):            MAE={fit_mae:.2f} ft  bias={fit_bias:+.2f} ft")
-    print(f"  cd_scale={cd_scale:.4f}  spin={fitted_spin.to_dict()}")
+    print(f"  cd_scale={cd_scale:.4f}  spin(fixed)={spin.to_dict()}")
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(calib.to_dict(), indent=2) + "\n")
