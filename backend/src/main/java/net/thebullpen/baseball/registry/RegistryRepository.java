@@ -214,6 +214,18 @@ public class RegistryRepository {
   }
 
   /**
+   * Every registered version across all models, grouped by model_name then newest-first. Feeds the
+   * Ops dashboard's Model Fleet table in a single round-trip — avoids an N+1 of {@link
+   * #findAllModelNames()} followed by {@link #findByName(String)} per name (which also collides
+   * with React's rules-of-hooks on the client).
+   */
+  public List<ModelVersion> findAll() {
+    return jdbc.query(
+        SELECT_ALL_COLUMNS + " ORDER BY model_name ASC, created_at DESC, id DESC",
+        MODEL_VERSION_MAPPER);
+  }
+
+  /**
    * Return the {@code feature_schema_hash} of the earliest non-archived row for {@code modelName} —
    * the bootstrap hash every later registration must match (decision [67] + rule 7). Empty if no
    * live (i.e., non-archived) version has been registered yet — caller treats that as a fresh

@@ -10,9 +10,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.time.Instant;
 import java.util.List;
 import net.thebullpen.baseball.api.ApiErrorAdvice;
+import net.thebullpen.baseball.api.dto.LatencyStat;
 import net.thebullpen.baseball.api.dto.OpsEvent;
 import net.thebullpen.baseball.api.dto.OpsEventType;
 import net.thebullpen.baseball.data.OpsEventsRepository;
+import net.thebullpen.baseball.data.PredictionLogRepository;
 import net.thebullpen.baseball.drift.DriftMetric;
 import net.thebullpen.baseball.drift.DriftMetricsRepository;
 import net.thebullpen.baseball.drift.MetricType;
@@ -38,6 +40,7 @@ class OpsControllerTest {
   private RetrainingQueueService retrain;
   private RegistryService registry;
   private OpsEventsRepository opsEvents;
+  private PredictionLogRepository predictionLog;
   private MockMvc mvc;
 
   @BeforeEach
@@ -47,9 +50,11 @@ class OpsControllerTest {
     retrain = mock(RetrainingQueueService.class);
     registry = mock(RegistryService.class);
     opsEvents = mock(OpsEventsRepository.class);
+    predictionLog = mock(PredictionLogRepository.class);
     mvc =
         MockMvcBuilders.standaloneSetup(
-                new OpsController(driftRepo, routingRepo, retrain, registry, opsEvents))
+                new OpsController(
+                    driftRepo, routingRepo, retrain, registry, opsEvents, predictionLog))
             .setControllerAdvice(new ApiErrorAdvice())
             .build();
   }
@@ -98,7 +103,7 @@ class OpsControllerTest {
   void drift_returns_empty_when_repo_bean_is_absent() throws Exception {
     MockMvc m =
         MockMvcBuilders.standaloneSetup(
-                new OpsController(null, routingRepo, retrain, registry, opsEvents))
+                new OpsController(null, routingRepo, retrain, registry, opsEvents, predictionLog))
             .setControllerAdvice(new ApiErrorAdvice())
             .build();
     m.perform(get("/v1/ops/drift").param("model", "any")).andExpect(status().isOk());
@@ -210,5 +215,30 @@ class OpsControllerTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.pitch_outcome_pre").value("{\"brier\":0.187}"))
         .andExpect(jsonPath("$.pitch_outcome_post").value(""));
+  }
+
+  @Test
+  void latency_returns_quantile_rows_per_model() throws Exception {
+    when(predictionLog.latencyQuantiles(7))
+        .thenReturn(
+            List.of(new LatencyStat("pitch_outcome_pre", "v3", 12_345L, 0.42, 0.91, 1.37, 2.10)));
+
+    mvc.perform(get("/v1/ops/latency"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].modelName").value("pitch_outcome_pre"))
+        .andExpect(jsonPath("$[0].sampleCount").value(12345))
+        .andExpect(jsonPath("$[0].p99Ms").value(1.37))
+        .andExpect(jsonPath("$[0].p999Ms").value(2.10));
+    verify(predictionLog).latencyQuantiles(7);
+  }
+
+  @Test
+  void latency_returns_empty_when_prediction_log_bean_is_absent() throws Exception {
+    MockMvc m =
+        MockMvcBuilders.standaloneSetup(
+                new OpsController(driftRepo, routingRepo, retrain, registry, opsEvents, null))
+            .setControllerAdvice(new ApiErrorAdvice())
+            .build();
+    m.perform(get("/v1/ops/latency")).andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
   }
 }

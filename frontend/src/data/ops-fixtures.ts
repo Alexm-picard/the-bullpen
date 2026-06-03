@@ -60,14 +60,14 @@ export type ModelRegistryRow = {
   state: RegistryState;
   /** Traffic share — "100%" / "10%" / "—" for SHADOW. */
   traffic: string;
-  /** Predictions in the last 24h window. */
-  predictions24h: number;
-  /** Max PSI across watched features in the last 24h. */
-  psiMax: number;
-  /** Mean ECE delta vs training baseline (signed) in the last 24h. */
-  eceDelta: number;
-  /** p99 latency in ms for the last 24h. */
-  p99Ms: number;
+  /** Predictions in the window. null when the model hasn't served any (→ em-dash). */
+  predictions24h: number | null;
+  /** Max PSI across watched features. null until drift jobs run in-season (→ em-dash). */
+  psiMax: number | null;
+  /** Mean ECE delta vs training baseline (signed). null until drift jobs run (→ em-dash). */
+  eceDelta: number | null;
+  /** p99 latency in ms. null when the model hasn't served any predictions (→ em-dash). */
+  p99Ms: number | null;
   /** Registration date, ISO yyyy-mm-dd. */
   lastRegistered: string;
 };

@@ -230,6 +230,11 @@ public class RegistryService {
     return repo.findByName(modelName);
   }
 
+  /** Every registered version across all models — feeds the Ops dashboard Model Fleet table. */
+  public List<ModelVersion> findAll() {
+    return repo.findAll();
+  }
+
   /** Distinct model names — feeds the Ops dashboard model-name dropdown. */
   public List<String> findAllModelNames() {
     return repo.findAllModelNames();
