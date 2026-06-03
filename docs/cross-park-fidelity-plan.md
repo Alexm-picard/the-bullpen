@@ -240,6 +240,15 @@ the new physics, then `compare_park_factors`.
 
 - **D1** — empirical geometry replaces the 5-point polyline (pending Phase 0).
 - **D2** — re-aim the 2c.7 gate target + threshold.
-- **D3** — humidor model (Branch A Phase 1A).
+- **D3** — humidor model (Branch A Phase 1A). **RESOLVED 2026-06-02** —
+  approach decided = Option A: a uniform, physically-sourced,
+  ambient-relative, era-aware per-(destination park, BIP season) EV
+  reduction in the retrodiction labels — a humidor-vs-ambient COR delta
+  scaled to batted-ball speed, with zero per-park free parameters →
+  non-circular with the 2c.7 gate. See decision [137] / ADR-0009.
+  Implementation pending (source `k_EV` + NOAA climate-normal RH table +
+  adoption timeline, then re-retrodict + `compare_park_factors`, verifying
+  the whole table — COL falls toward #9, humid parks tick up, dry parks tick
+  down).
 - **D4** — foul-territory model (Branch A Phase 2A).
 - **D5** — fielder/HR-margin recalibration, per-park-aware (Branch B suspect 1).

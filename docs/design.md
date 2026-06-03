@@ -488,6 +488,24 @@ The MLP learns the _residual_ between physics prediction and observed
 reality (wind gusts, bullpen door deflections, fielder positioning, etc.).
 Physics handles the deterministic part; ML handles the stochastic part.
 
+**Humidor EV adjustment in the counterfactual.** Because the retrodiction
+flies each BIP's _as-measured_ exit velocity through every park's air, it
+must also account for the fact that some parks store their baseballs in a
+50 % RH humidor, which lowers the ball's coefficient of restitution and so
+its exit velocity off the bat. This is a pre-contact (ball-COR) effect, not
+an air effect, so it enters the counterfactual as a per-(destination park,
+BIP season) reduction to `launch_speed_mph` _before_ trajectory
+integration: `EV_delta = k_EV·[COR(50 %) − COR(RH_ambient(park))]` when that
+park had a humidor that season, else 0. It is **ambient-relative**
+(suppressive in dry climates like Denver, slightly boosting in humid
+climates like Miami) and **era-aware** (COL 2002, AZ 2018, several parks
+2018–2021, all 30 under the 2022 MLB mandate). All inputs are exogenous —
+Nathan's COR-vs-RH slope, the 50 % standard, a static NOAA climate-normal
+ambient-RH table (distinct from the per-game weather of decision [88]), and
+a documented adoption timeline — so it adds **no per-park free parameter fit
+to the 2c.7 cross-park gate** it improves (the COL over-rank fix). See
+decision [137] / ADR-0009.
+
 **LightGBM Option-A baseline**: park-as-categorical, single model.
 Registered for direct comparison. If LightGBM wins, the architecture
 story changes. If MLP wins (more likely), the comparison validates the
