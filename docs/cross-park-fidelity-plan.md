@@ -123,6 +123,28 @@ climb and `physics vs observed_norm` rise off 0.588 (modestly — see tension
 above). Then on to **D3/D4** (the over-ranked side), which need `/decide` on a
 _physical_ (non-circular) approach. Ranking, not the absolute rate, is the gate.
 
+### D5 CONFIRMED — re-retrodict moved `physics vs observed_norm` 0.585 → 0.649
+
+The (0, 20) re-retrodict (1.25M BIPs, empirical geometry) lifted the headline
+**0.585 → 0.649** (+0.064) — better than the "modest" call. Lever stack so far:
+raw **0.294** → +geometry **0.588** → +fielder **0.649**, vs the 0.935 ceiling.
+The porches climbed as predicted (NYY #18→#11, PHI #9→#6, MIL #8→#5-exact; CIN's
+#4→#7 is tight-cluster reshuffle at 0.042, not a regression).
+
+**The surviving gap is the per-park EFFECTS, now named by the table** — all
+_over_-ranked (physics thinks they're more HR-friendly than reality):
+
+| park | physics | obs_norm | over-rank | cause                                  |
+| ---- | :-----: | :------: | :-------: | -------------------------------------- |
+| COL  |   #1    |    #9    |     8     | humidor (COR not modeled) → **D3**     |
+| SEA  |   #4    |   #17    |    13     | marine air (cool/dense, deep) → **D4** |
+| ATH  |   #16   |   #28    |    12     | marine layer / foul → **D4**           |
+| DET  |   #9    |   #22    |    13     | deep + cold-April air → audit          |
+| CWS  |   #2    |    #6    |     4     | (watch)                                |
+
+Fixing COL (humidor) + the Pacific/cold cluster (SEA/ATH/DET) is where the next
+~0.1-0.2 of rho lives. The fielder model is done; the rest is per-park physics.
+
 ## Phase 0 — Empirical geometry (DONE — worked)
 
 Re-retrodict with the staged per-park empirical fences
