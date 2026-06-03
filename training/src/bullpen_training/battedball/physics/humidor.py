@@ -3,9 +3,11 @@
 A baseball stored in a humidor equilibrates to the humidor's relative humidity
 (RH) rather than the local climate. Higher stored RH => wetter, heavier, softer
 ball => lower coefficient of restitution (COR) => lower exit velocity (EV) off the
-bat => less carry. The effect is **ambient-relative**: a 50-57 % humidor *lowers*
-COR in dry Denver (suppresses carry) but *raises* it in humid Miami (a small
-boost), because the sign of ``RH_humidor - RH_ambient`` flips.
+bat => less carry. The effect is **ambient-relative** (the sign follows
+``RH_humidor - RH_ambient``): in principle a humidor *raises* COR where storage is
+wetter than the setpoint. In practice balls are stored in climate-controlled
+clubhouses near/below the 57 % setpoint, so the realized effect is *suppression* -
+large in genuinely-dry Denver, near-zero (rank-neutral) where storage ~ setpoint.
 
 The cross-park retrodiction is a counterfactual — it flies each ball through every
 park. The as-measured EVs were produced by the hitters' home-park balls; to ask
@@ -25,9 +27,10 @@ gate** (the non-circularity discipline of ADR-0009):
   The small ball-weight contribution is folded into this effective constant.
 - **Humidor setpoints**: 50 % RH (COL since 2002, AZ since 2018) -> 57 % RH for all
   30 parks under the 2022 MLB mandate.
-- **Ambient RH** is a per-park baseball-season climate normal (the storage RH a
-  ball reaches *without* a humidor), deliberately distinct from the per-game
-  weather in the pipeline.
+- **Ambient RH** is the climate-controlled clubhouse storage RH (~52 %), with
+  documented dry exceptions (COL ~30 %, AZ ~45 %) — the storage RH a ball reaches
+  *without* a humidor, deliberately distinct from the per-game weather and from
+  the (wrong) outdoor-climate values an earlier version used.
 
 KNOWN SIMPLIFICATIONS (v1, documented per ADR-0009): we model the EV/COR effect
 but not the small +2 ft aero offset (slightly over-suppresses); we approximate the
@@ -57,45 +60,24 @@ HUMIDOR_SINCE_SEASON: dict[str, int] = {
     "AZ": 2018,
 }
 
-# --- Per-park ambient (climate-normal) RH, baseball-season afternoon avg (%) ---
-# The storage RH a ball equilibrates to WITHOUT a humidor. COL/AZ (the dry,
-# pre-mandate, load-bearing parks) are the values that actually move the ranking;
-# the rest are a league-humid baseline (post-2022 only, small deltas). SANITY-
-# CHECK TARGET: COL~30 anchors Nathan's -2.8 mph; the others want NOAA normals.
+# --- Per-park ambient (storage) RH: the humidity a ball reaches WITHOUT a
+# humidor (%) ---
+# Balls are stored in climate-controlled CLUBHOUSES (HVAC near the humidor
+# setpoint), NOT outdoors — so for most parks storage sits ~52 %, close to the
+# 57 % humidor, giving a near-uniform (rank-neutral) effect. The genuinely-dry
+# exceptions are where local climate pulls indoor storage well below that:
+# Denver's semi-arid air infiltrates to ~30 % (Nathan's documented COL case, the
+# load-bearing anchor) and Phoenix's desert to ~45 % (roofed but drier than the
+# norm). An earlier version of this table used OUTDOOR climate RH, which invented
+# large humid-park EV *boosts* that don't exist (clubhouses are controlled) and
+# degraded the cross-park gate (0.704 -> 0.679); the clubhouse model removes that
+# artifact. Only the dry exceptions move the ranking; everyone else is the
+# controlled baseline.
 AMBIENT_RH_PCT: dict[str, float] = {
-    "COL": 30.0,  # Denver — semi-arid; anchors the magnitude
-    "AZ": 45.0,  # Phoenix — desert outdoors, but roofed + climate-controlled
-    #             clubhouse storage, so not the ~25% desert ambient
-    "TEX": 55.0,  # Arlington (retractable roof)
-    "LAD": 58.0,
-    "LAA": 60.0,
-    "SD": 66.0,  # San Diego — coastal
-    "SF": 70.0,  # cool marine
-    "ATH": 68.0,  # Oakland — marine
-    "SEA": 64.0,
-    "HOU": 65.0,  # humid (retractable roof)
-    "KC": 62.0,
-    "STL": 62.0,
-    "MIN": 64.0,
-    "MIL": 66.0,  # (retractable roof)
-    "CHC": 64.0,
-    "CWS": 64.0,
-    "CIN": 64.0,
-    "CLE": 66.0,
-    "DET": 64.0,
-    "PIT": 65.0,
-    "TOR": 64.0,  # (retractable roof)
-    "BOS": 64.0,
-    "NYY": 60.0,
-    "NYM": 60.0,
-    "PHI": 60.0,
-    "BAL": 62.0,
-    "WSH": 62.0,
-    "ATL": 62.0,
-    "TB": 68.0,  # Tampa — fixed dome
-    "MIA": 70.0,  # Miami — humid (retractable roof)
+    "COL": 30.0,  # Denver - semi-arid; dry air infiltrates indoor storage (Nathan)
+    "AZ": 45.0,  # Phoenix - desert; roofed/controlled but drier than the norm
 }
-_DEFAULT_AMBIENT_RH_PCT: float = 62.0  # league-typical, for any unlisted park
+_DEFAULT_AMBIENT_RH_PCT: float = 52.0  # climate-controlled clubhouse storage
 
 
 def cor(rh_pct: float) -> float:

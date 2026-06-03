@@ -22,13 +22,16 @@ def test_col_humidor_reproduces_nathan_2_8_mph() -> None:
     assert delta == pytest.approx(-2.8, abs=0.1)
 
 
-def test_dry_park_suppresses_humid_park_boosts() -> None:
-    """Ambient-relative sign flip: a 57% humidor suppresses EV in dry Denver but
-    boosts it in humid Miami (where 57% is drier than the ~70% ambient)."""
-    col = humidor.ev_delta_for("COL", 2023)  # dry -> suppress
-    mia = humidor.ev_delta_for("MIA", 2023)  # humid -> boost
+def test_clubhouse_storage_suppresses_dry_parks_no_boost() -> None:
+    """With climate-controlled clubhouse storage (~52%, below the 57% setpoint),
+    no park stores wetter than the humidor, so there is no EV boost: dry Denver
+    suppresses strongly, a default-storage park (Miami) suppresses only slightly,
+    and COL suppresses far more than the controlled baseline."""
+    col = humidor.ev_delta_for("COL", 2023)  # 30% -> strong suppress
+    mia = humidor.ev_delta_for("MIA", 2023)  # 52% clubhouse -> small suppress
     assert col < 0.0
-    assert mia > 0.0
+    assert mia <= 0.0  # no boost under controlled storage
+    assert col < mia  # the dry exception suppresses far more than the baseline
 
 
 def test_no_humidor_before_adoption_is_zero() -> None:
