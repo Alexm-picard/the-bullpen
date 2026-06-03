@@ -28,7 +28,7 @@ ReplacingMergeTree in V011.
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from typing import Final
 
@@ -40,6 +40,7 @@ from bullpen_training.battedball.parks import (
     load_park_geometry,
 )
 from bullpen_training.battedball.parks.loader import ParkGeometry
+from bullpen_training.battedball.physics import humidor
 from bullpen_training.battedball.physics._constants import (
     DEG_TO_RAD,
     MPH_TO_M_S,
@@ -285,6 +286,8 @@ def retrodict_bip_at_all_parks(
 
     flat_launches: list[LaunchParams] = []
     flat_atmospheres: list[Atmosphere] = []
+    season = int(bbip.game_date[:4])
+    ev_base = bbip.launch_speed_mph
     for pid in park_ids:
         park = parks[pid]
         is_home = pid == bbip.home_park_id
@@ -293,8 +296,13 @@ def retrodict_bip_at_all_parks(
             if (weather is not None and is_home)
             else still_air_atmosphere(park)
         )
+        # Humidor EV adjustment (decision [137], ADR-0009): scale the launch speed
+        # by (EV + delta)/EV for this destination park + season (spin unchanged).
+        ev_delta = humidor.ev_delta_for(pid, season)
+        f = 1.0 + ev_delta / ev_base if ev_base > 0.0 else 1.0
         for lp in base_launches:
-            flat_launches.append(lp)
+            lp_park = replace(lp, launch_speed_mph=lp.launch_speed_mph * f) if f != 1.0 else lp
+            flat_launches.append(lp_park)
             flat_atmospheres.append(atmo)
     trajectories = simulate_batch(flat_launches, flat_atmospheres)
 
@@ -469,6 +477,21 @@ def retrodict_bips_batch(
     wind_x_mat = np.where(is_home_mat, wind_x[:, None], 0.0)
     wind_y_mat = np.where(is_home_mat, wind_y[:, None], 0.0)
 
+    # Humidor EV adjustment per (bbip-season, destination park) — decision [137],
+    # ADR-0009. Each park applies its ambient-relative COR/EV delta to the ball's
+    # launch speed (0 where the park had no humidor that season); we scale the
+    # launch velocity by (EV + delta)/EV. Precompute the delta per distinct
+    # (season, park) to avoid B*P humidor calls.
+    seasons = np.array([int(b.game_date[:4]) for b in bbips])
+    ev_base = np.array([b.launch_speed_mph for b in bbips], dtype=np.float64)
+    delta_by_season = {
+        s: np.array([humidor.ev_delta_for(pid, int(s)) for pid in park_ids])
+        for s in set(seasons.tolist())
+    }
+    ev_delta_mat = np.stack([delta_by_season[int(s)] for s in seasons])  # (B, P)
+    safe_ev = np.where(ev_base > 0.0, ev_base, 1.0)
+    ev_scale_mat = 1.0 + ev_delta_mat / safe_ev[:, None]  # (B, P)
+
     # Per-BIP jittered velocities (seeded per BIP) + per-draw spin from the
     # calibrated spin model (computed from each jittered EV/LA/spray, NOT the
     # BBIP's fixed prior — that's the Phase-1 physics overhaul). spin axis tilts
@@ -490,9 +513,10 @@ def retrodict_bips_batch(
 
     # Assemble (n_bbip, n_parks, n_mc, TRAJ_IN_COLS) via broadcasting, then flatten.
     traj = np.zeros((n_bbip, n_parks, n_mc, TRAJ_IN_COLS), dtype=np.float32)
-    traj[..., 0] = vel[:, None, :, 0]
-    traj[..., 1] = vel[:, None, :, 1]
-    traj[..., 2] = vel[:, None, :, 2]
+    # Launch velocity, scaled per (bbip, park) by the humidor EV factor.
+    traj[..., 0] = vel[:, None, :, 0] * ev_scale_mat[:, :, None]
+    traj[..., 1] = vel[:, None, :, 1] * ev_scale_mat[:, :, None]
+    traj[..., 2] = vel[:, None, :, 2] * ev_scale_mat[:, :, None]
     traj[..., 3] = vel[:, None, :, 3]
     traj[..., 4] = spin[:, None, :, 0]
     traj[..., 5] = spin[:, None, :, 1]

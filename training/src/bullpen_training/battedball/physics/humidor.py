@@ -64,7 +64,8 @@ HUMIDOR_SINCE_SEASON: dict[str, int] = {
 # CHECK TARGET: COL~30 anchors Nathan's -2.8 mph; the others want NOAA normals.
 AMBIENT_RH_PCT: dict[str, float] = {
     "COL": 30.0,  # Denver — semi-arid; anchors the magnitude
-    "AZ": 25.0,  # Phoenix — desert (retractable roof)
+    "AZ": 45.0,  # Phoenix — desert outdoors, but roofed + climate-controlled
+    #             clubhouse storage, so not the ~25% desert ambient
     "TEX": 55.0,  # Arlington (retractable roof)
     "LAD": 58.0,
     "LAA": 60.0,

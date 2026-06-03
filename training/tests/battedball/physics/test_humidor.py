@@ -52,6 +52,8 @@ def test_mandate_year_turns_on_all_parks_at_57() -> None:
 
 
 def test_ev_delta_for_is_monotonic_in_dryness() -> None:
-    """Among 2023 humidor parks, drier ambient => more suppression."""
-    assert humidor.ev_delta_for("AZ", 2023) < humidor.ev_delta_for("COL", 2023)
-    assert humidor.ev_delta_for("COL", 2023) < humidor.ev_delta_for("MIA", 2023)
+    """Among 2023 humidor parks, drier ambient => more suppression. COL (30%) is
+    the driest after AZ's roof correction (45%), so COL suppresses most; humid
+    Miami (70%) flips to a boost."""
+    assert humidor.ev_delta_for("COL", 2023) < humidor.ev_delta_for("AZ", 2023)
+    assert humidor.ev_delta_for("AZ", 2023) < humidor.ev_delta_for("MIA", 2023)
