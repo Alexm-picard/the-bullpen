@@ -145,6 +145,37 @@ _over_-ranked (physics thinks they're more HR-friendly than reality):
 Fixing COL (humidor) + the Pacific/cold cluster (SEA/ATH/DET) is where the next
 ~0.1-0.2 of rho lives. The fielder model is done; the rest is per-park physics.
 
+### D4 still-air interim RESULT — `physics vs observed_norm` 0.649 → 0.704
+
+The [138] still-air interim (away parks flown through the destination's seasonal
+**temperature**/density, **no wind**; home park keeps real game weather) lifted
+the headline **0.649 → 0.704** (+0.055). Stack: raw 0.294 → geometry 0.588 →
+fielder 0.649 → **temperature 0.704**, ceiling 0.935 (~64 % of raw→ceiling
+closed). Because wind is excluded, this is a clean **temperature-only isolation**,
+and the cool cluster split three ways:
+
+| park | obs_norm | @0.649 | @0.704 | read                                     |
+| ---- | :------: | :----: | :----: | ---------------------------------------- |
+| ATH  |   #28    |  #16   |  #23   | temperature was ATH's **dominant** cause |
+| SEA  |   #17    |   #4   |   #7   | barely moved → residual is **wind**      |
+| DET  |   #22    |   #9   |  #10   | unmoved → **not climate** (geometry)     |
+| SF   |   #30    |  #29   |  #29   | already matched                          |
+
+Consequences for the open levers:
+
+- **Foul-territory (ATH) is looking unnecessary.** Temperature moved ATH to #23
+  (near observed #28); the ~5-slot residual is most likely wind, not foul ground.
+  **Decision: do not build the foul model; re-check ATH after the wind backfill —
+  if it lands ~#28, close the foul line.**
+- **SEA justifies the backfill.** Its residual (#7 vs #17) is the marine onshore
+  **wind** the interim excludes — the strongest case for [138] stage 2
+  (`park_daily_weather` real per-date wind, A/B-gated).
+- **DET is a geometry problem, not weather.** Temperature did nothing (#9→#10);
+  audit Comerica's deep-CF fence estimate separately.
+- **COL #1 vs #9 untouched** — that's **D3 humidor** (locked [137], not yet
+  implemented), the biggest single remaining over-rank.
+- New watch: **CHC #9 vs #18** over-ranked; CIN/NYY/PHI now slightly _under_.
+
 ## Phase 0 — Empirical geometry (DONE — worked)
 
 Re-retrodict with the staged per-park empirical fences
