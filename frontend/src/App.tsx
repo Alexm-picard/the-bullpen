@@ -6,16 +6,18 @@ import {
   Loader,
   Title,
 } from "@mantine/core";
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, type ReactNode } from "react";
 import {
   BrowserRouter,
   NavLink,
   Outlet,
   Route,
   Routes,
+  useLocation,
 } from "react-router-dom";
 
 import HomePage from "./pages/home-page";
+import { ErrorBoundary } from "./components/shared/error-boundary";
 import { TokenSampleCard } from "./components/_token-sample";
 
 /**
@@ -77,12 +79,25 @@ function Layout() {
         </Container>
       </AppShell.Header>
       <AppShell.Main>
-        <Suspense fallback={<RoutePending />}>
-          <Outlet />
-        </Suspense>
+        <RouteBoundary>
+          <Suspense fallback={<RoutePending />}>
+            <Outlet />
+          </Suspense>
+        </RouteBoundary>
       </AppShell.Main>
     </AppShell>
   );
+}
+
+/**
+ * Route-level boundary: keyed on the pathname so navigating to another route
+ * remounts it and clears a prior page's error. Keeps the AppShell header/nav
+ * visible when a single page throws, so the visitor can navigate away rather
+ * than reload.
+ */
+function RouteBoundary({ children }: { children: ReactNode }) {
+  const location = useLocation();
+  return <ErrorBoundary key={location.pathname}>{children}</ErrorBoundary>;
 }
 
 function RoutePending() {
