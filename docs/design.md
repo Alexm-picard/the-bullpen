@@ -101,7 +101,11 @@ production system through real time-series data.
    2015–2025. One-time backfill plus nightly increments.
 3. **Open-Meteo** — weather data. Forecast endpoint (~30 min before
    first pitch) for live predictions; archive endpoint (~1 hour after game)
-   for training data.
+   for training data. The archive endpoint also backfills
+   `park_daily_weather` (per-(park, date) temp + wind for all 30 parks
+   across 2015–2025), used by the cross-park counterfactual labeling so each
+   ball is flown through the destination park's real weather (decision
+   [138] / ADR-0010).
 4. **Static park dimensions** — wall heights, distances, foul territory
    from MLB published data.
 
@@ -505,6 +509,30 @@ ambient-RH table (distinct from the per-game weather of decision [88]), and
 a documented adoption timeline — so it adds **no per-park free parameter fit
 to the 2c.7 cross-park gate** it improves (the COL over-rank fix). See
 decision [137] / ADR-0009.
+
+**Destination-weather in the counterfactual.** The same
+"this ball at park P uses P's conditions" logic applies to the air. The
+counterfactual flies each ball through the **destination park's real
+measured weather (game-time temperature + wind) on that ball's date**, not
+the origin game's — a home run hit in Boston, asked "is this a home run in
+Seattle?", is flown through Seattle's cool, dense marine air, so it carries
+less and Seattle ranks correctly lower. (The away-park branch previously
+re-used the origin game's temperature + wind, which over-carried and
+over-ranked the cool coastal parks SEA/ATH/SF.) The home park keeps its
+real game weather (decision [88], the observed-label anchor). This needs a
+weather backfill into a new `park_daily_weather` table keyed by
+(park_id, date) — historical daily temp + wind for all 30 park locations
+across all dates 2015–2025, from Open-Meteo's historical archive (decision
+[86]), since the per-game `weather_observed` only covers the (park, date)
+cells where a park actually hosted a game. Seasonal still-air (per-park
+`default_atmosphere`, no wind) is the documented fallback for gaps. The
+re-introduced wind (a fixed seasonal wind vector was previously tried and
+reverted) is A/B-gated: real daily wind is kept only if it raises
+cross-park rho over still-air. See decision [138] / ADR-0010. With the
+humidor (ADR-0009), the counterfactual now flies each ball through each
+park's **full real conditions** — altitude + humidity + temperature + wind
+
+- the humidor COR effect — rather than the origin park's.
 
 **LightGBM Option-A baseline**: park-as-categorical, single model.
 Registered for direct comparison. If LightGBM wins, the architecture

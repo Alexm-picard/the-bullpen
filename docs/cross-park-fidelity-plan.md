@@ -250,5 +250,30 @@ the new physics, then `compare_park_factors`.
   adoption timeline, then re-retrodict + `compare_park_factors`, verifying
   the whole table — COL falls toward #9, humid parks tick up, dry parks tick
   down).
-- **D4** — foul-territory model (Branch A Phase 2A).
+- **D4** — destination-weather in the counterfactual (was scoped here as the
+  foul-territory model for ATH; the audit found the dominant cause of the
+  cool-coastal over-rank — SEA/ATH/SF/DET — is the away-park branch flying
+  each ball through the BIP's _origin_-game temp + wind instead of the
+  destination park's). **RESOLVED 2026-06-02** — approach decided = Option A:
+  fly each ball through the **destination park's real measured weather
+  (game-time temp + wind) on that ball's date**, backfilled for all 30 parks
+  × all dates 2015–2025 into a new `park_daily_weather` (park_id, date) table
+  from Open-Meteo's historical archive, with **seasonal still-air as the
+  documented fallback** for gaps. Staged: (1) still-air interim (temp +
+  humidity + altitude, no wind, no backfill) lands first; (2)
+  `park_daily_weather` backfill upgrades to real per-date weather; (3) wind
+  A/B. The re-introduced wind is **A/B-gated** because the prior per-park
+  seasonal-wind path (`get_atmosphere`) was tried and reverted — a single
+  estimated seasonal wind vector per BIP scrambled the cross-park ranking —
+  so real daily wind is kept only if it raises cross-park rho over still-air
+  (the bet: accuracy, not wind per se, was the problem). The home park keeps
+  its real game weather ([88]). Composes with the [137] humidor so the
+  counterfactual flies each ball through each park's full real conditions
+  (altitude + humidity + temp + wind + humidor COR). See decision [138] /
+  ADR-0010. Implementation pending (still-air interim → backfill →
+  re-retrodict + `compare_park_factors` → wind A/B → MLP retrain for the real
+  gate). The re-retrodict also separates whether DET's over-rank is climate
+  (this helps) or geometry/deep-CF (this won't). The original foul-territory
+  lever for ATH remains available if its residual persists after the
+  destination-weather fix.
 - **D5** — fielder/HR-margin recalibration, per-park-aware (Branch B suspect 1).
