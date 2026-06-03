@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "park_id": "CHC",
+  "name": "Wrigley Field",
+  "altitude_m": 182.0,
+  "default_atmosphere": {
+    "temp_c": 20.0,
+    "pressure_hpa": null,
+    "humidity_pct": 63,
+    "wind_speed_mph": 10,
+    "wind_bearing_deg": 45
+  },
+  "centerline_bearing_deg": 32.0,
+  "fence_polyline": [
+    {
+      "angle_from_centerline_deg": -45.0,
+      "distance_ft": 347.3,
+      "height_ft": 11.5
+    },
+    {
+      "angle_from_centerline_deg": -40.0,
+      "distance_ft": 345.9,
+      "height_ft": 11.5
+    },
+    {
+      "angle_from_centerline_deg": -35.0,
+      "distance_ft": 353.0,
+      "height_ft": 11.5
+    },
+    {
+      "angle_from_centerline_deg": -30.0,
+      "distance_ft": 353.0,
+      "height_ft": 11.5
+    },
+    {
+      "angle_from_centerline_deg": -25.0,
+      "distance_ft": 363.0,
+      "height_ft": 11.5
+    },
+    {
+      "angle_from_centerline_deg": -20.0,
+      "distance_ft": 374.9,
+      "height_ft": 11.5
+    },
+    {
+      "angle_from_centerline_deg": -15.0,
+      "distance_ft": 384.0,
+      "height_ft": 11.5
+    },
+    {
+      "angle_from_centerline_deg": -10.0,
+      "distance_ft": 388.0,
+      "height_ft": 11.5
+    },
+    {
+      "angle_from_centerline_deg": -5.0,
+      "distance_ft": 392.0,
+      "height_ft": 11.5
+    },
+    {
+      "angle_from_centerline_deg": 0.0,
+      "distance_ft": 391.0,
+      "height_ft": 11.5
+    },
+    {
+      "angle_from_centerline_deg": 5.0,
+      "distance_ft": 382.0,
+      "height_ft": 11.5
+    },
+    {
+      "angle_from_centerline_deg": 10.0,
+      "distance_ft": 373.4,
+      "height_ft": 11.5
+    },
+    {
+      "angle_from_centerline_deg": 15.0,
+      "distance_ft": 367.0,
+      "height_ft": 11.5
+    },
+    {
+      "angle_from_centerline_deg": 20.0,
+      "distance_ft": 356.3,
+      "height_ft": 11.5
+    },
+    {
+      "angle_from_centerline_deg": 25.0,
+      "distance_ft": 353.7,
+      "height_ft": 11.5
+    },
+    {
+      "angle_from_centerline_deg": 30.0,
+      "distance_ft": 353.0,
+      "height_ft": 11.5
+    },
+    {
+      "angle_from_centerline_deg": 35.0,
+      "distance_ft": 353.4,
+      "height_ft": 11.5
+    },
+    {
+      "angle_from_centerline_deg": 40.0,
+      "distance_ft": 353.0,
+      "height_ft": 11.5
+    },
+    {
+      "angle_from_centerline_deg": 45.0,
+      "distance_ft": 344.6,
+      "height_ft": 11.5
+    }
+  ],
+  "behind_fence_stand_height_ft": 25.0,
+  "foul_territory_sqft": 22000,
+  "geometry_source": "empirical fence distances (Statcast wall-ball p90, 2015-2025); documented fallback + height overlay"
+}

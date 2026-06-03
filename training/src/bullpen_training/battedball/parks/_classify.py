@@ -67,17 +67,29 @@ _FOUL_LINE_DEG = 45.0
 # turn doubles into triples more often).
 DEFAULT_SPRINT_SPEED_FPS = 27.0
 
-# Fielder model (decision [132]) — the pure "ball clears the wall in
-# vacuum" check predicts 12 % HR rate on real BIPs vs the observed
-# ~4 % because (a) the simulator over-predicts carry without per-game
-# wind (the same +13 ft bias documented in decision [131] for 2c.2) and
-# (b) outfielders rob borderline HRs at the wall. These thresholds
-# require a substantial margin past the fence AND above the wall before
-# calling HR; flies that fail this check but reach the wall area split
-# into warning-track OUTs (long hang) and wall-banger DOUBLES (short).
-# Tuned on 500 2024-season BIPs to land HR rate at 4.20 % (= observed).
-DEFAULT_HR_MIN_DIST_PAST_FENCE_FT = 45.0
-DEFAULT_HR_MIN_HEIGHT_OVER_FENCE_FT = 25.0
+# Fielder model — a ball must clear the fence by some margin (in distance
+# AND height) before it's called HR, with near-misses splitting into
+# warning-track OUTs (long hang) and wall-banger DOUBLES (short). The
+# margins stand in for (a) residual carry/crossing slack, (b) the sim's lack
+# of wall-collision (a low fence-crosser is a wall-ball in reality, not a HR)
+# and (c) outfielders robbing borderline HRs at the wall.
+#
+# Decision [132] set (dist=45, height=25), tuned to a ~4.2 % HR rate — but
+# both were inflated to offset the simulator's no-wind over-carry (the
+# +13/+21 ft bias of [131]). Phase 1 removed that over-carry (physical
+# batted-ball spin + calibrated cd_scale with real per-game weather), so the
+# [132] margins became over-conservative — and asymmetrically: the distance
+# gate is a pure carry fudge (now obsolete: a ball landing past the fence IS
+# a HR), while the height gate does real work (it stands in for the missing
+# wall-collision + robbery). Re-tuned via the 2-D scripts/calibrate_fielder.py
+# sweep on 30000 BIPs (2015-2025, empirical fences, Phase-1 physics): the
+# height-dominated shape (dist=0, height=20) lands the global rate at 4.97 %
+# (vs 4.65 % observed) with the best per-park rank fidelity on the realistic
+# iso-rate curve (rho +0.54 vs +0.38 for the old distance-dominated shape).
+# Distance is near-irrelevant once height binds, so dist=0 is both the
+# calibrated and the physically-correct value.
+DEFAULT_HR_MIN_DIST_PAST_FENCE_FT = 0.0
+DEFAULT_HR_MIN_HEIGHT_OVER_FENCE_FT = 20.0
 DEFAULT_WALL_HANG_CUTOFF_S = 4.5
 
 

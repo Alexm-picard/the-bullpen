@@ -120,6 +120,16 @@ class RegistryControllerIT {
         .andExpect(jsonPath("$.length()", equalTo(0)));
   }
 
+  @Test
+  void ops_list_all_returns_every_registered_version_across_models() throws Exception {
+    service.register(sampleRequest("fleet_alpha", "v1"));
+    service.register(sampleRequest("fleet_beta", "v1"));
+    mvc.perform(get("/v1/ops/registry/all"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[?(@.modelName == 'fleet_alpha')]").exists())
+        .andExpect(jsonPath("$[?(@.modelName == 'fleet_beta')]").exists());
+  }
+
   // --- register endpoint -------------------------------------------------
 
   @Test

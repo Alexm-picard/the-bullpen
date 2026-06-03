@@ -56,30 +56,72 @@ from bullpen_training.battedball.mlp.dataset import (
 SPEARMAN_GATE: Final[float] = 0.80
 COORS_VS_OAKLAND_GAP_GATE: Final[float] = 0.05
 
-# Representative barrel inputs that cover different spray angles so the
-# sanity test captures asymmetric fence profiles (e.g. NYY's short left
-# field porch at -30°, SF's deep right-center at +25°). A single dead-CF
-# input misses most of the park-factor signal because center-field
-# distances are similar across parks (~390-415 ft).
+# Representative barrel grid for the cross-park probe.
+#
+# Sign convention (features_shared.hc_to_spray_deg): +spray = toward 3B/LF,
+# -spray = toward 1B/RF. So a *pulled* barrel is (RHB, +spray) → LF, or
+# (LHB, -spray) → RF; an *oppo* barrel is the mirror. The MLP conditions on
+# `stand` AND `spray` separately, so pull and oppo are NOT interchangeable
+# inputs — the head sees genuinely different feature vectors.
+#
+# Why the grid matters (decision [52] / 2c.7): ~80% of HR are PULLED, and the
+# park features that discriminate HR factors live on the pull side — NYY's short
+# RF porch is exploited by LHB pull (stand L, -spray), the Crawford Boxes by RHB
+# pull, etc. The previous grid was entirely opposite-field/center (RHB only at
+# spray <= 0, LHB only at spray >= +10), so it probed each park in the spray
+# region the model barely sees and never visited the porches — a likely driver
+# of the 0.49 Spearman (NYY ranked 28 vs published 3).
+#
+# This grid is pull-heavy for BOTH hands (4 pull / 1 center / 1 oppo per hand),
+# weighted to ~84% pull / ~8% center / ~8% oppo to approximate the HR-conditional
+# batted-ball distribution, over the HR-producing EV/LA region (EV ~104-110, LA
+# ~25-30). `cross_park_p_hr` does a `weight`-weighted average. Pure gate-side —
+# no retrodiction, no retrain — so it re-scores last night's model directly.
+# Empirically reweighting from the real HR-conditional distribution is a possible
+# refinement but would couple the gate to data at runtime; kept self-contained.
 CANONICAL_INPUTS: Final[list[dict[str, float | str | int]]] = [
+    # --- RHB pulled barrels -> LF (+spray) ---
     {
-        "speed": 110.0,
-        "angle": 28.0,
-        "spray": -35.0,
-        "dist": 380.0,
+        "speed": 108.0,
+        "angle": 27.0,
+        "spray": 18.0,
+        "dist": 405.0,
         "stand": "R",
         "base": 0,
         "outs": 1,
+        "weight": 1.0,
     },
     {
-        "speed": 108.0,
-        "angle": 26.0,
-        "spray": -20.0,
+        "speed": 110.0,
+        "angle": 25.0,
+        "spray": 28.0,
+        "dist": 400.0,
+        "stand": "R",
+        "base": 0,
+        "outs": 1,
+        "weight": 1.0,
+    },
+    {
+        "speed": 104.0,
+        "angle": 29.0,
+        "spray": 33.0,
         "dist": 395.0,
         "stand": "R",
         "base": 0,
         "outs": 1,
+        "weight": 1.0,
     },
+    {
+        "speed": 106.0,
+        "angle": 26.0,
+        "spray": 24.0,
+        "dist": 400.0,
+        "stand": "R",
+        "base": 0,
+        "outs": 1,
+        "weight": 1.0,
+    },
+    # --- RHB center ---
     {
         "speed": 110.0,
         "angle": 28.0,
@@ -88,42 +130,81 @@ CANONICAL_INPUTS: Final[list[dict[str, float | str | int]]] = [
         "stand": "R",
         "base": 0,
         "outs": 1,
+        "weight": 0.5,
     },
+    # --- RHB oppo -> RF (-spray) ---
     {
-        "speed": 108.0,
-        "angle": 26.0,
-        "spray": 20.0,
-        "dist": 395.0,
-        "stand": "L",
-        "base": 0,
-        "outs": 1,
-    },
-    {
-        "speed": 110.0,
-        "angle": 28.0,
-        "spray": 35.0,
-        "dist": 380.0,
-        "stand": "L",
-        "base": 0,
-        "outs": 1,
-    },
-    {
-        "speed": 105.0,
+        "speed": 106.0,
         "angle": 30.0,
-        "spray": -10.0,
+        "spray": -22.0,
         "dist": 400.0,
         "stand": "R",
         "base": 0,
         "outs": 1,
+        "weight": 0.25,
+    },
+    # --- LHB pulled barrels -> RF (-spray); this is the NYY short-porch region ---
+    {
+        "speed": 108.0,
+        "angle": 27.0,
+        "spray": -18.0,
+        "dist": 405.0,
+        "stand": "L",
+        "base": 0,
+        "outs": 1,
+        "weight": 1.0,
     },
     {
-        "speed": 105.0,
-        "angle": 30.0,
-        "spray": 10.0,
+        "speed": 110.0,
+        "angle": 25.0,
+        "spray": -28.0,
         "dist": 400.0,
         "stand": "L",
         "base": 0,
         "outs": 1,
+        "weight": 1.0,
+    },
+    {
+        "speed": 104.0,
+        "angle": 29.0,
+        "spray": -33.0,
+        "dist": 395.0,
+        "stand": "L",
+        "base": 0,
+        "outs": 1,
+        "weight": 1.0,
+    },
+    {
+        "speed": 106.0,
+        "angle": 26.0,
+        "spray": -24.0,
+        "dist": 400.0,
+        "stand": "L",
+        "base": 0,
+        "outs": 1,
+        "weight": 1.0,
+    },
+    # --- LHB center ---
+    {
+        "speed": 110.0,
+        "angle": 28.0,
+        "spray": 0.0,
+        "dist": 410.0,
+        "stand": "L",
+        "base": 0,
+        "outs": 1,
+        "weight": 0.5,
+    },
+    # --- LHB oppo -> LF (+spray) ---
+    {
+        "speed": 106.0,
+        "angle": 30.0,
+        "spray": 22.0,
+        "dist": 400.0,
+        "stand": "L",
+        "base": 0,
+        "outs": 1,
+        "weight": 0.25,
     },
 ]
 
@@ -218,16 +299,22 @@ def cross_park_p_hr(
     *,
     calibrators: ParkCalibrators | None = None,
 ) -> dict[str, float]:
-    """Run the model on multiple representative barrel inputs and return
-    the average {park_id: P(HR)} across all of them.
+    """Run the model on the CANONICAL_INPUTS barrel grid and return the
+    ``weight``-weighted average {park_id: P(HR)} across them.
 
-    Using multiple spray angles captures asymmetric fence profiles that
-    a single dead-center input misses entirely.
+    The grid is pull-heavy for both hands (see CANONICAL_INPUTS) so the
+    average reflects the spray/handedness region where HRs actually occur and
+    where park fence profiles (short porches, pull-side walls) discriminate —
+    a single dead-center input, or an all-oppo grid, misses that signal.
+    Per-input ``weight`` approximates the HR-conditional batted-ball density.
     """
     if len(park_order) != model.n_parks:
         raise ValueError(f"park_order length {len(park_order)} != model.n_parks {model.n_parks}")
 
     all_feats = np.stack([_build_features(inp) for inp in CANONICAL_INPUTS], axis=0)
+    weights = np.array(
+        [float(inp.get("weight", 1.0)) for inp in CANONICAL_INPUTS], dtype=np.float64
+    )
     feats = scaler.transform(all_feats)
     model.eval()
     with torch.no_grad():
@@ -235,8 +322,8 @@ def cross_park_p_hr(
         probs = F.softmax(logits, dim=-1).numpy()
     if calibrators is not None:
         probs = transform(calibrators, probs)
-    # Average P(HR) across all K canonical inputs per park.
-    mean_p_hr = probs[:, :, 4].mean(axis=0)  # (n_parks,)
+    # Weighted average of P(HR) across the K canonical inputs, per park.
+    mean_p_hr = np.average(probs[:, :, 4], axis=0, weights=weights)  # (n_parks,)
     return {pid: float(mean_p_hr[i]) for i, pid in enumerate(park_order)}
 
 

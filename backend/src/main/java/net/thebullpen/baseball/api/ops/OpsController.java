@@ -2,8 +2,10 @@ package net.thebullpen.baseball.api.ops;
 
 import java.util.List;
 import java.util.Map;
+import net.thebullpen.baseball.api.dto.LatencyStat;
 import net.thebullpen.baseball.api.dto.OpsEvent;
 import net.thebullpen.baseball.data.OpsEventsRepository;
+import net.thebullpen.baseball.data.PredictionLogRepository;
 import net.thebullpen.baseball.drift.DriftMetric;
 import net.thebullpen.baseball.drift.DriftMetricsRepository;
 import net.thebullpen.baseball.inference.routing.RoutingConfig;
@@ -48,18 +50,21 @@ public class OpsController {
   private final RetrainingQueueService retrain;
   private final RegistryService registry;
   private final OpsEventsRepository opsEvents;
+  private final PredictionLogRepository predictionLog;
 
   public OpsController(
       @Autowired(required = false) DriftMetricsRepository driftRepo,
       RoutingRepository routingRepo,
       RetrainingQueueService retrain,
       RegistryService registry,
-      OpsEventsRepository opsEvents) {
+      OpsEventsRepository opsEvents,
+      @Autowired(required = false) PredictionLogRepository predictionLog) {
     this.driftRepo = driftRepo;
     this.routingRepo = routingRepo;
     this.retrain = retrain;
     this.registry = registry;
     this.opsEvents = opsEvents;
+    this.predictionLog = predictionLog;
   }
 
   /**
@@ -104,6 +109,21 @@ public class OpsController {
   @GetMapping("/events")
   public List<OpsEvent> events(@RequestParam(name = "limit", defaultValue = "20") int limit) {
     return opsEvents.findRecent(limit);
+  }
+
+  /**
+   * Per-model serving-latency percentiles (p50 / p95 / p99, ms) over the last {@code days} days,
+   * read from {@code prediction_log.latency_ms}. Backs the Ops fleet p99 column + Latency Detail
+   * table — the first real latency numbers on the dashboard. Empty list when ClickHouse isn't wired
+   * ({@code predictionLog == null}) or no predictions fall in the window; the UI then shows its
+   * no-data state.
+   */
+  @GetMapping("/latency")
+  public List<LatencyStat> latency(@RequestParam(name = "days", defaultValue = "7") int days) {
+    if (predictionLog == null) {
+      return List.of();
+    }
+    return predictionLog.latencyQuantiles(days);
   }
 
   /**

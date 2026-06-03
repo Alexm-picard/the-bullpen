@@ -87,6 +87,17 @@ async function get<T>(path: string): Promise<T> {
 export const fetchAllModelNames = () => get<string[]>("/v1/ops/registry");
 export const fetchRegistryRows = (modelName: string) =>
   get<ModelVersion[]>(`/v1/ops/registry/${encodeURIComponent(modelName)}`);
+/** Every registered version across all models, one round-trip — feeds the Model Fleet table. */
+export const fetchAllRegistryRows = () =>
+  get<ModelVersion[]>("/v1/ops/registry/all");
+
+export function useAllRegistryRows() {
+  return useQuery<ModelVersion[], OpsApiError>({
+    queryKey: ["ops", "registry", "all"],
+    queryFn: fetchAllRegistryRows,
+    staleTime: 30_000,
+  });
+}
 
 export function useAllModelNames() {
   return useQuery<string[], OpsApiError>({
@@ -166,6 +177,36 @@ export function useCalibrationSummary() {
     queryKey: ["ops", "calibration-summary"],
     queryFn: fetchCalibrationSummary,
     staleTime: 60_000,
+  });
+}
+
+// --- C: per-model serving latency (GET /v1/ops/latency) -----------------
+
+/**
+ * One row from {@code GET /v1/ops/latency} — p50/p95/p99 serving latency (ms)
+ * computed from {@code prediction_log.latency_ms}, one per registered model
+ * version that served a logged prediction in the window. The first real
+ * (non-fixture) latency on the Ops dashboard.
+ */
+export type LatencyStat = {
+  modelName: string;
+  modelVersion: string;
+  sampleCount: number;
+  p50Ms: number;
+  p95Ms: number;
+  p99Ms: number;
+  p999Ms: number;
+};
+
+export const fetchLatency = (days = 7) =>
+  get<LatencyStat[]>(`/v1/ops/latency?days=${days}`);
+
+export function useLatency(days = 7) {
+  return useQuery<LatencyStat[], OpsApiError>({
+    queryKey: ["ops", "latency", days],
+    queryFn: () => fetchLatency(days),
+    staleTime: 30_000,
+    refetchInterval: 30_000,
   });
 }
 

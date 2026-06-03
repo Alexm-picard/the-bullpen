@@ -28,7 +28,7 @@ ReplacingMergeTree in V011.
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from typing import Final
 
@@ -40,6 +40,7 @@ from bullpen_training.battedball.parks import (
     load_park_geometry,
 )
 from bullpen_training.battedball.parks.loader import ParkGeometry
+from bullpen_training.battedball.physics import humidor
 from bullpen_training.battedball.physics._constants import (
     DEG_TO_RAD,
     MPH_TO_M_S,
@@ -56,6 +57,11 @@ from bullpen_training.battedball.physics._fused import (
 )
 from bullpen_training.battedball.physics.atmosphere import Atmosphere, air_density
 from bullpen_training.battedball.physics.simulator import LaunchParams, simulate_batch
+from bullpen_training.battedball.physics.spin import (
+    PhysicsCalibration,
+    batted_ball_spin,
+    load_physics_calibration,
+)
 from bullpen_training.battedball.retrodict._atmospheres import (
     Weather,
     get_atmosphere,
@@ -262,11 +268,17 @@ def retrodict_bip_at_all_parks(
     ``simulate_batch`` call — this is where the Numba JIT pays off,
     keeping the typical per-BIP work down to ~30-50 ms on warm caches.
 
-    When ``weather`` (the BIP's actual game-time conditions) is supplied, the
-    same field-relative wind + temperature is applied at every park — only
-    per-park altitude/geometry varies, which isolates the park's physical HR
-    factor. With no weather we fall back to still air per park (NOT the seasonal
-    default, which is what scrambled the cross-park ranking).
+    Counterfactual atmosphere (decision [138], still-air interim): the **home**
+    park uses the ball's real game ``weather`` (the observed-label anchor, [88]);
+    every **away** park uses that destination park's still-air seasonal
+    atmosphere — its own temperature/density + altitude, **no wind**. This flies
+    each ball through the destination park's conditions ("HR in Boston → would it
+    be a HR in Seattle?" uses Seattle's cool dense air), instead of the old
+    behaviour that applied the origin game's temp+wind everywhere and over-ranked
+    cool-marine parks. Wind is excluded here on purpose (a fixed seasonal-wind
+    vector scrambled the ranking); the real per-date wind arrives with the
+    ``park_daily_weather`` backfill, A/B-gated (ADR-0010). With no ``weather`` at
+    all, every park falls back to still air.
     """
     rng = np.random.default_rng(_seed_for_bbip(bbip.bbip_key, seed_offset))
     parks: dict[str, ParkGeometry] = {pid: load_park_geometry(pid) for pid in park_ids}
@@ -274,15 +286,23 @@ def retrodict_bip_at_all_parks(
 
     flat_launches: list[LaunchParams] = []
     flat_atmospheres: list[Atmosphere] = []
+    season = int(bbip.game_date[:4])
+    ev_base = bbip.launch_speed_mph
     for pid in park_ids:
         park = parks[pid]
+        is_home = pid == bbip.home_park_id
         atmo = (
             weather_to_atmosphere(weather, park)
-            if weather is not None
+            if (weather is not None and is_home)
             else still_air_atmosphere(park)
         )
+        # Humidor EV adjustment (decision [137], ADR-0009): scale the launch speed
+        # by (EV + delta)/EV for this destination park + season (spin unchanged).
+        ev_delta = humidor.ev_delta_for(pid, season)
+        f = 1.0 + ev_delta / ev_base if ev_base > 0.0 else 1.0
         for lp in base_launches:
-            flat_launches.append(lp)
+            lp_park = replace(lp, launch_speed_mph=lp.launch_speed_mph * f) if f != 1.0 else lp
+            flat_launches.append(lp_park)
             flat_atmospheres.append(atmo)
     trajectories = simulate_batch(flat_launches, flat_atmospheres)
 
@@ -347,26 +367,30 @@ def _build_fence_arrays(
 
 def _bbip_velocities(
     bbip: BBIP, n_mc: int, rng: np.random.Generator
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Jittered initial velocities (m/s) + contact height for one BIP's n_mc draws.
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Jittered initial velocities (m/s) + height + the jittered launch params.
 
     Reproduces ``_jittered_launches`` + ``simulator._initial_state`` exactly —
     same RNG draw order (speed, angle, spray) — but skips the LaunchParams
-    objects and emits the ``(vx, vy, vz, height)`` the kernel consumes directly.
-    Keeping the draw sequence identical preserves the per-BIP seeded idempotency
-    the reference path relies on (ReplacingMergeTree dedupe).
+    objects and emits the ``(vx, vy, vz, height)`` the kernel consumes directly,
+    plus the jittered ``(ev_mph, la_deg, spray_deg)`` so the spin model can be
+    evaluated per draw. Keeping the draw sequence identical preserves the
+    per-BIP seeded idempotency the reference path relies on.
     """
     speed_jit = rng.normal(0.0, LAUNCH_SPEED_SIGMA_MPH, size=n_mc)
     angle_jit = rng.normal(0.0, LAUNCH_ANGLE_SIGMA_DEG, size=n_mc)
     spray_jit = rng.normal(0.0, SPRAY_ANGLE_SIGMA_DEG, size=n_mc)
-    v = (bbip.launch_speed_mph + speed_jit) * MPH_TO_M_S
-    la = (bbip.launch_angle_deg + angle_jit) * DEG_TO_RAD
-    sa = (bbip.spray_angle_deg + spray_jit) * DEG_TO_RAD
+    ev_mph = bbip.launch_speed_mph + speed_jit
+    la_deg = bbip.launch_angle_deg + angle_jit
+    spray_deg = bbip.spray_angle_deg + spray_jit
+    v = ev_mph * MPH_TO_M_S
+    la = la_deg * DEG_TO_RAD
+    sa = spray_deg * DEG_TO_RAD
     vx = v * np.cos(la) * np.cos(sa)
     vy = v * np.cos(la) * np.sin(sa)
     vz = v * np.sin(la)
     height = np.full(n_mc, 1.0)  # initial_height_m default
-    return vx, vy, vz, height
+    return vx, vy, vz, height, ev_mph, la_deg, spray_deg
 
 
 def retrodict_bips_batch(
@@ -377,6 +401,7 @@ def retrodict_bips_batch(
     seed_offset: int = DEFAULT_SEED_OFFSET,
     weather_by_game: dict[int, Weather] | None = None,
     device: str = "auto",
+    calibration: PhysicsCalibration | None = None,
 ) -> list[RetrodictionResult]:
     """Retrodict many BIPs at all parks in one fused integrate+classify call.
 
@@ -387,11 +412,15 @@ def retrodict_bips_batch(
     5-class probability rows. Results are ordered ``[bbip0 @ all parks, bbip1 @
     all parks, ...]`` — the same order as looping ``retrodict_bip_at_all_parks``.
 
-    Per-BIP weather (the game's actual conditions, ``weather_by_game[game_id]``)
-    is applied identically at all parks (field-relative wind + temperature; only
-    per-park altitude/geometry varies). Games without a row fall back to still
-    air per park — matching ``retrodict_bip_at_all_parks``'s no-weather policy
-    (NOT the seasonal default, which scrambled the cross-park ranking).
+    Counterfactual atmosphere (decision [138], still-air interim): the **home**
+    park uses the ball's real game weather (``weather_by_game[game_id]`` — the
+    observed-label anchor, [88]); every **away** park uses that destination
+    park's still-air seasonal atmosphere (its own temp/density + altitude, **no
+    wind**), so each ball is flown through the destination park's conditions
+    rather than the origin game's temp+wind (which over-ranked cool-marine
+    parks). Wind is excluded on purpose; real per-date wind arrives with the
+    ``park_daily_weather`` backfill, A/B-gated (ADR-0010). Games without a
+    weather row fall back to still air everywhere.
 
     This is the float32 path (decision: GPU-B runs float32); it does not reproduce
     the float64 reference bit-for-bit. ``test_fused_parity.py`` pins the
@@ -399,6 +428,7 @@ def retrodict_bips_batch(
     [131]) is re-validated on the desktop before any full relabel.
     """
     weather_by_game = weather_by_game or {}
+    calib = calibration if calibration is not None else load_physics_calibration()
     n_bbip = len(bbips)
     n_parks = len(park_ids)
     if n_bbip == 0:
@@ -412,8 +442,11 @@ def retrodict_bips_batch(
     hum = np.array([p.default_atmosphere.humidity_pct for p in parks], dtype=np.float64)
     def_temp = np.array([p.default_atmosphere.temp_c for p in parks], dtype=np.float64)
 
-    # Per-BIP weather: temperature (NaN => use the target park's default) + wind.
-    # Wind is field-relative so it is the same vector at every park.
+    # Per-BIP game weather: temperature (NaN => use the target park's default) +
+    # field-relative wind. Decision [138] still-air interim: this real weather is
+    # applied ONLY at the ball's home park; away parks use the destination's
+    # seasonal still-air (its own default temp, no wind). is_home_mat[b, p] marks
+    # the (bbip, park) cells that are the ball's home park.
     temp_bbip = np.full(n_bbip, np.nan)
     wind_x = np.zeros(n_bbip)
     wind_y = np.zeros(n_bbip)
@@ -425,41 +458,73 @@ def retrodict_bips_batch(
             wind_x[b] = w.wind_speed_m_s * w.wind_out_x
             wind_y[b] = w.wind_speed_m_s * w.wind_out_y
 
-    # Air density per (bbip, park): game temp where present else park default,
-    # ISA pressure at the park's altitude, park seasonal humidity. Vectorised.
-    temp_mat = np.where(np.isnan(temp_bbip)[:, None], def_temp[None, :], temp_bbip[:, None])
+    park_pos = {pid: p for p, pid in enumerate(park_ids)}
+    is_home_mat = np.zeros((n_bbip, n_parks), dtype=bool)
+    for b, bbip in enumerate(bbips):
+        hp = park_pos.get(bbip.home_park_id)
+        if hp is not None:
+            is_home_mat[b, hp] = True
+
+    # Air density per (bbip, park): the game temp only at the home park (where it
+    # is present), else the destination park's seasonal default; ISA pressure at
+    # the park's altitude, park seasonal humidity. Vectorised.
+    use_game_temp = is_home_mat & ~np.isnan(temp_bbip)[:, None]  # (B, P)
+    temp_mat = np.where(use_game_temp, temp_bbip[:, None], def_temp[None, :])
     rho_mat = np.asarray(
         air_density(temp_mat, None, alt[None, :], hum[None, :]), dtype=np.float64
     )  # (B, P)
+    # Wind only at the home park; away parks are still air (no wind). (B, P)
+    wind_x_mat = np.where(is_home_mat, wind_x[:, None], 0.0)
+    wind_y_mat = np.where(is_home_mat, wind_y[:, None], 0.0)
 
-    # Per-BIP jittered velocities (seeded per BIP) + spin axis/rate.
+    # Humidor EV adjustment per (bbip-season, destination park) — decision [137],
+    # ADR-0009. Each park applies its ambient-relative COR/EV delta to the ball's
+    # launch speed (0 where the park had no humidor that season); we scale the
+    # launch velocity by (EV + delta)/EV. Precompute the delta per distinct
+    # (season, park) to avoid B*P humidor calls.
+    seasons = np.array([int(b.game_date[:4]) for b in bbips])
+    ev_base = np.array([b.launch_speed_mph for b in bbips], dtype=np.float64)
+    delta_by_season = {
+        s: np.array([humidor.ev_delta_for(pid, int(s)) for pid in park_ids])
+        for s in set(seasons.tolist())
+    }
+    ev_delta_mat = np.stack([delta_by_season[int(s)] for s in seasons])  # (B, P)
+    safe_ev = np.where(ev_base > 0.0, ev_base, 1.0)
+    ev_scale_mat = 1.0 + ev_delta_mat / safe_ev[:, None]  # (B, P)
+
+    # Per-BIP jittered velocities (seeded per BIP) + per-draw spin from the
+    # calibrated spin model (computed from each jittered EV/LA/spray, NOT the
+    # BBIP's fixed prior — that's the Phase-1 physics overhaul). spin axis tilts
+    # off pure backspin with spray; spin_rate in rad/s for the kernel.
     vel = np.zeros((n_bbip, n_mc, 4))  # vx, vy, vz, height
-    spin = np.zeros((n_bbip, 4))  # sx, sy, sz, spin_rate
+    spin = np.zeros((n_bbip, n_mc, 4))  # sx, sy, sz, spin_rate (per draw)
     for b, bbip in enumerate(bbips):
         rng = np.random.default_rng(_seed_for_bbip(bbip.bbip_key, seed_offset))
-        vx, vy, vz, height = _bbip_velocities(bbip, n_mc, rng)
+        vx, vy, vz, height, ev_mph, la_deg, spray_deg = _bbip_velocities(bbip, n_mc, rng)
         vel[b, :, 0] = vx
         vel[b, :, 1] = vy
         vel[b, :, 2] = vz
         vel[b, :, 3] = height
-        a = bbip.spin_axis_tilt_deg * DEG_TO_RAD
-        spin[b, 1] = np.cos(a)
-        spin[b, 2] = np.sin(a)
-        spin[b, 3] = bbip.spin_rate_rpm * RPM_TO_RAD_S
+        rate_rpm, tilt_deg = batted_ball_spin(ev_mph, la_deg, spray_deg, calib.spin)
+        a = np.asarray(tilt_deg) * DEG_TO_RAD
+        spin[b, :, 1] = np.cos(a)
+        spin[b, :, 2] = np.sin(a)
+        spin[b, :, 3] = np.asarray(rate_rpm) * RPM_TO_RAD_S
 
     # Assemble (n_bbip, n_parks, n_mc, TRAJ_IN_COLS) via broadcasting, then flatten.
     traj = np.zeros((n_bbip, n_parks, n_mc, TRAJ_IN_COLS), dtype=np.float32)
-    traj[..., 0] = vel[:, None, :, 0]
-    traj[..., 1] = vel[:, None, :, 1]
-    traj[..., 2] = vel[:, None, :, 2]
+    # Launch velocity, scaled per (bbip, park) by the humidor EV factor.
+    traj[..., 0] = vel[:, None, :, 0] * ev_scale_mat[:, :, None]
+    traj[..., 1] = vel[:, None, :, 1] * ev_scale_mat[:, :, None]
+    traj[..., 2] = vel[:, None, :, 2] * ev_scale_mat[:, :, None]
     traj[..., 3] = vel[:, None, :, 3]
-    traj[..., 4] = spin[:, None, None, 0]
-    traj[..., 5] = spin[:, None, None, 1]
-    traj[..., 6] = spin[:, None, None, 2]
-    traj[..., 7] = spin[:, None, None, 3]
+    traj[..., 4] = spin[:, None, :, 0]
+    traj[..., 5] = spin[:, None, :, 1]
+    traj[..., 6] = spin[:, None, :, 2]
+    traj[..., 7] = spin[:, None, :, 3]
     traj[..., 8] = rho_mat[:, :, None]
-    traj[..., 9] = wind_x[:, None, None]
-    traj[..., 10] = wind_y[:, None, None]
+    traj[..., 9] = wind_x_mat[:, :, None]
+    traj[..., 10] = wind_y_mat[:, :, None]
     # column 11 (wind_z) stays 0.0
 
     park_idx_grid = np.broadcast_to(
@@ -474,6 +539,7 @@ def retrodict_bips_batch(
         fence_height,
         fence_n,
         device=device,
+        cd_scale=calib.cd_scale,
     ).reshape(n_bbip, n_parks, n_mc)
 
     total = float(n_mc)

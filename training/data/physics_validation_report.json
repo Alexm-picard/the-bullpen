@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "n_fixtures": 100,
+  "weather_mode": false,
   "pass_rate_distance": 0.85,
   "mae_distance_ft": 19.73,
   "bias_distance_ft": 13.02,

@@ -63,6 +63,11 @@ class Fixture:
     stand: str  # 'L' or 'R'
     launch: dict[str, float]  # kwargs for LaunchParams
     observed_distance_ft: float
+    # game_id / game_date let the validation harness join per-game weather
+    # (weather_observed) so carry is scored under the ACTUAL conditions of each
+    # HR rather than the no-wind/20C park default (decision [131]'s +12 ft bias).
+    game_id: int = 0
+    game_date: str = ""
     notes: list[str] = field(default_factory=list)
 
 
@@ -176,7 +181,7 @@ def _row_to_fixture(row: list[str], bucket_label: str, idx: int) -> Fixture | No
     """Parse a ClickHouse TSV row into a Fixture. Returns None on bad data."""
     try:
         (
-            _game_id,
+            game_id,
             _abi,
             _pn,
             launch_speed_mph,
@@ -188,7 +193,7 @@ def _row_to_fixture(row: list[str], bucket_label: str, idx: int) -> Fixture | No
             stand,
             bb_type,
             events,
-            _game_date,
+            game_date,
         ) = row
     except ValueError:
         return None
@@ -223,6 +228,8 @@ def _row_to_fixture(row: list[str], bucket_label: str, idx: int) -> Fixture | No
             "initial_height_m": 1.0,
         },
         observed_distance_ft=observed,
+        game_id=int(game_id),
+        game_date=game_date,
         notes=[],
     )
 

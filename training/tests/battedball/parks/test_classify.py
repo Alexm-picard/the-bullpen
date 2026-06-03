@@ -111,9 +111,9 @@ def _make_traj(
 def test_dead_pull_hr_at_yankee_short_porch() -> None:
     """A ball that lands at 380 ft, -45 deg (RF foul pole) with 40 ft
     of height when it crosses NYY's 314 ft RF foul-pole fence is a HR.
-    Margins set well past the decision-[132] HR thresholds
-    (45 ft past fence + 25 ft above wall) so the test pins HR semantics
-    rather than the exact threshold values."""
+    Cleared well past the fielder-model HR thresholds in BOTH distance
+    and height, so the test pins HR semantics rather than the exact
+    (re-tunable) threshold values."""
     park = load_park_geometry("NYY")
     traj = _make_traj(
         landing_dist_ft=380.0,
@@ -142,12 +142,17 @@ def test_moon_shot_to_cf_at_coors() -> None:
 
 
 def test_borderline_shot_clears_nyy_but_not_comerica() -> None:
-    """A 460 ft shot to CF clears Yankee Stadium (CF 408, 460-408=52 >
-    45 ft HR margin) but NOT Comerica (CF 420, 460-420=40 < 45). Same
-    trajectory, different parks — the headline geometry case from the
-    leaf, retuned for the decision [132] thresholds."""
+    """A 430 ft shot to CF is a HR at Yankee Stadium (CF 408) but NOT at
+    Comerica (CF 420). Same descending trajectory, different parks: it
+    crosses NYY's nearer 408 ft fence high above the wall (a clean HR)
+    but reaches Comerica's farther 420 ft fence already too low to clear
+    the wall by the fielder-model height margin. The headline geometry
+    case from the leaf — the fielder model now resolves a 12 ft fence
+    difference, exactly the per-park expressiveness the cross-park gate
+    [52] needs (under the old distance-dominated [132] margins it could
+    not)."""
     traj = _make_traj(
-        landing_dist_ft=460.0,
+        landing_dist_ft=430.0,
         spray_deg=0.0,
         apex_ft=110.0,
         hang_time_s=5.0,
@@ -256,10 +261,12 @@ def test_weak_grounder_classifies_as_out() -> None:
 
 
 def test_borderline_hr_clears_coors_but_not_oracle() -> None:
-    """A 450 ft shot to CF clears Oracle's 391 ft CF (450-391=59 > 45
-    decision [132] HR margin) but NOT Coors' 415 ft CF (450-415=35 <
-    45). Same trajectory, different parks; the contrast pins the
-    park-geometry distinction even with the fielder model on."""
+    """A 450 ft shot to CF is a HR at Oracle (CF 391) but NOT at Coors
+    (CF 415). Same descending trajectory: it crosses Oracle's nearer
+    391 ft fence well above the wall, but reaches Coors' farther 415 ft
+    fence too low to clear it by the fielder-model height margin. The
+    contrast pins the park-geometry distinction even with the fielder
+    model on."""
     traj = _make_traj(
         landing_dist_ft=450.0,
         spray_deg=0.0,
@@ -276,9 +283,9 @@ def test_borderline_hr_clears_coors_but_not_oracle() -> None:
 
 def test_low_liner_off_the_wall_is_double() -> None:
     """A 100 mph liner with 3.0 s hang that lands at the LF foul pole
-    of NYY (318 ft), clearing the 8 ft wall by 10 ft, falls short of
-    the HR distance threshold (decision [132]) and gets called a
-    DOUBLE — the wall-banger branch (short hang at the wall)."""
+    of NYY (318 ft), clearing the 8 ft wall by only 10 ft of height,
+    fails the HR height margin (it crosses too low) and — short hang at
+    the wall — gets called a DOUBLE via the wall-banger branch."""
     park = load_park_geometry("NYY")
     traj = _make_traj(
         landing_dist_ft=325.0,  # only 7 ft past 318 ft fence

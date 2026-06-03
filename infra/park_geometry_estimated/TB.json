@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "park_id": "TB",
+  "name": "Tropicana Field",
+  "altitude_m": 11.0,
+  "default_atmosphere": {
+    "temp_c": 22.0,
+    "pressure_hpa": null,
+    "humidity_pct": 50,
+    "wind_speed_mph": 0,
+    "wind_bearing_deg": 0
+  },
+  "centerline_bearing_deg": 45.0,
+  "fence_polyline": [
+    {
+      "angle_from_centerline_deg": -45.0,
+      "distance_ft": 330.1,
+      "height_ft": 11.5
+    },
+    {
+      "angle_from_centerline_deg": -40.0,
+      "distance_ft": 343.1,
+      "height_ft": 10.7
+    },
+    {
+      "angle_from_centerline_deg": -35.0,
+      "distance_ft": 349.0,
+      "height_ft": 9.9
+    },
+    {
+      "angle_from_centerline_deg": -30.0,
+      "distance_ft": 356.0,
+      "height_ft": 9.2
+    },
+    {
+      "angle_from_centerline_deg": -25.0,
+      "distance_ft": 364.6,
+      "height_ft": 8.4
+    },
+    {
+      "angle_from_centerline_deg": -20.0,
+      "distance_ft": 380.0,
+      "height_ft": 8.1
+    },
+    {
+      "angle_from_centerline_deg": -15.0,
+      "distance_ft": 388.0,
+      "height_ft": 8.3
+    },
+    {
+      "angle_from_centerline_deg": -10.0,
+      "distance_ft": 396.0,
+      "height_ft": 8.6
+    },
+    {
+      "angle_from_centerline_deg": -5.0,
+      "distance_ft": 396.0,
+      "height_ft": 8.8
+    },
+    {
+      "angle_from_centerline_deg": 0.0,
+      "distance_ft": 395.0,
+      "height_ft": 9.0
+    },
+    {
+      "angle_from_centerline_deg": 5.0,
+      "distance_ft": 399.0,
+      "height_ft": 8.8
+    },
+    {
+      "angle_from_centerline_deg": 10.0,
+      "distance_ft": 399.0,
+      "height_ft": 8.6
+    },
+    {
+      "angle_from_centerline_deg": 15.0,
+      "distance_ft": 389.0,
+      "height_ft": 8.3
+    },
+    {
+      "angle_from_centerline_deg": 20.0,
+      "distance_ft": 376.0,
+      "height_ft": 8.1
+    },
+    {
+      "angle_from_centerline_deg": 25.0,
+      "distance_ft": 365.0,
+      "height_ft": 8.4
+    },
+    {
+      "angle_from_centerline_deg": 30.0,
+      "distance_ft": 357.0,
+      "height_ft": 9.2
+    },
+    {
+      "angle_from_centerline_deg": 35.0,
+      "distance_ft": 352.0,
+      "height_ft": 9.9
+    },
+    {
+      "angle_from_centerline_deg": 40.0,
+      "distance_ft": 341.0,
+      "height_ft": 10.7
+    },
+    {
+      "angle_from_centerline_deg": 45.0,
+      "distance_ft": 325.9,
+      "height_ft": 11.5
+    }
+  ],
+  "behind_fence_stand_height_ft": 25.0,
+  "foul_territory_sqft": 30000,
+  "geometry_source": "empirical fence distances (Statcast wall-ball p90, 2015-2025); documented fallback + height overlay"
+}

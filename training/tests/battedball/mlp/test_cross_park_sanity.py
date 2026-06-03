@@ -21,6 +21,7 @@ import pytest
 from bullpen_training.battedball.mlp.architecture import build_model
 from bullpen_training.battedball.mlp.dataset import FEATURE_NAMES, FeatureScaler
 from bullpen_training.battedball.mlp.sanity import (
+    CANONICAL_INPUTS,
     COORS_VS_OAKLAND_GAP_GATE,
     SPEARMAN_GATE,
     ParkGap,
@@ -30,6 +31,71 @@ from bullpen_training.battedball.mlp.sanity import (
     load_published_factors,
     write_report,
 )
+
+# --- CANONICAL_INPUTS probe grid (Patch B, decision [52]) -----------------
+
+
+def _is_pull(inp: dict) -> bool:
+    """Pulled barrel: RHB to LF (+spray) or LHB to RF (-spray)."""
+    return (str(inp["stand"]) == "R" and float(inp["spray"]) > 0) or (
+        str(inp["stand"]) == "L" and float(inp["spray"]) < 0
+    )
+
+
+def _is_oppo(inp: dict) -> bool:
+    return (str(inp["stand"]) == "R" and float(inp["spray"]) < 0) or (
+        str(inp["stand"]) == "L" and float(inp["spray"]) > 0
+    )
+
+
+def test_canonical_inputs_include_pulled_barrels_for_both_hands() -> None:
+    """The pre-Patch-B grid was all oppo/center and never visited the pull side
+    where HR-discriminating park features live (e.g. NYY's RF porch = LHB pull)."""
+    rhb_pull = [i for i in CANONICAL_INPUTS if str(i["stand"]) == "R" and float(i["spray"]) > 0]
+    lhb_pull = [i for i in CANONICAL_INPUTS if str(i["stand"]) == "L" and float(i["spray"]) < 0]
+    assert rhb_pull, "no RHB pulled barrels (R, +spray -> LF)"
+    assert lhb_pull, "no LHB pulled barrels (L, -spray -> RF) — the NYY short-porch region"
+
+
+def test_canonical_inputs_also_cover_oppo_and_center() -> None:
+    assert any(_is_oppo(i) for i in CANONICAL_INPUTS), "grid has no opposite-field inputs"
+    assert any(float(i["spray"]) == 0.0 for i in CANONICAL_INPUTS), "grid has no center inputs"
+
+
+def test_canonical_inputs_are_pull_weighted() -> None:
+    """~80% of HR are pulled; the grid should weight pull accordingly."""
+    pull_w = sum(float(i.get("weight", 1.0)) for i in CANONICAL_INPUTS if _is_pull(i))
+    total_w = sum(float(i.get("weight", 1.0)) for i in CANONICAL_INPUTS)
+    share = pull_w / total_w
+    assert share >= 0.6, f"pull weight share {share:.2f} too low for an HR-conditional grid"
+
+
+def test_canonical_inputs_sit_in_the_hr_zone() -> None:
+    for i in CANONICAL_INPUTS:
+        assert 100.0 <= float(i["speed"]) <= 115.0, f"EV out of HR zone: {i}"
+        assert 22.0 <= float(i["angle"]) <= 34.0, f"LA out of HR zone: {i}"
+        assert float(i.get("weight", 1.0)) > 0.0
+
+
+def test_cross_park_p_hr_weighted_path_returns_valid_probs() -> None:
+    """Exercises the weighted-average path on a small synthetic model so the
+    plumbing is pinned without needing the production artifact."""
+    import torch  # local import keeps the module importable without torch
+
+    _ = torch
+    park_order = ("COL", "NYY", "SF")
+    model = build_model(n_parks=len(park_order))
+    n = len(FEATURE_NAMES)
+    scaler = FeatureScaler(
+        means=np.zeros(n, dtype=np.float32),
+        stds=np.ones(n, dtype=np.float32),
+        is_continuous=np.ones(n, dtype=bool),
+    )
+    per_park = cross_park_p_hr(model, scaler, park_order)
+    assert set(per_park) == set(park_order)
+    for pid, p in per_park.items():
+        assert 0.0 <= p <= 1.0, f"{pid}: P(HR)={p} outside [0,1]"
+
 
 _HR_FACTORS_PATH = Path(__file__).resolve().parents[3] / "data" / "published_hr_factors.json"
 _MODEL_DIR = Path(__file__).resolve().parents[3] / "artifacts" / "battedball_mlp_v1"

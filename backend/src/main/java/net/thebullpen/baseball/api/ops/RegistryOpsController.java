@@ -46,6 +46,16 @@ public class RegistryOpsController {
     return registry.findAllModelNames();
   }
 
+  /**
+   * Every registered version across all models, grouped by name then newest-first. Feeds the Ops
+   * dashboard's Model Fleet table in one round-trip. Declared before {@code /{modelName}} so the
+   * literal {@code /all} path isn't swallowed by the path variable.
+   */
+  @GetMapping("/all")
+  public List<ModelVersion> listAll() {
+    return registry.findAll();
+  }
+
   @GetMapping("/{modelName}")
   public List<ModelVersion> list(@PathVariable String modelName) {
     return registry.findByName(modelName);

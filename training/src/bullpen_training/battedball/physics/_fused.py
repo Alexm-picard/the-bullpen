@@ -110,9 +110,10 @@ def _build_core(jit):  # - jit is a numba decorator factory
         return 0.30
 
     @jit
-    def accel(vx, vy, vz, wx, wy, wz, sx, sy, sz, spin_rate, rho):
+    def accel(vx, vy, vz, wx, wy, wz, sx, sy, sz, spin_rate, rho, cd_scale):
         # Drag + Magnus + gravity, scalar (mirrors _jit._accel_scalar). Returns
         # (ax, ay, az). Position-independent, so the integrator passes velocity only.
+        # cd_scale is the calibrated global drag multiplier (1.0 = raw CD).
         rx = vx - wx
         ry = vy - wy
         rz = vz - wz
@@ -121,7 +122,7 @@ def _build_core(jit):  # - jit is a numba decorator factory
             return 0.0, 0.0, -G_M_S2
         speed = math.sqrt(speed_sq)
 
-        cd = cd_interp(speed)
+        cd = cd_interp(speed) * cd_scale
         drag_coef = -0.5 * rho * cd * BALL_AREA_M2 * speed / BALL_MASS_KG
         a_drag_x = drag_coef * rx
         a_drag_y = drag_coef * ry
@@ -169,7 +170,18 @@ def _build_core(jit):  # - jit is a numba decorator factory
         return values[p, n - 1]
 
     @jit
-    def core(traj_in, i, park_idx, dt, n_steps_max, fence_angle, fence_dist, fence_height, fence_n):
+    def core(
+        traj_in,
+        i,
+        park_idx,
+        dt,
+        n_steps_max,
+        fence_angle,
+        fence_dist,
+        fence_height,
+        fence_n,
+        cd_scale,
+    ):
         vx = traj_in[i, 0]
         vy = traj_in[i, 1]
         vz = traj_in[i, 2]
@@ -200,19 +212,19 @@ def _build_core(jit):  # - jit is a numba decorator factory
             prev_py = py
             prev_pz = pz
 
-            a1x, a1y, a1z = accel(vx, vy, vz, wx, wy, wz, sx, sy, sz, spin_rate, rho)
+            a1x, a1y, a1z = accel(vx, vy, vz, wx, wy, wz, sx, sy, sz, spin_rate, rho, cd_scale)
             vx2 = vx + 0.5 * dt * a1x
             vy2 = vy + 0.5 * dt * a1y
             vz2 = vz + 0.5 * dt * a1z
-            a2x, a2y, a2z = accel(vx2, vy2, vz2, wx, wy, wz, sx, sy, sz, spin_rate, rho)
+            a2x, a2y, a2z = accel(vx2, vy2, vz2, wx, wy, wz, sx, sy, sz, spin_rate, rho, cd_scale)
             vx3 = vx + 0.5 * dt * a2x
             vy3 = vy + 0.5 * dt * a2y
             vz3 = vz + 0.5 * dt * a2z
-            a3x, a3y, a3z = accel(vx3, vy3, vz3, wx, wy, wz, sx, sy, sz, spin_rate, rho)
+            a3x, a3y, a3z = accel(vx3, vy3, vz3, wx, wy, wz, sx, sy, sz, spin_rate, rho, cd_scale)
             vx4 = vx + dt * a3x
             vy4 = vy + dt * a3y
             vz4 = vz + dt * a3z
-            a4x, a4y, a4z = accel(vx4, vy4, vz4, wx, wy, wz, sx, sy, sz, spin_rate, rho)
+            a4x, a4y, a4z = accel(vx4, vy4, vz4, wx, wy, wz, sx, sy, sz, spin_rate, rho, cd_scale)
 
             sixth = dt / 6.0
             px_n = px + sixth * (vx + 2.0 * vx2 + 2.0 * vx3 + vx4)
@@ -300,12 +312,30 @@ _core_cpu = _build_core(njit(fastmath=True))
 
 @njit(parallel=True, fastmath=True)
 def _batch_cpu(
-    traj_in, park_idx, dt, n_steps_max, fence_angle, fence_dist, fence_height, fence_n, out
+    traj_in,
+    park_idx,
+    dt,
+    n_steps_max,
+    fence_angle,
+    fence_dist,
+    fence_height,
+    fence_n,
+    cd_scale,
+    out,
 ):
     n = out.shape[0]
     for i in prange(n):
         out[i] = _core_cpu(
-            traj_in, i, park_idx, dt, n_steps_max, fence_angle, fence_dist, fence_height, fence_n
+            traj_in,
+            i,
+            park_idx,
+            dt,
+            n_steps_max,
+            fence_angle,
+            fence_dist,
+            fence_height,
+            fence_n,
+            cd_scale,
         )
 
 
@@ -324,7 +354,16 @@ if cuda.is_available():  # pragma: no cover - desktop GPU only (ADR-0006)
 
     @cuda.jit
     def _gpu_kernel(
-        traj_in, park_idx, dt, n_steps_max, fence_angle, fence_dist, fence_height, fence_n, out
+        traj_in,
+        park_idx,
+        dt,
+        n_steps_max,
+        fence_angle,
+        fence_dist,
+        fence_height,
+        fence_n,
+        cd_scale,
+        out,
     ):
         i = cuda.grid(1)
         if i < out.shape[0]:
@@ -338,6 +377,7 @@ if cuda.is_available():  # pragma: no cover - desktop GPU only (ADR-0006)
                 fence_dist,
                 fence_height,
                 fence_n,
+                cd_scale,
             )
 
     _batch_gpu_kernel = _gpu_kernel
@@ -362,6 +402,7 @@ def simulate_classify_cpu(
     *,
     dt: float,
     n_steps_max: int,
+    cd_scale: float = 1.0,
 ) -> np.ndarray:
     """Integrate+classify N trajectories on the CPU (njit/prange). Returns int8[N]."""
     out = np.empty(traj_in.shape[0], dtype=np.int8)
@@ -374,6 +415,7 @@ def simulate_classify_cpu(
         fence_dist,
         fence_height,
         fence_n,
+        np.float32(cd_scale),
         out,
     )
     return out
@@ -389,6 +431,7 @@ def simulate_classify_gpu(
     *,
     dt: float,
     n_steps_max: int,
+    cd_scale: float = 1.0,
     threads_per_block: int = 128,
 ) -> np.ndarray:  # pragma: no cover - desktop GPU only (ADR-0006)
     """Integrate+classify N trajectories on the GPU. Returns int8[N].
@@ -408,7 +451,16 @@ def simulate_classify_gpu(
     d_out = cuda.device_array(n, dtype=np.int8)  # type: ignore[arg-type]  # numba stub types dtype as float64-only
     blocks = (n + threads_per_block - 1) // threads_per_block
     _batch_gpu_kernel[blocks, threads_per_block](  # type: ignore[index]  # numba cuda kernel launch syntax
-        d_traj, d_park, np.float32(dt), n_steps_max, d_fa, d_fd, d_fh, d_fn, d_out
+        d_traj,
+        d_park,
+        np.float32(dt),
+        n_steps_max,
+        d_fa,
+        d_fd,
+        d_fh,
+        d_fn,
+        np.float32(cd_scale),
+        d_out,
     )
     return d_out.copy_to_host()
 
@@ -423,14 +475,16 @@ def simulate_classify_batch(
     *,
     dt: float = 0.005,
     n_steps_max: int = 2000,
+    cd_scale: float = 1.0,
     device: str = "auto",
 ) -> np.ndarray:
     """Dispatch the fused integrate+classify over the right target.
 
     ``device``: ``"auto"`` (GPU if available, else CPU), ``"cuda"`` (force GPU,
     error if unavailable), or ``"cpu"`` (force the njit/prange path — the
-    macOS-dev fallback per ADR-0006). Returns an ``int8[N]`` array of outcome
-    codes (see ``OUT_CODE``..``HR_CODE``).
+    macOS-dev fallback per ADR-0006). ``cd_scale`` is the calibrated global drag
+    multiplier (1.0 = raw CD). Returns an ``int8[N]`` array of outcome codes (see
+    ``OUT_CODE``..``HR_CODE``).
     """
     traj_in = np.ascontiguousarray(traj_in, dtype=np.float32)
     park_idx = np.ascontiguousarray(park_idx, dtype=np.int32)
@@ -458,6 +512,7 @@ def simulate_classify_batch(
             fence_n,
             dt=dt,
             n_steps_max=n_steps_max,
+            cd_scale=cd_scale,
         )
     return simulate_classify_cpu(
         traj_in,
@@ -468,6 +523,7 @@ def simulate_classify_batch(
         fence_n,
         dt=dt,
         n_steps_max=n_steps_max,
+        cd_scale=cd_scale,
     )
 
 

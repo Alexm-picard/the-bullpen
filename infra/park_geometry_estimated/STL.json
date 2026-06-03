@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "park_id": "STL",
+  "name": "Busch Stadium",
+  "altitude_m": 142.0,
+  "default_atmosphere": {
+    "temp_c": 23.0,
+    "pressure_hpa": null,
+    "humidity_pct": 64,
+    "wind_speed_mph": 8,
+    "wind_bearing_deg": 200
+  },
+  "centerline_bearing_deg": 60.0,
+  "fence_polyline": [
+    {
+      "angle_from_centerline_deg": -45.0,
+      "distance_ft": 340.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": -40.0,
+      "distance_ft": 351.6,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": -35.0,
+      "distance_ft": 356.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": -30.0,
+      "distance_ft": 362.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": -25.0,
+      "distance_ft": 371.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": -20.0,
+      "distance_ft": 384.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": -15.0,
+      "distance_ft": 385.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": -10.0,
+      "distance_ft": 386.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": -5.0,
+      "distance_ft": 391.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 0.0,
+      "distance_ft": 390.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 5.0,
+      "distance_ft": 393.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 10.0,
+      "distance_ft": 389.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 15.0,
+      "distance_ft": 383.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 20.0,
+      "distance_ft": 381.6,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 25.0,
+      "distance_ft": 372.4,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 30.0,
+      "distance_ft": 361.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 35.0,
+      "distance_ft": 355.0,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 40.0,
+      "distance_ft": 352.1,
+      "height_ft": 8.0
+    },
+    {
+      "angle_from_centerline_deg": 45.0,
+      "distance_ft": 341.9,
+      "height_ft": 8.0
+    }
+  ],
+  "behind_fence_stand_height_ft": 25.0,
+  "foul_territory_sqft": 23000,
+  "geometry_source": "empirical fence distances (Statcast wall-ball p90, 2015-2025); documented fallback + height overlay"
+}

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from bullpen_training.battedball.retrodict._atmospheres import Weather
 from bullpen_training.battedball.retrodict.labels import (
     BBIP,
     DEFAULT_N_MC,
@@ -130,9 +131,9 @@ def test_same_hr_launch_lower_hr_probability_at_deeper_park() -> None:
     bbip = _hr_bbip("NYY")
     nyy = retrodict_one(bbip, "NYY")
     sf = retrodict_one(bbip, "SF")
-    assert sf.prob_hr <= nyy.prob_hr, (
-        f"expected SF HR prob <= NYY's; got SF={sf.prob_hr:.2f} NYY={nyy.prob_hr:.2f}"
-    )
+    assert (
+        sf.prob_hr <= nyy.prob_hr
+    ), f"expected SF HR prob <= NYY's; got SF={sf.prob_hr:.2f} NYY={nyy.prob_hr:.2f}"
 
 
 def test_observed_outcome_only_populated_on_home_park() -> None:
@@ -227,14 +228,25 @@ def test_retrodict_bips_batch_home_park_carries_observed_only_there() -> None:
 
 
 def test_batch_matches_reference_within_tolerance() -> None:
-    """The fused CPU batch (no weather -> still air per park) should track the
-    float64 reference ``retrodict_bip_at_all_parks`` (also still air, same
-    per-BIP seed -> same jitter). float32 + the fence-crossing-spray
-    approximation can flip the odd MC draw, so we require close probabilities
-    and matching dominant outcomes, not bit-equality."""
+    """The fused CPU batch should track the float64 reference
+    ``retrodict_bip_at_all_parks`` (same per-BIP seed -> same jitter) when both
+    use the SAME (legacy) physics — so we pin the batch to DEFAULT_CALIBRATION
+    (flat 1800 rpm, cd_scale 1.0) to isolate the float32 + fence-crossing-spray
+    approximation from the Phase-1 spin/drag changes. Close probabilities +
+    matching dominant outcomes, not bit-equality.
+
+    Tolerance 0.35: the D5 fielder re-tune (dist=0, height=20) puts a barreled
+    shot at a deep park (the HR bbip @ SF's 391 ft CF) right at the height
+    margin, where 3 of 10 MC draws split between the fused crossing-spray and
+    the reference's landing-spray re-walk. The dominant class still agrees
+    (both HR); only the prob magnitude diverges — the by-design approximation."""
+    from bullpen_training.battedball.physics.spin import DEFAULT_CALIBRATION
+
     bbips = [_hr_bbip("NYY"), _liner_bbip("STL")]
     parks = ["NYY", "COL", "SF", "BOS", "STL"]
-    batched = retrodict_bips_batch(bbips, parks, seed_offset=999, device="cpu")
+    batched = retrodict_bips_batch(
+        bbips, parks, seed_offset=999, device="cpu", calibration=DEFAULT_CALIBRATION
+    )
     by_key = {(r.bbip.bbip_key, r.park_id): r for r in batched}
     max_abs = 0.0
     dominant_agree = 0
@@ -248,5 +260,63 @@ def test_batch_matches_reference_within_tolerance() -> None:
             if ref_vec.index(max(ref_vec)) == bat_vec.index(max(bat_vec)):
                 dominant_agree += 1
             total += 1
-    assert max_abs <= 0.3, f"max per-class prob gap {max_abs:.2f} too large"
+    assert max_abs <= 0.35, f"max per-class prob gap {max_abs:.2f} too large"
     assert dominant_agree / total >= 0.9, f"dominant-class agreement {dominant_agree}/{total}"
+
+
+# --- destination-weather counterfactual (decision [138] still-air interim) ----
+
+
+def test_home_park_uses_game_wind_away_parks_are_still_air() -> None:
+    """[138] still-air interim: a ball's real game weather (here the wind) is
+    applied ONLY at its home park; every away park is flown through that park's
+    still air, so an away park's probabilities are identical regardless of the
+    ball's weather. A borderline fly at SF's deep CF feels an out-wind vs an
+    in-wind at home (SF), while COL (away) is unchanged between the two."""
+    bbip = BBIP(
+        game_date="2024-07-15",
+        game_id=746000999,
+        at_bat_index=7,
+        pitch_number=3,
+        home_park_id="SF",  # deep park -> a moderate fly is a borderline HR
+        launch_speed_mph=101.0,
+        launch_angle_deg=29.0,
+        spray_angle_deg=0.0,
+        spin_rate_rpm=1800.0,
+        spin_axis_tilt_deg=180.0,
+        observed_event="double",
+    )
+    parks = ["SF", "COL"]
+    out_wind = Weather(
+        game_id=bbip.game_id,
+        temp_c=22.0,
+        wind_speed_m_s=12.0,
+        wind_out_x=1.0,
+        wind_out_y=0.0,
+        is_indoor=False,
+    )
+    in_wind = Weather(
+        game_id=bbip.game_id,
+        temp_c=22.0,
+        wind_speed_m_s=12.0,
+        wind_out_x=-1.0,
+        wind_out_y=0.0,
+        is_indoor=False,
+    )
+    r_out = {
+        r.park_id: r
+        for r in retrodict_bips_batch(
+            [bbip], parks, seed_offset=5, weather_by_game={bbip.game_id: out_wind}, device="cpu"
+        )
+    }
+    r_in = {
+        r.park_id: r
+        for r in retrodict_bips_batch(
+            [bbip], parks, seed_offset=5, weather_by_game={bbip.game_id: in_wind}, device="cpu"
+        )
+    }
+    # Home park (SF) feels the wind: a strong out-wind gives a higher HR prob
+    # than a strong in-wind on this borderline fly.
+    assert r_out["SF"].prob_hr > r_in["SF"].prob_hr
+    # Away park (COL) ignores the ball's wind -> identical still-air result.
+    assert r_out["COL"].prob_hr == r_in["COL"].prob_hr

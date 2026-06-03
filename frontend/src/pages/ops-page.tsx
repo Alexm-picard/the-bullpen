@@ -1,42 +1,47 @@
 /**
  * /ops — Operator's Marginalia (Stage 3b, decision [133] identity).
  *
- * Replaces the editorial-data tabbed ops dashboard (leaves 4e.1 – 4e.5) with
- * a single-column scouting-report packet back-page. Visual vocabulary lifts
- * from /home's cover sheet and /players/:id's matchup report — same shell,
- * same masthead pattern, same StatTable chrome.
+ * Single-column scouting-report back-page over the ML-systems wrapper. Visual
+ * vocabulary lifts from /home's cover sheet — same shell, masthead, StatTable
+ * chrome.
  *
- * Composition order (top → bottom, inside <ReportSheet> shell):
- *   1. <OpsHeader />            — masthead with alert + awaiting-promo counts
- *                                 in the byline strip (locked pick: no triage
- *                                 band; the counts live in the byline)
- *   2. <InfraRibbon />          — navy strip, 5 service chips, non-interactive
- *   3. <ModelFleetTable />      — the hero — fleet w/ p99 inline (locked L3)
- *   4. <DriftSnapshotGrid />    — PSI | ECE Δ subgrid, stacks at <900px
- *   5. <LatencyDetailTable />   — companion table — full per-percentile (L3)
- *   6. <RetrainQueueList />     — 3-row compact list w/ AWAITING-PROMOTION
- *                                 carrying a <abbr title> for rule-6 meaning
- *   7. <OpsLogTable />          — recent ops events as StatTable rows
- *                                 (TIMESTAMP · TYPE · DETAIL) — locked O2
- *   8. <CoverSheetFooter />     — reused, bookends the infra ribbon
+ * Data sourcing (C3, Threshold A):
+ *   - Model Fleet ........ LIVE — registry × routing × latency
+ *     (GET /v1/ops/registry/all + /v1/ops/routing + /v1/ops/latency?days=1),
+ *     mapped by ops-mappers.toFleetRows.
+ *   - Latency Detail ..... LIVE — GET /v1/ops/latency?days=7 → toLatencyRows.
+ *   - Retrain Queue ...... LIVE — GET /v1/ops/retrain → toRetrainEntries
+ *     (built-in empty state when the queue is empty).
+ *   - Ops Log ............ LIVE — GET /v1/ops/events (B3).
+ *   - Drift Snapshot ..... watched-surface skeleton with honest em-dashes —
+ *     PSI / ECE populate once the nightly drift jobs run in-season (Threshold
+ *     B). We never render the old illustrative drift numbers as if real (C4).
+ *   - Infra Ribbon ....... showcase chrome (service status has no endpoint yet).
  *
- * Fixture-driven (`ops-fixtures.ts`); no API calls. The old ops/*-section.tsx
- * tabs (drift / registry / reliability / retrain-queue / routing) have been
- * removed — they were the only consumers of api/ops.ts on this page.
- *
- * B3 (Phase B) wires the **Ops Log** section to live data (GET /v1/ops/events) with a
- * fixture fallback — the first section to go live. The fleet / drift / latency / retrain
- * sections remain fixture-driven until their aggregation endpoints land.
+ * Fixtures (`ops-fixtures.ts`) are the fallback ONLY when the backend is
+ * unreachable / has no registered models, and that case is marked in the table
+ * captions so a showcase render never reads as live (C4).
  *
  * Constraints honored:
  *   - One <Title order={1}> only (the masthead h1).
  *   - No hex codes — every color via tokens or CSS-var utilities.
- *   - Reuses CornerStripes + SectionLabel + CoverSheetFooter from shared/.
  */
 
-import { Stack } from "@mantine/core";
+import { Stack, Text } from "@mantine/core";
 
-import { useOpsEvents, opsEventToLogEntry } from "../api/ops";
+import {
+  opsEventToLogEntry,
+  useAllRegistryRows,
+  useLatency,
+  useOpsEvents,
+  useRetrainQueue,
+  useRouting,
+} from "../api/ops";
+import {
+  toFleetRows,
+  toLatencyRows,
+  toRetrainEntries,
+} from "../api/ops-mappers";
 import { DriftSnapshotGrid } from "../components/ops/drift-snapshot-grid";
 import { InfraRibbon } from "../components/ops/infra-ribbon";
 import { LatencyDetailTable } from "../components/ops/latency-detail-table";
@@ -57,26 +62,94 @@ import {
   PSI_BY_FEATURE,
   RETRAIN_QUEUE,
 } from "../data/ops-fixtures";
+import type { DriftFeatureRow, DriftOutputRow } from "../data/ops-fixtures";
+import { colors } from "../design/tokens";
 
 import "./ops/ops.css";
 
+const ET_TIME = new Intl.DateTimeFormat("en-US", {
+  hour: "numeric",
+  minute: "2-digit",
+  hour12: false,
+  timeZone: "America/New_York",
+});
+const ET_DATE = new Intl.DateTimeFormat("en-US", {
+  weekday: "short",
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+  timeZone: "America/New_York",
+});
+
+// Watched-surface skeletons: keep WHICH features/outputs are monitored (config,
+// not data) but null the values, so the grid renders the drift surface with
+// honest em-dashes until the first in-season sweep populates it.
+const PSI_SKELETON: DriftFeatureRow[] = PSI_BY_FEATURE.map((f) => ({
+  feature: f.feature,
+  byModel: {},
+}));
+const ECE_SKELETON: DriftOutputRow[] = ECE_BY_OUTPUT.map((o) => ({
+  output: o.output,
+  byModel: {},
+}));
+
 export default function OpsPage() {
-  // B3: the Ops Log is the first section on live data; empty/loading/error falls back
-  // to the showcase fixtures so the page always reads.
+  const registry = useAllRegistryRows();
+  const routing = useRouting();
+  const latency24h = useLatency(1); // fleet p99 + 24h prediction counts
+  const latency7d = useLatency(7); // latency-detail percentile table
+  const retrain = useRetrainQueue();
   const opsEvents = useOpsEvents();
+
+  // Fleet: live registry × routing × latency. Fall back to the showcase fixture
+  // only when the registry call returned nothing (offline / empty registry).
+  const liveFleet =
+    registry.data && registry.data.length > 0
+      ? toFleetRows(registry.data, routing.data ?? [], latency24h.data ?? [])
+      : null;
+  const fleet = liveFleet ?? MODEL_FLEET;
+  const fleetIsLive = liveFleet !== null;
+
+  const liveLatency =
+    latency7d.data && latency7d.data.length > 0
+      ? toLatencyRows(latency7d.data)
+      : null;
+  const latencyRows = liveLatency ?? LATENCY_BY_MODEL;
+  const latencyIsLive = liveLatency !== null;
+
+  // Retrain: render real data whenever the query resolved (an empty array is a
+  // legitimate "queue empty" state via the list's built-in empty path); only
+  // fall back to the fixture when the call never resolved (offline).
+  const retrainIsLive = retrain.data !== undefined;
+  const retrainEntries = retrainIsLive
+    ? toRetrainEntries(retrain.data ?? [])
+    : RETRAIN_QUEUE;
+
   const opsLog =
     opsEvents.data && opsEvents.data.length > 0
       ? opsEvents.data.map(opsEventToLogEntry)
       : OPS_LOG;
+
+  const now = new Date();
+  const issuedAt = `${ET_TIME.format(now)} ET`;
+  const issueDate = ET_DATE.format(now).replace(",", " ·");
+  const alertCount = opsLog.filter((e) => e.type === "ALERT").length;
+  const awaitingPromotionCount = fleet.filter(
+    (m) => m.state === "AWAITING-PROMOTION",
+  ).length;
+
+  const showcaseSuffix = (live: boolean) =>
+    live ? "" : " · showcase data (backend unreachable)";
+
   return (
     <ReportSheet>
       <Stack gap={28}>
         <OpsHeader
-          issueDate={OPS_META.issueDate}
-          modelCount={OPS_META.modelCount}
-          alertCount={OPS_META.alertCount}
-          awaitingPromotionCount={OPS_META.awaitingPromotionCount}
-          issuedAt={OPS_META.issuedAt}
+          issueDate={issueDate}
+          modelCount={fleet.length}
+          alertCount={alertCount}
+          awaitingPromotionCount={awaitingPromotionCount}
+          issuedAt={issuedAt}
           window={OPS_META.window}
         />
 
@@ -84,37 +157,44 @@ export default function OpsPage() {
 
         <section aria-labelledby="ops-fleet-section-label">
           <div id="ops-fleet-section-label">
-            <SectionLabel>
-              Model Fleet · {OPS_META.modelCount} Registered
-            </SectionLabel>
+            <SectionLabel>Model Fleet · {fleet.length} Registered</SectionLabel>
           </div>
           <ModelFleetTable
-            rows={MODEL_FLEET}
-            caption="Registry · state, traffic, 24h drift + p99 latency"
+            rows={fleet}
+            caption={`Registry · state, traffic, 24h drift + p99 latency${showcaseSuffix(fleetIsLive)}`}
           />
         </section>
 
-        <DriftSnapshotGrid
-          models={MODEL_FLEET}
-          psiByFeature={PSI_BY_FEATURE}
-          eceByOutput={ECE_BY_OUTPUT}
-        />
+        <section aria-labelledby="ops-drift-section-label">
+          <div id="ops-drift-section-label">
+            <SectionLabel>Drift Snapshot · PSI | ECE Δ</SectionLabel>
+          </div>
+          <Text size="sm" style={{ color: colors.textMuted }} mb={8}>
+            Monitored surface shown; PSI and calibration drift populate once the
+            nightly drift jobs run during live operation.
+          </Text>
+          <DriftSnapshotGrid
+            models={fleet}
+            psiByFeature={PSI_SKELETON}
+            eceByOutput={ECE_SKELETON}
+          />
+        </section>
 
         <section aria-labelledby="ops-latency-section-label">
           <div id="ops-latency-section-label">
             <SectionLabel>Latency Detail · By Percentile</SectionLabel>
           </div>
           <LatencyDetailTable
-            rows={LATENCY_BY_MODEL}
-            caption="Latency by percentile · last 24h · onnxruntime-java in-process"
+            rows={latencyRows}
+            caption={`Latency by percentile · onnxruntime-java in-process${showcaseSuffix(latencyIsLive)}`}
           />
         </section>
 
-        <RetrainQueueList entries={RETRAIN_QUEUE} />
+        <RetrainQueueList entries={retrainEntries} />
 
         <section aria-labelledby="ops-log-section-label">
           <div id="ops-log-section-label">
-            <SectionLabel>Ops Log · Last 24h Window</SectionLabel>
+            <SectionLabel>Ops Log · Recent Events</SectionLabel>
           </div>
           <OpsLogTable entries={opsLog} />
         </section>
