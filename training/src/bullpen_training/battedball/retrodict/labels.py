@@ -267,11 +267,17 @@ def retrodict_bip_at_all_parks(
     ``simulate_batch`` call — this is where the Numba JIT pays off,
     keeping the typical per-BIP work down to ~30-50 ms on warm caches.
 
-    When ``weather`` (the BIP's actual game-time conditions) is supplied, the
-    same field-relative wind + temperature is applied at every park — only
-    per-park altitude/geometry varies, which isolates the park's physical HR
-    factor. With no weather we fall back to still air per park (NOT the seasonal
-    default, which is what scrambled the cross-park ranking).
+    Counterfactual atmosphere (decision [138], still-air interim): the **home**
+    park uses the ball's real game ``weather`` (the observed-label anchor, [88]);
+    every **away** park uses that destination park's still-air seasonal
+    atmosphere — its own temperature/density + altitude, **no wind**. This flies
+    each ball through the destination park's conditions ("HR in Boston → would it
+    be a HR in Seattle?" uses Seattle's cool dense air), instead of the old
+    behaviour that applied the origin game's temp+wind everywhere and over-ranked
+    cool-marine parks. Wind is excluded here on purpose (a fixed seasonal-wind
+    vector scrambled the ranking); the real per-date wind arrives with the
+    ``park_daily_weather`` backfill, A/B-gated (ADR-0010). With no ``weather`` at
+    all, every park falls back to still air.
     """
     rng = np.random.default_rng(_seed_for_bbip(bbip.bbip_key, seed_offset))
     parks: dict[str, ParkGeometry] = {pid: load_park_geometry(pid) for pid in park_ids}
@@ -281,9 +287,10 @@ def retrodict_bip_at_all_parks(
     flat_atmospheres: list[Atmosphere] = []
     for pid in park_ids:
         park = parks[pid]
+        is_home = pid == bbip.home_park_id
         atmo = (
             weather_to_atmosphere(weather, park)
-            if weather is not None
+            if (weather is not None and is_home)
             else still_air_atmosphere(park)
         )
         for lp in base_launches:
@@ -397,11 +404,15 @@ def retrodict_bips_batch(
     5-class probability rows. Results are ordered ``[bbip0 @ all parks, bbip1 @
     all parks, ...]`` — the same order as looping ``retrodict_bip_at_all_parks``.
 
-    Per-BIP weather (the game's actual conditions, ``weather_by_game[game_id]``)
-    is applied identically at all parks (field-relative wind + temperature; only
-    per-park altitude/geometry varies). Games without a row fall back to still
-    air per park — matching ``retrodict_bip_at_all_parks``'s no-weather policy
-    (NOT the seasonal default, which scrambled the cross-park ranking).
+    Counterfactual atmosphere (decision [138], still-air interim): the **home**
+    park uses the ball's real game weather (``weather_by_game[game_id]`` — the
+    observed-label anchor, [88]); every **away** park uses that destination
+    park's still-air seasonal atmosphere (its own temp/density + altitude, **no
+    wind**), so each ball is flown through the destination park's conditions
+    rather than the origin game's temp+wind (which over-ranked cool-marine
+    parks). Wind is excluded on purpose; real per-date wind arrives with the
+    ``park_daily_weather`` backfill, A/B-gated (ADR-0010). Games without a
+    weather row fall back to still air everywhere.
 
     This is the float32 path (decision: GPU-B runs float32); it does not reproduce
     the float64 reference bit-for-bit. ``test_fused_parity.py`` pins the
@@ -423,8 +434,11 @@ def retrodict_bips_batch(
     hum = np.array([p.default_atmosphere.humidity_pct for p in parks], dtype=np.float64)
     def_temp = np.array([p.default_atmosphere.temp_c for p in parks], dtype=np.float64)
 
-    # Per-BIP weather: temperature (NaN => use the target park's default) + wind.
-    # Wind is field-relative so it is the same vector at every park.
+    # Per-BIP game weather: temperature (NaN => use the target park's default) +
+    # field-relative wind. Decision [138] still-air interim: this real weather is
+    # applied ONLY at the ball's home park; away parks use the destination's
+    # seasonal still-air (its own default temp, no wind). is_home_mat[b, p] marks
+    # the (bbip, park) cells that are the ball's home park.
     temp_bbip = np.full(n_bbip, np.nan)
     wind_x = np.zeros(n_bbip)
     wind_y = np.zeros(n_bbip)
@@ -436,12 +450,24 @@ def retrodict_bips_batch(
             wind_x[b] = w.wind_speed_m_s * w.wind_out_x
             wind_y[b] = w.wind_speed_m_s * w.wind_out_y
 
-    # Air density per (bbip, park): game temp where present else park default,
-    # ISA pressure at the park's altitude, park seasonal humidity. Vectorised.
-    temp_mat = np.where(np.isnan(temp_bbip)[:, None], def_temp[None, :], temp_bbip[:, None])
+    park_pos = {pid: p for p, pid in enumerate(park_ids)}
+    is_home_mat = np.zeros((n_bbip, n_parks), dtype=bool)
+    for b, bbip in enumerate(bbips):
+        hp = park_pos.get(bbip.home_park_id)
+        if hp is not None:
+            is_home_mat[b, hp] = True
+
+    # Air density per (bbip, park): the game temp only at the home park (where it
+    # is present), else the destination park's seasonal default; ISA pressure at
+    # the park's altitude, park seasonal humidity. Vectorised.
+    use_game_temp = is_home_mat & ~np.isnan(temp_bbip)[:, None]  # (B, P)
+    temp_mat = np.where(use_game_temp, temp_bbip[:, None], def_temp[None, :])
     rho_mat = np.asarray(
         air_density(temp_mat, None, alt[None, :], hum[None, :]), dtype=np.float64
     )  # (B, P)
+    # Wind only at the home park; away parks are still air (no wind). (B, P)
+    wind_x_mat = np.where(is_home_mat, wind_x[:, None], 0.0)
+    wind_y_mat = np.where(is_home_mat, wind_y[:, None], 0.0)
 
     # Per-BIP jittered velocities (seeded per BIP) + per-draw spin from the
     # calibrated spin model (computed from each jittered EV/LA/spray, NOT the
@@ -473,8 +499,8 @@ def retrodict_bips_batch(
     traj[..., 6] = spin[:, None, :, 2]
     traj[..., 7] = spin[:, None, :, 3]
     traj[..., 8] = rho_mat[:, :, None]
-    traj[..., 9] = wind_x[:, None, None]
-    traj[..., 10] = wind_y[:, None, None]
+    traj[..., 9] = wind_x_mat[:, :, None]
+    traj[..., 10] = wind_y_mat[:, :, None]
     # column 11 (wind_z) stays 0.0
 
     park_idx_grid = np.broadcast_to(
