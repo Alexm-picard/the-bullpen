@@ -176,6 +176,53 @@ Consequences for the open levers:
   implemented), the biggest single remaining over-rank.
 - New watch: **CHC #9 vs #18** over-ranked; CIN/NYY/PHI now slightly _under_.
 
+## CAP (decision [139]) — fidelity work capped at the full lever stack
+
+The humidor [137] was implemented and re-retrodicted, completing the lever
+stack. Against `observed_norm`'s **0.935** reliability ceiling:
+
+| lever                                    | `physics vs observed_norm` |
+| ---------------------------------------- | :------------------------: |
+| raw physics                              |           0.294            |
+| + empirical-geometry fences              |           0.588            |
+| + D5 fielder re-tune (dist=0, height=20) |           0.649            |
+| + [138] destination-temp still-air       |           0.704            |
+| + [137] humidor                          |         **0.689**          |
+
+**Within-noise observation (the cap trigger).** The last three runs (0.649,
+0.704, 0.689) are _within Spearman noise_ for n=30: SE ≈ (1−ρ²)/√(n−1) ≈
+**0.095**, and the whole spread is ~0.16 SE. The headline can no longer
+distinguish levers; further per-park physics chases sub-noise ρ. **Stop here.**
+
+**Humidor KEPT despite a COL overshoot.** At Nathan's literature magnitude the
+humidor moves **COL physics #1 (error 8 vs `observed_norm` #9) → #13 (error 4)** — error halved, but overshooting #9 to the _under_-ranked side. Kept:
+principled (Nathan-anchored, non-circular), improves the single worst
+over-rank, free on the noise-flat headline. The magnitude was **deliberately
+NOT tuned to land COL at #9** — that would be the circular cheat the gate's
+integrity depends on avoiding (ADR-0009). (Mid-implementation correction: the
+ambient-RH input moved from outdoor climate normals to climate-controlled
+clubhouse storage ~52 % — dry exceptions COL 30 % / AZ 45 % — after outdoor
+values invented spurious humid-park EV _boosts_, e.g. Miami +1.82 mph, that
+degraded the gate 0.704 → 0.679.)
+
+**Deferred to the improvement backlog** (an asset, not a gap — the
+drift-detection + retraining machinery exists to operate + improve the model
+over a season):
+
+1. [138]'s `park_daily_weather` wind backfill + the SEA marine-wind residual.
+2. The DET deep-CF geometry audit (temperature ruled out climate for DET).
+3. The CHC over-rank.
+4. Humid-park climate-RH polish + the humidor EV→HR-sensitivity / magnitude
+   refinement (the COL overshoot — investigate the EV→HR mapping, **do not**
+   tune the humidor to the gate).
+5. Promoting the staged empirical geometry to prod (open D1).
+
+**Next — the ship sequence (NOT part of this cap):** **D2** — re-aim the 2c.7
+gate target from the noisy published file (`observed_norm` vs published only
+0.638) to `observed_norm` at a reliability-derived threshold (amends [52]) →
+retrain the MLP on the capped labels → run the real `test_cross_park_sanity` →
+register the model.
+
 ## Phase 0 — Empirical geometry (DONE — worked)
 
 Re-retrodict with the staged per-park empirical fences
@@ -269,18 +316,39 @@ the new physics, then `compare_park_factors`.
 
 ## Decisions still open (route through `/decide` before locking)
 
+> **CAP — decision [139] (2026-06-02).** The fidelity push is **capped at the
+> full lever stack** (physics vs `observed_norm` ~0.689; see the CAP section
+> above). **D2 is the next action**; **D1 and the items below are backlog.**
+> Remaining levers chase sub-noise ρ (SE ≈ 0.095, n=30) — lower-leverage than
+> the live-data poller (issue #1), the Ops dashboard, and ML-wrapper polish.
+
 - **D1** — empirical geometry replaces the 5-point polyline (pending Phase 0).
-- **D2** — re-aim the 2c.7 gate target + threshold.
+  **BACKLOG (per [139]):** the staged fences are validated and in use via
+  `BULLPEN_PARK_GEOMETRY_DIR`; promoting them to prod (`--apply` + commit the
+  regenerated `infra/park_geometry/*.json` from the Mac, ADR-0006) is backlog
+  item (5).
+- **D2** — re-aim the 2c.7 gate target + threshold. **NEXT ACTION (per
+  [139]):** re-aim from the noisy published file (`observed_norm` vs published
+  only 0.638) to `observed_norm` at a reliability-derived threshold (amends
+  [52]) → retrain the MLP on the capped labels → run the real
+  `test_cross_park_sanity` → register the model.
 - **D3** — humidor model (Branch A Phase 1A). **RESOLVED 2026-06-02** —
   approach decided = Option A: a uniform, physically-sourced,
   ambient-relative, era-aware per-(destination park, BIP season) EV
   reduction in the retrodiction labels — a humidor-vs-ambient COR delta
   scaled to batted-ball speed, with zero per-park free parameters →
   non-circular with the 2c.7 gate. See decision [137] / ADR-0009.
-  Implementation pending (source `k_EV` + NOAA climate-normal RH table +
-  adoption timeline, then re-retrodict + `compare_park_factors`, verifying
-  the whole table — COL falls toward #9, humid parks tick up, dry parks tick
-  down).
+  **IMPLEMENTED + CAPPED (per [139], 2026-06-02):** `humidor.py` + wired into
+  both retrodiction paths in `labels.py`, re-retrodicted. At literature
+  magnitude it **over-corrects COL** (#1 / error 8 → #13 / error 4 — halved but
+  overshooting #9 to the under-ranked side). **Kept**: principled, improves the
+  worst over-rank, headline within Spearman n=30 noise; magnitude deliberately
+  NOT tuned to land COL at #9 (the non-circularity discipline). Ambient RH was
+  corrected from outdoor climate normals to climate-controlled clubhouse storage
+  (~52 %, dry exceptions COL 30 % / AZ 45 %) after outdoor values invented
+  spurious humid-park boosts (Miami +1.82 mph) that degraded the gate 0.704 →
+  0.679. The EV→HR-sensitivity / magnitude refinement (the overshoot) is
+  **backlog item (4)** — investigate the EV→HR mapping, do not tune to the gate.
 - **D4** — destination-weather in the counterfactual (was scoped here as the
   foul-territory model for ATH; the audit found the dominant cause of the
   cool-coastal over-rank — SEA/ATH/SF/DET — is the away-park branch flying

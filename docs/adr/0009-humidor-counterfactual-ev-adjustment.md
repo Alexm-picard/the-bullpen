@@ -231,4 +231,32 @@ holdout-only (rule 13).
 
 ## Revision History
 
-(none)
+- **2026-06-02** — Implementation outcome recorded (decision [139]). Status
+  stays **Accepted** — the decision and approach hold exactly as written; this
+  entry records what implementing them surfaced.
+  - **The humidor was implemented** (`battedball/retrodict/humidor.py` +
+    wired into both retrodiction paths in `labels.py`) and the labels were
+    re-retrodicted. At Nathan's literature magnitude it **over-corrects COL**:
+    COL moves from physics #1 (rank error 8 vs `observed_norm` #9) to **#13
+    (error 4)** — the error is halved, but it overshoots #9 to the
+    _under_-ranked side. **Kept** (per decision [139]): it is principled, it
+    improves the single worst over-rank, and the headline is within Spearman
+    n=30 noise (the lever-stack runs 0.649 → 0.704 → 0.689 are
+    indistinguishable at SE ≈ 0.095). Crucially, the magnitude was **deliberately
+    NOT tuned to land COL at #9** — that non-circularity is the discipline this
+    ADR establishes, and honoring it means accepting the overshoot rather than
+    fitting the constant to the gate. Likely cause of the overshoot: the fielder
+    model's EV→HR sensitivity near the fence amplifies the −2.8 / −3.78 mph EV
+    reduction. **Flagged as a backlog refinement** — investigate the EV→HR
+    mapping; **do not** tune the humidor to the gate.
+  - **The ambient-RH input was corrected** from the outdoor climate normals
+    specified in the Decision body to **climate-controlled clubhouse storage**
+    (~52 % default, with dry exceptions COL ~30 % / AZ ~45 %). The outdoor
+    values produced spurious humid-park EV _boosts_ (e.g. Miami +1.82 mph) that
+    don't physically exist — clubhouses are HVAC-controlled near the storage
+    setpoint, not at outdoor humidity — and that error **degraded the gate
+    0.704 → 0.679**. The clubhouse model makes non-dry parks rank-neutral and
+    isolates the humidor effect to the genuinely-dry parks (COL, AZ). The
+    Decision's sub-choice (ambient RH = a static table distinct from per-game
+    weather) is unchanged; only the table's _values_ moved from outdoor-climate
+    to clubhouse-storage humidity.
