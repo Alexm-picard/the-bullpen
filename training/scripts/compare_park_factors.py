@@ -92,17 +92,21 @@ def observed_rates(
     if game_parity is not None:
         parity = f" AND cityHash64(game_id) % 2 = {game_parity}"
     base = f"description = 'in_play' AND {_bounds(season_from, season_to)}{parity}"
+    # FINAL: pitches + bbip_retrodicted_labels are ReplacingMergeTree. The MLP
+    # training loader (mlp/dataset.py) reads both with FINAL, so this comparison
+    # MUST too — otherwise it averages stale + current rows from earlier retrodict
+    # runs and reports a blend the model never trained on.
     home = _rows(
         _run_ch(
             f"SELECT park_id, countIf(events='home_run') AS hr, count() AS n "
-            f"FROM pitches WHERE {base} GROUP BY park_id FORMAT TSV",
+            f"FROM pitches FINAL WHERE {base} GROUP BY park_id FORMAT TSV",
             container=container,
         )
     )
     road = _rows(
         _run_ch(
             f"SELECT away_team AS team, countIf(events='home_run') AS hr, count() AS n "
-            f"FROM pitches WHERE {base} GROUP BY away_team FORMAT TSV",
+            f"FROM pitches FINAL WHERE {base} GROUP BY away_team FORMAT TSV",
             container=container,
         )
     )
@@ -122,7 +126,7 @@ def physics_counterfactual(*, season_from: int, season_to: int, container: str) 
     """Mean retrodiction prob_hr per park (the labels), season-bounded."""
     rows = _rows(
         _run_ch(
-            f"SELECT park_id, avg(prob_hr) AS p, count() AS n FROM bbip_retrodicted_labels "
+            f"SELECT park_id, avg(prob_hr) AS p, count() AS n FROM bbip_retrodicted_labels FINAL "
             f"WHERE {_bounds(season_from, season_to)} GROUP BY park_id FORMAT TSV",
             container=container,
         )
@@ -145,6 +149,29 @@ def _spearman(a: dict[str, float], b: dict[str, float]) -> tuple[float, int]:
 def _ranks(values: dict[str, float]) -> dict[str, int]:
     ordered = sorted(values, key=lambda k: -values[k])
     return {pid: i + 1 for i, pid in enumerate(ordered)}
+
+
+def _leave_one_out_spearman(
+    a: dict[str, float], b: dict[str, float]
+) -> list[tuple[str, float, float]]:
+    """Per-park leave-one-out Spearman of ``a`` vs ``b``.
+
+    Returns ``(park, rho_without_park, delta_vs_full)`` sorted by delta descending
+    — the park at the top is the one whose removal raises rho the most, i.e. the
+    biggest drag on the cross-park correlation. Built to test whether a single
+    mismatched park (e.g. ATH after the 2025 Oakland->Sacramento move, modelled
+    only as Oakland) is capping the headline rho at n=30.
+    """
+    keys = sorted(set(a) & set(b))
+    full, _ = _spearman(a, b)
+    out: list[tuple[str, float, float]] = []
+    for k in keys:
+        sub_a = {x: a[x] for x in keys if x != k}
+        sub_b = {x: b[x] for x in keys if x != k}
+        rho_without, _ = _spearman(sub_a, sub_b)
+        out.append((k, rho_without, rho_without - full))
+    out.sort(key=lambda t: -t[2])
+    return out
 
 
 def emit_anchor(
@@ -293,6 +320,19 @@ def main() -> None:
         f"  -> a re-aimed gate threshold should sit near the {reliability:+.3f} reliability, "
         "not an a-priori 0.80."
     )
+
+    # Leave-one-out: which single park most drags physics-vs-observed_norm rho?
+    # Tests the ATH/Oakland->Sacramento confound (and surfaces DET/CHC/SEA from [139]).
+    loo = _leave_one_out_spearman(physics, observed_norm)
+    print("\n=== leave-one-out (physics vs observed_norm), top drags ===")
+    print(f"  full rho = {ph_on:+.3f} over n={len(set(physics) & set(observed_norm))} parks")
+    for pid, rho_without, delta in loo[:5]:
+        ph_rank = rk["physics"].get(pid, 0)
+        on_rank = rk["observed_norm"].get(pid, 0)
+        print(
+            f"  drop {pid:<4} -> rho {rho_without:+.3f}  (Δ {delta:+.3f})   "
+            f"physics #{ph_rank} vs observed_norm #{on_rank}"
+        )
 
     if args.report is not None:
         args.report.parent.mkdir(parents=True, exist_ok=True)
