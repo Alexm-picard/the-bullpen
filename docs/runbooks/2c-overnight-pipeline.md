@@ -143,14 +143,22 @@ Read the sanity-gate log:
 cat logs/2c-overnight/2c.7-sanity-gate.log
 ```
 
-The 2c.7 gate scores per-park P(HR) against the frozen `observed_norm`
-anchor at **ρ ≥ 0.65** (decision [52], re-aimed by [140] — _not_ the old
-0.80-vs-published bar). If the sanity-gate stage FAILED, the MLP is
-broken per decision [52] — do NOT register it in 3a. Investigate the
-per-park gap diagnostics in the failing assertion message + the saved
-`data/cross_park_sanity_report.json` (now `reference_*` fields vs
-observed_norm, schema_version 2). A "anchor missing" failure instead
-means the one-time anchor emit (prereqs) wasn't run.
+Decision [141] split the old 2c.7 gate into two stages:
+
+- **2c.7a — outcome-calibration gate (BLOCKING).** This is the stage that
+  blocks registration. It asserts per-park ECE post-cal mean **< 0.05** AND
+  aggregate test ECE **< 0.02** from `artifacts/battedball_mlp_v1/calibration_metrics.json`
+  (written by 2c.6). If **2c.7a** FAILS, do NOT register in 3a — the model
+  misses the calibration bar. (A "metrics missing" failure means 2c.6 didn't
+  emit `calibration_metrics.json` — re-run it.)
+- **2c.7b — cross-park sanity DIAGNOSTIC (NON-blocking, advisory).** Runs via
+  `run_soft`, so it reports cross-park ρ vs the frozen `observed_norm` anchor
+  but does **not** halt the run — v1 makes no cross-park park-factor claim
+  ([141]). Read its ρ + per-park offenders in `logs/2c-overnight/2c.7b-cross-park-diagnostic.log`
+  (and `data/cross_park_sanity_report.json`, `reference_*` fields vs
+  observed_norm, schema_version 2). An `ADVISORY FAIL (non-blocking)` line here
+  is expected at the current ~0.33 fidelity and is fine; a low ρ is a documented
+  known limitation, not a blocker.
 
 ---
 

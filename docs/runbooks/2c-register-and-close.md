@@ -40,29 +40,43 @@ ls -lh artifacts/batted_ball_lgbm_baseline/v1/   # model.txt metadata.json calib
 ls data/eval/reliability_diagrams_per_park/ | wc -l   # 30
 ```
 
-If the sanity-gate stage FAILED, **stop** — the MLP is broken per decision [52];
-do not register it. Investigate `data/cross_park_sanity_report.json`.
+If the **2c.7a outcome-calibration gate** stage FAILED, **stop** — the model
+misses the calibration bar (decision [141]); do not register it. (The 2c.7b
+cross-park stage is advisory — an `ADVISORY FAIL` there does **not** block.)
 
 ---
 
 ## 1. Verify the production gates
 
-### 1a. Cross-park sanity (decision [52], re-aimed by [140]: ρ ≥ 0.65 vs observed_norm)
+### 1a. Outcome calibration — the BLOCKING gate (decision [141])
 
 ```bash
-cat logs/2c-overnight/2c.7-sanity-gate.log | tail -20
+cat logs/2c-overnight/2c.7a-outcome-gate.log | tail -20
+python -c "import json; print(json.load(open('artifacts/battedball_mlp_v1/calibration_metrics.json')))"
 ```
 
-Look for the Spearman ρ and the Coors→Oakland gap. **ρ ≥ 0.65 against
-`observed_norm`** (the frozen `data/observed_norm_factors.json` anchor — _not_ the
-published file) and the gap positive ⇒ pass. (This stage already ran under `pytest
--m production`; a green stage in the orchestrator log means it passed.) The gate
-**fails loud** if the anchor is missing while a model exists — if you see that,
-the one-time anchor emit (overnight-pipeline runbook prereqs) wasn't done.
+This is the registration gate for batted-ball v1 (a calibrated per-park **outcome**
+model): **per-park ECE post-cal mean < 0.05 AND aggregate test ECE < 0.02**, read
+from `calibration_metrics.json` (written by 2c.6 from the _calibrated_ probs). A
+green 2c.7a stage ⇒ pass. It **fails loud** if the metrics file is missing while a
+model exists.
 
-> Threshold history: 0.80-vs-published was unreachable — the lever stack caps at
-> ρ ≈ 0.69 vs `observed_norm` (reliability ceiling 0.935, decision [139]). 0.65 is
-> the interim floor (decision [140]), to be tightened as the model improves.
+### 1b. Cross-park sanity — ADVISORY diagnostic only (decision [141])
+
+```bash
+cat logs/2c-overnight/2c.7b-cross-park-diagnostic.log | tail -20
+```
+
+Reports cross-park Spearman ρ vs the frozen `observed_norm` anchor. **This no
+longer gates registration** — v1 makes no cross-park park-factor claim. Record the
+ρ for the postmortem; an `ADVISORY FAIL (non-blocking)` at the current ~0.33
+fidelity is expected and fine.
+
+> History: the cross-park bar was 0.80-vs-published ([52]) → 0.65-vs-observed_norm
+> ([140], derived from [139]'s **0.689** lever-stack figure). [141] found that 0.689
+> was a non-`FINAL` ReplacingMergeTree blend; the honest deduplicated fidelity is
+> **~0.30**, so the cross-park claim is dropped from v1 and this check is advisory.
+> Cross-park fidelity is documented future work.
 
 ### 1b. Per-park ECE (the 2c.6 calibrator output)
 

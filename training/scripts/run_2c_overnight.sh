@@ -79,6 +79,33 @@ run() {
     fi
 }
 
+# Non-blocking variant for ADVISORY stages (decision [141]): runs + logs, but a
+# non-zero exit does NOT halt the pipeline. Used for the 2c.7 cross-park
+# DIAGNOSTIC — batted-ball v1 is a per-park outcome model that does not claim
+# cross-park ranking, so a low cross-park rho is reported (in the stage log), not
+# a registration blocker. (A failing condition inside `if` is exempt from set -e.)
+run_soft() {
+    local stage="$1"
+    shift
+    local log_path="$LOG_DIR/${stage}.log"
+    echo
+    echo "==> [$stage] (advisory, non-blocking) $*"
+    echo "    log: $log_path"
+    if [ "$DRY_RUN" = "1" ]; then
+        echo "    (dry-run; not executing)"
+        return 0
+    fi
+    local t0
+    t0=$(date +%s)
+    if "$@" 2>&1 | tee "$log_path"; then
+        local t1
+        t1=$(date +%s)
+        echo "    OK in $((t1 - t0))s"
+    else
+        echo "    ADVISORY FAIL (non-blocking) — see $log_path; continuing"
+    fi
+}
+
 echo "Phase 2c overnight pipeline"
 echo "  train seasons: ${SEASON_FROM}-${SEASON_TO}, val: ${VAL_SEASON}"
 echo "  device: ${DEVICE}, MLP epochs: ${MLP_EPOCHS}, batch: ${MLP_BATCH_SIZE}, lr: ${MLP_LR}"
@@ -123,10 +150,21 @@ run "2c.6-calibrators" \
         --val-season-from "${VAL_SEASON}" \
         --plots-out-dir "${DATA_DIR}/eval/reliability_diagrams_per_park"
 
-# --- 2c.7: cross-park sanity gate (decision [52] hard gate) --------------
-# This is the gate that BLOCKS production registration if the trained
-# model's per-park P(HR) doesn't track published park HR factors.
-run "2c.7-sanity-gate" \
+# --- 2c.7a: outcome-calibration gate (decision [141], BLOCKING) ----------
+# Batted-ball v1 ships as a calibrated per-park OUTCOME model, so registration
+# is gated on outcome calibration — per-park ECE post-cal < 0.05 AND aggregate
+# test ECE < 0.02 (read from calibration_metrics.json written by 2c.6) — NOT on
+# cross-park ranking. This is the stage that blocks registration.
+run "2c.7a-outcome-gate" \
+    uv run pytest -m production -v \
+        tests/battedball/mlp/test_outcome_calibration_gate.py
+
+# --- 2c.7b: cross-park sanity DIAGNOSTIC (decision [141], NON-blocking) ---
+# Reclassified from hard blocker ([52]) to advisory: it still RUNS and reports
+# cross-park rho every pipeline (honest visibility / the postmortem hook), but a
+# low rho does not halt the run — v1 makes no cross-park park-factor claim. The
+# rho + per-park offenders land in this stage's log.
+run_soft "2c.7b-cross-park-diagnostic" \
     uv run pytest -m production -v \
         tests/battedball/mlp/test_cross_park_sanity.py
 

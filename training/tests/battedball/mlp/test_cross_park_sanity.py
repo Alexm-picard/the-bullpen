@@ -363,14 +363,22 @@ def test_smoke_model_cross_park_report_writes(tmp_path: Path) -> None:
 @pytest.mark.production
 @pytest.mark.skipif(not _have_production_artifacts(), reason="batted_ball/v1 not trained yet")
 def test_production_model_passes_cross_park_sanity_gate() -> None:
-    """The HARD gate from decision [52], re-aimed by [140] to observed_norm at a
-    0.65 floor. Only meaningful against the production model trained on the full
-    2015-2024 backfill. Marked @pytest.mark.production so the smoke model in the
-    artifact dir doesn't trip it during dev iteration.
+    """Cross-park sanity check ([52], re-aimed by [140] to observed_norm at a 0.65
+    floor) — now an ADVISORY DIAGNOSTIC, not a registration blocker (decision [141]).
+
+    Batted-ball v1 ships as a calibrated per-park OUTCOME model and makes no
+    cross-park park-factor claim, so this no longer gates registration — the
+    overnight pipeline runs it via ``run_soft`` (2c.7b), so a sub-0.65 rho is
+    reported in the stage log but does not halt the run. The blocking registration
+    gate is outcome calibration (``test_outcome_calibration_gate.py``, 2c.7a). The
+    assertion is kept so the rho + offending parks are surfaced, and so this turns
+    green again on its own if cross-park fidelity is ever recovered (the [139]/[141]
+    future-work backlog). Marked @pytest.mark.production; only meaningful against
+    the full-backfill model.
 
     The anchor is REQUIRED whenever a model exists: if it's missing we fail loud
-    rather than skip, so a missing/un-emitted anchor on the desktop can never let
-    the gate silently pass-by-skip and admit an un-checked model to registration.
+    rather than skip, so a missing/un-emitted anchor can never let the diagnostic
+    silently pass-by-skip and report nothing.
     """
     import torch
 

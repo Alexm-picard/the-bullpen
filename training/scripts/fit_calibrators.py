@@ -37,6 +37,7 @@ from bullpen_training.battedball.mlp import (
 )
 from bullpen_training.battedball.mlp.architecture import build_model
 from bullpen_training.battedball.mlp.calibration import (
+    expected_calibration_error,
     fit_per_park_calibrators,
     per_park_ece,
     save_calibrator,
@@ -128,6 +129,35 @@ def main() -> None:
     calibrator_path = args.mlp_dir / "calibrator.json"
     save_calibrator(cals, calibrator_path)
     print(f"wrote -> {calibrator_path}")
+
+    # Persist the calibrated outcome-calibration metrics (decision [141]): these
+    # back the BLOCKING registration gate (per-park ECE post-cal < 0.05 AND
+    # aggregate test ECE < 0.02). The 2c.9 comparison evaluates the MLP on raw
+    # softmax, so its ECE is pre-cal — this file is the authoritative post-cal
+    # source. `aggregate_ece_post` pools all rows x parks per class on the
+    # calibrated probs and averages across classes.
+    n_outcomes = calibrated.shape[2]
+    aggregate_ece_post = float(
+        np.mean(
+            [
+                expected_calibration_error(calibrated[:, :, c].ravel(), labels[:, :, c].ravel())
+                for c in range(n_outcomes)
+            ]
+        )
+    )
+    metrics = {
+        "schema_version": 1,
+        "per_park_ece_post_mean": float(post.mean()),
+        "per_park_ece_post_max": float(post.max()),
+        "per_park_ece_pre_mean": float(pre.mean()),
+        "aggregate_ece_post": aggregate_ece_post,
+        "parks_improved": n_improved,
+        "n_parks": len(park_order),
+        "n_val_rows": int(calibrated.shape[0]),
+    }
+    metrics_path = args.mlp_dir / "calibration_metrics.json"
+    metrics_path.write_text(json.dumps(metrics, indent=2) + "\n")
+    print(f"wrote -> {metrics_path}  (aggregate ECE post = {aggregate_ece_post:.4f})")
 
     if args.plots_out_dir is not None:
         # Local import — matplotlib pulls in a non-trivial dependency tree
