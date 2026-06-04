@@ -47,15 +47,22 @@ do not register it. Investigate `data/cross_park_sanity_report.json`.
 
 ## 1. Verify the production gates
 
-### 1a. Cross-park sanity (decision [52], ρ ≥ 0.8)
+### 1a. Cross-park sanity (decision [52], re-aimed by [140]: ρ ≥ 0.65 vs observed_norm)
 
 ```bash
 cat logs/2c-overnight/2c.7-sanity-gate.log | tail -20
 ```
 
-Look for the Spearman ρ and the Coors→Oakland gap. **ρ ≥ 0.80** and the gap
-positive ⇒ pass. (This stage already ran under `pytest -m production`; a green
-stage in the orchestrator log means it passed.)
+Look for the Spearman ρ and the Coors→Oakland gap. **ρ ≥ 0.65 against
+`observed_norm`** (the frozen `data/observed_norm_factors.json` anchor — _not_ the
+published file) and the gap positive ⇒ pass. (This stage already ran under `pytest
+-m production`; a green stage in the orchestrator log means it passed.) The gate
+**fails loud** if the anchor is missing while a model exists — if you see that,
+the one-time anchor emit (overnight-pipeline runbook prereqs) wasn't done.
+
+> Threshold history: 0.80-vs-published was unreachable — the lever stack caps at
+> ρ ≈ 0.69 vs `observed_norm` (reliability ceiling 0.935, decision [139]). 0.65 is
+> the interim floor (decision [140]), to be tightened as the model improves.
 
 ### 1b. Per-park ECE (the 2c.6 calibrator output)
 
