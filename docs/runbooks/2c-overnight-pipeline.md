@@ -53,6 +53,16 @@ python -c "import torch; print(torch.cuda.is_available())"`.
   The kernel runs **float32** (decision: GPU-B precision): re-validate the
   decision [131] calibration gate on the GPU output before trusting a full
   relabel (the 2c.7 cross-park sanity gate is the in-pipeline guard).
+- **The frozen `observed_norm` gate anchor must exist** (decision [140]). The
+  2c.7 sanity gate now scores against `data/observed_norm_factors.json`, not the
+  published file, and **fails loud if the anchor is missing while a model exists**.
+  Emit it once (needs only `pitches`, so it can run before the relabel):
+  ```bash
+  uv run python scripts/compare_park_factors.py \
+      --emit-anchor data/observed_norm_factors.json
+  ```
+  Then bring the file back to the Mac to commit it (ADR-0006 — no commits from the
+  prod box). If it's already committed and present in the checkout, skip this.
 - ~10 GB free disk for logs + artifacts (the LightGBM `model.txt`
   alone is ~3 MB on the full 1.5 M-row dataset).
 
@@ -133,10 +143,14 @@ Read the sanity-gate log:
 cat logs/2c-overnight/2c.7-sanity-gate.log
 ```
 
-If the sanity-gate stage FAILED, the MLP is broken per decision [52]
-— do NOT register it in 3a. Investigate the per-park gap diagnostics
-in the failing assertion message + the saved
-`data/cross_park_sanity_report.json`.
+The 2c.7 gate scores per-park P(HR) against the frozen `observed_norm`
+anchor at **ρ ≥ 0.65** (decision [52], re-aimed by [140] — _not_ the old
+0.80-vs-published bar). If the sanity-gate stage FAILED, the MLP is
+broken per decision [52] — do NOT register it in 3a. Investigate the
+per-park gap diagnostics in the failing assertion message + the saved
+`data/cross_park_sanity_report.json` (now `reference_*` fields vs
+observed_norm, schema_version 2). A "anchor missing" failure instead
+means the one-time anchor emit (prereqs) wasn't run.
 
 ---
 

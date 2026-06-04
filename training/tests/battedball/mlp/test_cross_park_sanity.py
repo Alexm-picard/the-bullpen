@@ -28,6 +28,7 @@ from bullpen_training.battedball.mlp.sanity import (
     canonical_features,
     check_monotonicity,
     cross_park_p_hr,
+    load_observed_norm_factors,
     load_published_factors,
     write_report,
 )
@@ -98,6 +99,7 @@ def test_cross_park_p_hr_weighted_path_returns_valid_probs() -> None:
 
 
 _HR_FACTORS_PATH = Path(__file__).resolve().parents[3] / "data" / "published_hr_factors.json"
+_ANCHOR_PATH = Path(__file__).resolve().parents[3] / "data" / "observed_norm_factors.json"
 _MODEL_DIR = Path(__file__).resolve().parents[3] / "artifacts" / "battedball_mlp_v1"
 
 
@@ -174,6 +176,37 @@ def test_load_published_rejects_unknown_schema(tmp_path: Path) -> None:
         load_published_factors(bad)
 
 
+# --- observed_norm anchor (the re-aimed gate target, decision [140]) ------
+
+
+def test_spearman_gate_is_065_interim_floor() -> None:
+    """Pin decision [140]: the gate is the interim 0.65 floor vs observed_norm
+    (re-aimed from 0.80 vs the published file). Tighten as the model improves."""
+    assert SPEARMAN_GATE == 0.65
+
+
+def test_load_observed_norm_factors_round_trips(tmp_path: Path) -> None:
+    anchor = tmp_path / "anchor.json"
+    anchor.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "reference": "observed_norm",
+                "observed_norm_factors": {"COL": 1.31, "ATH": 0.78, "NYY": 1.12},
+            }
+        )
+    )
+    factors = load_observed_norm_factors(anchor)
+    assert factors == {"COL": 1.31, "ATH": 0.78, "NYY": 1.12}
+
+
+def test_load_observed_norm_rejects_unknown_schema(tmp_path: Path) -> None:
+    bad = tmp_path / "bad.json"
+    bad.write_text(json.dumps({"schema_version": 999, "observed_norm_factors": {}}))
+    with pytest.raises(ValueError, match="schema_version"):
+        load_observed_norm_factors(bad)
+
+
 # --- check_monotonicity (synthetic) --------------------------------------
 
 
@@ -246,7 +279,8 @@ def test_sanity_report_round_trips_through_json(tmp_path: Path) -> None:
     write_report(report, path)
     data = json.loads(path.read_text())
     assert data["gate_passes"] is True
-    assert data["schema_version"] == 1
+    assert data["schema_version"] == 2
+    assert data["reference"] == "observed_norm"
     assert "per_park_gaps" in data
     assert len(data["per_park_gaps"]) == 30
 
@@ -258,9 +292,9 @@ def test_park_gap_rank_delta_computed() -> None:
     gap = ParkGap(
         park_id="X",
         pred_p_hr=0.10,
-        published_factor=1.2,
+        reference_factor=1.2,
         pred_rank=3,
-        published_rank=10,
+        reference_rank=10,
         rank_delta=-7,
     )
     assert gap.rank_delta == -7
@@ -329,11 +363,24 @@ def test_smoke_model_cross_park_report_writes(tmp_path: Path) -> None:
 @pytest.mark.production
 @pytest.mark.skipif(not _have_production_artifacts(), reason="batted_ball/v1 not trained yet")
 def test_production_model_passes_cross_park_sanity_gate() -> None:
-    """The HARD gate from decision [52] — only meaningful against the
-    production model trained on the full 2015-2024 backfill. Marked
-    @pytest.mark.production so the smoke model in the artifact dir
-    doesn't trip it during dev iteration."""
+    """The HARD gate from decision [52], re-aimed by [140] to observed_norm at a
+    0.65 floor. Only meaningful against the production model trained on the full
+    2015-2024 backfill. Marked @pytest.mark.production so the smoke model in the
+    artifact dir doesn't trip it during dev iteration.
+
+    The anchor is REQUIRED whenever a model exists: if it's missing we fail loud
+    rather than skip, so a missing/un-emitted anchor on the desktop can never let
+    the gate silently pass-by-skip and admit an un-checked model to registration.
+    """
     import torch
+
+    assert _ANCHOR_PATH.exists(), (
+        f"observed_norm anchor missing at {_ANCHOR_PATH}. The gate must not be skipped "
+        "when a trained model exists (decision [140]). Emit it on the desktop:\n"
+        "  uv run python scripts/compare_park_factors.py "
+        "--emit-anchor data/observed_norm_factors.json\n"
+        "then commit it from the Mac (ADR-0006)."
+    )
 
     metadata = json.loads((_MODEL_DIR / "metadata.json").read_text())
     park_order = tuple(metadata["park_order"])
@@ -346,8 +393,8 @@ def test_production_model_passes_cross_park_sanity_gate() -> None:
     model.load_state_dict(torch.load(_MODEL_DIR / "model.pt", weights_only=True))
 
     per_park = cross_park_p_hr(model, scaler, park_order)
-    published = load_published_factors(_HR_FACTORS_PATH)
-    report = check_monotonicity(per_park, published)
+    observed_norm = load_observed_norm_factors(_ANCHOR_PATH)
+    report = check_monotonicity(per_park, observed_norm)
     assert report.gate_passes, report.actionable_error()
     assert report.spearman_rho > SPEARMAN_GATE
     assert report.coors_oakland_gap >= COORS_VS_OAKLAND_GAP_GATE

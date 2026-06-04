@@ -1,28 +1,42 @@
 """Cross-park sanity check for the multi-output MLP (Phase 2c.7).
 
 Decision [52] makes this a HARD GATE: the model's per-park P(HR) for a
-canonical batted ball must rank approximately the same as published
-park HR factors. If the Spearman rank correlation against the
-published factors is below the threshold, the model is broken and
-must NOT be registered — likely culprits are bad retrodiction labels,
-an MLP that hasn't trained long enough, or a wrong canonical-input
-encoding.
+canonical batted ball must rank approximately the same as a per-park
+reference HR factor. If the Spearman rank correlation against the
+reference is below the threshold, the model is broken and must NOT be
+registered — likely culprits are bad retrodiction labels, an MLP that
+hasn't trained long enough, or a wrong canonical-input encoding.
+
+The reference target was re-aimed by decision [140] (amends [52]): from
+the single-year published file (Savant 2024) to **observed_norm** — the
+roster-controlled, multi-year park factor the model is actually built to
+reproduce. The published single-season file is only ~0.64-correlated with
+observed_norm, so it was a noisy yardstick; observed_norm carries a
+split-half reliability of ~0.935 (the achievable ceiling). The threshold
+moved 0.80 → 0.65 to sit below the capped lever-stack fidelity (~0.69,
+decision [139]) with enough margin that n=30 Spearman noise doesn't flake
+the gate, while still failing a genuinely broken model (raw physics
+rho~0.29, under-trained MLP rho~0.49). 0.65 is an interim floor — to be
+tightened as the model improves (the deferred backlog in [139]).
 
 Inputs / convention:
 
 - Canonical launch: 110 mph / 28 deg / 0 spray / 2000 rpm backspin
   (default `LaunchParams`). The MLP gets these features after the
   fitted ``FeatureScaler`` is applied — same code path serving uses.
-- Published factors live in ``training/data/published_hr_factors.json``
-  (decision [52] points to a single source per release; default 2024
-  Baseball Savant single-season).
+- The observed_norm reference is a frozen anchor at
+  ``training/data/observed_norm_factors.json``, emitted once on the
+  desktop from ClickHouse via
+  ``scripts/compare_park_factors.py --emit-anchor`` and committed
+  (decision [140]). The legacy ``published_hr_factors.json`` stays as a
+  secondary diagnostic, no longer the gate target.
 - Output: a :class:`SanityReport` carrying the per-park predicted vs
-  published vector, Spearman rho, gap diagnostics, and a boolean
+  reference vector, Spearman rho, gap diagnostics, and a boolean
   `gate_passes` flag.
 
-The gates (matching the leaf):
+The gates (decision [52], re-aimed by [140]):
 
-  - Spearman rho between predicted P(HR) and published HR factor > 0.8
+  - Spearman rho between predicted P(HR) and observed_norm factor > 0.65
   - P(HR) at COL exceeds P(HR) at OAK (now ATH) by >= 0.05 absolute
 
 The OAK/ATH gap is the headline "the model knows altitude matters"
@@ -52,8 +66,10 @@ from bullpen_training.battedball.mlp.dataset import (
     stand_one_hot,
 )
 
-# Gates (decision [52]).
-SPEARMAN_GATE: Final[float] = 0.80
+# Gates (decision [52], re-aimed by [140]). The Spearman gate now scores against
+# observed_norm (not the published single-year file); 0.65 is an interim floor
+# below the ~0.69 capped fidelity ([139]) and above a genuinely broken model.
+SPEARMAN_GATE: Final[float] = 0.65
 COORS_VS_OAKLAND_GAP_GATE: Final[float] = 0.05
 
 # Representative barrel grid for the cross-park probe.
@@ -220,13 +236,17 @@ CANONICAL_OUTS: Final[int] = 1
 
 @dataclass(frozen=True)
 class ParkGap:
-    """Per-park diagnostic — the per-park rows surfaced in failure messages."""
+    """Per-park diagnostic — the per-park rows surfaced in failure messages.
+
+    ``reference_factor``/``reference_rank`` are the gate reference (observed_norm
+    since decision [140]); the field was named ``published_*`` before the re-aim.
+    """
 
     park_id: str
     pred_p_hr: float
-    published_factor: float
+    reference_factor: float
     pred_rank: int
-    published_rank: int
+    reference_rank: int
     rank_delta: int
 
 
@@ -234,7 +254,8 @@ class ParkGap:
 class SanityReport:
     park_order: tuple[str, ...]
     predicted_p_hr: dict[str, float]
-    published_hr_factor: dict[str, float]
+    # The per-park reference the gate ranks against — observed_norm ([140]).
+    reference_hr_factor: dict[str, float]
     spearman_rho: float
     spearman_pvalue: float
     coors_oakland_gap: float
@@ -253,8 +274,8 @@ class SanityReport:
         head = "; ".join(self.failure_reasons) if self.failure_reasons else "gate failed"
         worst = sorted(self.per_park_gaps, key=lambda g: -abs(g.rank_delta))[:3]
         worst_str = ", ".join(
-            f"{g.park_id} pred={g.pred_p_hr:.3f} factor={g.published_factor:.2f} "
-            f"(pred rank {g.pred_rank} vs pub rank {g.published_rank})"
+            f"{g.park_id} pred={g.pred_p_hr:.3f} factor={g.reference_factor:.2f} "
+            f"(pred rank {g.pred_rank} vs ref rank {g.reference_rank})"
             for g in worst
         )
         return f"{head}. Top 3 offenders: {worst_str}"
@@ -338,7 +359,7 @@ def _rank(values: dict[str, float]) -> dict[str, int]:
 
 def check_monotonicity(
     predicted: dict[str, float],
-    published: dict[str, float],
+    reference: dict[str, float],
     *,
     spearman_gate: float = SPEARMAN_GATE,
     coors_oakland_gap_gate: float = COORS_VS_OAKLAND_GAP_GATE,
@@ -347,24 +368,26 @@ def check_monotonicity(
 ) -> SanityReport:
     """Compute Spearman + gap-from-Coors-to-Oakland and assemble the report.
 
-    Park sets must match exactly — predicted parks not in published (or
-    vice versa) raise ``ValueError`` so the caller fixes the alignment.
+    ``reference`` is the per-park HR factor the gate ranks against —
+    observed_norm since decision [140] (was the published file). Park sets
+    must match exactly — predicted parks not in the reference (or vice
+    versa) raise ``ValueError`` so the caller fixes the alignment.
     """
     pred_set = set(predicted)
-    pub_set = set(published)
-    if pred_set != pub_set:
-        only_pred = pred_set - pub_set
-        only_pub = pub_set - pred_set
+    ref_set = set(reference)
+    if pred_set != ref_set:
+        only_pred = pred_set - ref_set
+        only_ref = ref_set - pred_set
         raise ValueError(
-            f"park set mismatch: only_in_pred={sorted(only_pred)} only_in_pub={sorted(only_pub)}"
+            f"park set mismatch: only_in_pred={sorted(only_pred)} only_in_ref={sorted(only_ref)}"
         )
 
     ordered_parks = tuple(sorted(predicted))
     pred_values = np.array([predicted[p] for p in ordered_parks], dtype=np.float64)
-    pub_values = np.array([published[p] for p in ordered_parks], dtype=np.float64)
+    ref_values = np.array([reference[p] for p in ordered_parks], dtype=np.float64)
     # scipy returns a SignificanceResult; access via attributes (pyright
     # can't narrow the tuple-protocol on the legacy unpacking path).
-    result = spearmanr(pred_values, pub_values)
+    result = spearmanr(pred_values, ref_values)
     raw_rho = float(result.statistic)  # type: ignore[union-attr]
     raw_pvalue = float(result.pvalue)  # type: ignore[union-attr]
     rho = raw_rho if not np.isnan(raw_rho) else 0.0
@@ -375,15 +398,15 @@ def check_monotonicity(
     coors_oakland_gap = coors_p - oakland_p
 
     pred_ranks = _rank(predicted)
-    pub_ranks = _rank(published)
+    ref_ranks = _rank(reference)
     per_park_gaps = [
         ParkGap(
             park_id=pid,
             pred_p_hr=predicted[pid],
-            published_factor=published[pid],
+            reference_factor=reference[pid],
             pred_rank=pred_ranks[pid],
-            published_rank=pub_ranks[pid],
-            rank_delta=pred_ranks[pid] - pub_ranks[pid],
+            reference_rank=ref_ranks[pid],
+            rank_delta=pred_ranks[pid] - ref_ranks[pid],
         )
         for pid in ordered_parks
     ]
@@ -401,7 +424,7 @@ def check_monotonicity(
     return SanityReport(
         park_order=ordered_parks,
         predicted_p_hr=dict(predicted),
-        published_hr_factor=dict(published),
+        reference_hr_factor=dict(reference),
         spearman_rho=rho,
         spearman_pvalue=pvalue,
         coors_oakland_gap=coors_oakland_gap,
@@ -419,7 +442,11 @@ def check_monotonicity(
 
 
 def load_published_factors(path: Path) -> dict[str, float]:
-    """Load the JSON, return {park_id: factor}."""
+    """Load the legacy published-factor JSON, return {park_id: factor}.
+
+    No longer the gate target since decision [140] — kept as a secondary
+    diagnostic and for the synthetic unit tests that just need a 30-park vector.
+    """
     payload = json.loads(path.read_text())
     if payload.get("schema_version") != 1:
         raise ValueError(
@@ -428,13 +455,29 @@ def load_published_factors(path: Path) -> dict[str, float]:
     return dict(payload["park_hr_factors"])
 
 
+def load_observed_norm_factors(path: Path) -> dict[str, float]:
+    """Load the frozen observed_norm anchor (the gate reference, decision [140]).
+
+    Emitted once on the desktop from ClickHouse via
+    ``scripts/compare_park_factors.py --emit-anchor`` and committed. Schema:
+    ``{"schema_version": 1, "observed_norm_factors": {park_id: factor}, ...}``.
+    """
+    payload = json.loads(path.read_text())
+    if payload.get("schema_version") != 1:
+        raise ValueError(
+            f"unknown observed_norm-anchor schema_version: {payload.get('schema_version')}"
+        )
+    return dict(payload["observed_norm_factors"])
+
+
 def write_report(report: SanityReport, path: Path) -> None:
     """Persist the report alongside the model artefacts."""
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
+        "reference": "observed_norm",
         "park_order": list(report.park_order),
         "predicted_p_hr": report.predicted_p_hr,
-        "published_hr_factor": report.published_hr_factor,
+        "reference_hr_factor": report.reference_hr_factor,
         "spearman_rho": report.spearman_rho,
         "spearman_pvalue": report.spearman_pvalue,
         "spearman_gate": report.spearman_gate,
@@ -448,9 +491,9 @@ def write_report(report: SanityReport, path: Path) -> None:
             {
                 "park_id": g.park_id,
                 "pred_p_hr": g.pred_p_hr,
-                "published_factor": g.published_factor,
+                "reference_factor": g.reference_factor,
                 "pred_rank": g.pred_rank,
-                "published_rank": g.published_rank,
+                "reference_rank": g.reference_rank,
                 "rank_delta": g.rank_delta,
             }
             for g in report.per_park_gaps
@@ -471,6 +514,7 @@ __all__ = (
     "canonical_features",
     "check_monotonicity",
     "cross_park_p_hr",
+    "load_observed_norm_factors",
     "load_published_factors",
     "write_report",
 )

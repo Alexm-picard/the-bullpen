@@ -46,6 +46,7 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+from datetime import UTC, datetime
 from itertools import combinations
 from pathlib import Path
 
@@ -146,6 +147,57 @@ def _ranks(values: dict[str, float]) -> dict[str, int]:
     return {pid: i + 1 for i, pid in enumerate(ordered)}
 
 
+def emit_anchor(
+    *, season_from: int, season_to: int, container: str, out_path: Path
+) -> dict[str, float]:
+    """Compute the frozen observed_norm anchor + its split-half reliability and
+    write it to ``out_path`` — the 2c.7 gate reference (decision [140] amends [52]).
+
+    Needs only ``pitches`` (observed rates), NOT the retrodiction labels, so it can
+    be emitted before the overnight relabel runs. Run on the desktop (ADR-0006):
+
+        uv run python scripts/compare_park_factors.py \\
+            --emit-anchor data/observed_norm_factors.json
+
+    Then bring the file back to the Mac to commit (no commits from the prod box).
+    """
+    at_park, team_road = observed_rates(
+        season_from=season_from, season_to=season_to, container=container
+    )
+    observed_norm = normalized_factor(at_park, team_road)
+
+    # Split-half reliability (game-disjoint halves) — the achievable ceiling the
+    # 0.65 gate sits below ([139]/[140]); recorded in the anchor for provenance.
+    ah0, ar0 = observed_rates(
+        season_from=season_from, season_to=season_to, container=container, game_parity=0
+    )
+    ah1, ar1 = observed_rates(
+        season_from=season_from, season_to=season_to, container=container, game_parity=1
+    )
+    reliability, _ = _spearman(normalized_factor(ah0, ar0), normalized_factor(ah1, ar1))
+
+    payload = {
+        "schema_version": 1,
+        "reference": "observed_norm",
+        "observed_norm_factors": {k: round(v, 6) for k, v in sorted(observed_norm.items())},
+        "metadata": {
+            "seasons": f"{season_from}-{season_to}",
+            "split_half_reliability": round(reliability, 4),
+            "n_parks": len(observed_norm),
+            "holdout_excluded": _HOLDOUT_YEAR,
+            "source": "scripts/compare_park_factors.py --emit-anchor",
+            "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        },
+    }
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(payload, indent=2) + "\n")
+    print(
+        f"wrote observed_norm anchor: {len(observed_norm)} parks, seasons "
+        f"{season_from}-{season_to}, split-half reliability rho={reliability:+.3f} -> {out_path}"
+    )
+    return observed_norm
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Cross-park factor comparison (2c.7).")
     ap.add_argument("--season-from", type=int, default=2015)
@@ -153,6 +205,12 @@ def main() -> None:
     ap.add_argument("--factors", type=Path, default=_DEFAULT_FACTORS)
     ap.add_argument("--container", default="bullpen-clickhouse")
     ap.add_argument("--report", type=Path, default=None)
+    ap.add_argument(
+        "--emit-anchor",
+        type=Path,
+        default=None,
+        help="Write the frozen observed_norm gate anchor (decision [140]) to this path and exit.",
+    )
     args = ap.parse_args()
 
     season_to = args.season_to
@@ -162,6 +220,13 @@ def main() -> None:
         )
         season_to = _HOLDOUT_YEAR - 1
     sf, st = args.season_from, season_to
+
+    # Emit-only mode: write the frozen gate anchor and stop (no physics needed).
+    if args.emit_anchor is not None:
+        emit_anchor(
+            season_from=sf, season_to=st, container=args.container, out_path=args.emit_anchor
+        )
+        return
 
     published = dict(json.loads(args.factors.read_text())["park_hr_factors"])
 
