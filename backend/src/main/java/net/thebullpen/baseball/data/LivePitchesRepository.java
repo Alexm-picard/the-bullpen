@@ -50,7 +50,11 @@ public class LivePitchesRepository {
           + " max(home_score) AS home_score, max(away_score) AS away_score,"
           + " max(inning) AS inning"
           + " FROM pitches_live FINAL"
-          + " WHERE game_date = ?"
+          // toDate(?) + a String 'yyyy-MM-dd' param (see findGamesForDate): clickhouse-jdbc 0.7.2
+          // inlines a bare java.sql.Date as the unquoted token 2026-06-05, which ClickHouse parses
+          // as arithmetic (2026-6-5 = 2015, Int64) -> "Date = Int64" type error. A String param is
+          // rendered quoted, so toDate('2026-06-05') yields the right Date.
+          + " WHERE game_date = toDate(?)"
           + " GROUP BY game_id, game_date, home_team, away_team"
           + " ORDER BY game_id ASC";
 
@@ -91,7 +95,8 @@ public class LivePitchesRepository {
                 rs.getInt("inning"),
                 "UNKNOWN",
                 "Unknown"),
-        java.sql.Date.valueOf(date));
+        // ISO-8601 'yyyy-MM-dd' String, not java.sql.Date; see FIND_GAMES_FOR_DATE.
+        date.toString());
   }
 
   public java.util.Optional<GameSummary> findGame(long gameId) {
