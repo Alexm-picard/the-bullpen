@@ -103,6 +103,10 @@ def test_vectorised_matches_scalar() -> None:
     la = np.array([18.0, 26.0, 33.0])
     spray = np.array([-30.0, 0.0, 25.0])
     rate_v, tilt_v = batted_ball_spin(ev, la, spray, c)
+    # Vectorised inputs return vectorised outputs; assert it (and narrow the
+    # float | np.ndarray return for the type checker so the [i] indexing is valid).
+    assert isinstance(rate_v, np.ndarray)
+    assert isinstance(tilt_v, np.ndarray)
     for i in range(3):
         r, t = batted_ball_spin(float(ev[i]), float(la[i]), float(spray[i]), c)
         assert r == pytest.approx(float(rate_v[i]))
