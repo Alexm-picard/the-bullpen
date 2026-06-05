@@ -73,11 +73,26 @@ def _load_mlp_predictions(
 
 
 def _load_lgbm_predictions(
-    lgbm_dir: Path, season_from: int, season_to: int
+    lgbm_dir: Path, season_from: int, season_to: int, park_order: tuple[str, ...]
 ) -> tuple[np.ndarray, list[str]]:
-    """Return (pred, park_ids) from the trained LGBM baseline."""
+    """Return (pred, park_ids) from the trained LGBM baseline, row-aligned to the
+    MLP loader's order.
+
+    The LGBM loader pages per-park (PARK-major); the MLP loader is BIP-major in
+    park_order. We re-sort the LGBM rows into the SAME (game_date, game_id,
+    at_bat_index, pitch_number, park_order-index) enumeration the MLP loader's
+    ClickHouse ORDER BY produces, so mlp_pred[i] / lgbm_pred[i] / labels[i] are the
+    same (BIP, park) row. game_id/at_bat_index/pitch_number arrive as ints (parsed
+    in the loader) so the numeric sort matches ClickHouse's UInt ORDER BY.
+    """
     bundle = load_baseline(lgbm_dir)
-    df = load_lgbm_dataset(season_from=season_from, season_to=season_to)
+    df = load_lgbm_dataset(season_from=season_from, season_to=season_to, include_keys=True)
+    park_index = {p: i for i, p in enumerate(park_order)}
+    df = df.assign(_park_idx=df["park_id"].astype(str).map(park_index.get))
+    df = df.sort_values(
+        ["game_date", "game_id", "at_bat_index", "pitch_number", "_park_idx"],
+        kind="mergesort",
+    ).reset_index(drop=True)
     park_ids = df["park_id"].astype(str).tolist()
     pred = predict_proba_calibrated(bundle, df).astype(np.float64)
     return pred, park_ids
@@ -112,16 +127,18 @@ def main() -> None:
 
     print("  loading LGBM predictions...")
     lgbm_pred, lgbm_park_ids = _load_lgbm_predictions(
-        args.lgbm_dir, args.season_from, args.season_to
+        args.lgbm_dir, args.season_from, args.season_to, park_order
     )
     print(f"    flat shape: {lgbm_pred.shape}")
 
-    # Sanity: row counts and park_id ordering must match — both feeds
-    # come from the same join (pitches FINAL x bbip_retrodicted_labels
-    # FINAL) ordered the same way.
+    # Sanity: row counts + per-row park_id must match. Both feeds cover the same
+    # (BIP, park) set; the MLP loader is BIP-major and _load_lgbm_predictions
+    # re-sorts the per-park LGBM rows into that same order, so the guard below
+    # should hold. If it ever fails, the two enumerations diverged - do NOT
+    # weaken the assert, fix the alignment (it would silently mis-pair rows).
     assert mlp_pred.shape[0] == lgbm_pred.shape[0], (
-        f"MLP rows {mlp_pred.shape[0]} != LGBM rows {lgbm_pred.shape[0]} — "
-        "the two loaders disagree on (BIP, park) ordering."
+        f"MLP rows {mlp_pred.shape[0]} != LGBM rows {lgbm_pred.shape[0]} - "
+        "the two loaders disagree on the (BIP, park) row set."
     )
     assert mlp_park_ids == lgbm_park_ids, "park_id row order differs between loaders"
 

@@ -50,8 +50,9 @@ def _query_joined_for_lgbm(
     season_to: int,
     park_filter: tuple[str, ...] | None = None,
     limit: int | None = None,
+    include_keys: bool = False,
 ) -> str:
-    """ClickHouse join query — emits one row per (BIP, park) pair.
+    """ClickHouse join query - emits one row per (BIP, park) pair.
 
     Same join as the MLP's dataset query but selects the WHOLE 5-class
     label distribution per row (so the caller can pick argmax in Python).
@@ -59,18 +60,32 @@ def _query_joined_for_lgbm(
 
     No ``ORDER BY`` and no ``OFFSET`` pagination: the LGBM baseline doesn't
     need row order, and deep-OFFSET pages re-materialize + re-sort the whole
-    ~30x FINAL fan-out join (~32M rows) on every page — that blew past the
+    ~30x FINAL fan-out join (~32M rows) on every page - that blew past the
     ClickHouse container's memory cap (code 241). ``load_lgbm_dataset`` instead
     pages by PARK, so each query is bounded to one park's ~1.1M rows.
+
+    ``include_keys`` adds the natural-key columns (game_date/game_id/at_bat_index/
+    pitch_number) so a caller can re-sort the per-park (park-major) result into the
+    MLP loader's BIP-major order - needed by the 2c.9 comparison, which aligns the
+    two models' predictions row-for-row. They are NOT features (training ignores
+    them; ``predict`` selects only FEATURE_COLUMNS).
     """
     park_clause = ""
     if park_filter is not None:
         plist = ", ".join(f"'{p}'" for p in park_filter)
         park_clause = f"AND r.park_id IN ({plist})"
     limit_clause = f"LIMIT {limit}" if limit else ""
+    key_cols = (
+        "toString(p.game_date) AS game_date,"
+        " toString(p.game_id) AS game_id,"
+        " toString(p.at_bat_index) AS at_bat_index,"
+        " toString(p.pitch_number) AS pitch_number,\n      "
+        if include_keys
+        else ""
+    )
     return f"""
     SELECT
-      toString(p.launch_speed_mph) AS launch_speed_mph,
+      {key_cols}toString(p.launch_speed_mph) AS launch_speed_mph,
       toString(p.launch_angle_deg) AS launch_angle_deg,
       toString(p.hc_x) AS hc_x,
       toString(p.hc_y) AS hc_y,
@@ -138,6 +153,16 @@ def _row_to_record(row: dict[str, str]) -> dict[str, object]:
         float(row["prob_hr"]),
     ]
     record[LABEL_COLUMN] = int(np.argmax(probs))
+
+    # Natural-key columns (present only when the query was built with
+    # include_keys) - for re-sorting to the MLP loader's BIP-major order. game_id
+    # is UInt64 / at_bat_index + pitch_number are ints in pitches, so parse them
+    # numerically to match ClickHouse's ORDER BY (string sort would diverge).
+    if "game_id" in row:
+        record["game_date"] = row["game_date"]
+        record["game_id"] = int(row["game_id"])
+        record["at_bat_index"] = int(row["at_bat_index"])
+        record["pitch_number"] = int(row["pitch_number"])
     return record
 
 
@@ -169,6 +194,7 @@ def load_lgbm_dataset(
     park_filter: tuple[str, ...] | None = None,
     limit: int | None = None,
     container: str = "bullpen-clickhouse",
+    include_keys: bool = False,
 ) -> pd.DataFrame:
     """Pull the joined (BIP, park) rows and return a LightGBM-ready DataFrame.
 
@@ -181,7 +207,11 @@ def load_lgbm_dataset(
     per BIP per park, ~32M rows for 2015-2024), and an ``OFFSET 30_000_000``
     page forces ClickHouse to re-materialize + re-sort the whole FINAL join in
     RAM, which exceeded the container's memory cap (code 241). One query per
-    park keeps each read at ~1.1M rows — the same scale the MLP loader handles.
+    park keeps each read at ~1.1M rows - the same scale the MLP loader handles.
+
+    The per-park paging makes the result PARK-major. ``include_keys=True`` adds
+    the natural-key columns so callers that need BIP-major order (the 2c.9
+    comparison) can re-sort; training leaves it False (order-agnostic + leaner).
     """
     # A capped pull (smoke / tests) is small enough for a single bounded query.
     if limit is not None:
@@ -191,6 +221,7 @@ def load_lgbm_dataset(
                 season_to=season_to,
                 park_filter=park_filter,
                 limit=limit,
+                include_keys=include_keys,
             ),
             container=container,
         )
@@ -211,6 +242,7 @@ def load_lgbm_dataset(
                 season_from=season_from,
                 season_to=season_to,
                 park_filter=(park,),
+                include_keys=include_keys,
             ),
             container=container,
         )
