@@ -1,0 +1,140 @@
+{
+  "model_name": "battedball_outcome",
+  "phase": "2c",
+  "feature_order": [
+    "launch_speed_mph",
+    "launch_angle_deg",
+    "spray_angle_deg",
+    "hit_distance_ft",
+    "stand_R",
+    "stand_L",
+    "base_state_0",
+    "base_state_1",
+    "base_state_2",
+    "base_state_3",
+    "base_state_4",
+    "base_state_5",
+    "base_state_6",
+    "base_state_7",
+    "outs"
+  ],
+  "input_dtype": "float32",
+  "preprocess": {
+    "launch_speed_mph": {
+      "type": "passthrough",
+      "source_column": "launch_speed_mph"
+    },
+    "launch_angle_deg": {
+      "type": "passthrough",
+      "source_column": "launch_angle_deg"
+    },
+    "spray_angle_deg": {
+      "type": "passthrough",
+      "source_column": "spray_angle_deg"
+    },
+    "hit_distance_ft": {
+      "type": "passthrough",
+      "source_column": "hit_distance_ft"
+    },
+    "stand_R": {
+      "type": "boolean_eq",
+      "source_column": "stand",
+      "match_value": "R",
+      "true_value": 1.0,
+      "false_value": 0.0
+    },
+    "stand_L": {
+      "type": "boolean_eq",
+      "source_column": "stand",
+      "match_value": "L",
+      "true_value": 1.0,
+      "false_value": 0.0
+    },
+    "base_state_0": {
+      "type": "boolean_eq",
+      "source_column": "base_state",
+      "match_value": 0,
+      "true_value": 1.0,
+      "false_value": 0.0
+    },
+    "base_state_1": {
+      "type": "boolean_eq",
+      "source_column": "base_state",
+      "match_value": 1,
+      "true_value": 1.0,
+      "false_value": 0.0
+    },
+    "base_state_2": {
+      "type": "boolean_eq",
+      "source_column": "base_state",
+      "match_value": 2,
+      "true_value": 1.0,
+      "false_value": 0.0
+    },
+    "base_state_3": {
+      "type": "boolean_eq",
+      "source_column": "base_state",
+      "match_value": 3,
+      "true_value": 1.0,
+      "false_value": 0.0
+    },
+    "base_state_4": {
+      "type": "boolean_eq",
+      "source_column": "base_state",
+      "match_value": 4,
+      "true_value": 1.0,
+      "false_value": 0.0
+    },
+    "base_state_5": {
+      "type": "boolean_eq",
+      "source_column": "base_state",
+      "match_value": 5,
+      "true_value": 1.0,
+      "false_value": 0.0
+    },
+    "base_state_6": {
+      "type": "boolean_eq",
+      "source_column": "base_state",
+      "match_value": 6,
+      "true_value": 1.0,
+      "false_value": 0.0
+    },
+    "base_state_7": {
+      "type": "boolean_eq",
+      "source_column": "base_state",
+      "match_value": 7,
+      "true_value": 1.0,
+      "false_value": 0.0
+    },
+    "outs": {
+      "type": "passthrough",
+      "source_column": "outs"
+    }
+  },
+  "scaler": {
+    "type": "standard_scale",
+    "applies_to": "continuous_features",
+    "params_location": "metadata.json:feature_scaler",
+    "note": "z-score (x - mean) / std is applied AFTER building the raw 15-feature vector. The per-feature means/stds + is_continuous mask are model-version-specific and live in the model's metadata.json (feature_scaler), NOT in this structural contract - so the schema_hash stays stable across retrains. The one-hot columns (stand_*, base_state_*) carry mean=0 / std=1 (identity); the continuous launch_speed/angle/spray/hit_distance + outs are scaled."
+  },
+  "output": {
+    "kind": "per_park_outcome_distribution",
+    "n_parks": 30,
+    "labels": [
+      "out",
+      "1b",
+      "2b",
+      "3b",
+      "hr"
+    ],
+    "onnx_output_index": 0,
+    "shape": "[n_parks, n_outcomes]",
+    "park_order_location": "metadata.json:park_order",
+    "note": "Per decision [141], v1 is a calibrated per-park OUTCOME model. The per-park axis is a physics-retrodicted estimate, NOT a validated cross-park park-factor ranking (cross-park Spearman vs observed_norm ~0.30; cross-park fidelity is documented future work). Per-park isotonic calibrators (calibrator.json) are applied to the raw softmax before serving."
+  },
+  "onnx_opset": 18,
+  "pipeline_version": "1.0.0",
+  "description": "Canonical Python<->Java feature contract for the Phase 2c batted-ball outcome model (battedball_outcome): 15 input features -> per-park 5-class outcome distribution. Sibling of feature_pipeline_post.json; mirrored on the Java side by FeaturePipelineBattedBall.",
+  "notes": "Both /backend (registry schema-hash check at registration, rule 7) and /training read the feature_order from here. The schema_hash is recomputed over canonical JSON (sort_keys, no whitespace, schema_hash field zeroed) by FeatureSchemaHasher (Java) and the .githooks/pre-commit Python snippet. NOTE: the pre-commit hook currently only auto-checks feature_pipeline.json; this contract's hash is enforced at model load (FeaturePipelineBattedBall.verifySchemaHash) and at registration. The 15-feature order must match training's features_shared.FEATURE_NAMES.",
+  "schema_hash": "53be50f92c875184c9300ec5d4b91a9688dc4548518f4eca29d6eb933898ce20"
+}
