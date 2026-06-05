@@ -12,7 +12,6 @@ function mv(
   over: Partial<ModelVersion> & Pick<ModelVersion, "id">,
 ): ModelVersion {
   return {
-    id: over.id,
     modelName: "pitch_outcome_pre",
     version: "v3",
     artifactPath: "",

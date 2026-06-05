@@ -131,9 +131,9 @@ def test_same_hr_launch_lower_hr_probability_at_deeper_park() -> None:
     bbip = _hr_bbip("NYY")
     nyy = retrodict_one(bbip, "NYY")
     sf = retrodict_one(bbip, "SF")
-    assert (
-        sf.prob_hr <= nyy.prob_hr
-    ), f"expected SF HR prob <= NYY's; got SF={sf.prob_hr:.2f} NYY={nyy.prob_hr:.2f}"
+    assert sf.prob_hr <= nyy.prob_hr, (
+        f"expected SF HR prob <= NYY's; got SF={sf.prob_hr:.2f} NYY={nyy.prob_hr:.2f}"
+    )
 
 
 def test_observed_outcome_only_populated_on_home_park() -> None:
