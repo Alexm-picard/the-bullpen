@@ -47,6 +47,8 @@ import subprocess
 from collections import defaultdict
 
 import numpy as np
+from scipy.stats import spearmanr  # type: ignore[import-untyped]
+
 from bullpen_training.battedball.features_shared import hc_to_spray_deg
 from bullpen_training.battedball.parks import Outcome, classify_outcome, load_park_geometry
 from bullpen_training.battedball.physics.simulator import LaunchParams, simulate
@@ -56,7 +58,6 @@ from bullpen_training.battedball.retrodict._atmospheres import (
     still_air_atmosphere,
     weather_to_atmosphere,
 )
-from scipy.stats import spearmanr  # type: ignore[import-untyped]
 
 _HOLDOUT_YEAR = 2026
 

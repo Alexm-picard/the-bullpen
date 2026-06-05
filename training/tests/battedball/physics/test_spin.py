@@ -6,6 +6,7 @@ import json
 
 import numpy as np
 import pytest
+
 from bullpen_training.battedball.physics.spin import (
     DEFAULT_CALIBRATION,
     DEFAULT_COEFFS,
