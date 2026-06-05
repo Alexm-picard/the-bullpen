@@ -1,0 +1,139 @@
+{
+  "model_name": "batted_ball_lgbm_baseline",
+  "phase": "2c",
+  "feature_order": [
+    "launch_speed_mph",
+    "launch_angle_deg",
+    "spray_angle_deg",
+    "hit_distance_ft",
+    "stand_R",
+    "stand_L",
+    "base_state_0",
+    "base_state_1",
+    "base_state_2",
+    "base_state_3",
+    "base_state_4",
+    "base_state_5",
+    "base_state_6",
+    "base_state_7",
+    "outs",
+    "park_id"
+  ],
+  "input_dtype": "float32",
+  "preprocess": {
+    "launch_speed_mph": {
+      "type": "passthrough",
+      "source_column": "launch_speed_mph"
+    },
+    "launch_angle_deg": {
+      "type": "passthrough",
+      "source_column": "launch_angle_deg"
+    },
+    "spray_angle_deg": {
+      "type": "passthrough",
+      "source_column": "spray_angle_deg"
+    },
+    "hit_distance_ft": {
+      "type": "passthrough",
+      "source_column": "hit_distance_ft"
+    },
+    "stand_R": {
+      "type": "boolean_eq",
+      "source_column": "stand",
+      "match_value": "R",
+      "true_value": 1.0,
+      "false_value": 0.0
+    },
+    "stand_L": {
+      "type": "boolean_eq",
+      "source_column": "stand",
+      "match_value": "L",
+      "true_value": 1.0,
+      "false_value": 0.0
+    },
+    "base_state_0": {
+      "type": "boolean_eq",
+      "source_column": "base_state",
+      "match_value": 0,
+      "true_value": 1.0,
+      "false_value": 0.0
+    },
+    "base_state_1": {
+      "type": "boolean_eq",
+      "source_column": "base_state",
+      "match_value": 1,
+      "true_value": 1.0,
+      "false_value": 0.0
+    },
+    "base_state_2": {
+      "type": "boolean_eq",
+      "source_column": "base_state",
+      "match_value": 2,
+      "true_value": 1.0,
+      "false_value": 0.0
+    },
+    "base_state_3": {
+      "type": "boolean_eq",
+      "source_column": "base_state",
+      "match_value": 3,
+      "true_value": 1.0,
+      "false_value": 0.0
+    },
+    "base_state_4": {
+      "type": "boolean_eq",
+      "source_column": "base_state",
+      "match_value": 4,
+      "true_value": 1.0,
+      "false_value": 0.0
+    },
+    "base_state_5": {
+      "type": "boolean_eq",
+      "source_column": "base_state",
+      "match_value": 5,
+      "true_value": 1.0,
+      "false_value": 0.0
+    },
+    "base_state_6": {
+      "type": "boolean_eq",
+      "source_column": "base_state",
+      "match_value": 6,
+      "true_value": 1.0,
+      "false_value": 0.0
+    },
+    "base_state_7": {
+      "type": "boolean_eq",
+      "source_column": "base_state",
+      "match_value": 7,
+      "true_value": 1.0,
+      "false_value": 0.0
+    },
+    "outs": {
+      "type": "passthrough",
+      "source_column": "outs"
+    },
+    "park_id": {
+      "type": "categorical_map",
+      "source_column": "park_id",
+      "mapping_location": "metadata.json:park_categories",
+      "note": "Encoded to the integer category code = index of park_id in metadata.park_categories (the LightGBM training-time pd.Categorical order). The ONNX model takes this code as a float32 input; the park->code map is model-version-specific and lives in metadata, not this structural contract. Unknown park -> the booster's default-direction handling."
+    }
+  },
+  "output": {
+    "kind": "outcome_distribution",
+    "labels": [
+      "out",
+      "1b",
+      "2b",
+      "3b",
+      "hr"
+    ],
+    "onnx_output_index": 0,
+    "shape": "[n_outcomes]",
+    "note": "Decision [46] Option-A baseline: park-as-categorical (one 5-class distribution per (BIP, park) input row), NOT a per-park multi-output like the MLP. Per-class isotonic calibrators (calibrator.json, 5 of them) are applied to the raw softmax before serving. Co-registered comparator for battedball_outcome (decision [141]); LGBM edges Brier, MLP edges calibration."
+  },
+  "onnx_opset": 18,
+  "pipeline_version": "1.0.0",
+  "description": "Canonical Python<->Java feature contract for the Phase 2c LightGBM Option-A batted-ball baseline (batted_ball_lgbm_baseline): 16 input features (the MLP's 15 + park_id as a categorical) -> 5-class outcome distribution. Sibling of feature_pipeline_battedball.json (the MLP contract).",
+  "notes": "Registry schema-hash check (rule 7) reads feature_order from here; the hash is recomputed over canonical JSON (sort_keys, no whitespace, schema_hash zeroed) by FeatureSchemaHasher (Java) and the .githooks/pre-commit Python snippet. ASCII-only so the Python and Java hashers agree. Trees do not z-score, so unlike the MLP contract there is no scaler. The 15 shared features must match training's features_shared.FEATURE_NAMES; park_id is appended (FEATURE_COLUMNS).",
+  "schema_hash": "65212905f1b705774a764935e97eef404683b58902b9b1fa4c705f3ab3bb103e"
+}
