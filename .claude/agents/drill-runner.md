@@ -20,8 +20,15 @@ Steps you walk through:
 3. Restore backups into the scratch env
 4. Boot the JAR with `--spring.profiles.active=api` pointing at the scratch env
 5. Curl `/actuator/health` and the prediction endpoint with a known input
-6. Compare prediction output against a reference baseline captured during a healthy production run
-7. Tear down scratch env
+6. **Boot the JAR with `--spring.profiles.active=worker` and confirm the context reaches
+   `active (running)` and stays up (NOT crash-looping).** The worker hard-requires ClickHouse,
+   so this is the canary for a missing `bullpen.clickhouse.enabled` / other absent env -- see
+   [`docs/runbooks/desktop-environment.md`](../../docs/runbooks/desktop-environment.md). This
+   step exists because the 2026-06-04 worker crash-loop went undetected for 4 days: the restore
+   drill only ever booted the **api** profile, which tolerates the absent bean while the worker
+   hard-fails. An api that comes up healthy while the worker crash-loops is an INCOMPLETE restore.
+7. Compare prediction output against a reference baseline captured during a healthy production run
+8. Tear down scratch env
 
 ### Reboot drill
 
@@ -33,7 +40,11 @@ Steps you walk through:
 2. Confirm Cloudflare Tunnel is installed as a service and `is-enabled`
 3. Confirm Healthchecks.io pings are scheduled (cron / timer)
 4. `sudo reboot` (after warning the user this will take the box down)
-5. Wait, then verify all units came up healthy from the same external monitoring (Uptime Robot)
+5. Wait, then verify all units came up healthy. Uptime Robot only watches the public **api** via
+   the tunnel, so it will NOT catch a crash-looping worker -- explicitly run `systemctl is-active
+bullpen-api bullpen-worker` (both must be `active`) and `systemctl show bullpen-worker -p
+NRestarts` (stable, not climbing). The worker is off the user-serving path, so nothing external
+   surfaces its failure; check it on-box.
 6. Make a prediction call from outside the network (via the Cloudflare Tunnel URL) and verify
 
 ## Procedure when invoked
