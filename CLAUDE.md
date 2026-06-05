@@ -223,6 +223,10 @@ Java/Python/TS on every edit; you do not need to run formatters manually for nor
 - **Frontend**: ESLint + Prettier, Vitest for unit, Playwright for E2E
 - **Git**: trunk-based on `main`, Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:`, `chore:`), tag releases with `v{YYYY.MM.DD-HHMM}`
 
+### Writing style
+
+- **Do not use em-dashes (`—`).** Use a plain hyphen `-`, a colon, parentheses, or rephrase into two sentences. This applies to everything written here: prose replies, commit messages, `docs/decisions.md` entries, ADRs, docs, and code comments. (Bonus: keeps hashed contract/JSON files ASCII-clean, avoiding cross-language canonicalization surprises.)
+
 ### Testing posture (important)
 
 **Prefer real dependencies over mocks.** ML systems are exactly where mock/prod
