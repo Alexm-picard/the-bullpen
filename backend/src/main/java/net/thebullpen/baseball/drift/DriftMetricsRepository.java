@@ -12,7 +12,7 @@ import javax.sql.DataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -20,17 +20,27 @@ import org.springframework.stereotype.Repository;
 
 /**
  * Bulk INSERTer + windowed reader for {@code drift_metrics} (V013, leaf 3c.1) on the analytical
- * (ClickHouse) DataSource. Same {@code @ConditionalOnBean(name = "clickhouseDataSource")} pattern
- * as {@link net.thebullpen.baseball.inference.PredictionLogWriter} — when ClickHouse isn't wired in
- * this env (dev without docker-compose), the bean is absent and the 3c.2–3c.5 batch jobs treat that
- * as "drift detection is off."
+ * (ClickHouse) DataSource.
  *
- * <p>Active on both {@code api} (Ops dashboard reads via this repo) and {@code worker} (batch jobs
- * write) profiles.
+ * <p>Gated on {@code @ConditionalOnProperty("bullpen.clickhouse.enabled")} — the SAME condition
+ * {@link net.thebullpen.baseball.config.ClickHouseConfig} uses for the {@code clickhouseDataSource}
+ * bean, so the data source and this repo are created together deterministically. This replaced an
+ * earlier {@code @ConditionalOnBean(name = "clickhouseDataSource")}, which is order-sensitive
+ * (Spring warns against it outside auto-config): under the {@code worker} profile it could evaluate
+ * before the data source was registered, leaving this bean absent — which crash-looped the worker
+ * for ~4 days post-2026-05-31 because the {@code @Profile("worker")} drift jobs (CalibrationJob,
+ * PsiFeatureJob, PsiPredictionJob, WeeklySegmentJob) hard-require it. Keying both on the property
+ * removes the ordering dependency.
+ *
+ * <p>Active on both {@code api} (Ops dashboard reads via this repo, tolerantly — {@code
+ * OpsController} injects it {@code required=false}) and {@code worker} (drift jobs write, hard
+ * dependency) profiles. When ClickHouse is disabled the property is false, neither this repo nor
+ * the worker drift jobs are wired, and "drift detection is off" — but in prod the worker REQUIRES
+ * {@code bullpen.clickhouse.enabled=true}.
  */
 @Repository
 @Profile({"api", "worker"})
-@ConditionalOnBean(name = "clickhouseDataSource")
+@ConditionalOnProperty(name = "bullpen.clickhouse.enabled", havingValue = "true")
 public class DriftMetricsRepository {
 
   private static final Logger log = LoggerFactory.getLogger(DriftMetricsRepository.class);
