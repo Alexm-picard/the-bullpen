@@ -37,6 +37,8 @@ from bullpen_training.battedball.lgbm_baseline.dataset import (
 )
 from bullpen_training.battedball.mlp import FeatureScaler
 from bullpen_training.battedball.mlp.architecture import build_model
+from bullpen_training.battedball.mlp.calibration import load_calibrator
+from bullpen_training.battedball.mlp.calibration import transform as apply_calibrators
 from bullpen_training.battedball.mlp.dataset import OUTCOME_NAMES, load_arrays
 
 
@@ -63,6 +65,16 @@ def _load_mlp_predictions(
     ys = lab
     with torch.no_grad():
         probs = F.softmax(model(torch.from_numpy(xs)), dim=-1).numpy()
+    # Apply the per-park isotonic calibrators (2c.6) so the MLP is compared in its
+    # PRODUCTION form, same as the LGBM side (predict_proba_calibrated). Comparing
+    # a RAW MLP softmax against a calibrated LGBM understates the MLP badly (its
+    # calibrated per-park ECE is ~10x lower than raw) and biases prefer_for_production.
+    cal_path = mlp_dir / "calibrator.json"
+    if cal_path.exists():
+        probs = apply_calibrators(load_calibrator(cal_path), probs)
+        print("    applied MLP per-park calibrators (calibrated comparison)")
+    else:
+        print("    WARNING: no calibrator.json - comparing RAW MLP softmax (not production form)")
     # Flatten (N, n_parks, 5) -> (N*n_parks, 5) row-major
     flat_pred = probs.reshape(-1, probs.shape[-1])
     flat_labels = ys.reshape(-1, ys.shape[-1])
