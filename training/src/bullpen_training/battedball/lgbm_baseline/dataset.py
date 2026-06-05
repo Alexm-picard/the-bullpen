@@ -50,20 +50,24 @@ def _query_joined_for_lgbm(
     season_to: int,
     park_filter: tuple[str, ...] | None = None,
     limit: int | None = None,
-    offset: int = 0,
 ) -> str:
     """ClickHouse join query — emits one row per (BIP, park) pair.
 
     Same join as the MLP's dataset query but selects the WHOLE 5-class
-    label distribution per row (so the caller can pick argmax in
-    Python). Park filter is optional; default returns all 30 parks.
+    label distribution per row (so the caller can pick argmax in Python).
+    Park filter is optional; default returns all 30 parks.
+
+    No ``ORDER BY`` and no ``OFFSET`` pagination: the LGBM baseline doesn't
+    need row order, and deep-OFFSET pages re-materialize + re-sort the whole
+    ~30x FINAL fan-out join (~32M rows) on every page — that blew past the
+    ClickHouse container's memory cap (code 241). ``load_lgbm_dataset`` instead
+    pages by PARK, so each query is bounded to one park's ~1.1M rows.
     """
     park_clause = ""
     if park_filter is not None:
         plist = ", ".join(f"'{p}'" for p in park_filter)
         park_clause = f"AND r.park_id IN ({plist})"
     limit_clause = f"LIMIT {limit}" if limit else ""
-    offset_clause = f"OFFSET {offset}" if offset > 0 else ""
     return f"""
     SELECT
       toString(p.launch_speed_mph) AS launch_speed_mph,
@@ -92,8 +96,7 @@ def _query_joined_for_lgbm(
       AND p.hit_distance_ft IS NOT NULL
       AND toYear(p.game_date) BETWEEN {season_from} AND {season_to}
       {park_clause}
-    ORDER BY p.game_date, p.game_id, p.at_bat_index, p.pitch_number, r.park_id
-    {limit_clause} {offset_clause}
+    {limit_clause}
     FORMAT JSONEachRow
     """
 
@@ -138,6 +141,27 @@ def _row_to_record(row: dict[str, str]) -> dict[str, object]:
     return record
 
 
+def _distinct_parks(*, season_from: int, season_to: int, container: str) -> tuple[str, ...]:
+    """Parks present in the label table for the window — the loader pages over
+    these so each query stays bounded to one park's rows. Cheap (30 rows)."""
+    raw = _run_clickhouse(
+        f"SELECT DISTINCT park_id FROM bbip_retrodicted_labels "
+        f"WHERE toYear(game_date) BETWEEN {season_from} AND {season_to} "
+        f"ORDER BY park_id FORMAT TSV",
+        container=container,
+    )
+    return tuple(p for p in raw.strip().split("\n") if p)
+
+
+def _frame_from_query(query: str, *, container: str) -> pd.DataFrame:
+    """Run one bounded query and decode JSONEachRow rows into a DataFrame."""
+    raw = _run_clickhouse(query, container=container)
+    records = [_row_to_record(json.loads(line)) for line in raw.strip().split("\n") if line]
+    if not records:
+        return pd.DataFrame()
+    return pd.DataFrame.from_records(records)
+
+
 def load_lgbm_dataset(
     *,
     season_from: int,
@@ -145,61 +169,58 @@ def load_lgbm_dataset(
     park_filter: tuple[str, ...] | None = None,
     limit: int | None = None,
     container: str = "bullpen-clickhouse",
-    chunk_rows: int = 150_000,
 ) -> pd.DataFrame:
     """Pull the joined (BIP, park) rows and return a LightGBM-ready DataFrame.
 
     The DataFrame has columns ``FEATURE_COLUMNS`` plus ``LABEL_COLUMN``
-    (the argmax 0-4 outcome index). ``park_id`` is a categorical
-    pandas column so LightGBM picks it up via
-    ``categorical_feature=['park_id']`` at Dataset construction.
+    (the argmax 0-4 outcome index). ``park_id`` is a categorical pandas column
+    so LightGBM picks it up via ``categorical_feature=['park_id']`` at Dataset
+    construction.
 
-    Streams from ClickHouse in chunks to keep peak memory bounded.
+    Pages by PARK (not by deep OFFSET): the join fans out ~30x (one label row
+    per BIP per park, ~32M rows for 2015-2024), and an ``OFFSET 30_000_000``
+    page forces ClickHouse to re-materialize + re-sort the whole FINAL join in
+    RAM, which exceeded the container's memory cap (code 241). One query per
+    park keeps each read at ~1.1M rows — the same scale the MLP loader handles.
     """
-    chunks: list[pd.DataFrame] = []
-    offset = 0
-    total = 0
-    chunk_idx = 0
-
-    while True:
-        effective_limit = chunk_rows
-        if limit is not None:
-            remaining = limit - total
-            if remaining <= 0:
-                break
-            effective_limit = min(chunk_rows, remaining)
-
-        raw = _run_clickhouse(
+    # A capped pull (smoke / tests) is small enough for a single bounded query.
+    if limit is not None:
+        df = _frame_from_query(
             _query_joined_for_lgbm(
                 season_from=season_from,
                 season_to=season_to,
                 park_filter=park_filter,
-                limit=effective_limit,
-                offset=offset,
+                limit=limit,
             ),
             container=container,
         )
-        records: list[dict[str, object]] = []
-        for line in raw.strip().split("\n"):
-            if not line:
-                continue
-            row = json.loads(line)
-            records.append(_row_to_record(row))
+        if not df.empty:
+            df["park_id"] = df["park_id"].astype("category")
+        return df
 
-        if not records:
-            break
-
-        chunk_df = pd.DataFrame.from_records(records)
-        chunks.append(chunk_df)
-        n = len(records)
-        offset += n
-        total += n
-        chunk_idx += 1
-        if chunk_idx % 5 == 0:
-            print(f"  lgbm dataset: loaded {total} rows so far...", flush=True)
-
-        if n < effective_limit:
-            break
+    parks = (
+        park_filter
+        if park_filter is not None
+        else _distinct_parks(season_from=season_from, season_to=season_to, container=container)
+    )
+    chunks: list[pd.DataFrame] = []
+    total = 0
+    for i, park in enumerate(parks, start=1):
+        frame = _frame_from_query(
+            _query_joined_for_lgbm(
+                season_from=season_from,
+                season_to=season_to,
+                park_filter=(park,),
+            ),
+            container=container,
+        )
+        if not frame.empty:
+            chunks.append(frame)
+            total += len(frame)
+        print(
+            f"  lgbm dataset: park {i}/{len(parks)} ({park}) -> {total} rows so far...",
+            flush=True,
+        )
 
     if not chunks:
         return pd.DataFrame()
