@@ -1,78 +1,229 @@
 package net.thebullpen.baseball.api;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.Timer;
 import jakarta.validation.Valid;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.TreeMap;
+import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
+import net.thebullpen.baseball.api.dto.AllParksOutcomeRequest;
 import net.thebullpen.baseball.api.dto.AllParksPredictionResponse;
-import net.thebullpen.baseball.api.dto.BattedBallRequest;
-import net.thebullpen.baseball.inference.ToyBattedBallInference;
+import net.thebullpen.baseball.inference.AsyncPredictionLogger;
+import net.thebullpen.baseball.inference.FeaturePipelineBattedBall;
+import net.thebullpen.baseball.inference.InferenceMetrics;
+import net.thebullpen.baseball.inference.InferenceRouter;
+import net.thebullpen.baseball.inference.LoadedAllParksModel;
+import net.thebullpen.baseball.inference.ModelLoader;
+import net.thebullpen.baseball.inference.PredictionLogEvent;
+import net.thebullpen.baseball.inference.RoutedPrediction;
+import net.thebullpen.baseball.inference.routing.Role;
+import net.thebullpen.baseball.registry.RegistryService;
+import net.thebullpen.baseball.registry.dto.ModelVersion;
 import org.slf4j.MDC;
 import org.springframework.context.annotation.Profile;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
- * {@code POST /v1/predict/batted-ball/all-parks} — fan-out predictor for the Park Explorer marquee
- * (leaf 4c.2). Returns a 30-entry {@code probHrByPark} map in a single round-trip.
+ * {@code POST /v1/predict/batted-ball/all-parks} - the real per-park outcome predictor (decision
+ * [146]; replaces the placeholder 30x toy loop). One ONNX call yields a calibrated 5-outcome
+ * distribution per park. The v1 response is HR-only ({@code probHrByPark}); the full per-park
+ * distribution is logged to {@code prediction_logs} for the shadow comparison.
  *
- * <p><strong>Temporary implementation note</strong>: the leaf body assumed the 2c.5 30-park MLP
- * would natively produce 30 outputs in one ONNX call. That model isn't built yet (Phase 4 is ahead
- * of Phase 2c.5 due to vertical-slice priority). For v1 we loop over the existing toy inference 30
- * times, varying only {@code parkId}. At ~10 μs per call this totals ~300 μs — well inside the
- * leaf's "&lt; 1 s render" budget. The endpoint contract is stable; the implementation swaps to a
- * real fan-out ONNX call when 2c.5 lands without any frontend or API change.
+ * <p>Routing goes through {@link InferenceRouter} under model name {@code battedball_outcome}:
  *
- * <p>{@code parkId} on the inbound request is ignored — the loop iterates the 30-park list. All
- * other fields (launch speed / angle / release speed / stand) are forwarded unchanged.
+ * <ul>
+ *   <li>An A/B routing config present (the normal state once a champion is promoted) -> champion
+ *       serves, any challenger runs in shadow and is logged.
+ *   <li>No routing config -> serve the registry's LIVE champion directly; {@code 503} when none is
+ *       live (decision: serve-live-champion-else-503). The toy is no longer in this path.
+ * </ul>
+ *
+ * <p>{@code X-Bullpen-Game-Id} drives bucket assignment (random per-request when absent - fine for
+ * Park-Explorer / dev-curl traffic).
  */
 @RestController
 @RequestMapping("/v1/predict")
 @Profile("api")
 public class PredictAllParksController {
 
-  /**
-   * The 30 canonical MLB park ids, sorted alphabetically. Source of truth is the {@code
-   * infra/park_geometry/*.json} set; this list is authored once so a missing geometry file fails
-   * loudly rather than dropping a park silently. Excludes the {@code ARI} legacy 2-letter code in
-   * favor of {@code AZ} (the Statcast-canonical form).
-   */
-  static final List<String> PARK_IDS =
-      List.of(
-          "ATH", "ATL", "AZ", "BAL", "BOS", "CHC", "CIN", "CLE", "COL", "CWS", "DET", "HOU", "KC",
-          "LAA", "LAD", "MIA", "MIL", "MIN", "NYM", "NYY", "PHI", "PIT", "SD", "SEA", "SF", "STL",
-          "TB", "TEX", "TOR", "WSH");
+  static final String MODEL_NAME = "battedball_outcome";
+  private static final String HR_OUTCOME = "hr";
+  private static final ObjectMapper MAPPER = new ObjectMapper();
 
-  private final ToyBattedBallInference inference;
+  private final ModelLoader modelLoader;
+  private final InferenceRouter router;
+  private final RegistryService registry;
+  private final AsyncPredictionLogger logger;
+  private final InferenceMetrics metrics;
 
-  public PredictAllParksController(ToyBattedBallInference inference) {
-    this.inference = inference;
+  public PredictAllParksController(
+      ModelLoader modelLoader,
+      InferenceRouter router,
+      RegistryService registry,
+      AsyncPredictionLogger logger,
+      InferenceMetrics metrics) {
+    this.modelLoader = modelLoader;
+    this.router = router;
+    this.registry = registry;
+    this.logger = logger;
+    this.metrics = metrics;
   }
 
   @PostMapping("/batted-ball/all-parks")
-  public AllParksPredictionResponse predictAllParks(@Valid @RequestBody BattedBallRequest req)
+  public AllParksPredictionResponse predictAllParks(
+      @Valid @RequestBody AllParksOutcomeRequest req,
+      @RequestHeader(value = "X-Bullpen-Game-Id", required = false) Long gameIdHeader)
       throws Exception {
-    Instant start = Instant.now();
-    TreeMap<String, Double> probHrByPark = new TreeMap<>();
-    for (String parkId : PARK_IDS) {
-      float prob =
-          inference.predict(
-              req.launchSpeedMph(),
-              req.launchAngleDeg(),
-              req.releaseSpeedMph(),
-              parkId,
-              req.stand());
-      probHrByPark.put(parkId, (double) prob);
-    }
-    long latencyMicros = java.time.Duration.between(start, Instant.now()).toNanos() / 1_000L;
+    Timer.Sample sample = metrics.startTimer();
+    Instant requestAt = Instant.now();
+    long gameId = gameIdHeader != null ? gameIdHeader : ThreadLocalRandom.current().nextLong();
     String correlationId = MDC.get("correlation_id");
-    return new AllParksPredictionResponse(
-        probHrByPark,
-        ToyBattedBallInference.MODEL_NAME,
-        ToyBattedBallInference.MODEL_VERSION,
-        latencyMicros,
-        correlationId == null ? "" : correlationId);
+    FeaturePipelineBattedBall.Request pipeReq = toPipelineRequest(req);
+
+    try {
+      RoutedPrediction<Map<String, float[]>> routed =
+          router.route(
+              MODEL_NAME,
+              gameId,
+              versionId -> predict(modelLoader.loadAllParks(versionId), pipeReq),
+              () -> predict(modelLoader.loadAllParks(requireChampionId()), pipeReq));
+
+      long elapsedNanos = sample.stop(metrics.timer(MODEL_NAME));
+      metrics.incrementPrediction(MODEL_NAME, routed.servingRole().name().toLowerCase(Locale.ROOT));
+      float elapsedMs = elapsedNanos / 1_000_000.0f;
+
+      // Legacy fallback (servingVersionId == -1) served the registry champion, so re-resolve it for
+      // its identity + outcome order (cached, so this is a cheap registry lookup + a cache hit).
+      long servingVersionId =
+          routed.servingVersionId() == -1L ? requireChampionId() : routed.servingVersionId();
+      LoadedAllParksModel servingModel = modelLoader.loadAllParks(servingVersionId);
+
+      Map<String, float[]> dist = routed.servingResponse();
+      Map<String, Double> probHrByPark = extractHr(dist, servingModel.outcomeOrder());
+
+      logger.enqueue(
+          new PredictionLogEvent(
+              UUID.randomUUID(),
+              requestAt,
+              MODEL_NAME,
+              servingModel.version(),
+              servingVersionId,
+              toLogRole(routed.servingRole()),
+              servingModel.schemaHash(),
+              serializeFeatures(req),
+              serializeDistribution(dist),
+              elapsedMs,
+              correlationId));
+
+      if (routed.hasShadowRow()) {
+        long shadowVid = routed.shadowVersionId().orElseThrow();
+        LoadedAllParksModel shadowModel = modelLoader.loadAllParks(shadowVid);
+        logger.enqueue(
+            new PredictionLogEvent(
+                UUID.randomUUID(),
+                requestAt,
+                MODEL_NAME,
+                shadowModel.version(),
+                shadowVid,
+                PredictionLogEvent.Role.SHADOW,
+                shadowModel.schemaHash(),
+                serializeFeatures(req),
+                serializeDistribution(routed.shadowResponse().orElseThrow()),
+                elapsedMs,
+                correlationId));
+      }
+
+      return new AllParksPredictionResponse(
+          probHrByPark,
+          MODEL_NAME,
+          servingModel.version(),
+          elapsedNanos / 1_000L,
+          correlationId == null ? "" : correlationId);
+    } catch (ResponseStatusException e) {
+      throw e; // 503 (no champion) / client errors pass through untouched
+    } catch (Exception e) {
+      metrics.incrementError(MODEL_NAME, e.getClass().getSimpleName());
+      throw e;
+    }
+  }
+
+  /**
+   * The registry's LIVE champion id for {@link #MODEL_NAME}, or a 503 when none is live. Used by
+   * the no-routing-config fallback (decision: serve-live-champion-else-503).
+   */
+  private long requireChampionId() {
+    return registry
+        .findChampion(MODEL_NAME)
+        .map(ModelVersion::id)
+        .orElseThrow(
+            () ->
+                new ResponseStatusException(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    MODEL_NAME
+                        + " has no LIVE champion and no A/B routing config; register + promote a"
+                        + " model first"));
+  }
+
+  private static Map<String, float[]> predict(
+      LoadedAllParksModel model, FeaturePipelineBattedBall.Request req) {
+    try {
+      return model.predict(req);
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  private static FeaturePipelineBattedBall.Request toPipelineRequest(AllParksOutcomeRequest req) {
+    return new FeaturePipelineBattedBall.Request(
+        req.launchSpeedMph(),
+        req.launchAngleDeg(),
+        req.sprayAngleDeg(),
+        req.hitDistanceFt(),
+        req.stand(),
+        req.baseState(),
+        req.outs());
+  }
+
+  private static Map<String, Double> extractHr(
+      Map<String, float[]> dist, List<String> outcomeOrder) {
+    int hrIdx = outcomeOrder.indexOf(HR_OUTCOME);
+    if (hrIdx < 0) {
+      throw new IllegalStateException(
+          "serving model outcome order has no '" + HR_OUTCOME + "': " + outcomeOrder);
+    }
+    TreeMap<String, Double> probHrByPark = new TreeMap<>();
+    for (Map.Entry<String, float[]> e : dist.entrySet()) {
+      probHrByPark.put(e.getKey(), (double) e.getValue()[hrIdx]);
+    }
+    return probHrByPark;
+  }
+
+  private static PredictionLogEvent.Role toLogRole(Role role) {
+    return switch (role) {
+      case CHAMPION -> PredictionLogEvent.Role.CHAMPION;
+      case CHALLENGER -> PredictionLogEvent.Role.CHALLENGER;
+      case SHADOW -> PredictionLogEvent.Role.SHADOW;
+    };
+  }
+
+  private static String serializeFeatures(AllParksOutcomeRequest req)
+      throws JsonProcessingException {
+    return MAPPER.writeValueAsString(req);
+  }
+
+  private static String serializeDistribution(Map<String, float[]> dist)
+      throws JsonProcessingException {
+    return MAPPER.writeValueAsString(dist);
   }
 }
