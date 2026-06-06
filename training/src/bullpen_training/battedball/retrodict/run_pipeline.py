@@ -120,7 +120,9 @@ def _distinct_game_count(
 ) -> int:
     """Distinct games in ``pitches`` for the season range (weather-coverage denom)."""
     tsv = _run_clickhouse(
-        "SELECT count(DISTINCT game_id) FROM pitches "
+        # FINAL for ReplacingMergeTree consistency: count(DISTINCT game_id) is dup-robust so this
+        # changes nothing today, but keeps every `pitches` read uniformly FINAL-guarded (DEF-L5).
+        "SELECT count(DISTINCT game_id) FROM pitches FINAL "
         f"WHERE toYear(game_date) BETWEEN {season_from} AND {season_to} FORMAT TSV",
         container=container,
     ).strip()

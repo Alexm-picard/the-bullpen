@@ -17,7 +17,9 @@
 WITH
     base AS (
         SELECT *
-        FROM pitches
+        -- FINAL: pitches is a ReplacingMergeTree; without it a re-ingested pitch double-counts every
+        -- Tier-3 rolling-window count below (28d / season-to-date / in-game) (DEF-H3).
+        FROM pitches FINAL
         WHERE description != 'unknown'
           AND game_date >= toDate(:test_start) - 90
           AND game_date <= toDate(:test_end)

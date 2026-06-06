@@ -27,7 +27,9 @@ SELECT
     toUInt8(toDayOfWeek(game_date)) AS dow,
 
     toString(description)         AS label
-FROM pitches
+-- FINAL: pitches is a ReplacingMergeTree; without it a re-ingested (corrected) pitch double-counts
+-- the per-row label, the target-encoding numerators, and every Tier-3 rolling-window count (DEF-H3).
+FROM pitches FINAL
 WHERE game_date BETWEEN :start_date AND :end_date
   AND description IN ('ball', 'called_strike', 'swinging_strike', 'foul', 'in_play')
 SETTINGS max_memory_usage = 0
