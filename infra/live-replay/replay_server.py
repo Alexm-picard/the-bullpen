@@ -40,15 +40,32 @@ from urllib.parse import urlparse
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _DEFAULT_FEED = _REPO_ROOT / "backend/src/test/resources/mlb/feed_live_824753.json"
 
+# Synthetic replay rows carry a SENTINEL gamePk far above any real MLB gamePk (currently ~6 digits),
+# so the rows they seed in pitches_live / prediction_log / live_game_status are permanently
+# identifiable and excludable by range: game_id >= SENTINEL_GAME_PK_FLOOR is synthetic. Drift /
+# calibration / eval / training MUST exclude this range (see docs/runbooks/live-data-setup.md).
+SENTINEL_GAME_PK_FLOOR = 900_000_000
+_DEFAULT_GAME_PK = (
+    900_000_824  # the 824 echoes the source fixture (824753); clearly synthetic
+)
+
 
 class Replay:
     """Holds the loaded full-game feed and builds progressive, deterministic snapshots."""
 
     def __init__(
-        self, feed_path: Path, game_date: str, start_at: int, advance_per_request: int
+        self,
+        feed_path: Path,
+        game_date: str,
+        start_at: int,
+        advance_per_request: int,
+        game_pk: int,
     ):
         full = json.loads(feed_path.read_text())
-        self.game_pk = full["gamePk"]
+        # A SENTINEL gamePk (not the fixture's real 824753) so synthetic replay rows in pitches_live
+        # / prediction_log / live_game_status are unmistakable and permanently excludable by range
+        # (game_id >= SENTINEL_GAME_PK_FLOOR), never colliding with real MLB data.
+        self.game_pk = game_pk
         self.game_data = full["gameData"]
         self.all_plays = full["liveData"]["plays"]["allPlays"]
         self.game_date = game_date
@@ -99,6 +116,9 @@ class Replay:
             "Live" if in_progress else "Final"
         )
         game_data.setdefault("datetime", {})["officialDate"] = self.game_date
+        game_data.setdefault("game", {})[
+            "pk"
+        ] = self.game_pk  # sentinel, overriding the fixture pk
         plays: dict = {"allPlays": self.all_plays[:idx]}
         if current is not None:
             plays["currentPlay"] = current
@@ -231,11 +251,26 @@ def main() -> int:
         help="reveal one more at-bat every Nth feed request (1 = progress each poll)",
     )
     p.add_argument(
+        "--game-pk",
+        type=int,
+        default=_DEFAULT_GAME_PK,
+        help=f"SENTINEL gamePk for the synthetic rows (default {_DEFAULT_GAME_PK}; must stay >="
+        f" {SENTINEL_GAME_PK_FLOOR} so drift/eval can exclude the synthetic range)",
+    )
+    p.add_argument(
         "--self-test", action="store_true", help="run invariants check and exit"
     )
     args = p.parse_args()
 
-    replay = Replay(args.feed, args.game_date, args.start_at, args.advance_per_request)
+    if args.game_pk < SENTINEL_GAME_PK_FLOOR:
+        p.error(
+            f"--game-pk must be >= {SENTINEL_GAME_PK_FLOOR} (the synthetic-row exclusion floor); a"
+            " real-range gamePk would let replay rows masquerade as real data"
+        )
+
+    replay = Replay(
+        args.feed, args.game_date, args.start_at, args.advance_per_request, args.game_pk
+    )
     if args.self_test:
         return _self_test(replay)
 

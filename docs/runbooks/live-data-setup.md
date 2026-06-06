@@ -239,6 +239,25 @@ docker exec bullpen-clickhouse clickhouse-client --query \
    FROM prediction_log WHERE game_id IS NOT NULL AND request_at > now() - INTERVAL 1 HOUR"
 ```
 
+**Synthetic-row hygiene (contamination boundary).** The replay writes to the SAME prod
+tables (`pitches_live`, `live_game_status`, and `prediction_log` once the pre-head is
+loaded) under a **sentinel gamePk** (default `900000824`). Every synthetic row therefore
+satisfies `game_id >= 900000000`, far above any real MLB gamePk - permanently identifiable
+and excludable by range, never colliding with real data:
+
+- **Drift / calibration / eval / training MUST exclude `game_id >= 900000000`** so a replay
+  never seeds prod analytics (the replay's features are deliberately approximated - see the
+  base-state note). The sentinel makes this a one-time range filter, not a per-run chore.
+- **First replay is low-risk:** `pitches_live` is empty until the poller runs, so the
+  synthetic game is the only data and trivially verifiable.
+- **Optional purge** (take a snapshot first - it doubles as the rollback):
+  ```bash
+  for t in pitches_live prediction_log live_game_status; do
+    docker exec bullpen-clickhouse clickhouse-client --query \
+      "ALTER TABLE $t DELETE WHERE game_id >= 900000000"   # snapshot first; this is a mutation
+  done
+  ```
+
 ### 9. Deploy + enable for a live game - **off-window only** (rule 3)
 
 Do the deploy + enable + worker restart in a **pre-game no-game window**; only
