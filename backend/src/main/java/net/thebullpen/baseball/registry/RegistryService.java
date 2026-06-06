@@ -157,14 +157,29 @@ public class RegistryService {
     // The registered paths point at the canonical destination so retention + restore have a
     // single place to flip. featurePipelinePath isn't a tracked column (the schema_hash is the
     // proxy), but we still archive the file so the pipeline can be reconstituted from S3.
-    Path snapshotDir =
-        snapshotStorage.placeArtifacts(
-            req.modelName(),
-            req.version(),
-            Map.of(
-                SnapshotStorage.ARTIFACT_FILE, Path.of(req.artifactPath()),
-                SnapshotStorage.METADATA_FILE, Path.of(req.metadataPath()),
-                SnapshotStorage.FEATURE_PIPELINE_FILE, Path.of(req.featurePipelinePath())));
+    // BUG-1c: also copy the calibrator + ONNX external-data sidecar when the trainer produced them
+    // beside the model. Both are co-located in the source dir but were omitted from the copy-list,
+    // so registered snapshots served UNCALIBRATED (no calibrator.json) and external-data ONNX
+    // models
+    // failed to load (no model.onnx.data). Both are optional - the toy / small in-graph models have
+    // neither, so include only when the source file is actually present.
+    Path artifactSource = Path.of(req.artifactPath());
+    Map<String, Path> sources = new java.util.LinkedHashMap<>();
+    sources.put(SnapshotStorage.ARTIFACT_FILE, artifactSource);
+    sources.put(SnapshotStorage.METADATA_FILE, Path.of(req.metadataPath()));
+    sources.put(SnapshotStorage.FEATURE_PIPELINE_FILE, Path.of(req.featurePipelinePath()));
+    Path sourceDir = artifactSource.getParent();
+    if (sourceDir != null) {
+      Path calibrator = sourceDir.resolve(SnapshotStorage.CALIBRATOR_FILE);
+      if (java.nio.file.Files.isRegularFile(calibrator)) {
+        sources.put(SnapshotStorage.CALIBRATOR_FILE, calibrator);
+      }
+      Path externalData = sourceDir.resolve(SnapshotStorage.ARTIFACT_FILE + ".data");
+      if (java.nio.file.Files.isRegularFile(externalData)) {
+        sources.put(SnapshotStorage.ARTIFACT_FILE + ".data", externalData);
+      }
+    }
+    Path snapshotDir = snapshotStorage.placeArtifacts(req.modelName(), req.version(), sources);
     String canonicalArtifact = snapshotDir.resolve(SnapshotStorage.ARTIFACT_FILE).toString();
     String canonicalMetadata = snapshotDir.resolve(SnapshotStorage.METADATA_FILE).toString();
     ModelVersion inserted =

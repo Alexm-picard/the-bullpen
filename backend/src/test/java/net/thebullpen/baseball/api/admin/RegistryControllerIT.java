@@ -147,6 +147,18 @@ class RegistryControllerIT {
   }
 
   @Test
+  void register_copies_the_calibrator_into_the_snapshot_when_present() throws Exception {
+    // BUG-1c: a calibrator.json beside the artifact must land in the snapshot, or the model serves
+    // uncalibrated. (The other register tests omit it, exercising the optional path.)
+    writeFile("calibrator.json", "{\"schema_version\":2,\"park_order\":[],\"parks\":{}}");
+    ModelVersion mv = service.register(sampleRequest("calib_model", "v1"));
+    Path snapshotCalibrator = Path.of(mv.artifactPath()).getParent().resolve("calibrator.json");
+    org.junit.jupiter.api.Assertions.assertTrue(
+        Files.exists(snapshotCalibrator),
+        "BUG-1c: calibrator.json must be copied into the snapshot beside model.onnx");
+  }
+
+  @Test
   void admin_register_with_path_body_modelName_mismatch_is_400() throws Exception {
     RegisterRequest req = sampleRequest("body_model", "v1");
     mvc.perform(
