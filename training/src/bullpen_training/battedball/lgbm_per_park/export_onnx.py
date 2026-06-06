@@ -164,8 +164,10 @@ def _parity_self_check(
     rng = np.random.default_rng(20260605)
     x = rng.normal(size=(n_check, N_FEATURES)).astype(np.float32)
     sess = ort.InferenceSession(combined.SerializeToString())
-    got = sess.run([COMBINED_OUTPUT], {"input": x})[0]
-    want = np.stack([b.predict(x.astype(np.float64)) for b in boosters], axis=1)
+    # booster.predict + ort.run are broadly typed (ndarray | spmatrix | list); coerce to ndarray.
+    got = np.asarray(sess.run([COMBINED_OUTPUT], {"input": x})[0], dtype=np.float64)
+    per_park = [np.asarray(b.predict(x.astype(np.float64)), dtype=np.float64) for b in boosters]
+    want = np.stack(per_park, axis=1)
     max_diff = float(np.max(np.abs(got - want)))
     if got.shape != want.shape:
         raise RuntimeError(f"combined shape {got.shape} != native stack {want.shape}")
