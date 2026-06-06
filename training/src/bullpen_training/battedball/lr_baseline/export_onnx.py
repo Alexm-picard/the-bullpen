@@ -133,11 +133,16 @@ def export(*, artifact_dir: Path, contract_path: Path = CONTRACT_PATH) -> dict[s
             f"bundle feature_columns {bundle.feature_columns} != {list(FEATURE_NAMES)}"
         )
 
-    pipeline_onnx = convert_sklearn(
-        bundle.pipeline,
-        initial_types=[("input", FloatTensorType([None, N_FEATURES]))],
-        target_opset=TARGET_OPSET,
-        options={id(bundle.pipeline): {"zipmap": False}},
+    # convert_sklearn is typed as a broad union (ModelProto | tuple | GraphProto | ...); for a
+    # single sklearn estimator with no intermediate-graph options it returns a ModelProto.
+    pipeline_onnx = cast(
+        onnx.ModelProto,
+        convert_sklearn(
+            bundle.pipeline,
+            initial_types=[("input", FloatTensorType([None, N_FEATURES]))],
+            target_opset=TARGET_OPSET,
+            options={id(bundle.pipeline): {"zipmap": False}},
+        ),
     )
     combined = _tile_to_parks(pipeline_onnx, n_parks, n_class)
     max_diff = _parity_self_check(combined, bundle.pipeline, n_parks)
