@@ -43,6 +43,13 @@ public class CalibrationRepository {
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
   /**
+   * Known single-probability payload keys (the batted-ball HR head logs {@code {"prob_hr": x}}).
+   * Looked up by name so a sibling numeric field can't be misread as the winner probability
+   * (DEF-M4).
+   */
+  private static final List<String> SINGLE_PROB_KEYS = List.of("prob_hr", "probHr", "prob");
+
+  /**
    * Pull predictions for this player + this model — winners only. Capped at a reasonable upper
    * bound to keep per-request cost predictable; the 5000 ceiling is well past the "<50 predictions"
    * threshold the UI uses to decide to render at all.
@@ -121,10 +128,13 @@ public class CalibrationRepository {
         JsonNode p = probs.path(winner.asText());
         if (p.isNumber()) return p.doubleValue();
       }
-      // Single-prob payloads like {"probHr": 0.87}.
+      // Single-prob payloads like {"prob_hr": 0.87}. Look the probability up by a KNOWN key, not
+      // "first numeric field" - a sibling numeric (a version, a latency_ms) ahead of the prob in
+      // the JSON would otherwise be misread as the winner probability (DEF-M4).
       if (probs.isMissingNode()) {
-        for (var e : root.properties()) {
-          if (e.getValue().isNumber()) return e.getValue().doubleValue();
+        for (String key : SINGLE_PROB_KEYS) {
+          JsonNode p = root.path(key);
+          if (p.isNumber()) return p.doubleValue();
         }
       }
     } catch (JsonProcessingException ex) {

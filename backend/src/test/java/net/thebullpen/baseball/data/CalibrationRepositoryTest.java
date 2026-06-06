@@ -41,6 +41,19 @@ class CalibrationRepositoryTest {
   @Test
   void parseWinnerProb_extracts_single_prob_payload() {
     assertThat(CalibrationRepository.parseWinnerProb("{\"probHr\":0.87}")).isEqualTo(0.87);
+    assertThat(CalibrationRepository.parseWinnerProb("{\"prob_hr\":0.42}")).isEqualTo(0.42);
+  }
+
+  @Test
+  void parseWinnerProb_ignores_sibling_numeric_fields_in_single_prob_payload() {
+    // DEF-M4: a numeric sibling (a version, a latency) ahead of the prob must NOT be returned as
+    // the winner probability. The probability is looked up by name, not by JSON field order.
+    assertThat(CalibrationRepository.parseWinnerProb("{\"version\":2,\"prob_hr\":0.87}"))
+        .isEqualTo(0.87);
+    assertThat(CalibrationRepository.parseWinnerProb("{\"latency_ms\":12.5,\"prob_hr\":0.31}"))
+        .isEqualTo(0.31);
+    // No known prob key present -> null (not the stray 0.99).
+    assertThat(CalibrationRepository.parseWinnerProb("{\"score\":0.99}")).isNull();
   }
 
   @Test
