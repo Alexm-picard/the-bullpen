@@ -1,6 +1,7 @@
 package net.thebullpen.baseball.ingest;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -118,6 +119,8 @@ class LivePollingServiceTest {
     // cursor high-water + predict-next dedup: still just one insert + one prediction.
     verify(repo, times(1)).insertPitches(any());
     verify(predictor, times(1)).predictAndLog(any());
+    // status upserts only on a transition (null -> IN_PROGRESS on poll 1; unchanged on poll 2).
+    verify(repo, times(1)).upsertGameStatus(anyLong(), any(), any());
   }
 
   @Test

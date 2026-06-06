@@ -94,9 +94,16 @@ public class LivePollingService {
       log.warn("live feed fetch failed for game {}", gamePk, e);
       return;
     }
-    GameStatus prev = statusByGame.getOrDefault(gamePk, GameStatus.SCHEDULED);
-    statusByGame.put(gamePk, stateMachine.transition(gamePk, prev, feed.status()));
+    GameStatus prev = statusByGame.get(gamePk);
+    GameStatus current =
+        stateMachine.transition(gamePk, prev == null ? GameStatus.SCHEDULED : prev, feed.status());
+    statusByGame.put(gamePk, current);
     lastPollAt.put(gamePk, Instant.now());
+    // Persist status only on a transition (step 7b) so the api read path can surface it; the
+    // in-memory map alone is invisible across the profile/process boundary.
+    if ((prev == null || prev != current) && feed.gameDate() != null) {
+      repo.upsertGameStatus(gamePk, feed.gameDate(), current.name());
+    }
     writeNewPitches(gamePk, feed);
     predictNextPitch(gamePk, feed);
   }

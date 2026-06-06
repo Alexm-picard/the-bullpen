@@ -38,4 +38,14 @@ class LivePitchesRepositoryParseTest {
     assertNull(p.classes());
     assertNull(p.winner());
   }
+
+  @Test
+  void humanizeStatus_titlecases_the_enum_name_for_display() {
+    assertEquals("In Progress", LivePitchesRepository.humanizeStatus("IN_PROGRESS"));
+    assertEquals("Mid Inning", LivePitchesRepository.humanizeStatus("MID_INNING"));
+    assertEquals("Scheduled", LivePitchesRepository.humanizeStatus("SCHEDULED"));
+    assertEquals("Unknown", LivePitchesRepository.humanizeStatus("UNKNOWN"));
+    assertEquals("Unknown", LivePitchesRepository.humanizeStatus(""));
+    assertEquals("Unknown", LivePitchesRepository.humanizeStatus(null));
+  }
 }

@@ -11,6 +11,7 @@ import java.sql.Types;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import javax.sql.DataSource;
@@ -72,26 +73,46 @@ public class LivePitchesRepository {
           + " WHERE pl.game_id = ? AND (pl.at_bat_index * 100 + pl.pitch_number) > ?"
           + " ORDER BY cursor ASC LIMIT 500";
 
+  // Latest status per game from the poller (step 7b). argMax over the ReplacingMergeTree gives the
+  // current status; a LEFT JOIN miss yields '' -> 'UNKNOWN' (the honest pre-poll answer).
+  private static final String LATEST_STATUS_SUBQUERY =
+      " LEFT JOIN ( SELECT game_id, argMax(status, updated_at) AS status"
+          + " FROM live_game_status GROUP BY game_id ) AS s ON s.game_id = g.game_id";
+
   private static final String FIND_GAMES_FOR_DATE =
-      "SELECT game_id, game_date, home_team, away_team,"
-          + " max(home_score) AS home_score, max(away_score) AS away_score,"
-          + " max(inning) AS inning"
-          + " FROM pitches_live FINAL"
+      "SELECT g.game_id AS game_id, g.game_date AS game_date, g.home_team AS home_team,"
+          + " g.away_team AS away_team, g.home_score AS home_score, g.away_score AS away_score,"
+          + " g.inning AS inning, if(s.status = '', 'UNKNOWN', s.status) AS status"
+          + " FROM ("
+          + "   SELECT game_id, game_date, home_team, away_team,"
+          + "          max(home_score) AS home_score, max(away_score) AS away_score,"
+          + "          max(inning) AS inning"
+          + "   FROM pitches_live FINAL"
           // toDate(?) + a String 'yyyy-MM-dd' param (see findGamesForDate): clickhouse-jdbc 0.7.2
           // inlines a bare java.sql.Date as the unquoted token 2026-06-05, which ClickHouse parses
           // as arithmetic (2026-6-5 = 2015, Int64) -> "Date = Int64" type error. A String param is
           // rendered quoted, so toDate('2026-06-05') yields the right Date.
-          + " WHERE game_date = toDate(?)"
-          + " GROUP BY game_id, game_date, home_team, away_team"
-          + " ORDER BY game_id ASC";
+          + "   WHERE game_date = toDate(?)"
+          + "   GROUP BY game_id, game_date, home_team, away_team"
+          + " ) AS g"
+          + LATEST_STATUS_SUBQUERY
+          + " ORDER BY g.game_id ASC";
 
   private static final String FIND_GAME =
-      "SELECT game_id, game_date, home_team, away_team,"
-          + " max(home_score) AS home_score, max(away_score) AS away_score,"
-          + " max(inning) AS inning"
-          + " FROM pitches_live FINAL"
-          + " WHERE game_id = ?"
-          + " GROUP BY game_id, game_date, home_team, away_team";
+      "SELECT g.game_id AS game_id, g.game_date AS game_date, g.home_team AS home_team,"
+          + " g.away_team AS away_team, g.home_score AS home_score, g.away_score AS away_score,"
+          + " g.inning AS inning, if(s.status = '', 'UNKNOWN', s.status) AS status"
+          + " FROM ("
+          + "   SELECT game_id, game_date, home_team, away_team,"
+          + "          max(home_score) AS home_score, max(away_score) AS away_score,"
+          + "          max(inning) AS inning"
+          + "   FROM pitches_live FINAL WHERE game_id = ?"
+          + "   GROUP BY game_id, game_date, home_team, away_team"
+          + " ) AS g"
+          + LATEST_STATUS_SUBQUERY;
+
+  private static final String INSERT_GAME_STATUS =
+      "INSERT INTO live_game_status (game_id, game_date, status) VALUES (?, ?, ?)";
 
   private static final String INSERT_PITCH =
       "INSERT INTO pitches_live"
@@ -179,45 +200,58 @@ public class LivePitchesRepository {
   }
 
   /**
-   * Today's games visible in pitches_live. Status is always {@code UNKNOWN} from this read path —
-   * the worker decorates summary rows with status when it lands. Until then, the UI shows "UNKNOWN"
-   * which is the honest answer.
+   * Upsert a game's current status; the poller (worker) calls this on a transition. The
+   * ReplacingMergeTree supersedes the prior row and findGamesForDate / findGame surface the latest
+   * via argMax. {@code game_date} is bound as an ISO-8601 String (clickhouse-jdbc inlines a bare
+   * date as arithmetic - same lesson as the pitches insert).
    */
+  public void upsertGameStatus(long gameId, LocalDate gameDate, String status) {
+    jdbc.update(INSERT_GAME_STATUS, gameId, gameDate.toString(), status);
+  }
+
+  /** Today's games in pitches_live, decorated with the poller's latest status (step 7b). */
   public List<GameSummary> findGamesForDate(LocalDate date) {
-    return jdbc.query(
-        FIND_GAMES_FOR_DATE,
-        (ResultSet rs, int n) ->
-            new GameSummary(
-                rs.getLong("game_id"),
-                rs.getDate("game_date").toLocalDate(),
-                rs.getString("home_team"),
-                rs.getString("away_team"),
-                rs.getInt("home_score"),
-                rs.getInt("away_score"),
-                rs.getInt("inning"),
-                "UNKNOWN",
-                "Unknown"),
-        // ISO-8601 'yyyy-MM-dd' String, not java.sql.Date; see FIND_GAMES_FOR_DATE.
-        date.toString());
+    // ISO-8601 'yyyy-MM-dd' String, not java.sql.Date; see FIND_GAMES_FOR_DATE.
+    return jdbc.query(FIND_GAMES_FOR_DATE, GAME_SUMMARY_MAPPER, date.toString());
   }
 
   public java.util.Optional<GameSummary> findGame(long gameId) {
-    List<GameSummary> hits =
-        jdbc.query(
-            FIND_GAME,
-            (ResultSet rs, int n) ->
-                new GameSummary(
-                    rs.getLong("game_id"),
-                    rs.getDate("game_date").toLocalDate(),
-                    rs.getString("home_team"),
-                    rs.getString("away_team"),
-                    rs.getInt("home_score"),
-                    rs.getInt("away_score"),
-                    rs.getInt("inning"),
-                    "UNKNOWN",
-                    "Unknown"),
-            gameId);
+    List<GameSummary> hits = jdbc.query(FIND_GAME, GAME_SUMMARY_MAPPER, gameId);
     return hits.isEmpty() ? java.util.Optional.empty() : java.util.Optional.of(hits.get(0));
+  }
+
+  private static final RowMapper<GameSummary> GAME_SUMMARY_MAPPER =
+      (ResultSet rs, int n) -> {
+        String status = rs.getString("status");
+        return new GameSummary(
+            rs.getLong("game_id"),
+            rs.getDate("game_date").toLocalDate(),
+            rs.getString("home_team"),
+            rs.getString("away_team"),
+            rs.getInt("home_score"),
+            rs.getInt("away_score"),
+            rs.getInt("inning"),
+            status,
+            humanizeStatus(status));
+      };
+
+  /** GameStatus enum name -> display label: IN_PROGRESS -> "In Progress", UNKNOWN -> "Unknown". */
+  static String humanizeStatus(String status) {
+    if (status == null || status.isEmpty()) {
+      return "Unknown";
+    }
+    StringBuilder sb = new StringBuilder(status.length());
+    for (String word : status.split("_")) {
+      if (word.isEmpty()) {
+        continue;
+      }
+      if (sb.length() > 0) {
+        sb.append(' ');
+      }
+      sb.append(Character.toUpperCase(word.charAt(0)))
+          .append(word.substring(1).toLowerCase(Locale.ROOT));
+    }
+    return sb.toString();
   }
 
   private static final RowMapper<LivePitchRow> PITCH_MAPPER =

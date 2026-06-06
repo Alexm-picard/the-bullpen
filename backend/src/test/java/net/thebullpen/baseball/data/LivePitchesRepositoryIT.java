@@ -86,6 +86,7 @@ class LivePitchesRepositoryIT {
         var stmt = conn.createStatement()) {
       stmt.execute("TRUNCATE TABLE IF EXISTS pitches_live");
       stmt.execute("TRUNCATE TABLE IF EXISTS prediction_log");
+      stmt.execute("TRUNCATE TABLE IF EXISTS live_game_status");
     }
   }
 
@@ -233,5 +234,35 @@ class LivePitchesRepositoryIT {
         "in_play",
         pitch(repo.findPitchesSince(824753L, 0L), 1, 1).predictedWinner(),
         "argMax(request_at) keeps the latest prediction");
+  }
+
+  @Test
+  void findGamesForDate_surfaces_the_pollers_upserted_status() throws Exception {
+    LocalDate date = LocalDate.of(2026, 6, 6);
+    insertPitch(700L, date, 1, 1, "BOS", "NYY", 1);
+    repo.upsertGameStatus(700L, date, "IN_PROGRESS");
+
+    GameSummary g = repo.findGamesForDate(date).get(0);
+    assertEquals("IN_PROGRESS", g.status());
+    assertEquals("In Progress", g.detailedState(), "humanized for display");
+  }
+
+  @Test
+  void findGamesForDate_defaults_to_unknown_without_a_status_row() throws Exception {
+    LocalDate date = LocalDate.of(2026, 6, 6);
+    insertPitch(701L, date, 1, 1, "BOS", "NYY", 1);
+
+    assertEquals("UNKNOWN", repo.findGamesForDate(date).get(0).status());
+  }
+
+  @Test
+  void upsertGameStatus_keeps_the_latest_status_under_replacing_merge_tree() throws Exception {
+    LocalDate date = LocalDate.of(2026, 6, 6);
+    insertPitch(702L, date, 1, 1, "BOS", "NYY", 1);
+    repo.upsertGameStatus(702L, date, "SCHEDULED");
+    Thread.sleep(5);
+    repo.upsertGameStatus(702L, date, "IN_PROGRESS"); // a transition
+
+    assertEquals("IN_PROGRESS", repo.findGame(702L).orElseThrow().status());
   }
 }
