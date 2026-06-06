@@ -77,6 +77,25 @@ def _load_pooled_sample(
     return pd.concat(frames, ignore_index=True)
 
 
+def _ensure_all_classes(x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray, list[int]]:
+    """Guarantee every outcome class is present in ``y`` so the LR emits a 5-wide predict_proba.
+
+    sklearn LogisticRegression infers its class set from ``y``; the sampled argmax labels can
+    miss an outcome (3b is essentially never the *dominant* outcome of a retrodicted
+    distribution), which would make predict_proba fewer than 5 columns and break the [30, 5]
+    contract. Inject one mean-feature anchor row per absent class (the LGBM gets the same effect
+    from ``num_class=5``). One row per absent class against ~1M is negligible bias, and the absent
+    class then calibrates to ~0. Returns ``(x, y, absent_indices)`` for the diagnostic.
+    """
+    present = {int(v) for v in np.unique(y)}
+    absent = [c for c in range(len(OUTCOME_NAMES)) if c not in present]
+    if absent:
+        anchors = np.tile(x.mean(axis=0, keepdims=True), (len(absent), 1))
+        x = np.vstack([x, anchors])
+        y = np.concatenate([y, np.asarray(absent, dtype=y.dtype)])
+    return x, y, absent
+
+
 def train_lr_baseline(
     *,
     season_from: int,
@@ -104,6 +123,14 @@ def train_lr_baseline(
 
     x_train = train_df[list(FEATURE_NAMES)].to_numpy(dtype=np.float64)
     y_train = train_df[LABEL_COLUMN].to_numpy(dtype=np.int64)
+    x_train, y_train, absent = _ensure_all_classes(x_train, y_train)
+    if absent:
+        print(
+            "  note: outcome classes absent from sampled labels: "
+            f"{[OUTCOME_NAMES[c] for c in absent]} -> injected anchor rows so the 5-class LR "
+            "emits all outcomes (absent class calibrates to ~0).",
+            flush=True,
+        )
     pipeline = Pipeline(
         [("scale", StandardScaler()), ("lr", LogisticRegression(max_iter=max_iter))]
     ).fit(x_train, y_train)
@@ -129,6 +156,7 @@ def train_lr_baseline(
             "per_park_limit": per_park_limit,
             "train_seasons": f"{season_from}-{season_to}",
             "val_season": val_season,
+            "absent_outcome_classes": [OUTCOME_NAMES[c] for c in absent],
         },
     )
 
