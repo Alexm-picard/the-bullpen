@@ -1,12 +1,19 @@
 package net.thebullpen.baseball.data;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 import net.thebullpen.baseball.api.dto.GameSummary;
+import net.thebullpen.baseball.api.dto.LivePitchRow;
+import net.thebullpen.baseball.ingest.LiveGameFeed;
+import net.thebullpen.baseball.ingest.MlbFeedParser;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
@@ -121,5 +128,52 @@ class LivePitchesRepositoryIT {
   void findGamesForDate_returns_empty_for_a_date_with_no_games() throws Exception {
     insertPitch(101L, LocalDate.of(2026, 6, 5), 1, 1, "BOS", "NYY", 1);
     assertTrue(repo.findGamesForDate(LocalDate.of(2026, 6, 4)).isEmpty());
+  }
+
+  /** Parse the captured real game (BAL @ BOS, gamePk 824753) the same way the worker will. */
+  private static LiveGameFeed parseFixture() throws Exception {
+    try (InputStream in =
+        LivePitchesRepositoryIT.class.getResourceAsStream("/mlb/feed_live_824753.json")) {
+      assertNotNull(in, "missing fixture");
+      String json = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+      return new MlbFeedParser(new ObjectMapper()).parseLiveFeed(json);
+    }
+  }
+
+  @Test
+  void insertPitches_round_trips_the_parsed_feed_through_real_clickhouse() throws Exception {
+    LiveGameFeed feed = parseFixture();
+    assertEquals(300, repo.insertPitches(feed), "every parsed pitch submitted");
+
+    List<LivePitchRow> rows = repo.findPitchesSince(824753L, 0L);
+    assertEquals(300, rows.size(), "every pitch reads back via the cursor query");
+
+    // The HBP that ended at-bat 1 (pitch 6): pre-pitch count 2-2, canonical description, stored
+    // through the real INSERT -> ReplacingMergeTree -> FINAL read path.
+    LivePitchRow hbp =
+        rows.stream()
+            .filter(r -> r.atBatIndex() == 1 && r.pitchNumber() == 6)
+            .findFirst()
+            .orElseThrow();
+    assertEquals("hit_by_pitch", hbp.description());
+    assertEquals(2, hbp.balls());
+    assertEquals(2, hbp.strikes());
+
+    // And the game surfaces on its real date through the same read path the /v1/games API uses
+    // (this also re-exercises the toDate(?) String binding from the Code 43 fix, now on real data).
+    List<GameSummary> games = repo.findGamesForDate(LocalDate.of(2026, 6, 4));
+    assertEquals(1, games.size());
+    assertEquals("BOS", games.get(0).homeTeam());
+    assertEquals("BAL", games.get(0).awayTeam());
+  }
+
+  @Test
+  void insertPitches_is_idempotent_under_replacing_merge_tree() throws Exception {
+    LiveGameFeed feed = parseFixture();
+    repo.insertPitches(feed);
+    repo.insertPitches(feed); // a re-poll of the same in-progress game
+
+    // FINAL collapses duplicate (game_id, at_bat_index, pitch_number) keys back to one row each.
+    assertEquals(300, repo.findPitchesSince(824753L, 0L).size());
   }
 }

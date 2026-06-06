@@ -1,15 +1,22 @@
 package net.thebullpen.baseball.data;
 
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.sql.Types;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Objects;
 import javax.sql.DataSource;
 import net.thebullpen.baseball.api.dto.GameSummary;
 import net.thebullpen.baseball.api.dto.LivePitchRow;
+import net.thebullpen.baseball.ingest.LiveGameFeed;
+import net.thebullpen.baseball.ingest.LivePitch;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.context.annotation.Profile;
+import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -66,10 +73,82 @@ public class LivePitchesRepository {
           + " WHERE game_id = ?"
           + " GROUP BY game_id, game_date, home_team, away_team";
 
+  private static final String INSERT_PITCH =
+      "INSERT INTO pitches_live"
+          + " (game_id, at_bat_index, pitch_number, game_date, pitcher_id, batter_id,"
+          + " description, pitch_type, release_speed_mph, plate_x_in, plate_z_in,"
+          + " balls, strikes, outs, inning, home_score, away_score, home_team, away_team)"
+          + " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+
   private final JdbcTemplate jdbc;
 
   public LivePitchesRepository(@Qualifier("clickhouseDataSource") DataSource clickhouse) {
     this.jdbc = new JdbcTemplate(clickhouse);
+  }
+
+  /**
+   * Batch-insert the pitches parsed from a live feed (the LivePollingService write path).
+   *
+   * <p>Idempotent: pitches_live is a {@code ReplacingMergeTree} keyed on (game_id, at_bat_index,
+   * pitch_number), so a re-polled or corrected pitch is overwritten on the next merge / FINAL read.
+   * {@code game_date} is bound as an ISO-8601 String (not {@code java.sql.Date}) so clickhouse-jdbc
+   * renders it quoted - same lesson as {@code findGamesForDate}: a bare date inlines as the token
+   * {@code 2026-06-04}, which ClickHouse evaluates as arithmetic. {@code pitch_type} is coalesced
+   * to {@code ""} because its column is a non-nullable {@code LowCardinality(String)}.
+   *
+   * <p>Returns the number of pitches submitted; ClickHouse batch-update counts are not reliable, so
+   * the FINAL read is the source of truth for what actually landed.
+   */
+  public int insertPitches(LiveGameFeed feed) {
+    List<LivePitch> pitches = feed.pitches();
+    if (pitches.isEmpty()) {
+      return 0;
+    }
+    String gameDate = Objects.requireNonNull(feed.gameDate(), "feed.gameDate()").toString();
+    String homeTeam = feed.homeAbbrev();
+    String awayTeam = feed.awayAbbrev();
+    jdbc.batchUpdate(
+        INSERT_PITCH,
+        new BatchPreparedStatementSetter() {
+          @Override
+          public void setValues(PreparedStatement ps, int i) throws SQLException {
+            LivePitch p = pitches.get(i);
+            ps.setLong(1, p.gameId());
+            ps.setInt(2, p.atBatIndex());
+            ps.setInt(3, p.pitchNumber());
+            ps.setString(4, gameDate);
+            ps.setLong(5, p.pitcherId());
+            ps.setLong(6, p.batterId());
+            ps.setString(7, p.description());
+            ps.setString(8, p.pitchType() == null ? "" : p.pitchType());
+            setNullableFloat(ps, 9, p.releaseSpeedMph());
+            setNullableFloat(ps, 10, p.plateXIn());
+            setNullableFloat(ps, 11, p.plateZIn());
+            ps.setInt(12, p.preBalls());
+            ps.setInt(13, p.preStrikes());
+            ps.setInt(14, p.outs());
+            ps.setInt(15, p.inning());
+            ps.setInt(16, p.homeScore());
+            ps.setInt(17, p.awayScore());
+            ps.setString(18, homeTeam);
+            ps.setString(19, awayTeam);
+          }
+
+          @Override
+          public int getBatchSize() {
+            return pitches.size();
+          }
+        });
+    return pitches.size();
+  }
+
+  private static void setNullableFloat(PreparedStatement ps, int idx, Double v)
+      throws SQLException {
+    if (v == null) {
+      ps.setNull(idx, Types.REAL);
+    } else {
+      ps.setDouble(idx, v);
+    }
   }
 
   public List<LivePitchRow> findPitchesSince(long gameId, long sinceCursor) {
