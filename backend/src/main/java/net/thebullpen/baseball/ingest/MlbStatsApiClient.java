@@ -1,0 +1,154 @@
+package net.thebullpen.baseball.ingest;
+
+import jakarta.annotation.PreDestroy;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
+import java.util.List;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.config.RequestConfig;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.impl.classic.HttpClients;
+import org.apache.hc.core5.http.HttpEntity;
+import org.apache.hc.core5.http.ParseException;
+import org.apache.hc.core5.http.io.entity.EntityUtils;
+import org.apache.hc.core5.util.Timeout;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Profile;
+import org.springframework.stereotype.Component;
+
+/**
+ * HTTP transport to the public MLB Stats API. Delegates all parsing to {@link MlbFeedParser}; this
+ * class only fetches (schedule + GUMBO live feed), with timeouts, a polite {@code User-Agent}, and
+ * exponential backoff on 429/5xx. Worker-profile only (decision [143]; the api profile never
+ * polls).
+ *
+ * <p>{@link #httpGet(String)} and {@link #backoff(int)} are package-private and overridable so the
+ * retry/orchestration logic is unit-testable against captured fixtures without a network or a mock
+ * server - the MLB HTTP boundary is the one place mocking is allowed (testing posture).
+ */
+@Component
+@Profile("worker")
+public class MlbStatsApiClient {
+
+  private static final Logger log = LoggerFactory.getLogger(MlbStatsApiClient.class);
+
+  private final MlbFeedParser parser;
+  private final String baseUrl;
+  private final String userAgent;
+  private final int maxRetries;
+  private final CloseableHttpClient http;
+
+  public MlbStatsApiClient(
+      MlbFeedParser parser,
+      @Value("${bullpen.ingest.live.base-url:https://statsapi.mlb.com}") String baseUrl,
+      @Value("${bullpen.ingest.live.user-agent:TheBullpen/1.0 (+https://thebullpen.net)}")
+          String userAgent,
+      @Value("${bullpen.ingest.live.timeout-ms:5000}") int timeoutMs,
+      @Value("${bullpen.ingest.live.max-retries:3}") int maxRetries) {
+    this.parser = parser;
+    this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
+    this.userAgent = userAgent;
+    this.maxRetries = maxRetries;
+    RequestConfig rc =
+        RequestConfig.custom()
+            .setConnectionRequestTimeout(Timeout.ofMilliseconds(timeoutMs))
+            .setResponseTimeout(Timeout.ofMilliseconds(timeoutMs))
+            .build();
+    this.http = HttpClients.custom().setDefaultRequestConfig(rc).build();
+  }
+
+  /** Today's (or any date's) MLB games, for poll discovery. */
+  public List<ScheduledGame> fetchSchedule(LocalDate date) throws IOException {
+    return parser.parseSchedule(getWithRetry(baseUrl + "/api/v1/schedule?sportId=1&date=" + date));
+  }
+
+  /** The GUMBO live feed for one game, parsed into status + every pitch so far. */
+  public LiveGameFeed fetchLiveFeed(long gamePk) throws IOException {
+    return parser.parseLiveFeed(getWithRetry(baseUrl + "/api/v1.1/game/" + gamePk + "/feed/live"));
+  }
+
+  String getWithRetry(String url) throws IOException {
+    IOException last = null;
+    for (int attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return httpGet(url);
+      } catch (RetryableHttpException e) {
+        last = e;
+        log.warn(
+            "retryable MLB API status {} for {} (attempt {}/{})",
+            e.statusCode,
+            url,
+            attempt + 1,
+            maxRetries + 1);
+      } catch (IOException e) {
+        last = e;
+        log.warn(
+            "MLB API IO error for {} (attempt {}/{}): {}",
+            url,
+            attempt + 1,
+            maxRetries + 1,
+            e.toString());
+      }
+      if (attempt < maxRetries) {
+        backoff(attempt);
+      }
+    }
+    throw last != null ? last : new IOException("MLB API request failed: " + url);
+  }
+
+  String httpGet(String url) throws IOException {
+    HttpGet get = new HttpGet(url);
+    get.addHeader("User-Agent", userAgent);
+    get.addHeader("Accept", "application/json");
+    return http.execute(
+        get,
+        response -> {
+          int code = response.getCode();
+          if (code == 429 || code >= 500) {
+            throw new RetryableHttpException(code);
+          }
+          if (code >= 400) {
+            throw new IOException("MLB API " + code + " for " + url);
+          }
+          return body(response.getEntity());
+        });
+  }
+
+  private static String body(HttpEntity entity) throws IOException {
+    if (entity == null) {
+      return "";
+    }
+    try {
+      return EntityUtils.toString(entity, StandardCharsets.UTF_8);
+    } catch (ParseException e) {
+      throw new IOException("unparseable MLB API entity", e);
+    }
+  }
+
+  void backoff(int attempt) {
+    try {
+      Thread.sleep(Math.min(2000L, 200L * (1L << attempt)));
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
+  }
+
+  @PreDestroy
+  void close() throws IOException {
+    http.close();
+  }
+
+  /** Signals a 429/5xx that {@link #getWithRetry(String)} should retry with backoff. */
+  static final class RetryableHttpException extends IOException {
+    private static final long serialVersionUID = 1L;
+    final int statusCode;
+
+    RetryableHttpException(int statusCode) {
+      super("retryable MLB API status " + statusCode);
+      this.statusCode = statusCode;
+    }
+  }
+}
