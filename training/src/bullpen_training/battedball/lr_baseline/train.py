@@ -1,0 +1,197 @@
+"""Train the pooled, park-agnostic logistic-regression baseline (rule 9 / decision [142]).
+
+One ``Pipeline(StandardScaler, LogisticRegression)`` on the 15 shared features (no park_id),
+plus 5 isotonic calibrators fit on a held-out season - the simplest honest floor the per-park
+MLP / LGBM must beat. Reuses ``lgbm_baseline.load_lgbm_dataset`` (all-parks, reads
+``bbip_retrodicted_labels FINAL``) and drops ``park_id`` to the 15 ``FEATURE_NAMES``.
+
+Runs on the desktop (ClickHouse lives there, ADR-0006):
+    uv run python -m bullpen_training.battedball.lr_baseline.train \\
+        --train-season-from 2015 --train-season-to 2024 --val-season 2025 \\
+        --out-dir artifacts/lr_baseline_batted_ball/v1
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+from dataclasses import dataclass
+from pathlib import Path
+
+import joblib
+import numpy as np
+import pandas as pd
+from sklearn.isotonic import IsotonicRegression
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+
+from bullpen_training.battedball.features_shared import FEATURE_NAMES, OUTCOME_NAMES
+from bullpen_training.battedball.lgbm_baseline.dataset import LABEL_COLUMN, load_lgbm_dataset
+from bullpen_training.battedball.parks.loader import load_all_parks
+
+
+@dataclass
+class LrBaselineBundle:
+    pipeline: Pipeline
+    calibrators: list[IsotonicRegression]
+    feature_columns: tuple[str, ...]
+    outcome_names: tuple[str, ...]
+    park_order: tuple[str, ...]
+    train_summary: dict[str, object]
+
+
+def _features(df: pd.DataFrame, columns: tuple[str, ...]) -> np.ndarray:
+    return df[list(columns)].to_numpy(dtype=np.float64)
+
+
+def train_lr_baseline(
+    *,
+    season_from: int,
+    season_to: int,
+    val_season: int,
+    limit: int | None = None,
+    max_iter: int = 1000,
+    container: str = "bullpen-clickhouse",
+) -> LrBaselineBundle:
+    if season_to >= 2026 or val_season >= 2026:
+        raise ValueError("rule 13: 2026 is holdout-only; train/val must be 2015-2025")
+
+    train_df = load_lgbm_dataset(
+        season_from=season_from, season_to=season_to, limit=limit, container=container
+    )
+    cal_df = load_lgbm_dataset(
+        season_from=val_season, season_to=val_season, limit=limit, container=container
+    )
+
+    x_train = _features(train_df, FEATURE_NAMES)  # park_id dropped -> pooled, park-agnostic
+    y_train = train_df[LABEL_COLUMN].to_numpy(dtype=np.int64)
+    pipeline = Pipeline(
+        [("scale", StandardScaler()), ("lr", LogisticRegression(max_iter=max_iter))]
+    ).fit(x_train, y_train)
+
+    x_cal = _features(cal_df, FEATURE_NAMES)
+    y_cal = cal_df[LABEL_COLUMN].to_numpy(dtype=np.int64)
+    raw_cal = np.asarray(pipeline.predict_proba(x_cal), dtype=np.float64)
+    calibrators: list[IsotonicRegression] = []
+    for c in range(len(OUTCOME_NAMES)):
+        iso = IsotonicRegression(out_of_bounds="clip")
+        iso.fit(raw_cal[:, c], (y_cal == c).astype(np.float64))
+        calibrators.append(iso)
+
+    return LrBaselineBundle(
+        pipeline=pipeline,
+        calibrators=calibrators,
+        feature_columns=FEATURE_NAMES,
+        outcome_names=OUTCOME_NAMES,
+        park_order=tuple(sorted(load_all_parks().keys())),
+        train_summary={
+            "train_rows": len(train_df),
+            "cal_rows": len(cal_df),
+            "train_seasons": f"{season_from}-{season_to}",
+            "val_season": val_season,
+        },
+    )
+
+
+def _calibrator_to_dict(iso: IsotonicRegression, outcome_name: str) -> dict:
+    return {
+        "outcome": outcome_name,
+        "x_thresholds": iso.X_thresholds_.astype(float).tolist(),
+        "y_thresholds": iso.y_thresholds_.astype(float).tolist(),
+        "y_min": float(iso.y_min) if iso.y_min is not None else None,
+        "y_max": float(iso.y_max) if iso.y_max is not None else None,
+        "out_of_bounds": iso.out_of_bounds,
+    }
+
+
+def _calibrator_from_dict(d: dict) -> IsotonicRegression:
+    iso = IsotonicRegression(
+        out_of_bounds=d.get("out_of_bounds", "clip"), y_min=d.get("y_min"), y_max=d.get("y_max")
+    )
+    iso.X_thresholds_ = np.asarray(d["x_thresholds"], dtype=np.float64)
+    iso.y_thresholds_ = np.asarray(d["y_thresholds"], dtype=np.float64)
+    iso.X_min_ = float(iso.X_thresholds_.min()) if iso.X_thresholds_.size else 0.0
+    iso.X_max_ = float(iso.X_thresholds_.max()) if iso.X_thresholds_.size else 1.0
+    iso.increasing_ = True
+    iso._build_f(iso.X_thresholds_, iso.y_thresholds_)
+    return iso
+
+
+def save_lr_baseline_bundle(bundle: LrBaselineBundle, out_dir: Path) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    joblib.dump(bundle.pipeline, out_dir / "pipeline.joblib")
+    (out_dir / "calibrator.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "model_name": "lr_baseline_batted_ball",
+                "outcome_order": list(bundle.outcome_names),
+                "classes": [
+                    _calibrator_to_dict(iso, name)
+                    for iso, name in zip(bundle.calibrators, bundle.outcome_names, strict=True)
+                ],
+            },
+            indent=2,
+        )
+    )
+    (out_dir / "metadata.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "model_name": "lr_baseline_batted_ball",
+                "model_version": "v1",
+                "framework": "sklearn",
+                "feature_columns": list(bundle.feature_columns),
+                "outcome_names": list(bundle.outcome_names),
+                "park_order": list(bundle.park_order),
+                "train_summary": bundle.train_summary,
+            },
+            indent=2,
+        )
+    )
+
+
+def load_lr_baseline_bundle(model_dir: Path) -> LrBaselineBundle:
+    pipeline = joblib.load(model_dir / "pipeline.joblib")
+    cal_payload = json.loads((model_dir / "calibrator.json").read_text())
+    calibrators = [_calibrator_from_dict(c) for c in cal_payload["classes"]]
+    md = json.loads((model_dir / "metadata.json").read_text())
+    return LrBaselineBundle(
+        pipeline=pipeline,
+        calibrators=calibrators,
+        feature_columns=tuple(md["feature_columns"]),
+        outcome_names=tuple(md["outcome_names"]),
+        park_order=tuple(md["park_order"]),
+        train_summary=md.get("train_summary", {}),
+    )
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Train the pooled LR batted-ball baseline.")
+    parser.add_argument("--train-season-from", type=int, default=2015)
+    parser.add_argument("--train-season-to", type=int, default=2024)
+    parser.add_argument("--val-season", type=int, default=2025)
+    parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument(
+        "--out-dir", type=Path, default=Path("artifacts/lr_baseline_batted_ball/v1")
+    )
+    args = parser.parse_args()
+
+    bundle = train_lr_baseline(
+        season_from=args.train_season_from,
+        season_to=args.train_season_to,
+        val_season=args.val_season,
+        limit=args.limit,
+    )
+    save_lr_baseline_bundle(bundle, args.out_dir)
+    print(
+        f"wrote LR baseline to {args.out_dir} "
+        f"(train {bundle.train_summary['train_rows']} rows, "
+        f"cal {bundle.train_summary['cal_rows']} rows, {len(bundle.park_order)} parks)\n"
+        "  NEXT: export to ONNX via lr_baseline.export_onnx, then register (rule-9 baseline)."
+    )
+
+
+if __name__ == "__main__":
+    main()
