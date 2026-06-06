@@ -162,16 +162,25 @@ public class LivePollingService {
   /**
    * Be a good citizen: keep at least {@code minApiGapMs} between MLB API calls (~2 req/s ceiling).
    */
-  private synchronized void rateLimit() {
-    long wait = minApiGapMs - (System.currentTimeMillis() - lastApiCallMs);
-    if (wait > 0) {
+  private void rateLimit() {
+    // Reserve this caller's slot under the lock, then sleep OUTSIDE it. Holding the monitor across
+    // Thread.sleep blocks every other caller for the whole gap (SpotBugs SWL_SLEEP_WITH_LOCK_HELD)
+    // and serializes nothing useful. Advancing lastApiCallMs to the reserved target also staggers
+    // concurrent callers (each reserves the next slot) instead of releasing a thundering herd.
+    long sleepFor;
+    synchronized (this) {
+      long now = System.currentTimeMillis();
+      long target = Math.max(now, lastApiCallMs + minApiGapMs);
+      sleepFor = target - now;
+      lastApiCallMs = target;
+    }
+    if (sleepFor > 0) {
       try {
-        Thread.sleep(wait);
+        Thread.sleep(sleepFor);
       } catch (InterruptedException e) {
         Thread.currentThread().interrupt();
       }
     }
-    lastApiCallMs = System.currentTimeMillis();
   }
 
   static long cursor(LivePitch p) {
