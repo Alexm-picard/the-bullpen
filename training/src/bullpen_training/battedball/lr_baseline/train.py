@@ -64,7 +64,9 @@ def _load_pooled_sample(
             container=container,
         )
         if not df_p.empty:
-            frames.append(df_p[[*FEATURE_NAMES, LABEL_COLUMN]])
+            # list-indexing returns a DataFrame at runtime; pd.DataFrame() pins it for the
+            # type checker (pandas stubs widen df[[...]] to Series | DataFrame).
+            frames.append(pd.DataFrame(df_p[[*FEATURE_NAMES, LABEL_COLUMN]]))
         print(
             f"  lr baseline sample: park {i}/{len(park_ids)} ({park}) "
             f"-> {sum(len(f) for f in frames)} rows so far...",
