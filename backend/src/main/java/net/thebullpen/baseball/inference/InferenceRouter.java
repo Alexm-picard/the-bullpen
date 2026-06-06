@@ -2,6 +2,7 @@ package net.thebullpen.baseball.inference;
 
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.function.Function;
 import net.thebullpen.baseball.inference.routing.Bucketer;
 import net.thebullpen.baseball.inference.routing.Role;
@@ -132,11 +133,22 @@ public class InferenceRouter {
   private static <Resp> Resp safeJoin(CompletableFuture<Resp> fut, String modelName) {
     try {
       return fut.join();
-    } catch (RuntimeException e) {
+    } catch (CompletionException e) {
+      // DEF-L3: degrade silently on inference / loading failures (the shadow contract), but never
+      // mask a programming bug (NPE / CCE) or a JVM Error as a "challenger failed" event - those
+      // are
+      // defects, not a degraded shadow run, and must surface loudly.
+      Throwable cause = e.getCause();
+      if (cause instanceof Error err) {
+        throw err;
+      }
+      if (cause instanceof NullPointerException || cause instanceof ClassCastException) {
+        throw e;
+      }
       log.warn(
           "InferenceRouter: challenger/shadow prediction for {} failed; degrading silently",
           modelName,
-          e);
+          cause != null ? cause : e);
       return null;
     }
   }

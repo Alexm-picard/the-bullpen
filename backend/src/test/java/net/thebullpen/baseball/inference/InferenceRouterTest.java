@@ -1,6 +1,7 @@
 package net.thebullpen.baseball.inference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -9,6 +10,7 @@ import static org.mockito.Mockito.when;
 
 import java.time.Instant;
 import java.util.Optional;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -171,6 +173,30 @@ class InferenceRouterTest {
     assertThat(result.hasShadowRow())
         .as("challenger failure must NOT create a shadow log row")
         .isFalse();
+  }
+
+  @Test
+  void shadow_mode_challenger_npe_surfaces_instead_of_silent_degradation() {
+    // DEF-L3: a programming bug (NPE) in the challenger must surface, not be masked as a degraded
+    // shadow run the way a genuine inference failure (a plain RuntimeException) is.
+    RoutingConfig cfg = abCfg("model_a", 100L, 200L, 0.0, RoutingMode.SHADOW);
+    when(routing.findRouting("model_a")).thenReturn(Optional.of(cfg));
+    when(bucketer.route(anyLong(), any(), any())).thenReturn(Role.CHAMPION);
+
+    assertThatThrownBy(
+            () ->
+                router.route(
+                    "model_a",
+                    12345L,
+                    vid -> {
+                      if (vid == 200L) {
+                        throw new NullPointerException("bug in challenger wiring");
+                      }
+                      return "champ-resp";
+                    },
+                    () -> "unused"))
+        .isInstanceOf(CompletionException.class)
+        .hasCauseInstanceOf(NullPointerException.class);
   }
 
   // --- helpers ----------------------------------------------------------
