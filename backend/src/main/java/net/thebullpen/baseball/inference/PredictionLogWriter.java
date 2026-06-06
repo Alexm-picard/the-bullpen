@@ -28,8 +28,9 @@ public class PredictionLogWriter {
   private static final String INSERT_SQL =
       "INSERT INTO prediction_log "
           + "(request_id, request_at, model_name, model_version, model_version_id, role, "
-          + " feature_hash, features, prediction, latency_ms, correlation_id) "
-          + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+          + " feature_hash, features, prediction, latency_ms, correlation_id, "
+          + " game_id, at_bat_index, pitch_number) "
+          + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
   private final DataSource clickhouse;
 
@@ -59,6 +60,22 @@ public class PredictionLogWriter {
         stmt.setString(9, ev.prediction());
         stmt.setFloat(10, ev.latencyMs());
         stmt.setString(11, ev.correlationId() == null ? "" : ev.correlationId());
+        // Live-game truth-join key (issue #1 step 3); null for HTTP-path + shadow predictions.
+        if (ev.gameId() == null) {
+          stmt.setNull(12, java.sql.Types.BIGINT);
+        } else {
+          stmt.setLong(12, ev.gameId());
+        }
+        if (ev.atBatIndex() == null) {
+          stmt.setNull(13, java.sql.Types.INTEGER);
+        } else {
+          stmt.setInt(13, ev.atBatIndex());
+        }
+        if (ev.pitchNumber() == null) {
+          stmt.setNull(14, java.sql.Types.INTEGER);
+        } else {
+          stmt.setInt(14, ev.pitchNumber());
+        }
         stmt.addBatch();
       }
       stmt.executeBatch();
