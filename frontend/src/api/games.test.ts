@@ -5,6 +5,7 @@ import {
   fetchGame,
   fetchLivePitchesSince,
   fetchTodaysGames,
+  mergePitchesNewestFirst,
   statusPollIntervalMs,
   type GameSummary,
   type LivePitchRow,
@@ -132,5 +133,42 @@ describe("fetch helpers", () => {
     const err = await fetchLivePitchesSince(777001, 0).catch((e) => e);
     expect(err).toBeInstanceOf(GameApiError);
     expect(err.status).toBe(500);
+  });
+});
+
+describe("mergePitchesNewestFirst", () => {
+  const at = (
+    cursor: number,
+    extra: Partial<LivePitchRow> = {},
+  ): LivePitchRow => ({
+    ...PITCH,
+    cursor,
+    ...extra,
+  });
+
+  it("returns pitches newest-first (highest cursor first)", () => {
+    const out = mergePitchesNewestFirst(new Map(), [at(101), at(103), at(102)]);
+    expect(out.map((p) => p.cursor)).toEqual([103, 102, 101]);
+  });
+
+  it("dedups + reconciles a re-sent cursor (replaces, not duplicates)", () => {
+    const store = new Map<number, LivePitchRow>();
+    mergePitchesNewestFirst(store, [at(101, { description: "ball" })]);
+    const out = mergePitchesNewestFirst(store, [
+      at(101, { description: "called_strike" }),
+      at(102),
+    ]);
+    expect(out.map((p) => p.cursor)).toEqual([102, 101]);
+    expect(out.find((p) => p.cursor === 101)?.description).toBe(
+      "called_strike",
+    );
+    expect(store.size).toBe(2); // bounded to distinct cursors, not appended
+  });
+
+  it("keeps the newest pitch first so the header [0] and slice(0,N) stay current", () => {
+    const many = Array.from({ length: 60 }, (_, i) => at(100 + i));
+    const out = mergePitchesNewestFirst(new Map(), many);
+    expect(out[0]?.cursor).toBe(159); // most recent, not the opener
+    expect(out.slice(0, 50)[0]?.cursor).toBe(159); // slice keeps the newest, never cuts it
   });
 });

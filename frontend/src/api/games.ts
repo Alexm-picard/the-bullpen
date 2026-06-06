@@ -123,13 +123,34 @@ export function useGame(id: number | null) {
 }
 
 /**
+ * Merge a delta of pitches into the cursor-keyed store and return all pitches NEWEST-FIRST.
+ *
+ * Keyed by `cursor` so a re-sent or corrected row replaces (not duplicates) its prior entry, and the
+ * store stays bounded to distinct pitches (DEF-L9). Newest-first is what the consumers expect: the
+ * game header reads `[0]` as the live pitch and `<LivePitchLog>` accents `[0]` as just-thrown and
+ * slices the most recent N (DEF-H4/H5) — the prior ascending order surfaced the oldest pitch as
+ * "most recent" and cut the newest pitches past 50.
+ */
+export function mergePitchesNewestFirst(
+  store: Map<number, LivePitchRow>,
+  delta: LivePitchRow[],
+): LivePitchRow[] {
+  for (const p of delta) {
+    store.set(p.cursor, p);
+  }
+  return [...store.values()].sort((a, b) => b.cursor - a.cursor);
+}
+
+/**
  * Polls the pitch delta. Keeps the last-seen cursor in a ref so the queryKey
  * doesn't change (which would discard the previous data on every poll); instead
- * the query function reads the current cursor at fetch time.
+ * the query function reads the current cursor at fetch time. Pitches are returned
+ * newest-first (see {@link mergePitchesNewestFirst}).
  */
 export function useLivePitches(id: number | null, status: string | undefined) {
   const cursorRef = useRef(0);
-  const seenRef = useRef<LivePitchRow[]>([]);
+  const storeRef = useRef<Map<number, LivePitchRow>>(new Map());
+  const sortedRef = useRef<LivePitchRow[]>([]);
 
   const query = useQuery<LivePitchRow[], GameApiError>({
     queryKey: ["games", "pitches", id],
@@ -140,16 +161,13 @@ export function useLivePitches(id: number | null, status: string | undefined) {
       if (id == null) throw new Error("id required");
       const delta = await fetchLivePitchesSince(id, cursorRef.current);
       if (delta.length > 0) {
-        const maxCursor = delta.reduce(
-          (acc, p) => Math.max(acc, p.cursor),
-          cursorRef.current,
-        );
-        cursorRef.current = maxCursor;
-        seenRef.current = [...seenRef.current, ...delta].sort(
-          (a, b) => a.cursor - b.cursor,
-        );
+        for (const p of delta) {
+          cursorRef.current = Math.max(cursorRef.current, p.cursor);
+        }
+        // Recompute only on new data so the array reference stays stable on empty polls.
+        sortedRef.current = mergePitchesNewestFirst(storeRef.current, delta);
       }
-      return seenRef.current;
+      return sortedRef.current;
     },
   });
 
