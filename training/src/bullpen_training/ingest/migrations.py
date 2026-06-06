@@ -74,10 +74,65 @@ def apply_migrations(client: Client, migrations_dir: Path | None = None) -> list
 
 
 def _split_statements(sql: str) -> list[str]:
-    """Strip `--` comment lines first, then split the remainder on `;`.
+    """Split a multi-statement SQL script on `;`, ignoring any `;` inside a single-quoted
+    string literal, a `-- ...` line comment, or a `/* ... */` block comment.
 
-    Comment-first order matters: a `;` inside a `-- ...` comment must not be
-    treated as a statement boundary.
+    The previous implementation dropped only whole lines whose stripped text began with
+    `--`, then split on `;`. That mis-handled a `;` inside an inline trailing comment
+    (``col Int32, -- id; pk``), inside a block comment, or inside a string literal
+    (``DEFAULT 'a;b'``) - each became a false statement boundary (DEF-L6). This is a small
+    char-scanner instead: comments are stripped from the emitted statements and a `;` only
+    splits when we're in plain SQL. Single quotes escape by doubling (`''`), matching
+    ClickHouse/ANSI SQL.
     """
-    decommented = "\n".join(line for line in sql.splitlines() if not line.strip().startswith("--"))
-    return [chunk.strip() for chunk in decommented.split(";") if chunk.strip()]
+    statements: list[str] = []
+    buf: list[str] = []
+    i, n = 0, len(sql)
+    in_string = in_line_comment = in_block_comment = False
+    while i < n:
+        c = sql[i]
+        nxt = sql[i + 1] if i + 1 < n else ""
+        if in_line_comment:
+            if c == "\n":
+                in_line_comment = False
+                buf.append("\n")
+            i += 1
+        elif in_block_comment:
+            if c == "*" and nxt == "/":
+                in_block_comment = False
+                buf.append(" ")  # avoid gluing tokens that hugged the comment
+                i += 2
+            else:
+                i += 1
+        elif in_string:
+            buf.append(c)
+            if c == "'":
+                if nxt == "'":  # doubled quote = escaped literal quote, stay in string
+                    buf.append(nxt)
+                    i += 2
+                    continue
+                in_string = False
+            i += 1
+        elif c == "-" and nxt == "-":
+            in_line_comment = True
+            i += 2
+        elif c == "/" and nxt == "*":
+            in_block_comment = True
+            i += 2
+        elif c == "'":
+            in_string = True
+            buf.append(c)
+            i += 1
+        elif c == ";":
+            stmt = "".join(buf).strip()
+            if stmt:
+                statements.append(stmt)
+            buf = []
+            i += 1
+        else:
+            buf.append(c)
+            i += 1
+    tail = "".join(buf).strip()
+    if tail:
+        statements.append(tail)
+    return statements
