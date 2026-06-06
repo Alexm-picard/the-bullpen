@@ -1,7 +1,10 @@
 package net.thebullpen.baseball.drift.alerting;
 
 import java.time.Duration;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import net.thebullpen.baseball.drift.DriftMetric;
@@ -51,6 +54,8 @@ public class DriftAlertEvaluator {
   private static final Duration DEDUP_WINDOW = Duration.ofHours(24);
   private static final Duration PAGE_LOOKBACK = Duration.ofDays(3);
   private static final Duration NOTICE_LOOKBACK = Duration.ofDays(7);
+  // "Consecutive days" is measured in calendar days in this zone (matches the 3 AM ET schedule).
+  private static final ZoneId ALERT_ZONE = ZoneId.of("America/New_York");
 
   private final RegistryRepository registryRepo;
   private final DriftMetricsRepository driftRepo;
@@ -101,11 +106,15 @@ public class DriftAlertEvaluator {
   private int evaluateCalibration(ModelVersion champ) {
     List<DriftMetric> recent =
         driftRepo.findRecent(champ.modelName(), MetricType.CALIBRATION_ERROR, "all", PAGE_LOOKBACK);
-    // Need at least 3 distinct daily-ish samples within the 3-day window.
-    if (recent.size() < 3) {
+    // Collapse to one canonical value per calendar day before counting "days": a same-day rerun of
+    // the 2:30 calibration batch writes multiple rows, and counting rows would let 3 reruns on one
+    // day masquerade as 3 consecutive days and fire a false PAGE (DEF-M3). Latest sample wins per
+    // day (reruns supersede). 3 distinct days within the 3-day lookback ARE consecutive.
+    List<Double> daily = dailyCanonical(recent);
+    if (daily.size() < 3) {
       return 0;
     }
-    boolean allOver = recent.stream().allMatch(m -> m.metricValue() > calibrationPageThreshold);
+    boolean allOver = daily.stream().allMatch(v -> v > calibrationPageThreshold);
     if (!allOver) {
       return 0;
     }
@@ -114,7 +123,7 @@ public class DriftAlertEvaluator {
       log.debug("DriftAlertEvaluator: PAGE for {} suppressed by 24h dedup", key);
       return 0;
     }
-    double worst = recent.stream().mapToDouble(DriftMetric::metricValue).max().orElse(0.0);
+    double worst = daily.stream().mapToDouble(Double::doubleValue).max().orElse(0.0);
     discord.send(
         DiscordNotifier.Severity.WARN,
         "PAGE: " + champ.modelName() + " calibration drifted",
@@ -126,7 +135,7 @@ public class DriftAlertEvaluator {
             "threshold",
             calibrationPageThreshold,
             "consecutive_days",
-            recent.size(),
+            daily.size(),
             "runbook",
             "docs/runbooks/calibration-drift-investigation.md"));
     historyRepo.record(
@@ -134,7 +143,7 @@ public class DriftAlertEvaluator {
         AlertSeverity.PAGE,
         worst,
         calibrationPageThreshold,
-        "Sustained calibration drift for " + recent.size() + " days");
+        "Sustained calibration drift for " + daily.size() + " days");
     return 1;
   }
 
@@ -162,11 +171,13 @@ public class DriftAlertEvaluator {
     }
     for (var entry : byFeature.entrySet()) {
       String feature = entry.getKey();
-      List<DriftMetric> rows = entry.getValue();
-      if (rows.size() < 7) {
+      // Same calendar-day collapse as calibration: 7 distinct days over threshold, not 7 rows
+      // (a same-day PSI rerun must not count twice toward the 7-day sustain) (DEF-M3).
+      List<Double> daily = dailyCanonical(entry.getValue());
+      if (daily.size() < 7) {
         continue;
       }
-      if (!rows.stream().allMatch(m -> m.metricValue() > featurePsiNoticeThreshold)) {
+      if (!daily.stream().allMatch(v -> v > featurePsiNoticeThreshold)) {
         continue;
       }
       String key = "drift/" + champ.modelName() + "/psi_feature/" + feature;
@@ -174,7 +185,7 @@ public class DriftAlertEvaluator {
         log.debug("DriftAlertEvaluator: NOTICE for {} suppressed by 24h dedup", key);
         continue;
       }
-      double worst = rows.stream().mapToDouble(DriftMetric::metricValue).max().orElse(0.0);
+      double worst = daily.stream().mapToDouble(Double::doubleValue).max().orElse(0.0);
       discord.send(
           DiscordNotifier.Severity.NOTICE,
           "NOTICE: " + champ.modelName() + " feature drift on " + feature,
@@ -188,7 +199,7 @@ public class DriftAlertEvaluator {
               "threshold",
               featurePsiNoticeThreshold,
               "consecutive_days",
-              rows.size(),
+              daily.size(),
               "runbook",
               "docs/runbooks/feature-drift-investigation.md"));
       historyRepo.record(
@@ -196,7 +207,7 @@ public class DriftAlertEvaluator {
           AlertSeverity.NOTICE,
           worst,
           featurePsiNoticeThreshold,
-          "Sustained PSI drift on " + feature + " for " + rows.size() + " days");
+          "Sustained PSI drift on " + feature + " for " + daily.size() + " days");
       fired++;
     }
     // Suppress the unused-variable warning on the original 7-day exact-segment query.
@@ -206,6 +217,27 @@ public class DriftAlertEvaluator {
           recent.size());
     }
     return fired;
+  }
+
+  /**
+   * Collapse drift rows to one canonical value per calendar day (in {@link #ALERT_ZONE}), the
+   * latest sample winning so a same-day rerun supersedes rather than double-counts. Ordered
+   * ascending by day, so "N values within an N-day lookback" correctly means N consecutive days
+   * (DEF-M3).
+   */
+  private static List<Double> dailyCanonical(List<DriftMetric> rows) {
+    Map<LocalDate, DriftMetric> latestPerDay = new HashMap<>();
+    for (DriftMetric m : rows) {
+      LocalDate day = m.computedAt().atZone(ALERT_ZONE).toLocalDate();
+      DriftMetric cur = latestPerDay.get(day);
+      if (cur == null || m.computedAt().isAfter(cur.computedAt())) {
+        latestPerDay.put(day, m);
+      }
+    }
+    return latestPerDay.entrySet().stream()
+        .sorted(Map.Entry.comparingByKey())
+        .map(e -> e.getValue().metricValue())
+        .toList();
   }
 
   private List<ModelVersion> activeChampions() {

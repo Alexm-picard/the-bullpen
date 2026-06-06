@@ -163,6 +163,79 @@ class DriftAlertEvaluatorIT {
     assertThat(evaluator.runOnce()).isEqualTo(0);
   }
 
+  @Test
+  void calibration_three_same_day_reruns_do_not_fire_page() {
+    // DEF-M3: 3 rows ALL on the same calendar day (a thrice-rerun 2:30 batch), each over the
+    // threshold. Counting rows would fire a false "3 consecutive days" PAGE; counting calendar
+    // days must not. Fixed midday-NY instants so the same-day grouping can't straddle midnight.
+    ModelVersion champ = champion("model_a", 1L);
+    when(registryRepo.findAllNameVersionPairs())
+        .thenReturn(List.<String[]>of(new String[] {"model_a", "v1"}));
+    when(registryRepo.findByName("model_a")).thenReturn(List.of(champ));
+    Instant noonEt = Instant.parse("2026-06-06T16:00:00Z"); // 12:00 EDT
+    List<DriftMetric> sameDay =
+        List.of(
+            metric("model_a", MetricType.CALIBRATION_ERROR, "all", 0.15, noonEt),
+            metric(
+                "model_a",
+                MetricType.CALIBRATION_ERROR,
+                "all",
+                0.15,
+                noonEt.minus(2, ChronoUnit.HOURS)),
+            metric(
+                "model_a",
+                MetricType.CALIBRATION_ERROR,
+                "all",
+                0.15,
+                noonEt.minus(4, ChronoUnit.HOURS)));
+    when(driftRepo.findRecent(
+            eq("model_a"), eq(MetricType.CALIBRATION_ERROR), eq("all"), any(Duration.class)))
+        .thenReturn(sameDay);
+    when(driftRepo.findAllForModel("model_a")).thenReturn(List.of());
+
+    assertThat(evaluator.runOnce()).as("3 same-day reruns are 1 day, not 3").isEqualTo(0);
+    verify(discord, never()).send(any(), any(), any());
+  }
+
+  @Test
+  void calibration_latest_same_day_rerun_wins_over_earlier_under_threshold() {
+    // DEF-M3 latest-wins: day 0 had an early under-threshold reading then a later over-threshold
+    // correction; days 1 and 2 are over. The corrected (latest) value for day 0 should win, so all
+    // 3 distinct days are over and the PAGE fires.
+    ModelVersion champ = champion("model_a", 1L);
+    when(registryRepo.findAllNameVersionPairs())
+        .thenReturn(List.<String[]>of(new String[] {"model_a", "v1"}));
+    when(registryRepo.findByName("model_a")).thenReturn(List.of(champ));
+    Instant day0Noon = Instant.parse("2026-06-06T16:00:00Z");
+    List<DriftMetric> rows =
+        List.of(
+            metric(
+                "model_a",
+                MetricType.CALIBRATION_ERROR,
+                "all",
+                0.05,
+                day0Noon.minus(3, ChronoUnit.HOURS)), // early, under threshold
+            metric("model_a", MetricType.CALIBRATION_ERROR, "all", 0.15, day0Noon), // correction
+            metric(
+                "model_a",
+                MetricType.CALIBRATION_ERROR,
+                "all",
+                0.15,
+                day0Noon.minus(1, ChronoUnit.DAYS)),
+            metric(
+                "model_a",
+                MetricType.CALIBRATION_ERROR,
+                "all",
+                0.15,
+                day0Noon.minus(2, ChronoUnit.DAYS)));
+    when(driftRepo.findRecent(
+            eq("model_a"), eq(MetricType.CALIBRATION_ERROR), eq("all"), any(Duration.class)))
+        .thenReturn(rows);
+    when(driftRepo.findAllForModel("model_a")).thenReturn(List.of());
+
+    assertThat(evaluator.runOnce()).as("latest same-day correction wins").isEqualTo(1);
+  }
+
   // --- 24h dedup --------------------------------------------------------
 
   @Test
