@@ -1,0 +1,69 @@
+{
+  "gamePk": 822810,
+  "gameData": {
+    "game": {
+      "pk": 822810
+    },
+    "datetime": {
+      "dateTime": "2026-06-05T23:07:00Z",
+      "officialDate": "2026-06-05"
+    },
+    "status": {
+      "detailedState": "In Progress",
+      "abstractGameState": "Live"
+    },
+    "teams": {
+      "home": {
+        "id": 141,
+        "abbreviation": "TOR"
+      },
+      "away": {
+        "id": 110,
+        "abbreviation": "BAL"
+      }
+    },
+    "venue": {
+      "name": "Rogers Centre"
+    }
+  },
+  "liveData": {
+    "plays": {
+      "currentPlay": {
+        "about": {
+          "atBatIndex": 77,
+          "halfInning": "bottom",
+          "isTopInning": false,
+          "inning": 9,
+          "isComplete": false
+        },
+        "count": {
+          "balls": 0,
+          "strikes": 0,
+          "outs": 0
+        },
+        "matchup": {
+          "batter": {
+            "id": 676391,
+            "fullName": "Ernie Clement"
+          },
+          "pitcher": {
+            "id": 689296,
+            "fullName": "Anthony Nunez"
+          },
+          "batSide": {
+            "code": "R"
+          },
+          "pitchHand": {
+            "code": "R"
+          },
+          "postOnFirst": {
+            "id": 682818
+          },
+          "postOnSecond": null,
+          "postOnThird": null
+        },
+        "playEvents": []
+      }
+    }
+  }
+}

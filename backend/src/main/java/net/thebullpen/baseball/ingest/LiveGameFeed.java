@@ -16,4 +16,7 @@ public record LiveGameFeed(
     int awayTeamId,
     String homeAbbrev,
     String awayAbbrev,
-    List<LivePitch> pitches) {}
+    List<LivePitch> pitches,
+    // The pitch about to be thrown (decision [143] predict-next), from currentPlay; null when the
+    // game isn't awaiting a pitch (between at-bats, or final).
+    LiveNextPitch nextPitch) {}

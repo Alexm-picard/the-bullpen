@@ -29,7 +29,7 @@ import org.springframework.stereotype.Component;
  * env), the logger silently no-ops — the API still serves; logging is best-effort.
  */
 @Component
-@Profile("api")
+@Profile({"api", "worker"})
 public class AsyncPredictionLogger {
 
   private static final Logger log = LoggerFactory.getLogger(AsyncPredictionLogger.class);

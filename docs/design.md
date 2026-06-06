@@ -746,9 +746,12 @@ One JAR, two profiles, two systemd units. Different runtime
 characteristics, shared codebase.
 
 ```
-@Profile("api")    → web controllers, inference loader, async logger
-@Profile("worker") → @Scheduled jobs, drift computation, ingest
-(no profile)       → @Repository, registry service, domain models
+@Profile("api")            → web controllers
+@Profile("worker")         → @Scheduled jobs, drift computation, ingest (incl. the live-game poller)
+@Profile({"api","worker"}) → inference loader + async prediction logger
+                             (HTTP predictions on api; live-game predictions on the worker's
+                             poller — in-process per decision [27]; widened by decision [144])
+(no profile)               → @Repository, registry service, domain models
 ```
 
 Why split: drift computation jobs scan days of prediction logs in

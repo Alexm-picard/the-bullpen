@@ -40,7 +40,7 @@ import org.springframework.stereotype.Component;
  * pass at 1e-6 against each head's fixture.
  */
 @Component
-@Profile("api")
+@Profile({"api", "worker"})
 @ConditionalOnExpression(
     "T(java.nio.file.Files).exists(T(java.nio.file.Path).of('${bullpen.inference.pitch.artifacts-dir:../training/artifacts/pitch_outcome_pre/v1}').resolve('model.onnx'))")
 public class PitchInferenceService {

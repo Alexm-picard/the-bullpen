@@ -156,15 +156,58 @@ public class MlbFeedParser {
       awayScore = play.path("result").path("awayScore").asInt(awayScore);
     }
 
+    LocalDate gameDate = parseGameDate(gameData);
+    String parkId = textOrNull(home.path("abbreviation"));
     return new LiveGameFeed(
         gamePk,
         status,
-        parseGameDate(gameData),
+        gameDate,
         home.path("id").asInt(),
         away.path("id").asInt(),
-        textOrNull(home.path("abbreviation")),
+        parkId,
         textOrNull(away.path("abbreviation")),
-        pitches);
+        pitches,
+        parseNextPitch(root, gamePk, gameDate, parkId));
+  }
+
+  /**
+   * Extract the pre-pitch context for the pitch about to be thrown from {@code currentPlay}
+   * (decision [143] predict-next). Returns null when there is no pitch to predict - currentPlay
+   * missing, or the at-bat is already complete (between at-bats, or the game is final).
+   */
+  private static LiveNextPitch parseNextPitch(
+      JsonNode root, long gamePk, LocalDate gameDate, String parkId) {
+    JsonNode cp = root.path("liveData").path("plays").path("currentPlay");
+    if (cp.isMissingNode() || cp.path("about").path("isComplete").asBoolean(false)) {
+      return null;
+    }
+    JsonNode about = cp.path("about");
+    JsonNode matchup = cp.path("matchup");
+    JsonNode count = cp.path("count");
+    int pitchesSoFar = 0;
+    for (JsonNode e : cp.path("playEvents")) {
+      if (e.path("isPitch").asBoolean()) {
+        pitchesSoFar++;
+      }
+    }
+    return new LiveNextPitch(
+        gamePk,
+        about.path("atBatIndex").asInt(),
+        pitchesSoFar + 1,
+        about.path("inning").asInt(),
+        about.path("isTopInning").asBoolean(),
+        matchup.path("pitcher").path("id").asLong(),
+        matchup.path("batter").path("id").asLong(),
+        textOrNull(matchup.path("pitchHand").path("code")),
+        textOrNull(matchup.path("batSide").path("code")),
+        count.path("balls").asInt(),
+        count.path("strikes").asInt(),
+        count.path("outs").asInt(),
+        isOccupied(matchup.path("postOnFirst")),
+        isOccupied(matchup.path("postOnSecond")),
+        isOccupied(matchup.path("postOnThird")),
+        parkId,
+        gameDate);
   }
 
   private static LocalDate parseGameDate(JsonNode gameData) {

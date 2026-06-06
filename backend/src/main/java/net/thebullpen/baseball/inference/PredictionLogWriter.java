@@ -19,7 +19,7 @@ import org.springframework.stereotype.Component;
  * and {@link AsyncPredictionLogger} flips to noop mode rather than crashing the app at startup.
  */
 @Component
-@Profile("api")
+@Profile({"api", "worker"})
 @ConditionalOnBean(name = "clickhouseDataSource")
 public class PredictionLogWriter {
 

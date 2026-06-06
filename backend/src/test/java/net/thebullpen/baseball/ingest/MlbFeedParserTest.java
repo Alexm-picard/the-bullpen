@@ -3,6 +3,7 @@ package net.thebullpen.baseball.ingest;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -130,5 +131,37 @@ class MlbFeedParserTest {
       assertTrue(p.outs() >= 0 && p.outs() <= 2, "outs in 0..2");
       assertTrue(p.baseState() >= 0 && p.baseState() <= 7, "base state is a 3-bit mask");
     }
+  }
+
+  @Test
+  void parseLiveFeed_extracts_the_next_pitch_context_from_currentPlay() throws IOException {
+    LiveGameFeed feed = parser.parseLiveFeed(resource("/mlb/feed_live_inprogress.json"));
+
+    assertEquals(GameStatus.IN_PROGRESS, feed.status());
+    LiveNextPitch np = feed.nextPitch();
+    assertNotNull(np, "an in-progress at-bat is awaiting a pitch");
+    assertEquals(822810L, np.gameId());
+    assertEquals(77, np.atBatIndex());
+    assertEquals(1, np.pitchNumber(), "0 pitches thrown this at-bat -> next is pitch 1");
+    assertEquals(9, np.inning());
+    assertFalse(np.topInning(), "bottom of the 9th");
+    assertEquals(689296L, np.pitcherId());
+    assertEquals(676391L, np.batterId());
+    assertEquals("R", np.pitchHand());
+    assertEquals("R", np.batSide());
+    assertEquals(0, np.balls());
+    assertEquals(0, np.strikes());
+    assertEquals(0, np.outs());
+    assertTrue(np.onFirst(), "runner on first");
+    assertFalse(np.onSecond());
+    assertEquals(1, np.baseState());
+    assertEquals("TOR", np.parkId(), "park id is the home team");
+    assertEquals(LocalDate.of(2026, 6, 5), np.gameDate());
+  }
+
+  @Test
+  void parseLiveFeed_has_no_next_pitch_for_a_completed_game() throws IOException {
+    // The full-game fixture is Final and carries no currentPlay -> nothing to predict.
+    assertNull(parser.parseLiveFeed(resource("/mlb/feed_live_824753.json")).nextPitch());
   }
 }
