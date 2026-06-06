@@ -125,6 +125,55 @@ class PredictBattedBallControllerTest {
   }
 
   @Test
+  void garbageGameIdHeader_returns400_not500() throws Exception {
+    // Schemathesis sent a non-numeric X-Bullpen-Game-Id (binds to Long) and got a 500.
+    String body =
+        MAPPER.writeValueAsString(
+            Map.of(
+                "launchSpeedMph", 95.0,
+                "launchAngleDeg", 12.0,
+                "releaseSpeedMph", 90.0,
+                "parkId", "NYY",
+                "stand", "R"));
+    mvc()
+        .perform(
+            post("/v1/predict/batted-ball")
+                .header("X-Bullpen-Game-Id", "not-a-long")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void parkIdAsArray_returns400_not500() throws Exception {
+    String body =
+        "{\"launchSpeedMph\":95.0,\"launchAngleDeg\":12.0,\"releaseSpeedMph\":90.0,"
+            + "\"parkId\":[{}],\"stand\":\"R\"}";
+    mvc()
+        .perform(
+            post("/v1/predict/batted-ball").contentType(MediaType.APPLICATION_JSON).content(body))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void unknownParkId_doesNotProduce5xx() throws Exception {
+    // A schema-valid but unknown park id passes Bean Validation, then reaches inference - if the
+    // feature pipeline NPEs on an unrecognized park this 500s instead of predicting gracefully.
+    String body =
+        MAPPER.writeValueAsString(
+            Map.of(
+                "launchSpeedMph", 95.0,
+                "launchAngleDeg", 12.0,
+                "releaseSpeedMph", 90.0,
+                "parkId", "ZZ_UNKNOWN_PARK",
+                "stand", "R"));
+    mvc()
+        .perform(
+            post("/v1/predict/batted-ball").contentType(MediaType.APPLICATION_JSON).content(body))
+        .andExpect(status().is(org.hamcrest.Matchers.lessThan(500)));
+  }
+
+  @Test
   void rejectsLaunchSpeedOutOfRange_with400() throws Exception {
     String body =
         MAPPER.writeValueAsString(
