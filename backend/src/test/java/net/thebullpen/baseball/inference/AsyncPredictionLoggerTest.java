@@ -77,7 +77,7 @@ class AsyncPredictionLoggerTest {
   }
 
   @Test
-  void writerFailure_incrementsFailureCounter_andDoesNotPropagate() throws InterruptedException {
+  void writerFailure_reEnqueuesBatch_noLossWithHeadroom() throws InterruptedException {
     PredictionLogWriter throwing =
         new PredictionLogWriter(null) {
           @Override
@@ -92,10 +92,44 @@ class AsyncPredictionLoggerTest {
       logger.flushOnce();
       assertThat(registry.counter("thebullpen_prediction_log_write_failures_total").count())
           .isEqualTo(1);
-      assertThat(registry.counter("thebullpen_prediction_log_dropped_total").count()).isEqualTo(5);
+      // DEF-M1: a transient write failure re-enqueues the batch (the queue has headroom), so
+      // nothing is dropped and the events survive to be retried.
+      assertThat(registry.counter("thebullpen_prediction_log_dropped_total").count()).isEqualTo(0);
+      assertThat(logger.queueDepth()).isEqualTo(5);
     } finally {
       logger.stop();
     }
+  }
+
+  @Test
+  void writerFailure_thenRecovery_deliversEverything() throws InterruptedException {
+    FailOnceWriter writer = new FailOnceWriter();
+    AsyncPredictionLogger logger = new AsyncPredictionLogger(Optional.of(writer), registry, 32);
+    try {
+      logger.start();
+      for (int i = 0; i < 5; i++) logger.enqueue(sampleEvent(i));
+      logger.flushOnce(); // transient failure -> re-enqueues 5
+      logger.flushOnce(); // recovers -> writes 5
+      assertThat(writer.captured()).hasSize(5);
+      assertThat(registry.counter("thebullpen_prediction_log_write_failures_total").count())
+          .isEqualTo(1);
+      assertThat(registry.counter("thebullpen_prediction_log_dropped_total").count()).isEqualTo(0);
+    } finally {
+      logger.stop();
+    }
+  }
+
+  @Test
+  void shutdownDrain_survivesATransientFailure() throws InterruptedException {
+    // DEF-M2: a single failed flush during @PreDestroy must not abandon the rest of the queue.
+    FailOnceWriter writer = new FailOnceWriter();
+    AsyncPredictionLogger logger = new AsyncPredictionLogger(Optional.of(writer), registry, 32);
+    logger.start();
+    for (int i = 0; i < 5; i++) logger.enqueue(sampleEvent(i));
+    logger.stop(); // drain: first flush fails (re-enqueues), second succeeds -> all 5 written
+
+    assertThat(writer.captured()).hasSize(5);
+    assertThat(logger.queueDepth()).isEqualTo(0);
   }
 
   @Test
@@ -211,6 +245,31 @@ class AsyncPredictionLoggerTest {
     public synchronized void writeBatch(List<PredictionLogEvent> batch) {
       captured.addAll(batch);
       calls.incrementAndGet();
+    }
+
+    synchronized List<PredictionLogEvent> captured() {
+      return new ArrayList<>(captured);
+    }
+  }
+
+  /**
+   * Fails the first writeBatch (a transient outage), succeeds after - exercises re-enqueue + drain.
+   */
+  private static final class FailOnceWriter extends PredictionLogWriter {
+    private final List<PredictionLogEvent> captured = new ArrayList<>();
+    private boolean failedOnce = false;
+
+    FailOnceWriter() {
+      super(null);
+    }
+
+    @Override
+    public synchronized void writeBatch(List<PredictionLogEvent> batch) {
+      if (!failedOnce) {
+        failedOnce = true;
+        throw new RuntimeException("transient ClickHouse outage");
+      }
+      captured.addAll(batch);
     }
 
     synchronized List<PredictionLogEvent> captured() {

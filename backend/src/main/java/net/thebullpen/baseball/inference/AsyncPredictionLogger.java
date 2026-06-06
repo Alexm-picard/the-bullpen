@@ -37,6 +37,9 @@ public class AsyncPredictionLogger {
   private static final int FLUSH_BATCH_SIZE = 500;
   private static final long FLUSH_INTERVAL_SECONDS = 1L;
   private static final long SHUTDOWN_TIMEOUT_SECONDS = 10L;
+  // Cap on consecutive failed flushes during shutdown so a persistently-unreachable ClickHouse
+  // can't hang @PreDestroy (each failure re-enqueues its batch via flushOnce).
+  private static final int MAX_SHUTDOWN_FLUSH_FAILURES = 3;
 
   private final BlockingQueue<PredictionLogEvent> queue;
   private final Optional<PredictionLogWriter> writer;
@@ -113,9 +116,23 @@ public class AsyncPredictionLogger {
       writer.get().writeBatch(batch);
       return batch.size();
     } catch (Exception e) {
+      // A transient ClickHouse write failure must NOT lose the batch: re-offer it (it goes to the
+      // back of the queue, retried on the next flush). Drop only what no longer fits - that is the
+      // genuine overload case decision [30] sanctions, distinct from a write failure.
       writeFailedCounter.increment();
-      droppedCounter.increment(batch.size());
-      log.warn("prediction_log batch flush failed size={} cause={}", batch.size(), e.toString());
+      int requeued = 0;
+      for (PredictionLogEvent ev : batch) {
+        if (queue.offer(ev)) {
+          requeued++;
+        } else {
+          droppedCounter.increment();
+        }
+      }
+      log.warn(
+          "prediction_log batch flush failed size={} requeued={} cause={}",
+          batch.size(),
+          requeued,
+          e.toString());
       return -1;
     }
   }
@@ -139,9 +156,23 @@ public class AsyncPredictionLogger {
     if (!flusher.awaitTermination(SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
       flusher.shutdownNow();
     }
-    // Final drain so we don't lose anything that landed while the flusher was sleeping.
-    while (flushOnce() > 0) {
-      // keep going
+    // Final drain so we don't lose anything that landed while the flusher was sleeping. A single
+    // failed flush no longer abandons the rest of the queue: flushOnce returns -1 on a write
+    // failure (and re-enqueues the batch), so we loop on queue depth, not the return value, and the
+    // next batch may write fine. The failure cap bounds shutdown so a persistently-unreachable
+    // ClickHouse can't hang @PreDestroy.
+    int failedFlushes = 0;
+    while (queueDepth() > 0 && failedFlushes < MAX_SHUTDOWN_FLUSH_FAILURES) {
+      int flushed = flushOnce();
+      if (flushed == 0) {
+        break; // queue drained (or no writer)
+      }
+      if (flushed < 0) {
+        failedFlushes++;
+      }
+    }
+    if (queueDepth() > 0) {
+      log.warn("prediction_log shutdown left {} events unflushed", queueDepth());
     }
   }
 }
