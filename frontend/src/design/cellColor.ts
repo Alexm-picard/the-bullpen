@@ -93,7 +93,12 @@ function estimatePercentile(
     const [x0, p0] = breakpoints[i - 1]!;
     const [x1, p1] = breakpoints[i]!;
     if (value <= x1) {
-      const t = (value - x0) / (x1 - x0);
+      // A degenerate reference (e.g. p25 === median when a feature is
+      // concentrated) collapses a segment to zero width; dividing would yield
+      // NaN/Infinity and an arbitrary ramp end. Treat the collapsed point as a
+      // step and take the lower percentile (finite + monotonic) (DEF-L8).
+      const span = x1 - x0;
+      const t = span > 0 ? (value - x0) / span : 0;
       return p0 + t * (p1 - p0);
     }
   }

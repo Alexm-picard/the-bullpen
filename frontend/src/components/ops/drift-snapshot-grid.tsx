@@ -75,11 +75,16 @@ function eceRows(outputs: DriftOutputRow[]): StatTableRow[] {
 }
 
 function formatPsi(v: unknown): string {
-  return Number(v).toFixed(2);
+  const n = Number(v);
+  // A non-numeric string sentinel from live /v1/ops data (StatTable already
+  // maps null -> em-dash, but passes strings through) would render "NaN" (DEF-L7).
+  if (!Number.isFinite(n)) return "—";
+  return n.toFixed(2);
 }
 
 function formatEce(v: unknown): string {
   const n = Number(v);
+  if (!Number.isFinite(n)) return "—";
   const sign = n > 0 ? "+" : "";
   return `${sign}${n.toFixed(3)}`;
 }

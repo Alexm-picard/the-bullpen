@@ -168,3 +168,43 @@ describe("cellColor — always returns a token hex", () => {
     }
   });
 });
+
+describe("cellColor — degenerate / malformed reference (DEF-L8)", () => {
+  const HEX6 = /^#[0-9A-Fa-f]{6}$/;
+
+  // A concentrated feature collapses interior breakpoints (p25 === median ===
+  // p75). The piecewise-linear percentile must not divide by a zero-width
+  // segment and emit NaN/Infinity -> an arbitrary ramp end.
+  it("collapsed interior breakpoints still return a valid ramp hex", () => {
+    const metric = {
+      key: "psi",
+      direction: "lower-is-better" as const,
+      reference: { min: 0, p25: 50, median: 50, p75: 50, max: 100 },
+    };
+    for (const v of [0, 10, 49.9, 50, 50.1, 90, 100]) {
+      expect(cellColor(v, metric)).toMatch(HEX6);
+    }
+  });
+
+  it("fully-collapsed reference returns a valid ramp hex (no NaN)", () => {
+    const metric = {
+      key: "psi",
+      direction: "higher-is-better" as const,
+      reference: { min: 5, p25: 5, median: 5, p75: 5, max: 5 },
+    };
+    for (const v of [0, 5, 10]) {
+      expect(cellColor(v, metric)).toMatch(HEX6);
+    }
+  });
+
+  it("non-monotonic (malformed) reference never emits a NaN-derived color", () => {
+    const metric = {
+      key: "psi",
+      direction: "higher-is-better" as const,
+      reference: { min: 0, p25: 60, median: 50, p75: 55, max: 100 },
+    };
+    for (const v of [0, 25, 50, 55, 60, 100]) {
+      expect(cellColor(v, metric)).toMatch(HEX6);
+    }
+  });
+});
