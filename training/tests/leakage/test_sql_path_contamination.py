@@ -34,7 +34,7 @@ import os
 from collections.abc import Iterator
 from dataclasses import replace
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from clickhouse_driver import Client
@@ -248,9 +248,13 @@ def _build(ch: Client, fold_id: int, encodings_dir: Any) -> None:
 
 def _read_te(ch: Client, fold_id: int) -> list[tuple[float, ...]]:
     cols = ", ".join(TE_COLUMNS)
-    return ch.execute(
-        f"SELECT {cols} FROM features WHERE fold = {fold_id} "
-        f"ORDER BY game_date, game_id, at_bat_index, pitch_number"
+    # clickhouse_driver's execute() is typed as a broad union; this SELECT returns row tuples.
+    return cast(
+        "list[tuple[float, ...]]",
+        ch.execute(
+            f"SELECT {cols} FROM features WHERE fold = {fold_id} "
+            f"ORDER BY game_date, game_id, at_bat_index, pitch_number"
+        ),
     )
 
 
