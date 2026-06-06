@@ -82,13 +82,11 @@ public class ModelLoader {
    * 3a.5 runbook).
    */
   public LoadedBattedBallModel loadBattedBall(long versionId) {
-    LoadedBattedBallModel cached = battedBallCache.getIfPresent(versionId);
-    if (cached != null) {
-      return cached;
-    }
-    LoadedBattedBallModel fresh = loadBattedBallFresh(versionId);
-    battedBallCache.put(versionId, fresh);
-    return fresh;
+    // BUG-4: atomic load. Caffeine runs the mapping function at most once per key under contention,
+    // so two concurrent cold-cache misses can't each open an ORT session - the get-then-put it
+    // replaces let the loser's bundle never reach the cache, so the removalListener never fired for
+    // it and its native ORT session leaked (plus a wasted double-load).
+    return battedBallCache.get(versionId, this::loadBattedBallFresh);
   }
 
   private LoadedBattedBallModel loadBattedBallFresh(long versionId) {
