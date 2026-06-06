@@ -6,3 +6,17 @@ spring:
   threads:
     virtual:
       enabled: true
+
+bullpen:
+  ingest:
+    live:
+      # Live-game poller (issue #1). OFF by default so a deploy never silently starts polling;
+      # flip BULLPEN_INGEST_LIVE_ENABLED=true in /etc/default/bullpen to turn it on (off-window).
+      enabled: ${BULLPEN_INGEST_LIVE_ENABLED:false}
+      base-url: ${BULLPEN_INGEST_LIVE_BASE_URL:https://statsapi.mlb.com}
+      user-agent: ${BULLPEN_INGEST_LIVE_USER_AGENT:TheBullpen/1.0 (+https://thebullpen.net)}
+      tick-ms: ${BULLPEN_INGEST_LIVE_TICK_MS:5000}
+      api-min-gap-ms: ${BULLPEN_INGEST_LIVE_API_MIN_GAP_MS:500}
+      schedule-refresh-min: ${BULLPEN_INGEST_LIVE_SCHEDULE_REFRESH_MIN:15}
+      timeout-ms: ${BULLPEN_INGEST_LIVE_TIMEOUT_MS:5000}
+      max-retries: ${BULLPEN_INGEST_LIVE_MAX_RETRIES:3}
