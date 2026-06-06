@@ -3,10 +3,12 @@
 Shared 2-layer backbone (Dense(hidden) -> ReLU -> Dense(hidden) -> ReLU)
 followed by N parallel output heads, each Dense(hidden -> n_outcomes).
 The forward pass returns a ``(batch, n_parks, n_outcomes)`` tensor of
-RAW LOGITS — softmax is applied at the loss step (in :mod:`train`) so
-the loss can use ``F.log_softmax`` directly and so the ONNX export
-preserves the multi-head topology without a baked-in softmax (the
-Java-side inference layer in 2c.7 will softmax per head).
+RAW LOGITS - softmax is applied at the loss step (in :mod:`train`) so
+the loss can use ``F.log_softmax`` directly. The SERVING ONNX export
+wraps this module with a per-park softmax (``train._ProbaExport``) so
+the exported graph emits per-park probabilities; the Java serving layer
+calibrates them directly with no Java-side softmax (matching the LGBM/LR
+exports, whose converters already emit probabilities).
 
 Why 30 separate heads vs one head with park-id as a feature:
   - Decision [50] (park geometry NOT a model feature) — the park

@@ -205,6 +205,24 @@ def train_model(
 # --- ONNX export ----------------------------------------------------------
 
 
+class _ProbaExport(torch.nn.Module):
+    """Export wrapper that applies a per-park softmax to the MLP's raw logits so the exported ONNX
+    emits per-park outcome PROBABILITIES.
+
+    Decision: every batted-ball ONNX outputs per-park softmax (the LGBM/LR converters already do),
+    so the Java serving layer calibrates the model output directly with NO Java-side softmax. The
+    MLP's forward stays logits (the KL loss needs log_softmax); only the serving export bakes the
+    softmax in.
+    """
+
+    def __init__(self, model: BattedBallMLP) -> None:
+        super().__init__()
+        self.model = model
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.softmax(self.model(x), dim=-1)
+
+
 def export_onnx(
     model: BattedBallMLP,
     out_path: Path,
@@ -212,22 +230,25 @@ def export_onnx(
     n_features: int | None = None,
     opset_version: int = 17,
 ) -> None:
-    """Export a trained model to ONNX and validate with onnx.checker.
+    """Export a trained model to ONNX (per-park softmax baked in) and validate with onnx.checker.
 
-    Uses dynamic batch axis so the Java side can call with any batch
-    size at inference time. Final shape: ``(N, n_parks, n_outcomes)``.
+    The export wraps the logits-producing model with a per-park softmax (:class:`_ProbaExport`) so
+    the ONNX emits per-park outcome PROBABILITIES, matching the LGBM/LR converters - the Java
+    serving layer calibrates the output directly, no Java-side softmax. Uses a dynamic batch axis so
+    the Java side can call with any batch size. Final shape: ``(N, n_parks, n_outcomes)``.
     """
     feat_count = n_features if n_features is not None else model.n_features
     model.cpu().eval()
+    export_model = _ProbaExport(model).eval()
     dummy = torch.zeros((1, feat_count), dtype=torch.float32)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     torch.onnx.export(
-        model,
+        export_model,
         (dummy,),
         out_path,
         input_names=["features"],
-        output_names=["logits"],
-        dynamic_axes={"features": {0: "batch"}, "logits": {0: "batch"}},
+        output_names=["probabilities"],
+        dynamic_axes={"features": {0: "batch"}, "probabilities": {0: "batch"}},
         opset_version=opset_version,
         # Explicit (already the torch default) - pins constant-folding so a future default flip
         # can't silently change the exported graph and break Java parity (DEF-M6).

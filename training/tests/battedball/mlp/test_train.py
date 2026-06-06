@@ -13,8 +13,6 @@ import onnx
 import pytest
 import torch
 import torch.nn.functional as F
-from torch.utils.data import Dataset
-
 from bullpen_training.battedball.mlp.architecture import build_model
 from bullpen_training.battedball.mlp.train import (
     LABEL_SMOOTHING_EPS,
@@ -24,6 +22,7 @@ from bullpen_training.battedball.mlp.train import (
     train_model,
     write_metadata,
 )
+from torch.utils.data import Dataset
 
 
 class _SyntheticBBIPDataset(Dataset):
@@ -107,9 +106,9 @@ def test_loss_decreases_over_epochs_on_synthetic_data() -> None:
     # Train.
     _trained, summary = train_model(ds, n_epochs=5, batch_size=64, lr=1e-2, device="cpu")
     final_loss = summary.final_train_loss
-    assert final_loss < init_loss * 0.9, (
-        f"loss should drop noticeably; init {init_loss:.4f} -> final {final_loss:.4f}"
-    )
+    assert (
+        final_loss < init_loss * 0.9
+    ), f"loss should drop noticeably; init {init_loss:.4f} -> final {final_loss:.4f}"
     assert summary.device == "cpu"
     assert summary.n_epochs == 5
     assert summary.elapsed_sec > 0
@@ -149,10 +148,13 @@ def test_onnx_export_matches_pytorch_within_1e5(tmp_path: Path) -> None:
 
     x = torch.randn((3, 15), dtype=torch.float32)
     with torch.no_grad():
-        torch_out = model(x).numpy()
+        # The export bakes a per-park softmax, so the ONNX emits probabilities, not raw logits.
+        torch_out = torch.softmax(model(x), dim=-1).numpy()
     session = onnxruntime.InferenceSession(str(out), providers=["CPUExecutionProvider"])
-    onnx_out = session.run(["logits"], {"features": x.numpy()})[0]
+    onnx_out = session.run(["probabilities"], {"features": x.numpy()})[0]
     np.testing.assert_allclose(torch_out, onnx_out, atol=1e-5, rtol=1e-5)
+    # Probabilities: every park's outcome distribution sums to 1.
+    np.testing.assert_allclose(onnx_out.sum(axis=-1), np.ones((3, 30)), atol=1e-5)
 
 
 def test_onnx_export_dynamic_batch_axis(tmp_path: Path) -> None:
@@ -166,7 +168,7 @@ def test_onnx_export_dynamic_batch_axis(tmp_path: Path) -> None:
     session = onnxruntime.InferenceSession(str(out), providers=["CPUExecutionProvider"])
     for batch in (1, 4, 32):
         x = np.zeros((batch, 15), dtype=np.float32)
-        result = session.run(["logits"], {"features": x})[0]
+        result = session.run(["probabilities"], {"features": x})[0]
         assert result.shape == (batch, 30, 5)
 
 
