@@ -213,9 +213,17 @@ the predict-next dedup are validated against a saved feed at any time.
 # 0. SNAPSHOT first - the replay still DEPLOYS 885a868, which applies V017/V018 on boot.
 infra/backup/clickhouse-snapshot.sh          # verify a fresh snapshot lands (hard rule)
 
-# deploy the dormant build, then point the worker at the replay server + enable it
+# deploy the dormant build
 ./deploy.sh
-# (replay server serves /api/v1/schedule + /api/v1.1/game/{pk}/feed/live from the fixtures)
+
+# start the fixture-replay server (infra/live-replay/replay_server.py): pure fixture server -
+# never hits the real API, binds 127.0.0.1 only, deterministic. It progressively reveals at-bats
+# from the committed real game so the loop writes new pitches + predicts one new upcoming pitch per
+# poll. Verify its invariants first, then run it backgrounded:
+python3 infra/live-replay/replay_server.py --self-test
+nohup python3 infra/live-replay/replay_server.py --port 9099 >/tmp/replay.log 2>&1 &
+
+# point the worker at the replay + enable (idempotent set-or-replace, NOT tee -a alone)
 sudo sed -i '/^BULLPEN_INGEST_LIVE_BASE_URL=/d;/^BULLPEN_INGEST_LIVE_ENABLED=/d' /etc/default/bullpen
 printf 'BULLPEN_INGEST_LIVE_BASE_URL=http://localhost:9099\nBULLPEN_INGEST_LIVE_ENABLED=true\n' | sudo tee -a /etc/default/bullpen
 sudo systemctl restart bullpen-worker
