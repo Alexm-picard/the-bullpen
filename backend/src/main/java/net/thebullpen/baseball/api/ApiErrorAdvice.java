@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import java.util.List;
 import net.thebullpen.baseball.api.dto.ApiError;
 import net.thebullpen.baseball.api.dto.ApiError.FieldError;
+import net.thebullpen.baseball.config.CorrelationIdFilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -127,7 +128,15 @@ public class ApiErrorAdvice {
   @ExceptionHandler(Exception.class)
   public ResponseEntity<ApiError> handleAnyOther(Exception ex) {
     String cid = correlationId();
-    log.error("unhandled exception correlation_id={}", cid, ex);
+    // Concurrency context for the open rare-500 follow-up: a failure that correlates with a load
+    // spike (high in_flight) rather than a specific input points at a race, not a bad request.
+    // thread + in_flight let the NEXT occurrence be classified straight from the log.
+    log.error(
+        "unhandled exception correlation_id={} thread={} in_flight={}",
+        cid,
+        Thread.currentThread().getName(),
+        CorrelationIdFilter.inFlight(),
+        ex);
     ApiError body = ApiError.of("internal_error", "an unexpected error occurred", cid);
     return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
   }
