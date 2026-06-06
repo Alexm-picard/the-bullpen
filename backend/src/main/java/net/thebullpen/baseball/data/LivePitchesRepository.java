@@ -1,12 +1,17 @@
 package net.thebullpen.baseball.data;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.sql.Types;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import javax.sql.DataSource;
 import net.thebullpen.baseball.api.dto.GameSummary;
@@ -39,17 +44,32 @@ import org.springframework.stereotype.Repository;
 @ConditionalOnBean(name = "clickhouseDataSource")
 public class LivePitchesRepository {
 
-  private static final String SELECT_PITCH_COLS =
-      "SELECT game_id, at_bat_index, pitch_number,"
-          + " (at_bat_index * 100 + pitch_number) AS cursor,"
-          + " ingested_at, pitcher_id, batter_id, description, pitch_type,"
-          + " release_speed_mph, plate_x_in, plate_z_in,"
-          + " balls, strikes, outs, inning, home_score, away_score";
-
   private static final String FIND_PITCHES_SINCE =
-      SELECT_PITCH_COLS
-          + " FROM pitches_live FINAL"
-          + " WHERE game_id = ? AND (at_bat_index * 100 + pitch_number) > ?"
+      "SELECT pl.game_id AS game_id, pl.at_bat_index AS at_bat_index,"
+          + " pl.pitch_number AS pitch_number,"
+          + " (pl.at_bat_index * 100 + pl.pitch_number) AS cursor,"
+          + " pl.ingested_at AS ingested_at, pl.pitcher_id AS pitcher_id,"
+          + " pl.batter_id AS batter_id, pl.description AS description,"
+          + " pl.pitch_type AS pitch_type, pl.release_speed_mph AS release_speed_mph,"
+          + " pl.plate_x_in AS plate_x_in, pl.plate_z_in AS plate_z_in,"
+          + " pl.balls AS balls, pl.strikes AS strikes, pl.outs AS outs,"
+          + " pl.inning AS inning, pl.home_score AS home_score, pl.away_score AS away_score,"
+          + " pred.prediction AS prediction_json"
+          + " FROM pitches_live AS pl FINAL"
+          // One champion prediction per pitch: predict-next re-logs the same upcoming pitch on
+          // every poll (decision [143]), so collapse to the latest by request_at. NULL-keyed
+          // HTTP-path rows never match (game_id IS NULL after the equality). Unmatched pitches get
+          // '' from the LEFT JOIN -> null predictions in the mapper (the frontend's "n/a" path).
+          + " LEFT JOIN ("
+          + "   SELECT game_id, at_bat_index, pitch_number,"
+          + "          argMax(prediction, request_at) AS prediction"
+          + "   FROM prediction_log"
+          + "   WHERE game_id = ? AND role = 'champion'"
+          + "   GROUP BY game_id, at_bat_index, pitch_number"
+          + " ) AS pred"
+          + " ON pred.game_id = pl.game_id AND pred.at_bat_index = pl.at_bat_index"
+          + "    AND pred.pitch_number = pl.pitch_number"
+          + " WHERE pl.game_id = ? AND (pl.at_bat_index * 100 + pl.pitch_number) > ?"
           + " ORDER BY cursor ASC LIMIT 500";
 
   private static final String FIND_GAMES_FOR_DATE =
@@ -79,6 +99,8 @@ public class LivePitchesRepository {
           + " description, pitch_type, release_speed_mph, plate_x_in, plate_z_in,"
           + " balls, strikes, outs, inning, home_score, away_score, home_team, away_team)"
           + " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+
+  private static final ObjectMapper MAPPER = new ObjectMapper();
 
   private final JdbcTemplate jdbc;
 
@@ -152,7 +174,8 @@ public class LivePitchesRepository {
   }
 
   public List<LivePitchRow> findPitchesSince(long gameId, long sinceCursor) {
-    return jdbc.query(FIND_PITCHES_SINCE, PITCH_MAPPER, gameId, sinceCursor);
+    // Params: subquery game_id (prunes prediction_log to this game), outer game_id, cursor.
+    return jdbc.query(FIND_PITCHES_SINCE, PITCH_MAPPER, gameId, gameId, sinceCursor);
   }
 
   /**
@@ -200,6 +223,7 @@ public class LivePitchesRepository {
   private static final RowMapper<LivePitchRow> PITCH_MAPPER =
       (ResultSet rs, int n) -> {
         Timestamp ts = rs.getTimestamp("ingested_at");
+        Prediction pred = parsePrediction(rs.getString("prediction_json"));
         return new LivePitchRow(
             rs.getLong("game_id"),
             rs.getInt("at_bat_index"),
@@ -219,14 +243,42 @@ public class LivePitchesRepository {
             rs.getInt("inning"),
             rs.getInt("home_score"),
             rs.getInt("away_score"),
-            // 4d.2 leaves prediction columns null today; truth-join lands when
-            // prediction_log carries traffic keyed on (game_id, at_bat_index, pitch_number).
-            null,
-            null);
+            // Truth-join (step 5): the latest champion prediction keyed to this pitch, or null when
+            // none was logged (LEFT JOIN miss -> empty string -> the frontend's "n/a" path).
+            pred.classes(),
+            pred.winner());
       };
 
   private static Double nullable(ResultSet rs, String col) throws java.sql.SQLException {
     double v = rs.getDouble(col);
     return rs.wasNull() ? null : v;
+  }
+
+  /**
+   * Parsed champion prediction from the joined {@code prediction} JSON, or {@code (null, null)}.
+   */
+  record Prediction(Map<String, Double> classes, String winner) {}
+
+  /**
+   * Parse the joined {@code prediction_json} ({@code {"probabilities": {...}, "winner": "..."}})
+   * into a class map + winner. Returns {@code (null, null)} for an absent prediction (a LEFT JOIN
+   * miss yields an empty string) or a malformed payload - one bad prediction row must not break the
+   * whole read path.
+   */
+  static Prediction parsePrediction(String json) {
+    if (json == null || json.isEmpty()) {
+      return new Prediction(null, null);
+    }
+    try {
+      JsonNode node = MAPPER.readTree(json);
+      Map<String, Double> classes = new LinkedHashMap<>();
+      for (Map.Entry<String, JsonNode> e : node.path("probabilities").properties()) {
+        classes.put(e.getKey(), e.getValue().asDouble());
+      }
+      String winner = node.path("winner").asText(null);
+      return new Prediction(classes.isEmpty() ? null : classes, winner);
+    } catch (JsonProcessingException e) {
+      return new Prediction(null, null);
+    }
   }
 }

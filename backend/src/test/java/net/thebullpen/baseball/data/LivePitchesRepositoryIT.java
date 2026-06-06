@@ -2,6 +2,7 @@ package net.thebullpen.baseball.data;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -80,11 +81,33 @@ class LivePitchesRepositoryIT {
 
   @BeforeEach
   void wipe() throws Exception {
-    // pitches_live (V015) is created by ClickHouseMigrationRunner on boot.
+    // pitches_live (V015) + prediction_log (V004/V017) are created by ClickHouseMigrationRunner.
     try (var conn = clickhouseDs.getConnection();
         var stmt = conn.createStatement()) {
       stmt.execute("TRUNCATE TABLE IF EXISTS pitches_live");
+      stmt.execute("TRUNCATE TABLE IF EXISTS prediction_log");
     }
+  }
+
+  private void insertPrediction(long gameId, int atBat, int pitch, String predictionJson)
+      throws Exception {
+    try (var conn = clickhouseDs.getConnection();
+        var stmt = conn.createStatement()) {
+      stmt.execute(
+          String.format(
+              "INSERT INTO prediction_log (request_id, request_at, model_name, model_version,"
+                  + " role, feature_hash, features, prediction, latency_ms, correlation_id,"
+                  + " game_id, at_bat_index, pitch_number) VALUES (generateUUIDv4(), now64(3),"
+                  + " 'pitch_outcome_pre', 'v1', 'champion', 'h', '{}', '%s', 1.0, '', %d, %d, %d)",
+              predictionJson, gameId, atBat, pitch));
+    }
+  }
+
+  private static LivePitchRow pitch(List<LivePitchRow> rows, int atBat, int pitchNumber) {
+    return rows.stream()
+        .filter(r -> r.atBatIndex() == atBat && r.pitchNumber() == pitchNumber)
+        .findFirst()
+        .orElseThrow();
   }
 
   private void insertPitch(
@@ -175,5 +198,40 @@ class LivePitchesRepositoryIT {
 
     // FINAL collapses duplicate (game_id, at_bat_index, pitch_number) keys back to one row each.
     assertEquals(300, repo.findPitchesSince(824753L, 0L).size());
+  }
+
+  @Test
+  void findPitchesSince_left_joins_the_champion_prediction_for_a_pitch() throws Exception {
+    repo.insertPitches(parseFixture()); // 300 pitches, no predictions yet
+    insertPrediction(
+        824753L,
+        1,
+        1,
+        "{\"probabilities\":{\"ball\":0.6,\"called_strike\":0.4},\"winner\":\"ball\"}");
+
+    List<LivePitchRow> rows = repo.findPitchesSince(824753L, 0L);
+    LivePitchRow predicted = pitch(rows, 1, 1);
+    LivePitchRow unpredicted = pitch(rows, 1, 2);
+
+    assertEquals("ball", predicted.predictedWinner());
+    assertNotNull(predicted.predictedClasses());
+    assertEquals(0.6, predicted.predictedClasses().get("ball"));
+    assertNull(unpredicted.predictedWinner(), "no prediction logged -> the frontend's n/a path");
+    assertNull(unpredicted.predictedClasses());
+  }
+
+  @Test
+  void findPitchesSince_takes_the_latest_champion_when_a_pitch_is_re_predicted() throws Exception {
+    // predict-next re-logs the same upcoming pitch each poll (decision [143]); the join must keep
+    // the latest one by request_at (argMax), not double-count or pick an arbitrary row.
+    repo.insertPitches(parseFixture());
+    insertPrediction(824753L, 1, 1, "{\"probabilities\":{\"ball\":0.9},\"winner\":\"ball\"}");
+    Thread.sleep(5); // ensure a strictly later request_at
+    insertPrediction(824753L, 1, 1, "{\"probabilities\":{\"in_play\":0.7},\"winner\":\"in_play\"}");
+
+    assertEquals(
+        "in_play",
+        pitch(repo.findPitchesSince(824753L, 0L), 1, 1).predictedWinner(),
+        "argMax(request_at) keeps the latest prediction");
   }
 }
