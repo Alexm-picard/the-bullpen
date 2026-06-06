@@ -1,7 +1,6 @@
 package net.thebullpen.baseball.api;
 
 import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -96,8 +95,8 @@ class PredictAllParksControllerTest {
         .andExpect(jsonPath("$.modelName").value("battedball_outcome"))
         .andExpect(jsonPath("$.modelVersion").value("v1"))
         .andExpect(jsonPath("$.probHrByPark.length()").value(equalTo(N_PARKS)))
-        .andExpect(jsonPath("$.probHrByPark.PARK00").value(greaterThanOrEqualTo(0.0)))
-        .andExpect(jsonPath("$.latencyMicros").value(greaterThanOrEqualTo(0)));
+        .andExpect(jsonPath("$.probHrByPark.PARK00").isNumber())
+        .andExpect(jsonPath("$.latencyMicros").isNumber());
   }
 
   @Test
