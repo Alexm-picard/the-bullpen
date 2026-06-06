@@ -1,7 +1,9 @@
 package net.thebullpen.baseball.drift.algorithms;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -96,14 +98,25 @@ public final class Psi {
   static double[] quantileEdges(double[] reference, int nBins) {
     double[] sorted = reference.clone();
     Arrays.sort(sorted);
-    double[] edges = new double[nBins + 1];
-    edges[0] = Double.NEGATIVE_INFINITY;
+    // Distinct interior breakpoints only. A concentrated reference produces tied quantiles, and
+    // duplicate edges create zero-width bins whose empty reference proportion (floored to EPSILON)
+    // then gets compared against real actual mass -> garbage/inflated PSI (DEF-H1). The breakpoints
+    // are non-decreasing (quantiles of the sorted sample), so ties are adjacent; collapsing them
+    // yields fewer, valid bins, and binCounts/psiFromCounts adapt to edges.length.
+    List<Double> interior = new ArrayList<>();
     for (int i = 1; i < nBins; i++) {
       double q = (double) i / nBins;
-      int idx = (int) Math.floor(q * (sorted.length - 1));
-      edges[i] = sorted[idx];
+      double edge = sorted[(int) Math.floor(q * (sorted.length - 1))];
+      if (interior.isEmpty() || edge != interior.get(interior.size() - 1)) {
+        interior.add(edge);
+      }
     }
-    edges[nBins] = Double.POSITIVE_INFINITY;
+    double[] edges = new double[interior.size() + 2];
+    edges[0] = Double.NEGATIVE_INFINITY;
+    for (int i = 0; i < interior.size(); i++) {
+      edges[i + 1] = interior.get(i);
+    }
+    edges[edges.length - 1] = Double.POSITIVE_INFINITY;
     return edges;
   }
 

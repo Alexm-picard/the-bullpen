@@ -96,6 +96,37 @@ class PsiTest {
   }
 
   @Test
+  void concentrated_reference_dedups_tied_quantile_edges() {
+    // 90% of the mass is one value -> every interior quantile is the same -> tied edges that would
+    // create zero-width bins. Dedup collapses them to the distinct breakpoints (DEF-H1).
+    double[] reference = new double[1000];
+    for (int i = 0; i < 50; i++) reference[i] = 0.1;
+    for (int i = 50; i < 950; i++) reference[i] = 0.5;
+    for (int i = 950; i < 1000; i++) reference[i] = 0.9;
+
+    double[] edges = Psi.quantileEdges(reference, 10);
+
+    assertThat(edges).hasSizeLessThan(11); // collapsed from the nominal 11
+    assertThat(edges[0]).isEqualTo(Double.NEGATIVE_INFINITY);
+    assertThat(edges[edges.length - 1]).isEqualTo(Double.POSITIVE_INFINITY);
+    for (int i = 1; i < edges.length; i++) {
+      assertThat(edges[i]).isGreaterThan(edges[i - 1]); // strictly increasing -> no zero-width bins
+    }
+  }
+
+  @Test
+  void concentrated_identical_distributions_yield_near_zero_psi() {
+    // The degenerate-edge bug inflated PSI even when reference == actual. With dedup it stays ~0.
+    double[] reference = new double[1000];
+    for (int i = 0; i < 950; i++) reference[i] = 0.5;
+    for (int i = 950; i < 1000; i++) reference[i] = 0.9;
+
+    double psi = Psi.computeContinuous(reference, reference.clone(), 10);
+
+    assertThat(psi).isCloseTo(0.0, within(1e-6));
+  }
+
+  @Test
   void empty_reference_throws() {
     assertThatThrownBy(() -> Psi.computeContinuous(new double[0], new double[] {1.0}, 10))
         .isInstanceOf(IllegalArgumentException.class);
