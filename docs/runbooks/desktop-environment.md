@@ -39,6 +39,14 @@ and heap). Spring relaxed-binds `FOO_BAR_BAZ` -> `foo.bar.baz`.
   silently if unset.
 - `bullpen.ratelimit.*`, `bullpen.snapshot.*`, `bullpen.inference.*` -- defaulted in the
   `application*.yml` files.
+- `BULLPEN_INGEST_LIVE_ENABLED` (`bullpen.ingest.live.enabled`) -- gates the live-game poller
+  (issue #1, worker profile). **Default `false`**: the poller is dormant, the safe default. Set
+  `true` (in a no-game window, rule 3) to start polling MLB + writing `pitches_live` /
+  `prediction_log`. Captured here on purpose so the **restore drill doesn't regress it** (same
+  env-regression class as `BULLPEN_CLICKHOUSE_ENABLED` above): a clean rebuild leaves it `false`
+  (poller off) until deliberately re-enabled. Sibling knobs `BULLPEN_INGEST_LIVE_{BASE_URL,
+TICK_MS,API_MIN_GAP_MS,...}` are defaulted in `application-worker.yml`; `BASE_URL` is the
+  fixture-replay knob for the step-8 dry-run (see `live-data-setup.md`).
 
 (Full surface of externalized settings: `backend/src/main/resources/application{,-api,-worker}.yml`
 plus the `@Value("${bullpen...}")` and `@ConditionalOnProperty` annotations in `config/` and the

@@ -176,33 +176,104 @@ map 1:1 to the tracking issue's task checklist.
 
 ## Verify → deploy → operate (desktop)
 
-### 8. Local dry-run
+> **Production-reviewed 2026-06-06** (Dev/Prod cross-environment pass). The build
+> (steps 1-7) is on `origin/main`; the loop is OFF by default
+> (`bullpen.ingest.live.enabled=false`). What follows is the reviewed enable
+> procedure. Migrations V017 (`prediction_log` natural-key columns) + V018
+> (`live_game_status`) are both **additive** (`ADD COLUMN IF NOT EXISTS` /
+> `CREATE TABLE IF NOT EXISTS`) - verified against the live `prediction_log` sort
+> key - so no recreate, no data loss.
 
-Run the worker profile locally on a game day pointed at the live StatsAPI
-(or replay a saved feed). Confirm the dev frontend shows live pitches +
-predictions, the cursor-delta polling only fetches new pitches, and the
-"n/a" placeholder renders for any pitch missing a prediction.
+### Pre-checks (confirm before running)
 
-### 9. Deploy — **not during a live game** (rule 3)
+- **P1 - migrations additive.** Verified: V017 only appends 3 nullable columns
+  after `correlation_id`; the `ORDER BY (model_name, request_at)` sort key,
+  partitioning, and TTL are untouched. Existing rows are safe.
+- **P2 (GATE) - is the pitch pre-head loaded?** `predictedWinner` comes from the
+  read-path LEFT JOIN to `prediction_log`, whose rows the worker writes via
+  `LivePitchPredictor` - which is gated on `PitchInferenceService`, which is gated
+  on `Files.exists(.../pitch_outcome_pre/v1/model.onnx)`. The **same** condition
+  gates `/v1/predict/pitch`. So:
+  ```bash
+  curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:8080/v1/predict/pitch \
+    -H 'content-type: application/json' \
+    -d '{"countBalls":1,"countStrikes":2,"outs":1,"inning":5,"baseState":0,"scoreDiff":0,"dow":3,"pitcherThrows":"R","batterStand":"L","parkId":"BOS","pitcherId":1,"batterId":2}'
+  ```
+  **200** = pre-head loaded → live predictions will render. **404** = pre-head
+  artifact not on the box → the dry-run validates the **write path only** (pitches
+  - status); predictions stay "n/a" until the artifact lands. Deploy the pre-head
+    artifact first if visible predictions are the goal.
+
+### 8. Dry-run (recommended FIRST: fixture replay - no live API, no game window)
+
+Point the poller at a local server replaying the committed fixtures, so writes +
+the predict-next dedup are validated against a saved feed at any time.
 
 ```bash
-# morning / off-window only — the deploy-safely skill enforces the check
-git push origin main
-./deploy.sh                # or: invoke the deploy-safely skill
+# 0. SNAPSHOT first - the replay still DEPLOYS 885a868, which applies V017/V018 on boot.
+infra/backup/clickhouse-snapshot.sh          # verify a fresh snapshot lands (hard rule)
+
+# deploy the dormant build, then point the worker at the replay server + enable it
+./deploy.sh
+# (replay server serves /api/v1/schedule + /api/v1.1/game/{pk}/feed/live from the fixtures)
+sudo sed -i '/^BULLPEN_INGEST_LIVE_BASE_URL=/d;/^BULLPEN_INGEST_LIVE_ENABLED=/d' /etc/default/bullpen
+printf 'BULLPEN_INGEST_LIVE_BASE_URL=http://localhost:9099\nBULLPEN_INGEST_LIVE_ENABLED=true\n' | sudo tee -a /etc/default/bullpen
+sudo systemctl restart bullpen-worker
 ```
 
-- Add the ingest config to `/etc/default/bullpen` (the worker env file).
-- The worker systemd unit restarts with `bullpen.ingest.live.enabled=true`.
+Validate: pitches land, status surfaces, and crucially the dedup holds -
+`keyed_preds ≈ distinct_pitches` (one prediction per upcoming pitch, not one per
+poll):
 
-### 10. Operate
+```bash
+docker exec bullpen-clickhouse clickhouse-client --query \
+  "SELECT count() AS keyed_preds, uniqExact((game_id,at_bat_index,pitch_number)) AS distinct_pitches \
+   FROM prediction_log WHERE game_id IS NOT NULL AND request_at > now() - INTERVAL 1 HOUR"
+```
 
-- Watch the first live game: Grafana / logs for poll cadence, insert rate,
-  prediction-log rate; the public site shows live data.
+### 9. Deploy + enable for a live game - **off-window only** (rule 3)
+
+Do the deploy + enable + worker restart in a **pre-game no-game window**; only
+_observe_ during the game.
+
+```bash
+infra/backup/clickhouse-snapshot.sh           # step 0: snapshot before migrations
+./deploy.sh                                   # poller ships DORMANT (flag off, zero behavior change)
+
+# enable idempotently (set-or-replace, NOT tee -a which duplicates the line)
+sudo sed -i '/^BULLPEN_INGEST_LIVE_BASE_URL=/d;/^BULLPEN_INGEST_LIVE_ENABLED=/d' /etc/default/bullpen
+echo 'BULLPEN_INGEST_LIVE_ENABLED=true' | sudo tee -a /etc/default/bullpen
+sudo systemctl restart bullpen-worker
+```
+
+> Capture `BULLPEN_INGEST_LIVE_ENABLED` (and `BULLPEN_CLICKHOUSE_ENABLED`) in
+> `desktop-environment.md` as part of this change so the restore drill doesn't
+> regress them (closes the env-regression class).
+
+**Abort** (poller goes dormant, all services keep running):
+
+```bash
+sudo sed -i 's/^BULLPEN_INGEST_LIVE_ENABLED=true/BULLPEN_INGEST_LIVE_ENABLED=false/' /etc/default/bullpen
+sudo systemctl restart bullpen-worker
+```
+
+### 10. Operate (observe-only during the game)
+
+```bash
+journalctl -u bullpen-worker -n 100 --no-pager | grep -iE "DataSource ready|V017|V018|LivePolling|live poll"
+docker exec bullpen-clickhouse clickhouse-client --query \
+  "SELECT game_id, count() AS pitches, max(inning) AS inn FROM pitches_live FINAL WHERE game_date = today() GROUP BY game_id ORDER BY pitches DESC"
+docker exec bullpen-clickhouse clickhouse-client --query \
+  "SELECT game_id, argMax(status, updated_at) AS status FROM live_game_status GROUP BY game_id"
+curl -s http://localhost:8080/v1/games/today | jq '.[] | {gameId, status, detailedState}'
+```
+
+- Watch poll cadence (12s live), no `429`s, sane insert rate, the dedup ratio.
 - Append surprises to `docs/hardening/observations.md`.
 - **Holdout (rule 13):** the overnight `pitches_live → pitches` handoff
-  (separate, later job — see V015 header comment) backfills Statcast fields
-  into the canonical table; it must keep 2026 rows out of any training
-  split. Live display is fine; training ingestion is the line.
+  (separate, later job - see V015 header comment) backfills Statcast fields into
+  the canonical table; it must keep 2026 rows out of any training split. Live
+  display is fine; training ingestion is the line.
 
 ---
 
