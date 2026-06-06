@@ -74,9 +74,11 @@ Expected: ~1.5s, all 6 assertions pass, `pitches_final_rows ≈ 711898`.
 uv run python -m bullpen_training.battedball.train_toy --year 2024
 ```
 
-Expected: AUC ≈ 0.987, `model.lgb` written to `training/artifacts/_toy/v0/`.
-Re-runs produce a byte-identical `.lgb` (deterministic LightGBM + fixed
-seed).
+Expected: `model.lgb` written to `training/artifacts/_toy/v0/` and a finite AUC
+logged. (The toy now uses a temporal holdout, not the old random split; the prior
+"≈ 0.987" was a random-split, leakage-optimistic figure - expect a lower, honest
+number and do not treat 0.987 as a target.) Re-runs produce a byte-identical
+`.lgb` (deterministic LightGBM + fixed seed).
 
 ### 5. Export to ONNX + park lookup
 
@@ -167,9 +169,9 @@ The `./deploy.sh` step alone (7) handles every other deploy.
 
 - **CLAUDE.md ADR-0006 caveat:** this runbook requires Python work on the
   WSL2 box, which violates the dev/prod boundary. Acceptable here because
-  the source-of-truth pipeline (statcast_pull, transform_pitches,
+  the source-of-truth pipeline (statcast*pull, transform_pitches,
   train_toy, export_toy_onnx) is fully committed to git and the WSL2 box
-  is only _running_ it, not editing it. Same posture as the May-21
+  is only \_running* it, not editing it. Same posture as the May-21
   restore-drill exception that's already documented in
   `docs/phase-status.json`.
 

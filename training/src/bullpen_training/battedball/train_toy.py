@@ -5,15 +5,19 @@ The output `model.lgb` is the only thing 1.4 (ONNX export) cares about;
 `metadata.json` carries the provenance Java side reads to render the
 model identity in the UI.
 
-Reproducibility: `deterministic=True` + `force_row_wise=True` + fixed
-seeds (numpy, sklearn split, LightGBM). Two runs from the same git commit
-on the same data produce a byte-identical `model.lgb`.
+Reproducibility: `deterministic=True` + `force_row_wise=True` + a fixed LightGBM
+seed, with a positional (non-random) temporal split. Two runs from the same git
+commit on the same data produce a byte-identical `model.lgb`.
 
 Limits — **intentional and Phase-1-only**:
     - Single binary output (HR vs not-HR). No 5-class outcome head.
     - No calibration (no isotonic, no Platt scaling).
-    - No rolling-origin CV — straight 80/20 stratified split.
-    - Park target-encoding leaks within-year HR rate.
+    - No rolling-origin CV - a single temporal 80/20 holdout (trailing slice of the
+      game-date-ordered frame). No random_state: the no-random-split rule has no toy
+      exception (TD sign-off 2026-06-06).
+    - Park target-encoding still leaks within-year HR rate (the real Phase-2a pipeline
+      ships out-of-fold TE); so the reported AUC remains optimistic on that axis even
+      with the split now temporal.
     - Not registered in the Spring registry; lives at training/artifacts/_toy/v0/.
 
 Usage:
@@ -38,7 +42,6 @@ import lightgbm as lgb
 import numpy as np
 import pandas as pd
 from sklearn.metrics import roc_auc_score
-from sklearn.model_selection import train_test_split
 
 from bullpen_training.battedball.features_toy import (
     FEATURES,
@@ -74,11 +77,20 @@ def _sha256(path: Path) -> str:
 
 
 def _train_on_frame(df: pd.DataFrame) -> tuple[lgb.Booster, dict[str, Any]]:
-    """Fit the toy booster on a prepared frame. Returns model + metrics."""
+    """Fit the toy booster on a TEMPORAL holdout (last 20% of rows). Returns model + metrics.
+
+    NOT a random split. The production frame arrives ordered by game_date
+    (features_toy.load_training_frame ORDERs by the PK, game_date leading), so the trailing
+    slice is the latest dates - a leakage-safe split with zero random_state. The
+    no-random-split rule (CLAUDE.md hard-never) has no toy exception: a stratified random
+    split mixes future rows into train and inflates the reported AUC with leakage, which is
+    exactly the optimism the rule exists to prevent. The positional slice is also fully
+    deterministic, so the byte-identical-model reproducibility property is preserved.
+    """
     np.random.seed(SEED)
-    train_df, test_df = train_test_split(df, test_size=0.2, random_state=SEED, stratify=df[TARGET])
-    train = cast(pd.DataFrame, train_df)
-    test = cast(pd.DataFrame, test_df)
+    split_idx = int(len(df) * 0.8)
+    train = cast(pd.DataFrame, df.iloc[:split_idx].copy())
+    test = cast(pd.DataFrame, df.iloc[split_idx:].copy())
     params: dict[str, Any] = {
         "objective": "binary",
         "metric": "auc",
