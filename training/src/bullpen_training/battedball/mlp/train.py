@@ -229,6 +229,9 @@ def export_onnx(
         output_names=["logits"],
         dynamic_axes={"features": {0: "batch"}, "logits": {0: "batch"}},
         opset_version=opset_version,
+        # Explicit (already the torch default) - pins constant-folding so a future default flip
+        # can't silently change the exported graph and break Java parity (DEF-M6).
+        do_constant_folding=True,
     )
     onnx.checker.check_model(onnx.load(str(out_path)))
 
