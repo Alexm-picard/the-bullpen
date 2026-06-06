@@ -164,3 +164,50 @@ jobs:
       - name: Leakage suite
         working-directory: training
         run: uv run pytest tests/leakage -v
+
+  # Required - DEF-H2. The four leakage tests above validate `build_fold_inmem`, a
+  # pure-pandas MIRROR of the production builder, so a leak living in the real SQL
+  # (tier_1_2.build_fold_features -> select_labeled_pitches.sql reading past
+  # train_end, or a dropped FINAL double-counting a re-ingested pitch) would never
+  # trip them. This gate drives the REAL builder against a real ClickHouse.
+  # BULLPEN_REQUIRE_CH=1 turns an unreachable CH into a hard failure, so the gate
+  # can never pass by silently skipping (which is how the fast job above tolerates
+  # having no CH service).
+  leakage-sql-gate:
+    runs-on: ubuntu-latest
+    needs: lint-and-type
+    name: REQUIRED - SQL-path leakage gate (real ClickHouse)
+    services:
+      clickhouse:
+        image: clickhouse/clickhouse-server:24.12
+        ports:
+          - 9000:9000
+          - 8123:8123
+        env:
+          CLICKHOUSE_USER: default
+          CLICKHOUSE_PASSWORD: thebullpen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - working-directory: training
+        run: uv sync --frozen
+      - name: Wait for ClickHouse
+        working-directory: training
+        run: |
+          for i in $(seq 1 30); do
+            if uv run python -c "from clickhouse_driver import Client; Client(host='localhost', port=9000, password='thebullpen').execute('SELECT 1')" 2>/dev/null; then
+              echo "ClickHouse ready"; exit 0
+            fi
+            echo "waiting for ClickHouse ($i)..."; sleep 2
+          done
+          echo "ClickHouse did not become ready"; exit 1
+      - name: SQL-path leakage test
+        working-directory: training
+        env:
+          BULLPEN_REQUIRE_CH: "1"
+          CLICKHOUSE_HOST: localhost
+          CLICKHOUSE_PORT: "9000"
+          CLICKHOUSE_PASSWORD: thebullpen
+        run: uv run python -m pytest tests/leakage/test_sql_path_contamination.py -v
