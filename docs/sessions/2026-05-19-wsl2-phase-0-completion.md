@@ -186,7 +186,10 @@ cat >> ~/.bashrc <<'EOF'
 export VERCEL_API_KEY="vcp_..."             # mint at https://vercel.com/account/tokens
 export GITHUB_PERSONAL_ACCESS_TOKEN="$(gh auth token 2>/dev/null || echo 'gho_...')"
 export CLICKHOUSE_HOST="localhost"
-export CLICKHOUSE_PORT="8123"
+# CORRECTED 2026-06-07 (was 8123): 9000 is the NATIVE port the training client +
+# leakage gate use; 8123 is HTTP (ClickHouse MCP only) and a global 8123 silently
+# skipped the SQL-path leakage gate. from_env now rejects 8123/8443 (DEV-3).
+export CLICKHOUSE_PORT="9000"
 export CLICKHOUSE_USER="default"
 export CLICKHOUSE_PASSWORD="thebullpen"     # local-only; production sets its own
 export BULLPEN_REGISTRY_DB="$HOME/code/the-bullpen/backend/data/registry.sqlite"

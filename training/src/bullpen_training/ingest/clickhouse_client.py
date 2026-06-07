@@ -20,6 +20,14 @@ from dataclasses import dataclass
 import pandas as pd
 from clickhouse_driver import Client
 
+# ClickHouse HTTP ports. The native clickhouse-driver protocol used here does NOT
+# speak these - a CLICKHOUSE_PORT pointing at one yields a cryptic "Unknown packet"
+# deep in the driver, which (in the leakage fixture) reads as an unreachable CH and
+# SILENTLY SKIPS the SQL-path leakage gate. That exact misconfig happened on the box
+# (a stale `export CLICKHOUSE_PORT=8123` in the WSL2 session docs) and skipped the
+# gate during the 2026-06-07 feature build. Fail loud at config time instead. DEV-3.
+_HTTP_PORTS = frozenset({8123, 8443})
+
 
 @dataclass(frozen=True)
 class ClickHouseSettings:
@@ -31,9 +39,19 @@ class ClickHouseSettings:
 
     @classmethod
     def from_env(cls) -> ClickHouseSettings:
+        port = int(os.environ.get("CLICKHOUSE_PORT", cls.port))
+        if port in _HTTP_PORTS:
+            raise ValueError(
+                f"CLICKHOUSE_PORT={port} is a ClickHouse HTTP port, but this client speaks "
+                f"the NATIVE protocol (default {cls.port}). The native driver cannot talk to "
+                f"the HTTP port - it would fail with a cryptic 'Unknown packet' that silently "
+                f"skips the leakage gate. Set CLICKHOUSE_PORT={cls.port} or unset it; if an "
+                f"HTTP endpoint is needed for another tool, give it a distinct env var "
+                f"(CLICKHOUSE_PORT is owned by the native client)."
+            )
         return cls(
             host=os.environ.get("CLICKHOUSE_HOST", cls.host),
-            port=int(os.environ.get("CLICKHOUSE_PORT", cls.port)),
+            port=port,
             user=os.environ.get("CLICKHOUSE_USER", cls.user),
             password=os.environ.get("CLICKHOUSE_PASSWORD", cls.password),
             database=os.environ.get("CLICKHOUSE_DATABASE", cls.database),

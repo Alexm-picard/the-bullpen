@@ -165,8 +165,14 @@ Add to `~/.bashrc` or `~/.profile` on WSL2:
 
 ```bash
 export GITHUB_PERSONAL_ACCESS_TOKEN="ghp_..."         # GitHub MCP
-export CLICKHOUSE_HOST="localhost"                    # ClickHouse MCP
-export CLICKHOUSE_PORT="8123"
+export CLICKHOUSE_HOST="localhost"
+# CLICKHOUSE_PORT is the NATIVE protocol port (9000) - it is owned by the native
+# clickhouse-driver client the training pipeline + leakage gate use. Do NOT set it to
+# the HTTP port 8123: the native client cannot speak HTTP, and a stale 8123 silently
+# skipped the SQL-path leakage gate during the 2026-06-07 build. `from_env` now FAILS
+# LOUD on 8123/8443 (DEV-3). The ClickHouse MCP uses HTTP 8123 - configure that in the
+# MCP server config, NOT via this shared shell var.
+export CLICKHOUSE_PORT="9000"
 export CLICKHOUSE_USER="default"
 export CLICKHOUSE_PASSWORD="..."
 export BULLPEN_REGISTRY_DB="${HOME}/code/thebullpen/backend/data/registry.sqlite"
