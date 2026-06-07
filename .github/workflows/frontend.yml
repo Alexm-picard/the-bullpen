@@ -79,11 +79,11 @@ jobs:
       - if: steps.check.outputs.present == 'true'
         working-directory: frontend
         run: npm ci --include=optional && npx playwright install --with-deps chromium
-      # A7: non-blocking while the smoke stabilises (plan: non-blocking first, then gate).
-      # Drop continue-on-error to make E2E a required gate.
+      # A7: now a REQUIRED gate. The smoke (3 fixture render-checks) is stable - 5/5 locally
+      # at retries=0 (2026-06-07) + consistently green in CI, and CI keeps retries:1 for extra
+      # resilience. A real render regression (uncaught error / missing heading) now reds the build.
       - name: Playwright E2E
         if: steps.check.outputs.present == 'true'
-        continue-on-error: true
         working-directory: frontend
         run: npx playwright test
       - if: failure() && steps.check.outputs.present == 'true'
