@@ -44,6 +44,16 @@ public class RoutingRepository {
   }
 
   /**
+   * Delete the routing row for {@code modelName}. Used by the champion-rollback path (INC-1):
+   * {@code champion_version_id} is NOT NULL, so a demoted champion's row can't be emptied - it must
+   * be removed, leaving no routing row -> {@code InferenceRouter} finds none -> legacy fallback.
+   * Returns the number of rows deleted (0 or 1, since {@code model_name} is UNIQUE).
+   */
+  public int deleteByModelName(String modelName) {
+    return jdbc.update("DELETE FROM model_routing WHERE model_name = ?", modelName);
+  }
+
+  /**
    * Insert-or-update the routing row for {@code modelName}. SQLite supports {@code INSERT ... ON
    * CONFLICT (...) DO UPDATE SET ...} which mirrors the UNIQUE constraint on {@code model_name} —
    * single SQL statement, atomic against concurrent writes (though concurrent admin writes are not

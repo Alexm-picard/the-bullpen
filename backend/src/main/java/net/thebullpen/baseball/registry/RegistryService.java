@@ -295,6 +295,22 @@ public class RegistryService {
     if (newStage == Stage.CHAMPION) {
       assertPromotionCriteriaMet(current);
       promoteToChampionAtomically(current);
+    } else if (current.stage() == Stage.CHAMPION && newStage == Stage.SHADOW) {
+      // INC-1 (decision [150]) controlled rollback. champion_version_id is NOT NULL, so the routing
+      // row can't be emptied - remove it so InferenceRouter finds none and the legacy fallback
+      // serves. Same @Transactional unit (model_versions + model_routing are both SQLite
+      // post-BUG-9).
+      // The version stays SHADOW (re-promotable) and, if it's the only version, keeps the rule-5
+      // bootstrap exemption - which is how a stuck first champion (the 2026-06-07 incident)
+      // recovers:
+      // demote, fix the snapshot, re-promote the same version.
+      repo.updateStage(id, Stage.SHADOW);
+      routingService.removeRouting(current.modelName());
+      log.warn(
+          "registry: ROLLBACK {}/{} (id={}) CHAMPION->SHADOW, routing row removed",
+          current.modelName(),
+          current.version(),
+          id);
     } else {
       repo.updateStage(id, newStage);
     }

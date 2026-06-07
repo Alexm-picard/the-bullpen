@@ -63,6 +63,7 @@ class RegistryServiceIT {
     // Each test starts with an empty model_versions + experiment_results; tmp SQLite is fresh per
     // JVM, but tests share the JVM through the SpringBootTest context.
     jdbc.update("DELETE FROM experiment_results");
+    jdbc.update("DELETE FROM model_routing");
     jdbc.update("DELETE FROM model_versions");
   }
 
@@ -243,6 +244,36 @@ class RegistryServiceIT {
     service.transitionStage(mv.id(), Stage.CHAMPION);
     ModelVersion archived = service.transitionStage(mv.id(), Stage.ARCHIVED);
     assertThat(archived.stage()).isEqualTo(Stage.ARCHIVED);
+  }
+
+  @Test
+  void champion_to_shadow_rollback_removes_routing_and_stays_repromotable() throws Exception {
+    // INC-1 (decision [150]): a bad champion must be recoverable. Bootstrap-promote a single
+    // version, roll it back to SHADOW -> routing row removed (so InferenceRouter finds none and the
+    // legacy fallback serves), version stays SHADOW and re-promotable (single version keeps the
+    // rule-5 bootstrap exemption). This is the recovery path for a stuck first champion (the
+    // 2026-06-07 promotion incident).
+    ModelVersion mv = service.register(sampleRequest("rollback_model", "v1"));
+    service.transitionStage(mv.id(), Stage.CHAMPION);
+    assertThat(routingRowCount("rollback_model")).as("routing created on promote").isEqualTo(1);
+
+    ModelVersion demoted = service.transitionStage(mv.id(), Stage.SHADOW);
+    assertThat(demoted.stage()).isEqualTo(Stage.SHADOW);
+    assertThat(routingRowCount("rollback_model")).as("routing removed on rollback").isEqualTo(0);
+    assertThat(service.findChampion("rollback_model")).as("no champion after rollback").isEmpty();
+
+    ModelVersion rePromoted = service.transitionStage(mv.id(), Stage.CHAMPION);
+    assertThat(rePromoted.stage()).isEqualTo(Stage.CHAMPION);
+    assertThat(routingRowCount("rollback_model"))
+        .as("routing recreated on re-promote")
+        .isEqualTo(1);
+  }
+
+  private int routingRowCount(String modelName) {
+    Integer n =
+        jdbc.queryForObject(
+            "SELECT count(*) FROM model_routing WHERE model_name = ?", Integer.class, modelName);
+    return n == null ? 0 : n;
   }
 
   // --- atomic CHAMPION promotion -----------------------------------------

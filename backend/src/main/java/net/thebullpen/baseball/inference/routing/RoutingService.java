@@ -170,6 +170,25 @@ public class RoutingService {
   }
 
   /**
+   * Remove the routing row for {@code modelName} entirely. The symmetric counterpart of {@link
+   * #ensureRoutingForChampion}: when a CHAMPION is rolled back to SHADOW (INC-1 / decision [150]),
+   * {@code champion_version_id} is non-null so the row can't be "emptied" - it must be deleted.
+   * With no routing row, {@link net.thebullpen.baseball.inference.InferenceRouter} finds nothing
+   * and the legacy fallback serves (the toy for batted-ball). Called inside {@link
+   * net.thebullpen.baseball.registry.RegistryService#transitionStage}'s rollback branch, in the
+   * same transaction as the stage flip.
+   */
+  @Transactional
+  @CacheEvict(value = CacheConfig.ROUTING_CACHE, allEntries = true)
+  public void removeRouting(String modelName) {
+    int deleted = repo.deleteByModelName(modelName);
+    log.warn(
+        "routing: removed routing row for {} ({} row(s)) - champion rolled back, falling back to legacy",
+        modelName,
+        deleted);
+  }
+
+  /**
    * Idempotent: if no routing row exists for {@code modelName}, create one with the given champion
    * and default SHADOW mode + 0 traffic. Otherwise update only the champion (keeps the existing
    * challenger / mode / traffic — the registry promotion is the source of truth for "who's champion

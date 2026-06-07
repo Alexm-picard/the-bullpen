@@ -15,11 +15,14 @@ import java.util.Set;
  *       champion)
  *   <li>{@link #SHADOW} → {@link #CHAMPION} (normal promotion path; rule 5 + 6 — gated by a passing
  *       experiment_results row)
+ *   <li>{@link #CHAMPION} → {@link #SHADOW} (controlled ROLLBACK of a bad champion; INC-1 /
+ *       decision [150] — the registry charter is rollback-able change. The demote removes the
+ *       routing row so the legacy fallback serves; the version stays re-promotable)
  *   <li>any → {@link #ARCHIVED} (terminal; archived rows stay forever, never re-activate)
  * </ul>
  *
- * <p>Explicitly not allowed: {@code SHADOW → CANDIDATE} (no demotion — archive then re-register
- * instead), {@code CHAMPION → SHADOW} (same), {@code ARCHIVED → *} (terminal).
+ * <p>Explicitly not allowed: {@code SHADOW → CANDIDATE} (no demotion back to candidate — archive
+ * then re-register instead), {@code ARCHIVED → *} (terminal).
  */
 public enum Stage {
   CANDIDATE,
@@ -32,7 +35,8 @@ public enum Stage {
     return switch (this) {
       case CANDIDATE -> Set.of(SHADOW, CHAMPION, ARCHIVED);
       case SHADOW -> Set.of(CHAMPION, ARCHIVED);
-      case CHAMPION -> Set.of(ARCHIVED);
+      case CHAMPION ->
+          Set.of(SHADOW, ARCHIVED); // SHADOW = INC-1 controlled rollback (decision [150])
       case ARCHIVED -> Set.of(); // terminal
     };
   }
