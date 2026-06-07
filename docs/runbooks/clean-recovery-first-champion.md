@@ -2,23 +2,25 @@
 
 **Owner:** developer (Mac) + box-operator · **Created:** 2026-06-07 · **Phase:** 3a / Phase-6 ops
 **Incident:** [`docs/postmortems/incident-2026-06-07-first-champion-promotion-500.md`](../postmortems/incident-2026-06-07-first-champion-promotion-500.md)
-**Pairs with decisions:** `[149]` (map calibrator), `[150]` (INC-1 rollback), `[151]` (INC-2 load gate)
+**Pairs with decisions:** `[149]` (map calibrator), `[150]` (INC-1 rollback), `[151]` (INC-2 load gate), `[152]` (reader input-name fix)
 
 This runbook takes the box from "battedball_outcome/v1 is a stuck, unloadable
 CHAMPION 500ing `/all-parks`" to "v1 is a healthy CHAMPION serving `/all-parks`
 with a 200" - the durable clean recovery, not the interim re-key unblock.
 
-It is **gated on a deploy** of the two machinery rails. Both are on `main` but
-NOT yet on the box:
+It is **gated on a deploy** of three changes. All are on `main` but NOT yet on
+the box:
 
-| Rail  | Commit    | Decision | What it enables for recovery                                  |
-| ----- | --------- | -------- | ------------------------------------------------------------- |
-| INC-1 | `2878420` | `[150]`  | `CHAMPION -> SHADOW` rollback (a stuck champion is demotable) |
-| INC-2 | `27298ac` | `[151]`  | promote load gate (a non-loadable model can't re-champion)    |
+| Change     | Commit    | Decision | What it enables for recovery                                                                                                                      |
+| ---------- | --------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| INC-1      | `2878420` | `[150]`  | `CHAMPION -> SHADOW` rollback (a stuck champion is demotable)                                                                                     |
+| INC-2      | `27298ac` | `[151]`  | promote load gate (a non-loadable model can't re-champion)                                                                                        |
+| reader fix | `2ca7e2f` | `[152]`  | reader resolves the input name (the MLP names it `"features"`, not `"input"`) - WITHOUT this the INC-2 gate 422s the re-promote on the input name |
 
-**Do not start before `./deploy.sh` has put a SHA >= `27298ac` on the box.**
+**Do not start before `./deploy.sh` has put a SHA >= `2ca7e2f` on the box.**
 Confirm with `readlink -f /opt/bullpen/app.jar` + the deployed-SHA print from
-`deploy.sh`.
+`deploy.sh`. The reader fix (`2ca7e2f`) is the load-bearing prerequisite: it is
+the most recent of the three and the one that lets step 4's load gate pass.
 
 ---
 
@@ -35,12 +37,16 @@ Confirm with `readlink -f /opt/bullpen/app.jar` + the deployed-SHA print from
   `requireChampionId()`, so with the champion demoted it returns a clean **503**
   ("has no LIVE champion ... promote a model first"), not a prediction. That is
   strictly better than the calibrator-500 (honest + actionable), but it means the
-  **demote -> re-promote window is a 503 window for `/all-parks`**. Keep it short;
-  do the snapshot fix before the demote where possible (see step ordering).
-- **The load gate runs on the re-promote.** Step 4's `promote -> champion` will
-  itself load v1 + run a forward pass (INC-2). If the snapshot is still broken it
-  returns **422** and v1 stays SHADOW - the gate is the proof, so a green step 4
-  IS the verification that the snapshot is fixed. C5 is the end-to-end confirm.
+  **demote -> re-promote window is a 503 window for `/all-parks`**. The snapshot is
+  already complete (step 2 only verifies), so the window is just demote -> re-promote;
+  keep it short.
+- **The load gate runs on the re-promote, and depends on the reader fix being
+  deployed.** Step 4's `promote -> champion` loads v1 + runs a forward pass through
+  the SAME reader serving uses (INC-2). With `[152]` deployed, the reader resolves
+  the model's `"features"` input and the pass succeeds; WITHOUT it, the gate returns
+  **422 `Unknown input name "input"`** - which is the signal that the reader fix did
+  not make the deploy, NOT a snapshot defect. Either way v1 stays SHADOW (safe). A
+  green step 4 is the proof the model loads + predicts end-to-end; C5 confirms serving.
 
 ---
 
@@ -51,7 +57,7 @@ BASE=http://localhost:8080            # box-side; external confirm via https://a
 ADMIN="<admin-user>:<admin-pass>"     # the /v1/admin Basic creds (systemd EnvironmentFile)
 M=battedball_outcome
 
-# 0a. Rails are deployed (SHA >= 27298ac):
+# 0a. All three changes are deployed (SHA >= 2ca7e2f - the reader fix is the latest):
 readlink -f /opt/bullpen/app.jar
 journalctl -u bullpen-api --since "10 min ago" | grep -i "Started\|version" | tail
 
@@ -81,43 +87,41 @@ No ClickHouse write happens in this recovery, so no CH snapshot is required (the
 `block-destructive-ch` rule does not apply - we touch only SQLite + the snapshot
 files on disk).
 
-## Step 2 - Fix the v1 snapshot on disk (do this BEFORE the demote)
+## Step 2 - Verify the v1 snapshot is complete (no snapshot change needed)
 
-The snapshot lives at `/opt/bullpen/data/models/$M/v1/`. Two defects to close
-(the incident's snapshot layers):
+**The snapshot is already correct and complete.** All of the incident's
+snapshot-side layers were resolved before this deploy; the remaining blocker was
+reader CODE (`[152]`, the input-name fix shipping in this deploy), NOT a snapshot
+defect. So this step is a read-only re-verify, not a fix - which is also why the
+"fix before demote" ordering concern is moot (there is no snapshot fix to race the
+503 window).
 
 ```bash
 SNAP=/opt/bullpen/data/models/$M/v1
-ls -l "$SNAP"        # expect: model.onnx, meta.json, feature_pipeline.json, calibrator.json
-                     # and CRUCIALLY model.onnx.data (the external-weights sidecar)
+ls -l "$SNAP"   # model.onnx, model.onnx.data, meta.json, feature_pipeline.json, calibrator.json
+
+# 2a. Calibrator is map-format ([149], re-keyed 2026-06-07):
+jq '.schema_version' "$SNAP/calibrator.json"                 # expect 2
+
+# 2b. External-weights sidecar present (the original C5 symptom; confirmed ~151 KB on the box):
+test -s "$SNAP/model.onnx.data" && echo "sidecar OK ($(stat -c%s "$SNAP/model.onnx.data") bytes)" || echo "MISSING"
+
+# 2c. model.onnx input name is "features" - the name the reader fix ([152]) now resolves and feeds.
+#     This is NOT a snapshot defect (the model is correct); it is the proof that the reader, not the
+#     model, was the third layer. The deployed [152] reads whatever this prints.
+python3 -c "import onnx; print([i.name for i in onnx.load('$SNAP/model.onnx').graph.input])"  # expect ['features']
 ```
 
-**2a. Calibrator list -> map** (the `[149]` re-key). Authoring happens on the Mac,
-NOT the box (no calibrator hand-editing on prod - ADR-0006). Two options:
+Expected: calibrator `schema_version` 2, `model.onnx.data` ~151 KB, model input
+`['features']` - all confirmed during the incident.
 
-- _Preferred (clean):_ re-export the calibrator from the Mac with the post-`[149]`
-  `to_json` (emits schema_version 2 / map), and ship it to the box inside the
-  re-registered snapshot. If you re-register, the INC-3 copy-set fix in
-  `RegistryService.register` copies `calibrator.json` + `model.onnx.data` together.
-- _Acceptable (deterministic re-key, no re-fit):_ run the shipped converter. It is
-  a pure re-key (every threshold copied verbatim, validated by a value round-trip),
-  so there is zero miscalibration risk:
-  ```bash
-  # run from the training/ checkout on the box ONLY as a mechanical file op (not authoring):
-  uv run python -m training.scripts.convert_calibrator_list_to_map \
-    --in  "$SNAP/calibrator.json" --out "$SNAP/calibrator.json"
-  jq '.schema_version' "$SNAP/calibrator.json"   # expect 2
-  ```
-
-**2b. `model.onnx.data` present.** The C5-time symptom was the external-weights
-sidecar missing from the snapshot. Confirm it is there and non-empty:
-
-```bash
-test -s "$SNAP/model.onnx.data" && echo "sidecar OK" || echo "MISSING - re-stage the snapshot from the Mac artifact"
-```
-
-If missing, re-register from the Mac artifact (which carries it) so the copy-set
-is complete - the same-version idempotent re-stage, not a v2.
+> If (unexpectedly) a check fails - calibrator not v2, or the sidecar missing -
+> THAT is a real snapshot fix, and the clean path is a re-stage from the Mac
+> artifact (authoring stays on the Mac, ADR-0006). The `[149]` converter
+> (`training.scripts.convert_calibrator_list_to_map`, in-place, pure re-key) is the
+> box-mechanical unblock for the calibrator layer only. Per the incident's
+> verification these are already done; do not re-key a calibrator that is already
+> `schema_version` 2.
 
 ## Step 3 - Demote the stuck champion (INC-1, `[150]`)
 
