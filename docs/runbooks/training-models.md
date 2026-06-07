@@ -24,7 +24,7 @@
 
 | #   | Model (registry name)       | Command (from `training/`)                       | Artifact dir                              | Gate                                  |
 | --- | --------------------------- | ------------------------------------------------ | ----------------------------------------- | ------------------------------------- |
-| 0   | — (feature table)           | `features.tier_1_2` then `features.tier_3_form`  | `features` table + `artifacts/encodings/` | rows present per fold                 |
+| 0   | — (feature table)           | `features.tier_3_form` (standalone; see §0 note) | `features` table + `artifacts/encodings/` | rows present per fold                 |
 | 1   | `pitch_outcome_pre`         | `pitch.production --model lightgbm`              | `artifacts/pitch_outcome_pre/v1/`         | ECE < 0.02 on test                    |
 | 2   | `pitch_outcome_post`        | `pitch.production --model post`                  | `artifacts/pitch_outcome_post/v1/`        | ECE < 0.02 on test                    |
 | 3   | `pitch_outcome_lr_baseline` | `pitch.production --model lr`                    | `artifacts/pitch_outcome_lr_baseline/v1/` | co-registered (rule 9)                |
@@ -33,6 +33,37 @@
 
 Models 1–3 are LightGBM/LR (CPU). Models 4–5 + the 30 isotonic
 calibrators are the batted-ball pipeline — model 4 needs the GPU.
+
+### §0 — the feature table is a SINGLE STAGE (`tier_3_form` subsumes `tier_1_2`)
+
+`features.tier_3_form.build_fold_full` is a **standalone full build**, not an
+additive "Tier 3 layer" on top of `tier_1_2`. Per fold it loads the labeled
+pitches, computes its own target encodings, and writes the **full
+`[train_start, test_end]` span** with **Tier 1+2+3+4** columns. `features` is a
+`ReplacingMergeTree` keyed by `(fold, game_date, pk)`, and `tier_1_2` writes only
+the **test-window** span with **Tier 1+2** columns — a strict subset — so
+`tier_3_form`'s later rows **supersede** them. Therefore:
+
+- **Run `tier_3_form` alone** for all folds; it fully populates `features`.
+- `tier_1_2` is **not a required precursor** — it remains only as a faster
+  Tier-1+2-only subset build; running it first is redundant work (superseded).
+- `tier_3_form` **chunks the encode window by calendar year** (DEV-1), so the
+  pandas peak is ~one season and it no longer OOMs on the full 2015–2025 fold.
+  The per-year Tier 3/4 loaders carry their own 90-day lookback, so the result is
+  identical to a single-shot build (the rolling-form window is never truncated).
+
+**Leakage gate after a (re)build** — always run it fail-loud so a misconfigured
+env can never silently skip it (the 2026-06-07 build skipped it via a stale
+`CLICKHOUSE_PORT=8123`):
+
+```bash
+cd ~/code/the-bullpen/training
+CLICKHOUSE_PORT=9000 BULLPEN_REQUIRE_CH=1 uv run python -m pytest tests/leakage -x
+```
+
+`CLICKHOUSE_PORT` must be **9000** (native) — the SQL-path test connects with the
+native driver; `8123` is the HTTP/MCP port and `from_env` now rejects it.
+`BULLPEN_REQUIRE_CH=1` turns an unreachable CH into a hard failure (never a skip).
 
 ---
 
@@ -68,9 +99,9 @@ orchestrator is its own gated pipeline). Each line blocks until done.
 ```bash
 cd ~/code/the-bullpen/training
 
-# 0. Feature table (Tier 1+2, then add Tier 3). REBUILD-on-rerun, idempotent.
-uv run python -m bullpen_training.features.tier_1_2   --min-year 2015 --max-year 2025
-uv run python -m bullpen_training.features.tier_3_form --min-year 2015 --max-year 2025
+# 0. Feature table - SINGLE STAGE (see §0 note below). tier_3_form is a standalone
+#    full build; it does NOT need tier_1_2 to have run first.
+CLICKHOUSE_PORT=9000 uv run python -m bullpen_training.features.tier_3_form --min-year 2015 --max-year 2025
 
 # 1. Pre-pitch head  → pitch_outcome_pre   (4-fold CV + final bundle, then ONNX)
 uv run python -m bullpen_training.pitch.production    --model lightgbm --version v1
@@ -104,14 +135,13 @@ overwrites its own artifacts and reads the previous step's output from disk
 next. Natural cut-points (heaviest first, so you know where to expect the
 fans):
 
-| Run when cool | Command                                                 | Heat / time                          | Safe to stop after? |
-| ------------- | ------------------------------------------------------- | ------------------------------------ | ------------------- |
-| **B0a**       | `features.tier_1_2 --min-year 2015 --max-year 2025`     | medium, ~20–40 min                   | yes                 |
-| **B0b**       | `features.tier_3_form --min-year 2015 --max-year 2025`  | **hot** (windowed scans), ~40–60 min | yes                 |
-| **B1**        | `pitch.production --model lightgbm` + `export_pre_onnx` | medium, ~20–40 min                   | yes                 |
-| **B2**        | `pitch.production --model post` + `export_post_onnx`    | medium, ~20–40 min                   | yes                 |
-| **B3**        | `pitch.production --model lr`                           | light, ~5–10 min                     | yes                 |
-| **B4**        | batted-ball — itself sectionable, see below             | **hottest** (GPU)                    | per sub-stage       |
+| Run when cool | Command                                                 | Heat / time                                                                  | Safe to stop after?                   |
+| ------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------- |
+| **B0**        | `features.tier_3_form --min-year 2015 --max-year 2025`  | **hot** (windowed scans), ~40–60 min; year-chunked so memory-bounded (DEV-1) | yes (single stage; tier_1_2 subsumed) |
+| **B1**        | `pitch.production --model lightgbm` + `export_pre_onnx` | medium, ~20–40 min                                                           | yes                                   |
+| **B2**        | `pitch.production --model post` + `export_post_onnx`    | medium, ~20–40 min                                                           | yes                                   |
+| **B3**        | `pitch.production --model lr`                           | light, ~5–10 min                                                             | yes                                   |
+| **B4**        | batted-ball — itself sectionable, see below             | **hottest** (GPU)                                                            | per sub-stage                         |
 
 **The batted-ball step (B4) is itself a 6-stage pipeline** and the biggest
 heat source. To run _its_ stages with cooldowns, edit
