@@ -1,6 +1,6 @@
 # Incident postmortem: first-champion promotion bricked `/all-parks` (2026-06-07)
 
-- **Status**: resolved-pending-clean-recovery (interim unblock available; durable fixes in flight)
+- **Status**: resolved-pending-clean-recovery (interim unblock available; durable fixes `[149]`/`[150]`/`[151]` landed on main, recovery runbook ready, gated on deploy of `27298ac`)
 - **Severity**: SEV-3 (public endpoint 500, zero live consumers)
 - **Date**: 2026-06-07 (deploy + promotion ~01:38-02:10 UTC)
 - **Authors**: developer (Mac) + box-operator + independent reviewer
@@ -94,15 +94,15 @@ The registered `battedball_outcome/v1` snapshot was both **incomplete** and carr
 
 ## Action items
 
-| Item                                                                                                                                    | Owner                    | Status                                                            |
-| --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ | ----------------------------------------------------------------- |
-| Re-key the on-box v1 calibrator list->map (interim unblock)                                                                             | box-operator             | script shipped (`convert_calibrator_list_to_map.py`); run pending |
-| `to_json` -> map-canonical + `from_json` back-compat + Java-contract CI test                                                            | developer (Mac)          | **DONE** (decision `[149]`, commit `b831ac7`)                     |
-| INC-3 copy-set fix (`model.onnx.data` + `calibrator.json`)                                                                              | (prior)                  | DONE (predates incident; doesn't backfill)                        |
-| INC-2 register/promote **load gate** (load + warmup predict; reject on failure)                                                         | registry track           | spec'd; **prerequisite to any re-promote**                        |
-| INC-1 champion **rollback** path (CHAMPION -> SHADOW or non-terminal RETIRED)                                                           | registry track           | spec'd; load-bearing for clean recovery                           |
-| INC-4 hash the calibrator under rule 7 (content guard)                                                                                  | registry track           | proposed                                                          |
-| Clean recovery: re-export map calibrator -> (INC-1) demote v1 -> idempotent re-register v1 (complete) -> (INC-2-gated) re-promote -> C5 | developer + box-operator | blocked on INC-1/INC-2                                            |
+| Item                                                                                                                                    | Owner                    | Status                                                                                                                                                  |
+| --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Re-key the on-box v1 calibrator list->map (interim unblock)                                                                             | box-operator             | script shipped (`convert_calibrator_list_to_map.py`); run pending                                                                                       |
+| `to_json` -> map-canonical + `from_json` back-compat + Java-contract CI test                                                            | developer (Mac)          | **DONE** (decision `[149]`, commit `b831ac7`)                                                                                                           |
+| INC-3 copy-set fix (`model.onnx.data` + `calibrator.json`)                                                                              | (prior)                  | DONE (predates incident; doesn't backfill)                                                                                                              |
+| INC-2 register/promote **load gate** (load + warmup predict; reject on failure)                                                         | registry track           | **DONE** (decision `[151]`, commit `27298ac`; on main, undeployed)                                                                                      |
+| INC-1 champion **rollback** path (CHAMPION -> SHADOW or non-terminal RETIRED)                                                           | registry track           | **DONE** (decision `[150]`, commit `2878420`; on main, undeployed)                                                                                      |
+| INC-4 hash the calibrator under rule 7 (content guard)                                                                                  | registry track           | proposed (deferred; not in the recovery deploy)                                                                                                         |
+| Clean recovery: re-export map calibrator -> (INC-1) demote v1 -> idempotent re-register v1 (complete) -> (INC-2-gated) re-promote -> C5 | developer + box-operator | **unblocked** (rails on main); runbook [`clean-recovery-first-champion.md`](../runbooks/clean-recovery-first-champion.md); gated on deploy of `27298ac` |
 
 ## Lessons
 
