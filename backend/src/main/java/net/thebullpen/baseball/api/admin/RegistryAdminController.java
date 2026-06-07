@@ -5,6 +5,7 @@ import java.util.List;
 import net.thebullpen.baseball.api.admin.dto.PromoteRequest;
 import net.thebullpen.baseball.api.dto.OpsEventType;
 import net.thebullpen.baseball.data.OpsEventsRepository;
+import net.thebullpen.baseball.inference.ModelLoadValidator;
 import net.thebullpen.baseball.registry.RegistryException;
 import net.thebullpen.baseball.registry.RegistryService;
 import net.thebullpen.baseball.registry.dto.ModelVersion;
@@ -12,6 +13,7 @@ import net.thebullpen.baseball.registry.dto.RegisterRequest;
 import net.thebullpen.baseball.registry.dto.Stage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -65,10 +67,20 @@ public class RegistryAdminController {
 
   private final RegistryService registry;
   private final OpsEventsRepository opsEvents;
+  private final ModelLoadValidator loadValidator;
+  // INC-2 kill-switch: the load gate is on in prod, but can be disabled in an emergency (e.g. the
+  // gate itself misbehaves) and is disabled in the transition-logic ITs that promote dummy models.
+  private final boolean loadGateEnabled;
 
-  public RegistryAdminController(RegistryService registry, OpsEventsRepository opsEvents) {
+  public RegistryAdminController(
+      RegistryService registry,
+      OpsEventsRepository opsEvents,
+      ModelLoadValidator loadValidator,
+      @Value("${bullpen.registry.promotion-load-gate.enabled:true}") boolean loadGateEnabled) {
     this.registry = registry;
     this.opsEvents = opsEvents;
+    this.loadValidator = loadValidator;
+    this.loadGateEnabled = loadGateEnabled;
   }
 
   /** Best-effort ops-log emit — an event-log failure must never break a registry operation. */
@@ -143,6 +155,22 @@ public class RegistryAdminController {
               + current.modelName()
               + " for id="
               + versionId);
+    }
+    // INC-2 (decision [151]) load gate, run BEFORE the write-transaction so the slow ONNX load
+    // never
+    // holds the SQLite connection. Gate -> CHAMPION (must) and the forward CANDIDATE -> SHADOW (a
+    // shadow model is loaded by shadow dispatch). Do NOT gate the CHAMPION -> SHADOW ROLLBACK
+    // (INC-1):
+    // a broken champion must be demotable to recover - load-gating it would trap it (the 2026-06-07
+    // stuck-champion). Resolves the loader from the model's own shape, same as serving.
+    boolean loadGate =
+        target == Stage.CHAMPION || (target == Stage.SHADOW && current.stage() == Stage.CANDIDATE);
+    if (loadGateEnabled && loadGate) {
+      try {
+        loadValidator.validate(current);
+      } catch (RegistryException.ModelLoadFailed e) {
+        throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, e.getMessage(), e);
+      }
     }
     try {
       ModelVersion after = registry.transitionStage(versionId, target);

@@ -74,6 +74,10 @@ class RegistryControllerIT {
             System.getProperty("java.io.tmpdir"),
             "bullpen-registry-ctrl-it-snapshots-" + UUID.randomUUID());
     registry.add("bullpen.snapshot.local-base-path", snapshotBase::toString);
+    // These tests promote DUMMY (non-loadable) snapshots to exercise transition + rule-5 + auth
+    // logic, not the model-load path. Disable the INC-2 load gate here; it has its own
+    // PromotionLoadGateIT. (The gate would otherwise 422 every dummy-model promote.)
+    registry.add("bullpen.registry.promotion-load-gate.enabled", () -> "false");
   }
 
   @Autowired private MockMvc mvc;

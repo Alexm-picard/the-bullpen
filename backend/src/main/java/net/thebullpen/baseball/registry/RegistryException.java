@@ -12,7 +12,8 @@ public sealed class RegistryException extends RuntimeException
         RegistryException.IllegalTransition,
         RegistryException.FeatureSchemaMismatch,
         RegistryException.ResetConfirmationMissing,
-        RegistryException.PromotionCriteriaMissing {
+        RegistryException.PromotionCriteriaMissing,
+        RegistryException.ModelLoadFailed {
 
   protected RegistryException(String message) {
     super(message);
@@ -142,6 +143,30 @@ public sealed class RegistryException extends RuntimeException
 
     public long challengerVersionId() {
       return challengerVersionId;
+    }
+  }
+
+  /**
+   * INC-2 (decision [151]): the model's snapshot won't load + run a forward pass through the
+   * serving loader. Catches an incomplete copy-set (missing {@code model.onnx.data} / {@code
+   * calibrator.json}), a wrong-format calibrator, or any ONNX/pipeline wiring failure - the things
+   * that otherwise only surface as a 500 at serving (the 2026-06-07 promotion incident). Maps to
+   * 422.
+   */
+  public static final class ModelLoadFailed extends RegistryException {
+    public ModelLoadFailed(String modelName, String version, long id, Throwable cause) {
+      super(
+          "registry: model "
+              + modelName
+              + "/"
+              + version
+              + " (id="
+              + id
+              + ") failed to load + predict via the serving path: "
+              + (cause.getMessage() == null
+                  ? cause.getClass().getSimpleName()
+                  : cause.getMessage()),
+          cause);
     }
   }
 }
