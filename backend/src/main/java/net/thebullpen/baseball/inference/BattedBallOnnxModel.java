@@ -23,14 +23,32 @@ import java.util.Map;
  */
 public final class BattedBallOnnxModel implements AutoCloseable {
 
-  private static final String INPUT_NAME = "input";
-
   private final OrtEnvironment env;
   private final OrtSession session;
+
+  /**
+   * The model's declared input tensor name, resolved from the loaded session rather than hardcoded
+   * (decision [152]). The all-parks exporters this one reader serves (see the class javadoc)
+   * DISAGREE on the input name: the MLP / per-park MLP export {@code "features"}; the per-park LGBM
+   * and the LR baseline export {@code "input"}. A hardcoded constant could feed at most one family,
+   * so it is resolved from {@link OrtSession#getInputNames()} - the reader feeds whatever the
+   * loaded model actually declares. This is the latent input-name half of the Python<->Java
+   * batted-ball contract, surfaced by the 2026-06-07 first-champion promotion: the MLP (named
+   * {@code "features"}) was the first real all-parks model ever served through this reader - the
+   * toy always went through {@link OnnxModel} (named {@code "input"}), so the mismatch never fired
+   * until now.
+   */
+  private final String inputName;
 
   public BattedBallOnnxModel(Path modelPath) throws OrtException {
     this.env = OrtEnvironment.getEnvironment();
     this.session = env.createSession(modelPath.toString(), new OrtSession.SessionOptions());
+    var inputNames = session.getInputNames();
+    if (inputNames.size() != 1) {
+      throw new IllegalStateException(
+          "batted-ball ONNX must declare exactly one input tensor, got " + inputNames);
+    }
+    this.inputName = inputNames.iterator().next();
   }
 
   /**
@@ -47,7 +65,7 @@ public final class BattedBallOnnxModel implements AutoCloseable {
   /** Batched variant: {@code [N][nFeatures]} in, {@code [N][nParks][nOutcomes]} out. */
   public float[][][] predictBatch(float[][] features) throws OrtException {
     try (OnnxTensor tensor = OnnxTensor.createTensor(env, features);
-        OrtSession.Result result = session.run(Map.of(INPUT_NAME, tensor))) {
+        OrtSession.Result result = session.run(Map.of(inputName, tensor))) {
       // The batted-ball contract pins the per-park distribution at output index 0.
       Object value = result.get(0).getValue();
       if (!(value instanceof float[][][] dist)) {
