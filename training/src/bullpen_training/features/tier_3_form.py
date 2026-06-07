@@ -176,76 +176,111 @@ def build_fold_full(
         batter_entities=len(batter_te),
     )
 
-    # Encode the FULL fold span [train_start, test_end] so the harness can
-    # pull train/val/test from `features` without recomputing TE on the fly.
-    # The TE itself was built only from train_start..train_end (above), so
-    # encoding the train years with that TE is a benign self-reference —
-    # rows in the train years see the same fold-wide TE every other row uses.
+    train_rows = len(train_df)
+    # Free the large train frame now - only the (small) TE dicts + train_prior are
+    # needed below, so the per-year encode chunk stays the only big allocation.
+    del train_df
+
+    # Encode the FULL fold span [train_start, test_end] so the harness can pull
+    # train/val/test from `features` without recomputing TE on the fly. The TE was
+    # built from train_start..train_end only (above), so encoding the train years
+    # with that TE is a benign self-reference - rows in the train years see the same
+    # fold-wide TE every other row uses.
+    #
+    # DEV-1 (fold-4 OOM): chunk the encode -> merge -> insert by CALENDAR YEAR so the
+    # pandas peak is ~one season, not the whole fold span (fold 4's ~7.4M-row window
+    # stacked encoded + tier3 + tier4 + merged and exceeded the live-box headroom).
+    #
+    # Correctness invariant (rule 10) - DO NOT move these inside the loop: the TE fit
+    # (compute_te on train_df), train_prior, the saved encodings, and as_of_date are
+    # FOLD-INVARIANT, computed ONCE above and reused for every chunk. Fitting TE per
+    # year would leak the test span into its own encoding. Only the
+    # load -> apply_te -> tier3/4 -> merge -> insert body is chunked. The
+    # load_tier3_for_window / load_tier4_for_window loaders are themselves year-chunked
+    # and each carries a 90-day lookback in its SQL, so a per-year call returns data
+    # IDENTICAL to the full-window call - the rolling-form window is never truncated at
+    # a year edge, and apply_te is a pure per-row lookup (no temporal component). The
+    # resulting `features` table is therefore identical to the single-shot build.
     encode_start = fold.train_start
     encode_end = fold.test_end
     log.info(
-        "loading encode window (Tier 1+2)",
+        "encoding fold span by year (Tier 1+2+3+4)",
         fold=fold.fold_id,
         encode_start=str(encode_start),
         encode_end=str(encode_end),
     )
-    test_df = load_labeled_pitches(client, start_date=encode_start, end_date=encode_end)
-    test_df["as_of_date"] = fold.train_end
-    test_df["fold"] = fold.fold_id
-    encoded = apply_te(
-        test_df, pitcher_te, entity_col="pitcher_id", column_prefix="pitcher", prior=train_prior
-    )
-    encoded = apply_te(
-        encoded, batter_te, entity_col="batter_id", column_prefix="batter", prior=train_prior
-    )
 
-    log.info("computing Tier 3 windows", fold=fold.fold_id)
-    tier3 = load_tier3_for_window(client, test_start=encode_start, test_end=encode_end)
-    log.info("Tier 3 rows loaded", fold=fold.fold_id, rows=len(tier3))
-
-    log.info("loading Tier 4 (post-pitch) attributes", fold=fold.fold_id)
-    tier4 = load_tier4_for_window(client, test_start=encode_start, test_end=encode_end)
-    log.info("Tier 4 rows loaded", fold=fold.fold_id, rows=len(tier4))
-
-    merged = encoded.merge(tier3, on=list(PK_JOIN), how="left")
-    # T3 has more rows than T1+2 (HBP is in T3 but excluded from the 5-class
-    # T1+2 filter). LEFT JOIN drops the extras correctly; we only warn if the
-    # OPPOSITE happens (T1+2 rows missing a T3 match — that would mean the
-    # windowed SQL skipped pitches we expected to see).
-    unmatched = int(cast(Any, merged["pitcher_pitches_in_game"].isna().sum()))
-    if unmatched:
-        log.warning(
-            "Tier 1+2 rows without Tier 3 match",
-            fold=fold.fold_id,
-            unmatched=unmatched,
-            total=len(merged),
+    test_rows = 0
+    tier3_rows = 0
+    rows_written = 0
+    for year in range(encode_start.year, encode_end.year + 1):
+        chunk_start = max(date(year, 1, 1), encode_start)
+        chunk_end = min(date(year, 12, 31), encode_end)
+        year_df = load_labeled_pitches(client, start_date=chunk_start, end_date=chunk_end)
+        if year_df.empty:
+            continue
+        test_rows += len(year_df)
+        year_df["as_of_date"] = fold.train_end
+        year_df["fold"] = fold.fold_id
+        encoded = apply_te(
+            year_df, pitcher_te, entity_col="pitcher_id", column_prefix="pitcher", prior=train_prior
+        )
+        encoded = apply_te(
+            encoded, batter_te, entity_col="batter_id", column_prefix="batter", prior=train_prior
         )
 
-    # ClickHouse Nullable(UInt*) columns reject numpy.float64 (which is what
-    # pandas LEFT JOIN produces when there are missing matches). Coerce to
-    # pandas nullable Int / explicit fillna for the DEFAULT-0 column before
-    # the driver's type check trips.
-    for col in ("pitcher_pitches_last_28d", "days_since_last_appearance"):
-        merged[col] = merged[col].astype("Int64")
-    merged["pitcher_pitches_in_game"] = merged["pitcher_pitches_in_game"].fillna(0).astype("uint32")
+        tier3 = load_tier3_for_window(client, test_start=chunk_start, test_end=chunk_end)
+        tier4 = load_tier4_for_window(client, test_start=chunk_start, test_end=chunk_end)
+        tier3_rows += len(tier3)
 
-    # Tier 4 join — merge_tier4 fills NaN pitch_type with "" so the LowCardinality
-    # serializer is happy. Float Tier 4 columns stay Nullable; clickhouse-driver
-    # encodes NaN → NULL for Nullable(Float32) without help.
-    merged = merge_tier4(merged, tier4)
+        merged = encoded.merge(tier3, on=list(PK_JOIN), how="left")
+        # T3 has more rows than T1+2 (HBP is in T3 but excluded from the 5-class
+        # T1+2 filter). LEFT JOIN drops the extras correctly; we only warn on the
+        # OPPOSITE (a T1+2 row with no T3 match - the windowed SQL skipped a pitch).
+        unmatched = int(cast(Any, merged["pitcher_pitches_in_game"].isna().sum()))
+        if unmatched:
+            log.warning(
+                "Tier 1+2 rows without Tier 3 match",
+                fold=fold.fold_id,
+                year=year,
+                unmatched=unmatched,
+                total=len(merged),
+            )
 
-    final = cast(pd.DataFrame, merged[list(FEATURES_COLUMNS_FULL)])
-    rows_written = insert_dataframe(client, "features", final, columns=FEATURES_COLUMNS_FULL)
+        # ClickHouse Nullable(UInt*) columns reject numpy.float64 (what a pandas LEFT
+        # JOIN yields on missing matches). Coerce to pandas nullable Int / explicit
+        # fillna for the DEFAULT-0 column before the driver's type check trips.
+        for col in ("pitcher_pitches_last_28d", "days_since_last_appearance"):
+            merged[col] = merged[col].astype("Int64")
+        merged["pitcher_pitches_in_game"] = (
+            merged["pitcher_pitches_in_game"].fillna(0).astype("uint32")
+        )
+
+        # Tier 4 join - merge_tier4 fills NaN pitch_type with "" for LowCardinality;
+        # float Tier 4 columns stay Nullable (clickhouse-driver encodes NaN -> NULL).
+        merged = merge_tier4(merged, tier4)
+
+        final = cast(pd.DataFrame, merged[list(FEATURES_COLUMNS_FULL)])
+        rows_written += insert_dataframe(client, "features", final, columns=FEATURES_COLUMNS_FULL)
+        log.info(
+            "features chunk inserted (Tier 1+2+3+4)",
+            fold=fold.fold_id,
+            year=year,
+            rows=len(final),
+        )
+        # Free the per-year frames before the next iteration so peak stays ~one season.
+        del year_df, encoded, tier3, tier4, merged, final
+
     log.info(
-        "features inserted (Tier 1+2+3)",
+        "features inserted (Tier 1+2+3+4)",
         fold=fold.fold_id,
         rows=rows_written,
     )
     return {
         "fold": fold.fold_id,
-        "train_rows": len(train_df),
-        "test_rows": len(test_df),
-        "tier3_rows": len(tier3),
+        "train_rows": train_rows,
+        "test_rows": test_rows,
+        "tier3_rows": tier3_rows,
         "rows_written": rows_written,
     }
 
