@@ -29,6 +29,7 @@ from bullpen_training.features import LABEL_CLASSES
 from bullpen_training.ingest.clickhouse_client import ClickHouseSettings, make_client
 from bullpen_training.pitch import PITCH_FEATURE_COLUMNS
 from bullpen_training.pitch.isotonic import IsotonicCalibrator
+from bullpen_training.pitch.lgb_dataset import build_lgb_dataset
 
 log = logging.getLogger(__name__)
 
@@ -244,8 +245,12 @@ def model_factory(
         "verbosity": -1,
     }
     feat_cols = list(PITCH_FEATURE_COLUMNS)
-    dtrain = lgb.Dataset(train_df[feat_cols], label=train_df["label"])
-    dval = lgb.Dataset(val_df[feat_cols], label=val_df["label"], reference=dtrain)
+    # CV-MEM-1: build + construct eagerly (shared helper) so each column sub-copy is
+    # binned and freed before the next Dataset / tree-building, instead of both
+    # sub-copies coexisting with the caller's full-fold frames. Pandas path kept ->
+    # binning byte-identical, model unchanged.
+    dtrain = build_lgb_dataset(train_df, feat_cols)
+    dval = build_lgb_dataset(val_df, feat_cols, reference=dtrain)
     booster = cast(
         lgb.Booster,
         lgb.train(

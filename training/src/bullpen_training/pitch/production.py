@@ -23,6 +23,7 @@ has a real held-out test set whose metrics we can publish.
 
 from __future__ import annotations
 
+import gc
 import logging
 from pathlib import Path
 from typing import Any, cast
@@ -103,8 +104,13 @@ def _train_production_lightgbm(
     use the test year for the eval-artifact preds."""
     train_df = loader(prod_fold.train_start_year, prod_fold.train_end_year, prod_fold.fold_id)
     val_df = loader(prod_fold.val_year, prod_fold.val_year, prod_fold.fold_id)
-    test_df = loader(prod_fold.test_year, prod_fold.test_year, prod_fold.fold_id)
     bundle = lgb_factory(train_df, val_df, num_boost_round=2000, early_stopping_rounds=50)
+    # CV-MEM-1: free train/val and load test AFTER training - test is only used for
+    # the eval-artifact preds below, never during the fit, so it need not be resident
+    # during the train-time peak.
+    del train_df, val_df
+    gc.collect()
+    test_df = loader(prod_fold.test_year, prod_fold.test_year, prod_fold.fold_id)
     test_predictions = cast(np.ndarray, bundle.predict_proba(test_df))
     return bundle, test_df, test_predictions
 
@@ -114,8 +120,10 @@ def _train_production_lr(
 ) -> tuple[LRModelBundle, pd.DataFrame, np.ndarray]:
     train_df = loader(prod_fold.train_start_year, prod_fold.train_end_year, prod_fold.fold_id)
     val_df = loader(prod_fold.val_year, prod_fold.val_year, prod_fold.fold_id)
-    test_df = loader(prod_fold.test_year, prod_fold.test_year, prod_fold.fold_id)
     bundle = lr_factory(train_df, val_df)
+    del train_df, val_df  # CV-MEM-1: free before the deferred test load
+    gc.collect()
+    test_df = loader(prod_fold.test_year, prod_fold.test_year, prod_fold.fold_id)
     test_predictions = cast(np.ndarray, bundle.predict_proba(test_df))
     return bundle, test_df, test_predictions
 
@@ -127,8 +135,10 @@ def _train_production_post(
     `model_name` at persistence time."""
     train_df = loader(prod_fold.train_start_year, prod_fold.train_end_year, prod_fold.fold_id)
     val_df = loader(prod_fold.val_year, prod_fold.val_year, prod_fold.fold_id)
-    test_df = loader(prod_fold.test_year, prod_fold.test_year, prod_fold.fold_id)
     bundle = post_factory(train_df, val_df, num_boost_round=2000, early_stopping_rounds=50)
+    del train_df, val_df  # CV-MEM-1: free before the deferred test load
+    gc.collect()
+    test_df = loader(prod_fold.test_year, prod_fold.test_year, prod_fold.fold_id)
     test_predictions = cast(np.ndarray, bundle.predict_proba(test_df))
     return bundle, test_df, test_predictions
 

@@ -31,6 +31,7 @@ before any model trains. The rebuild lands as a 2a.5 prereq.
 
 from __future__ import annotations
 
+import gc
 import logging
 import statistics
 from collections.abc import Callable, Iterable
@@ -74,7 +75,8 @@ FOLDS: tuple[FoldSpec, ...] = (
 
 
 class HasPredictProba(Protocol):
-    def predict_proba(self, X: pd.DataFrame) -> np.ndarray: ...
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+        ...
 
 
 # A loader takes (start_year, end_year, fold_id) and returns a DataFrame
@@ -116,6 +118,16 @@ def _label_array(df: pd.DataFrame) -> np.ndarray:
     return np.asarray(df["label"], dtype=np.int64)
 
 
+def _require_label(df: pd.DataFrame, fold_id: int, split_name: str) -> None:
+    """Fail loud if a loaded split is missing the label column (per-split so test can
+    be validated after its deferred load - CV-MEM-1)."""
+    if "label" not in df.columns:
+        raise ValueError(
+            f"feature_loader returned a DataFrame missing the 'label' column "
+            f"(fold {fold_id}, split {split_name})"
+        )
+
+
 def run(
     model_factory: ModelFactory,
     feature_loader: FeatureLoader,
@@ -147,31 +159,44 @@ def run(
         )
         train_df = feature_loader(fold.train_start_year, fold.train_end_year, fold.fold_id)
         val_df = feature_loader(fold.val_year, fold.val_year, fold.fold_id)
-        test_df = feature_loader(fold.test_year, fold.test_year, fold.fold_id)
-        for split_name, split_df in (("train", train_df), ("val", val_df), ("test", test_df)):
-            if "label" not in split_df.columns:
-                raise ValueError(
-                    f"feature_loader returned a DataFrame missing the 'label' column "
-                    f"(fold {fold.fold_id}, split {split_name})"
-                )
+        _require_label(train_df, fold.fold_id, "train")
+        _require_label(val_df, fold.fold_id, "val")
 
         model = model_factory(train_df, val_df)
+        train_rows = len(train_df)
+        val_rows = len(val_df)
+        # CV-MEM-1: train/val are no longer needed once model_factory has returned
+        # (it has already fit the booster + the val-based calibrator). Free them
+        # before the test frame loads so test + the metric computation don't stack on
+        # top of the train-time peak.
+        del train_df, val_df
+        gc.collect()
+
+        # test_df is only needed for the test-metric, NOT during training - load it
+        # here (after the train peak) so it is never resident while the model fits.
+        test_df = feature_loader(fold.test_year, fold.test_year, fold.fold_id)
+        _require_label(test_df, fold.fold_id, "test")
         y_test = _label_array(test_df)
         feature_cols = [c for c in test_df.columns if c != "label"]
         test_features = cast(pd.DataFrame, test_df[feature_cols])
         proba = model.predict_proba(test_features)
+        test_rows = len(test_df)
 
         fold_metrics = {m.__name__: float(m(y_test, proba)) for m in metrics_list}
         per_fold.append(
             FoldResult(
                 fold_id=fold.fold_id,
-                train_rows=len(train_df),
-                val_rows=len(val_df),
-                test_rows=len(test_df),
+                train_rows=train_rows,
+                val_rows=val_rows,
+                test_rows=test_rows,
                 metrics=fold_metrics,
             )
         )
         log.log(log_level, "fold done", fold=fold.fold_id, **fold_metrics)
+        # Release this fold's frames before the next fold loads, so two folds'
+        # worth of data never coexist (the cross-fold overlap, CV-MEM-1).
+        del test_df, test_features, proba, model
+        gc.collect()
 
     summary: dict[str, tuple[float, float]] = {}
     for name in {m.__name__ for m in metrics_list}:

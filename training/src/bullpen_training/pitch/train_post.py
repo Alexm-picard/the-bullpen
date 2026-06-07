@@ -39,6 +39,7 @@ from bullpen_training.features import LABEL_CLASSES
 from bullpen_training.ingest.clickhouse_client import ClickHouseSettings, make_client
 from bullpen_training.pitch import PITCH_FEATURE_COLUMNS_POST
 from bullpen_training.pitch.isotonic import IsotonicCalibrator
+from bullpen_training.pitch.lgb_dataset import build_lgb_dataset
 from bullpen_training.pitch.train_pre import (
     STAND_TO_INT,
     THROWS_TO_INT,
@@ -326,8 +327,12 @@ def model_factory(
     # out to be ~3-4x slower per round on the joint (park, pitch_type)
     # cardinality with no measurable Brier improvement on this data shape.
     # Documented in the 2b.2 status log; revisit if scaling reveals a gap.
-    dtrain = lgb.Dataset(train_df[feat_cols], label=train_df["label"])
-    dval = lgb.Dataset(val_df[feat_cols], label=val_df["label"], reference=dtrain)
+    #
+    # CV-MEM-1: build + construct eagerly (shared helper) so each column sub-copy is
+    # binned and freed before the next Dataset / tree-building. The wider post feature
+    # set makes this the worse OOM site; pandas path kept -> binning byte-identical.
+    dtrain = build_lgb_dataset(train_df, feat_cols)
+    dval = build_lgb_dataset(val_df, feat_cols, reference=dtrain)
     booster = cast(
         lgb.Booster,
         lgb.train(
