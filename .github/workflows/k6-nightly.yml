@@ -47,16 +47,33 @@ jobs:
             --bullpen.clickhouse.enabled=false --bullpen.ratelimit.enabled=false \
             --server.port=8080 > /tmp/api.log 2>&1 &
           echo "API_PID=$!" >> "$GITHUB_ENV"
+          # Wait for READINESS (post-warmup), not overall health, so k6 measures the warm path and
+          # never fires during the WarmupReadiness REFUSING_TRAFFIC window (see contract.yml).
           for i in $(seq 1 60); do
-            curl -fsS http://localhost:8080/actuator/health >/dev/null 2>&1 && { echo "up after ${i}s"; exit 0; }
+            curl -fsS http://localhost:8080/actuator/health/readiness >/dev/null 2>&1 && { echo "ready (post-warmup) after ${i}s"; exit 0; }
             sleep 1
           done
-          echo "API never healthy:"; tail -40 /tmp/api.log; exit 1
+          echo "API never ready:"; tail -40 /tmp/api.log; exit 1
 
-      - name: Run k6 (SLA p99<50ms, error<0.1%)
+      - name: Run k6 (SLA p99<50ms, error<0.1%) - fail on a SUSTAINED breach (1-retry debounce)
         id: k6
         run: |
-          k6 run infra/k6/predict-load.js | tee /tmp/k6.txt || echo "breached=true" >> "$GITHUB_OUTPUT"
+          # The SLO is demonstrated (last nightly p(99)=24.82ms, 0% error - ~2x headroom). Enforce
+          # it: k6 exits non-zero when its thresholds breach. To avoid redding the nightly on a
+          # single shared-runner spike (the flakiness the prior annotate-only design feared), retry
+          # once and fail only on TWO consecutive breaches - a real regression, not a blip.
+          if k6 run infra/k6/predict-load.js | tee /tmp/k6.txt; then
+            echo "k6 SLO met"
+          else
+            echo "::warning title=k6 SLO breached::first run breached; retrying once to debounce a shared-runner spike"
+            if k6 run infra/k6/predict-load.js | tee /tmp/k6_retry.txt; then
+              echo "::warning title=k6 transient::passed on retry (transient spike); not failing the build"
+            else
+              echo "breached=true" >> "$GITHUB_OUTPUT"
+              echo "::error title=k6 SLO regression::breached on two consecutive runs"
+              exit 1
+            fi
+          fi
 
       - name: Ping Discord on SLA breach
         if: steps.k6.outputs.breached == 'true' && env.DISCORD != ''

@@ -55,9 +55,14 @@ jobs:
             --bullpen.ratelimit.enabled=false \
             --server.port=8080 > /tmp/api.log 2>&1 &
           echo "API_PID=$!" >> "$GITHUB_ENV"
+          # Wait for READINESS, not overall health: WarmupReadiness publishes REFUSING_TRAFFIC ->
+          # runs warmup predict() -> ACCEPTING_TRAFFIC, but /actuator/health is UP at context-ready
+          # (the start of that window). Firing the fuzzer during warmup is a candidate for the rare
+          # non-deterministic 500 (a request racing the first predict()'s lazy init);
+          # /actuator/health/readiness stays 503 until warmup completes.
           for i in $(seq 1 60); do
-            if curl -fsS http://localhost:8080/actuator/health >/dev/null 2>&1; then
-              echo "api up after ${i}s"; exit 0
+            if curl -fsS http://localhost:8080/actuator/health/readiness >/dev/null 2>&1; then
+              echo "api ready (post-warmup) after ${i}s"; exit 0
             fi
             sleep 1
           done

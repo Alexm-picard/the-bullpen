@@ -128,14 +128,18 @@ public class ApiErrorAdvice {
   @ExceptionHandler(Exception.class)
   public ResponseEntity<ApiError> handleAnyOther(Exception ex) {
     String cid = correlationId();
-    // Concurrency context for the open rare-500 follow-up: a failure that correlates with a load
-    // spike (high in_flight) rather than a specific input points at a race, not a bad request.
-    // thread + in_flight let the NEXT occurrence be classified straight from the log.
+    // Context for the open rare-500 follow-up so the NEXT occurrence self-classifies:
+    //   - high in_flight -> a load/concurrency race, not a bad request;
+    //   - low uptime_ms (fresh boot) -> the WarmupReadiness window race (a request landing before
+    //     warmup completes), the cheap CI-only candidate; readiness-gated boot-waits should remove
+    // it.
+    // If a 500 still logs with high uptime + low in_flight, it's a genuine input, captured here.
     log.error(
-        "unhandled exception correlation_id={} thread={} in_flight={}",
+        "unhandled exception correlation_id={} thread={} in_flight={} uptime_ms={}",
         cid,
         Thread.currentThread().getName(),
         CorrelationIdFilter.inFlight(),
+        java.lang.management.ManagementFactory.getRuntimeMXBean().getUptime(),
         ex);
     ApiError body = ApiError.of("internal_error", "an unexpected error occurred", cid);
     return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
