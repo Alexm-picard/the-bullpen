@@ -314,6 +314,13 @@ def persist_lr_baseline_v1(
         calibrator_path=cal_path,
         extras={
             "fitted_label_classes": list(bundle.fitted_label_classes),
+            "design_matrix_dtype": "float32",
+            "design_matrix_dtype_rationale": (
+                "baseline-only memory accommodation (CV-MEM lever 2); decision [37] LR has"
+                " no byte-identity gate, and the ~1e-5 precision delta cannot make LR"
+                " spuriously beat LightGBM. The LightGBM heads are unaffected (they bin"
+                " via build_lgb_dataset and never hold a dense float64 design matrix)."
+            ),
         },
     )
 

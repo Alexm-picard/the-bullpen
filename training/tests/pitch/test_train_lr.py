@@ -77,7 +77,9 @@ def test_lr_calibrator_attaches_and_changes_probabilities() -> None:
 
     bundle = model_factory(train, val)
     cal_proba = bundle.predict_proba(test)
-    raw_proba = bundle.pipeline.predict_proba(test[list(PITCH_FEATURE_COLUMNS)])
+    # .to_numpy() matches the nameless-array fit (fit_lr_from_arrays); a named frame
+    # here would trip sklearn's feature-name-mismatch warning.
+    raw_proba = bundle.pipeline.predict_proba(test[list(PITCH_FEATURE_COLUMNS)].to_numpy())
 
     # Reorder raw to canonical layout for fair compare
     canonical = np.zeros_like(cal_proba)

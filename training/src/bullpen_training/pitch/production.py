@@ -40,13 +40,18 @@ from bullpen_training.eval.metrics import (
     multiclass_log_loss,
 )
 from bullpen_training.logging_config import configure_logging, get_logger
+from bullpen_training.pitch import PITCH_FEATURE_COLUMNS
 from bullpen_training.pitch.persist import (
     PersistInputs,
     persist_lightgbm_v1,
     persist_lr_baseline_v1,
 )
 from bullpen_training.pitch.train_lr_baseline import (
+    DESIGN_MATRIX_DTYPE as LR_DESIGN_MATRIX_DTYPE,
+)
+from bullpen_training.pitch.train_lr_baseline import (
     LRModelBundle,
+    fit_lr_from_arrays,
 )
 from bullpen_training.pitch.train_lr_baseline import (
     model_factory as lr_factory,
@@ -118,11 +123,29 @@ def _train_production_lightgbm(
 def _train_production_lr(
     loader: Any, prod_fold: FoldSpec
 ) -> tuple[LRModelBundle, pd.DataFrame, np.ndarray]:
+    feat_cols = list(PITCH_FEATURE_COLUMNS)
+    # CV-MEM lever 2: extract the float32 design matrix, then free the multi-GB train
+    # frame BEFORE the LR fit allocates its imputer/scaler/solver copies. On the
+    # fold-4 (~20M-row) window the resident frames were the dominant LR OOM driver;
+    # train (2015-2023) dwarfs val (one year), so free it before val even loads so the
+    # two frames never coexist. float32 halves the ~5 GB float64 conversion array.
     train_df = loader(prod_fold.train_start_year, prod_fold.train_end_year, prod_fold.fold_id)
-    val_df = loader(prod_fold.val_year, prod_fold.val_year, prod_fold.fold_id)
-    bundle = lr_factory(train_df, val_df)
-    del train_df, val_df  # CV-MEM-1: free before the deferred test load
+    X_train = train_df[feat_cols].to_numpy(dtype=LR_DESIGN_MATRIX_DTYPE)
+    y_train = np.asarray(train_df["label"], dtype=np.int64)
+    del train_df
     gc.collect()
+
+    val_df = loader(prod_fold.val_year, prod_fold.val_year, prod_fold.fold_id)
+    X_val = val_df[feat_cols].to_numpy(dtype=LR_DESIGN_MATRIX_DTYPE)
+    y_val = np.asarray(val_df["label"], dtype=np.int64)
+    del val_df
+    gc.collect()
+
+    bundle = fit_lr_from_arrays(X_train, y_train, X_val, y_val)
+    del X_train, y_train, X_val, y_val
+    gc.collect()
+
+    # test is only needed for the eval-artifact preds (CV-MEM-1), loaded after the fit.
     test_df = loader(prod_fold.test_year, prod_fold.test_year, prod_fold.fold_id)
     test_predictions = cast(np.ndarray, bundle.predict_proba(test_df))
     return bundle, test_df, test_predictions
