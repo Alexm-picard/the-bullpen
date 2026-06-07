@@ -48,6 +48,15 @@ export default defineConfig({
         "src/main.tsx",
         "src/**/*.d.ts",
       ],
+      // Regression floor a few points below current (2026-06-07: lines 72.8 / stmts 71.5 /
+      // branches 60.6 / functions 67.9). Gates a coverage DROP without blocking today; ratchet up
+      // as coverage rises. This is a no-backsliding guard, not the 75% aspiration.
+      thresholds: {
+        lines: 65,
+        statements: 65,
+        branches: 55,
+        functions: 60,
+      },
     },
   },
 });

@@ -81,16 +81,15 @@ jobs:
             tests/battedball/test_python_java_parity.py \
             tests/battedball/lgbm_baseline \
             tests/test_smoke.py
-      # Coverage gate. TARGET is 75% (fail_under in pyproject) but coverage is
-      # ~50% today, so this step REPORTS the gap as a warning instead of failing
-      # the build while we layer in tests across the sprints. When coverage
-      # clears 75%, drop the `|| { warn; }` wrapper to make it a hard gate.
-      - name: Coverage gate (target 75%, non-blocking until reached)
+      # Coverage gate. 75% (pyproject fail_under) stays the aspirational TARGET, surfaced as a
+      # warning. The ENFORCED gate is a regression FLOOR at 40% (current is ~46%): coverage may not
+      # backslide below it, but isn't blocked from shipping today. Raise the floor as coverage
+      # climbs toward 75; that's when the floor and the target converge.
+      - name: Coverage gate (regression floor 40%; 75% is the aspirational target)
         working-directory: training
         run: |
-          uv run coverage report || {
-            echo "::warning title=Coverage below target::training coverage is under the 75% target (non-blocking — see pyproject [tool.coverage.report])"
-          }
+          uv run coverage report || echo "::warning title=Coverage below 75% target::training coverage is under the 75% aspiration (non-blocking)"
+          uv run coverage report --fail-under=40 >/dev/null
       - name: Coverage XML artifact
         if: always()
         working-directory: training
