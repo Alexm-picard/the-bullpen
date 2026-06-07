@@ -237,8 +237,15 @@ def per_park_ece(
 
 
 def to_json(calibrators: ParkCalibrators) -> dict:
-    """Schema mirrored by the Java IsotonicCalibrator port (decision [51])."""
-    parks_payload: list[dict] = []
+    """Serialize to the calibrator.json schema the Java serving loader
+    (BattedBallCalibrators.load) consumes: ``parks`` is a MAP ``{park_id -> [per-outcome
+    calibrator]}``, NOT a list. schema_version 2: v1 wrote a list of ``{park_id, classes}``
+    (decision [51]), but the Java port was rewritten to a name-keyed map in B3, so the
+    list form 500s at serving (the 2026-06-07 promotion incident; reconciled to map-
+    canonical in decision [149]). The Java side reads only x_thresholds/y_thresholds per
+    calibrator; the extra fields (outcome/y_min/y_max/out_of_bounds) are kept for the
+    Python round-trip (from_json) and ignored by Java."""
+    parks_payload: dict[str, list[dict]] = {}
     for p_idx, park_id in enumerate(calibrators.park_order):
         classes: list[dict] = []
         for c_idx, outcome in enumerate(calibrators.outcome_order):
@@ -256,9 +263,9 @@ def to_json(calibrators: ParkCalibrators) -> dict:
                     "out_of_bounds": iso.out_of_bounds,
                 }
             )
-        parks_payload.append({"park_id": park_id, "classes": classes})
+        parks_payload[park_id] = classes
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "calibrator_name": "battedball_outcome_calibrator",
         "calibrator_version": "v1",
         "park_order": list(calibrators.park_order),
@@ -268,15 +275,25 @@ def to_json(calibrators: ParkCalibrators) -> dict:
 
 
 def from_json(payload: dict) -> ParkCalibrators:
-    """Rebuild a ParkCalibrators from a to_json() payload."""
-    if payload.get("schema_version") != 1:
-        raise ValueError(f"unknown calibrator schema_version: {payload.get('schema_version')}")
+    """Rebuild a ParkCalibrators from a to_json() payload. Accepts schema_version 1
+    (``parks`` as a list of ``{park_id, classes}``) and 2 (``parks`` as a
+    ``{park_id -> classes}`` map), so legacy artifacts still load; new exports are v2
+    (map) to match the Java serving loader. Iterates ``park_order`` to keep the head-axis
+    ordering regardless of the payload's parks layout."""
+    version = payload.get("schema_version")
+    if version not in (1, 2):
+        raise ValueError(f"unknown calibrator schema_version: {version}")
     park_order = tuple(payload["park_order"])
     outcome_order = tuple(payload["outcome_order"])
+    parks = payload["parks"]
     nested: list[list[IsotonicRegression]] = []
-    for park_block in payload["parks"]:
+    for park_id in park_order:
+        if isinstance(parks, dict):  # v2 map keyed by park
+            classes = parks[park_id]
+        else:  # v1 list of {park_id, classes}
+            classes = next(b["classes"] for b in parks if b["park_id"] == park_id)
         per_class: list[IsotonicRegression] = []
-        for cls in park_block["classes"]:
+        for cls in classes:
             iso = IsotonicRegression(
                 out_of_bounds=cls.get("out_of_bounds", "clip"),
                 y_min=cls.get("y_min"),

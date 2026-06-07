@@ -136,16 +136,55 @@ def test_json_schema_carries_park_order_and_outcomes() -> None:
     raw, labels, parks = _make_synthetic_predictions()
     cals = fit_per_park_calibrators(raw, labels, park_order=parks, outcome_order=_OUTCOMES)
     payload = to_json(cals)
-    assert payload["schema_version"] == 1
+    assert payload["schema_version"] == 2
     assert payload["park_order"] == list(parks)
     assert payload["outcome_order"] == list(_OUTCOMES)
-    assert len(payload["parks"]) == len(parks)
-    for park_block in payload["parks"]:
-        assert "park_id" in park_block
-        assert len(park_block["classes"]) == 5
-        for cls in park_block["classes"]:
+    # parks is a MAP keyed by park id (the Java loader does parks.get(park)).
+    assert isinstance(payload["parks"], dict)
+    assert set(payload["parks"]) == set(parks)
+    for _park_id, classes in payload["parks"].items():
+        assert len(classes) == 5
+        for cls in classes:
             for key in ("outcome", "x_thresholds", "y_thresholds", "out_of_bounds"):
                 assert key in cls
+
+
+def test_to_json_satisfies_java_loader_contract() -> None:
+    """Guard the Python<->Java calibrator contract the 2026-06-07 promotion incident
+    exposed: BattedBallCalibrators.load reads `parks` as a MAP keyed by name, each park
+    -> exactly len(outcome_order) calibrators carrying x_thresholds + y_thresholds. The
+    old list-format export 500s at serving ("park ATH has 0 calibrators, expected 5").
+    This mirrors the Java loader's EXACT checks so the drift is caught in training CI,
+    not in production (the B5 parity test missed it by loading a hand-shaped fixture)."""
+    raw, labels, parks = _make_synthetic_predictions()
+    cals = fit_per_park_calibrators(raw, labels, park_order=parks, outcome_order=_OUTCOMES)
+    payload = to_json(cals)
+
+    park_order = payload["park_order"]
+    n_out = len(payload["outcome_order"])
+    parks_map = payload["parks"]
+    assert isinstance(parks_map, dict), "Java loader needs `parks` as a JSON object (map)"
+    for park in park_order:
+        per_park = parks_map.get(park)
+        assert per_park is not None and len(per_park) == n_out, (
+            f"park {park}: {0 if per_park is None else len(per_park)} calibrators, expected {n_out}"
+        )
+        for c in per_park:
+            assert "x_thresholds" in c and "y_thresholds" in c
+            assert len(c["x_thresholds"]) == len(c["y_thresholds"])
+
+
+def test_from_json_reads_legacy_v1_list_format() -> None:
+    """Back-compat: from_json still loads schema_version 1 (parks-as-list) artifacts, so
+    older calibrator.json files keep working through the map migration."""
+    raw, labels, parks = _make_synthetic_predictions()
+    cals = fit_per_park_calibrators(raw, labels, park_order=parks, outcome_order=_OUTCOMES)
+    v2 = to_json(cals)
+    v1 = dict(v2)
+    v1["schema_version"] = 1
+    v1["parks"] = [{"park_id": p, "classes": v2["parks"][p]} for p in v2["park_order"]]
+    restored = from_json(v1)
+    np.testing.assert_allclose(transform(cals, raw), transform(restored, raw), atol=1e-6, rtol=1e-6)
 
 
 def test_save_load_round_trip_via_disk(tmp_path: Path) -> None:
