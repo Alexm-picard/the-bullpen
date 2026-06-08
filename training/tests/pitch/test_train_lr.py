@@ -7,7 +7,7 @@ import pandas as pd
 
 from bullpen_training.features import LABEL_CLASSES
 from bullpen_training.pitch import PITCH_FEATURE_COLUMNS
-from bullpen_training.pitch.train_lr_baseline import model_factory
+from bullpen_training.pitch.train_lr_baseline import model_factory, subsample_train_rows
 
 
 def _synthetic_frame(n: int = 1500, seed: int = 7) -> pd.DataFrame:
@@ -42,6 +42,24 @@ def _synthetic_frame(n: int = 1500, seed: int = 7) -> pd.DataFrame:
         [rng.choice(len(LABEL_CLASSES), p=probs[i]) for i in range(n)], dtype="int8"
     )
     return df
+
+
+def test_subsample_caps_rows_and_is_deterministic() -> None:
+    """Path 1: the LR production-fit row subsample caps row count, is deterministic for
+    a fixed seed, and is a no-op (same object) when the frame is already within the cap.
+    """
+    df = _synthetic_frame(n=500, seed=1)
+
+    capped = subsample_train_rows(df, max_rows=100, seed=7)
+    assert len(capped) == 100
+    # Same seed -> same rows (deterministic; the index carries the sampled positions).
+    assert capped.index.equals(subsample_train_rows(df, max_rows=100, seed=7).index)
+    # Different seed -> (overwhelmingly likely) different rows.
+    assert not capped.index.equals(subsample_train_rows(df, max_rows=100, seed=8).index)
+    # No-op when already within the cap: returns the SAME object, untouched.
+    assert subsample_train_rows(df, max_rows=1000) is df
+    # The thin preserves columns (incl. label + as-of context), only fewer rows.
+    assert list(capped.columns) == list(df.columns)
 
 
 def test_lr_returns_valid_proba_distribution() -> None:

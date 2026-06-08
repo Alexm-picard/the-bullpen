@@ -50,8 +50,10 @@ from bullpen_training.pitch.train_lr_baseline import (
     DESIGN_MATRIX_DTYPE as LR_DESIGN_MATRIX_DTYPE,
 )
 from bullpen_training.pitch.train_lr_baseline import (
+    MAX_LR_TRAIN_ROWS,
     LRModelBundle,
     fit_lr_from_arrays,
+    subsample_train_rows,
 )
 from bullpen_training.pitch.train_lr_baseline import (
     model_factory as lr_factory,
@@ -124,12 +126,20 @@ def _train_production_lr(
     loader: Any, prod_fold: FoldSpec
 ) -> tuple[LRModelBundle, pd.DataFrame, np.ndarray]:
     feat_cols = list(PITCH_FEATURE_COLUMNS)
-    # CV-MEM lever 2: extract the float32 design matrix, then free the multi-GB train
-    # frame BEFORE the LR fit allocates its imputer/scaler/solver copies. On the
-    # fold-4 (~20M-row) window the resident frames were the dominant LR OOM driver;
-    # train (2015-2023) dwarfs val (one year), so free it before val even loads so the
-    # two frames never coexist. float32 halves the ~5 GB float64 conversion array.
+    # Path 1: the LR production fit OOMs on the full fold-4 window (~20M rows) - lbfgs
+    # upcasts the design matrix to float64 internally (~13.7 GB peak, measured; the
+    # frame is already freed before the fit, so freeing it earlier is a no-op, and
+    # f1d2b66's float32 only halved the preprocessing intermediates). Subsample the
+    # train rows (fixed seed, WITHIN the fixed fold window - NOT a re-split) so the
+    # fit's peak fits the box headroom. CV + the test eval-metrics stay full-data; only
+    # the persisted LR model is on the subsample.
     train_df = loader(prod_fold.train_start_year, prod_fold.train_end_year, prod_fold.fold_id)
+    original_rows = len(train_df)
+    train_df = subsample_train_rows(train_df)
+    subsample_rows = MAX_LR_TRAIN_ROWS if len(train_df) < original_rows else None
+
+    # Extract the float32 design matrix, then free the (subsampled) frame before the
+    # fit; train dwarfs val, so free it before val even loads.
     X_train = train_df[feat_cols].to_numpy(dtype=LR_DESIGN_MATRIX_DTYPE)
     y_train = np.asarray(train_df["label"], dtype=np.int64)
     del train_df
@@ -142,6 +152,7 @@ def _train_production_lr(
     gc.collect()
 
     bundle = fit_lr_from_arrays(X_train, y_train, X_val, y_val)
+    bundle.train_subsample_rows = subsample_rows
     del X_train, y_train, X_val, y_val
     gc.collect()
 

@@ -46,7 +46,10 @@ from bullpen_training.eval.artifact import (
 )
 from bullpen_training.eval.cv_harness import CVResult
 from bullpen_training.features import LABEL_CLASSES
-from bullpen_training.pitch.train_lr_baseline import LRModelBundle
+from bullpen_training.pitch.train_lr_baseline import (
+    LR_TRAIN_SUBSAMPLE_SEED,
+    LRModelBundle,
+)
 from bullpen_training.pitch.train_pre import ModelBundle
 
 log = logging.getLogger(__name__)
@@ -306,22 +309,35 @@ def persist_lr_baseline_v1(
 
     snapshot_path, data_hash = _write_training_data_snapshot(out_dir, inputs.test_df)
 
+    lr_extras: dict[str, Any] = {
+        "fitted_label_classes": list(bundle.fitted_label_classes),
+        "design_matrix_dtype": "float32",
+        "design_matrix_dtype_rationale": (
+            "baseline-only memory accommodation; decision [37] LR has no byte-identity"
+            " gate, and the ~3e-6 precision delta cannot make LR spuriously beat LightGBM."
+            " float32 halves only the preprocessing intermediates - lbfgs upcasts the"
+            " design matrix to float64 internally - so the row subsample below is the"
+            " actual headroom fix. The LightGBM heads are unaffected (they bin via"
+            " build_lgb_dataset and never hold a dense float64 design matrix)."
+        ),
+    }
+    if bundle.train_subsample_rows is not None:
+        lr_extras["lr_train_subsample_rows"] = bundle.train_subsample_rows
+        lr_extras["lr_train_subsample_seed"] = LR_TRAIN_SUBSAMPLE_SEED
+        lr_extras["lr_train_subsample_rationale"] = (
+            "baseline-only memory accommodation; the full ~20M-row fold-4 LR fit exceeds"
+            " live-box headroom (lbfgs upcasts the design matrix to float64; ~13.7 GB peak"
+            " measured). Fixed-seed row sample WITHIN the fixed fold window - NOT a"
+            " re-split. Decision [37] baseline does not require full N; CV + the test"
+            " eval-metrics remain full-data."
+        )
     _write_metadata(
         out_dir,
         inputs,
         model_path,
         training_data_hash=data_hash,
         calibrator_path=cal_path,
-        extras={
-            "fitted_label_classes": list(bundle.fitted_label_classes),
-            "design_matrix_dtype": "float32",
-            "design_matrix_dtype_rationale": (
-                "baseline-only memory accommodation (CV-MEM lever 2); decision [37] LR has"
-                " no byte-identity gate, and the ~1e-5 precision delta cannot make LR"
-                " spuriously beat LightGBM. The LightGBM heads are unaffected (they bin"
-                " via build_lgb_dataset and never hold a dense float64 design matrix)."
-            ),
-        },
+        extras=lr_extras,
     )
 
     # LR has no comparable feature_importance.csv — coefficients aren't on

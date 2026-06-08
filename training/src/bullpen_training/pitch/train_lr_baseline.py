@@ -36,6 +36,38 @@ log = logging.getLogger(__name__)
 
 DEFAULT_SEED = 42
 
+# LR production-fit memory accommodation (Path 1). The full fold-4 train window (~20M
+# rows) OOMs the live box during the LR fit: lbfgs upcasts the float32 design matrix to
+# float64 internally (MEASURED - peak RSS ~13.7 GB at 20M, vs the ~3 GB target), so the
+# float32 cast (DESIGN_MATRIX_DTYPE) only halved the preprocessing intermediates, not
+# the dominant solver allocation. Cap the LR PRODUCTION fit at a fixed-seed row
+# subsample (measured: 3M rows -> ~2.5 GB peak, comfortably under the ~4 GB post-CV
+# headroom). 3M is far more than a 31-feature baseline needs, so the rule-[37] sanity
+# (LightGBM brier <= LR brier) holds. This is NOT a re-split: the temporal fold and its
+# window are unchanged, no random_state on any split - a row thin within the fixed
+# window. CV + the test eval-metrics stay full-data; only the persisted LR model is on
+# the subsample.
+MAX_LR_TRAIN_ROWS = 3_000_000
+LR_TRAIN_SUBSAMPLE_SEED = DEFAULT_SEED
+
+
+def subsample_train_rows(
+    train_df: pd.DataFrame,
+    *,
+    max_rows: int = MAX_LR_TRAIN_ROWS,
+    seed: int = LR_TRAIN_SUBSAMPLE_SEED,
+) -> pd.DataFrame:
+    """Fixed-seed row sample within the fold's already-fixed train window, applied only
+    when it exceeds ``max_rows`` (see the module note above on why this is a memory
+    accommodation, not a re-split). Returns ``train_df`` unchanged when it is already
+    within the cap (e.g. the CV folds, which are NOT subsampled). Uniform random is fine
+    for a 31-feature baseline at multi-million rows - class balance holds statistically.
+    """
+    if len(train_df) <= max_rows:
+        return train_df
+    idx = np.random.default_rng(seed).choice(len(train_df), size=max_rows, replace=False)
+    return cast(pd.DataFrame, train_df.iloc[idx])
+
 
 def _build_pipeline(seed: int) -> Pipeline:
     """Pipeline: median-impute Tier 3 NULLs → StandardScaler → multinomial LR.
@@ -68,6 +100,9 @@ class LRModelBundle:
     calibrator: IsotonicCalibrator
     feature_cols: tuple[str, ...]
     fitted_label_classes: tuple[int, ...]
+    # Rows the model was actually fit on when a subsample was applied (Path 1); None =
+    # full-data fit (e.g. the CV folds). Set by _train_production_lr, recorded in metadata.
+    train_subsample_rows: int | None = None
 
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
         # Feed a nameless array (column order = feature_cols) to match the array fit
@@ -88,13 +123,16 @@ class LRModelBundle:
 
 
 # The LR design matrix is built as float32 (NOT float64) - a baseline-only memory
-# accommodation (CV-MEM lever 2): the fold-4 train window (~20M x ~31) is a ~5 GB
-# float64 array that must coexist with the source frame during extraction, which
-# OOMs the serving box; float32 halves it. Decision [37] gives the LR baseline no
-# byte-identity gate, so the ~1e-5 precision delta on standardised features is
-# acceptable (it cannot make LR spuriously beat a real LightGBM, so the rule-[37]
-# sanity signal is preserved). CV and production share this dtype so the persisted
-# model and the CV-reported metrics describe the same precision.
+# accommodation. NOTE (corrected from the f1d2b66 claim): float32 only halves the
+# DATA + preprocessing intermediates; lbfgs upcasts the design matrix to float64
+# internally for the solve (MEASURED - float32 peak RSS is ~0.70x float64, not ~0.5x),
+# so it did NOT halve the dominant allocation and did NOT clear the fold-4 production
+# fit. The headroom fix is the row subsample (MAX_LR_TRAIN_ROWS); float32 is kept
+# because it still helps the preprocessing intermediates and the CV folds. Decision
+# [37] gives the LR baseline no byte-identity gate, so the ~3e-6 precision delta on
+# standardised features cannot make LR spuriously beat a real LightGBM (rule-[37]
+# sanity preserved). CV and production share this dtype so the persisted model and the
+# CV-reported metrics describe the same precision.
 DESIGN_MATRIX_DTYPE = np.float32
 
 
