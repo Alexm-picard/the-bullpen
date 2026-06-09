@@ -24,8 +24,10 @@ season for a real drift postmortem.
   the excuse.
 - **ONNX Runtime in-process** in Java + Spring Boot 3 — no Python
   sidecar, no live RPC. Training is Python; serving is JVM.
-- **Editorial-data design system** (Inter / JetBrains Mono / Source
-  Serif 4 on a warm-paper substrate). Not yet-another-SaaS chrome.
+- **Scouting-report design system** (Saira Condensed / IBM Plex Sans /
+  IBM Plex Mono on a warm cream substrate, navy + scarlet team-graphics
+  chrome). The product is advance-scouting analytics, so it presents as a
+  scouting packet, not yet-another-SaaS chrome (decision [133]).
 - **Per-model eval artifact** with rolling-origin cross-validation,
   reliability diagrams, calibration metrics — always co-registered with
   a logistic-regression baseline to bound the neural model's lift.

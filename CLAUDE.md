@@ -38,10 +38,12 @@ session and most "obvious" alternatives have already been considered and rejecte
 - **Live game poller is wired but not running.** The controller surface + `GameStateMachine`
   exist and are tested; the producer side (MLB Stats API client + per-game poll) is planned
   in `docs/runbooks/live-data-setup.md` and tracked in issue #1.
-- **Coverage is not measured.** ~379 backend `@Test` + ~400 frontend tests are real, but
-  there is no JaCoCo (backend) and no vitest coverage config (frontend); training coverage
-  is ~50% behind a non-blocking gate. Do **not** cite a coverage percentage you cannot
-  reproduce from CI (the README's "~95%" is unbacked — fix, don't propagate).
+- **Coverage is measured now, but mostly non-gating.** Backend JaCoCo (in `backend/build.gradle.kts`
+  and `backend.yml`) and frontend vitest v8 (`frontend.yml` `npm run test:coverage`) publish
+  line/branch baselines on every CI run; neither gates the build today. Training coverage
+  (~46%) is gated only as a 40% regression floor, with 75% an aspirational warning-only target
+  (`training.yml`). The README's earlier unbacked "~95%" has been corrected to the measured
+  figures. Rule still holds: do **not** cite a coverage percentage you cannot reproduce from CI.
 
 ## What this project is
 

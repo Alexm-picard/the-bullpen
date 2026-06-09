@@ -66,15 +66,10 @@ class InferenceRouterIT {
             System.getProperty("java.io.tmpdir"),
             "bullpen-router-it-snapshots-" + UUID.randomUUID());
     registry.add("bullpen.snapshot.local-base-path", snapshotBase::toString);
-    // ModelLoader reads its contract path from this property; point at the canonical toy
-    // contract since registry placeArtifacts doesn't relocate park_hr_rate.json.
-    registry.add(
-        "bullpen.model-loader.batted-ball-contract-path",
-        () ->
-            Path.of(System.getProperty("user.dir"))
-                .getParent()
-                .resolve("contracts/feature_pipeline_toy.json")
-                .toString());
+    // BUG-1b: ModelLoader now resolves each version's contract from its OWN snapshot's
+    // feature_pipeline.json (no process-wide default property). registerToyVersion copies the
+    // canonical toy contract into each snapshot as feature_pipeline.json, so the snapshot-resolved
+    // contract IS the toy contract - no property override needed.
   }
 
   @Autowired private RegistryService registryService;

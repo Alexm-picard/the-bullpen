@@ -34,6 +34,11 @@ training/build/
 training/dist/
 training/*.egg-info/
 
+# Promotion-evidence run products + local sample mirror (W5; not source -
+# dev samples come from R2/MinIO per ADR-0007, evidence JSON regenerates per run)
+training/data/eval/promotion/
+training/data/samples/
+
 # Model artifacts NEVER go in git (CLAUDE.md hard never-rule)
 training/artifacts/**
 !training/artifacts/.gitkeep

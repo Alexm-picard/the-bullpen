@@ -41,19 +41,14 @@ public class ModelLoader {
   private static final Logger log = LoggerFactory.getLogger(ModelLoader.class);
 
   private final RegistryService registry;
-  private final Path defaultBattedBallContractPath;
   private final Cache<Long, LoadedBattedBallModel> battedBallCache;
   private final Cache<Long, LoadedAllParksModel> allParksCache;
+  private final Cache<Long, LoadedPitchModel> pitchPreCache;
+  private final Cache<Long, LoadedPitchModel> pitchPostCache;
 
   public ModelLoader(
-      RegistryService registry,
-      @Value(
-              "${bullpen.model-loader.batted-ball-contract-path:../contracts/feature_pipeline_toy.json}")
-          String battedBallContractPath,
-      @Value("${bullpen.model-loader.cache-size:4}") int cacheSize) {
+      RegistryService registry, @Value("${bullpen.model-loader.cache-size:4}") int cacheSize) {
     this.registry = registry;
-    this.defaultBattedBallContractPath =
-        Path.of(battedBallContractPath).toAbsolutePath().normalize();
     this.battedBallCache =
         Caffeine.newBuilder()
             .maximumSize(cacheSize)
@@ -87,10 +82,30 @@ public class ModelLoader {
                   }
                 })
             .build();
-    log.info(
-        "ModelLoader ready: batted-ball cache size={} contract={}",
-        cacheSize,
-        defaultBattedBallContractPath);
+    // Two pitch caches keyed by version_id (rule 9: pre + post are separate registry models, so a
+    // given version_id loads into exactly one cache; the two never hold the same key).
+    this.pitchPreCache = buildPitchCache("pre", cacheSize);
+    this.pitchPostCache = buildPitchCache("post", cacheSize);
+    log.info("ModelLoader ready: per-model cache size={}", cacheSize);
+  }
+
+  private static Cache<Long, LoadedPitchModel> buildPitchCache(String head, int cacheSize) {
+    return Caffeine.newBuilder()
+        .maximumSize(cacheSize)
+        .removalListener(
+            (Long key, LoadedPitchModel value, RemovalCause cause) -> {
+              if (value == null) {
+                return;
+              }
+              try {
+                value.close();
+                log.info(
+                    "ModelLoader: evicted pitch {} version_id={} (cause={})", head, key, cause);
+              } catch (OrtException e) {
+                log.warn("ModelLoader: failed to close evicted pitch {} model_id={}", head, key, e);
+              }
+            })
+        .build();
   }
 
   /**
@@ -109,13 +124,21 @@ public class ModelLoader {
   private LoadedBattedBallModel loadBattedBallFresh(long versionId) {
     ResolvedSnapshot r = resolveSnapshot(versionId);
     try {
+      // BUG-1b: resolve the contract from THIS model's snapshot (mirrors LoadedAllParksModel.load),
+      // not a process-wide ../contracts/feature_pipeline_toy.json default that every registered
+      // version shared. A version registered against a different contract used to silently load the
+      // toy contract; now each version loads its own feature_pipeline.json. The single-park toy
+      // SERVING route under _toy_batted_ball (decision [146]) is untouched - that bean ships its
+      // own
+      // contract and never goes through ModelLoader.
+      Path snapshotContract = r.snapshotDir().resolve(SnapshotStorage.FEATURE_PIPELINE_FILE);
       return LoadedBattedBallModel.load(
           versionId,
           r.mv().modelName(),
           r.mv().version(),
           r.mv().featureSchemaHash(),
           r.snapshotDir(),
-          defaultBattedBallContractPath);
+          snapshotContract);
     } catch (IOException | OrtException e) {
       throw new IllegalStateException(
           "ModelLoader: failed to load batted-ball model "
@@ -157,9 +180,66 @@ public class ModelLoader {
   }
 
   /**
+   * Get (or load) the PRE pitch head ({@code pitch_outcome_pre}) for {@code versionId} (W1). Same
+   * atomic-load + S3-archive guard as {@link #loadBattedBall}, yielding a {@link LoadedPitchModel}.
+   * Rule 9: pre + post are separate registry models loaded through separate caches.
+   */
+  public LoadedPitchModel loadPitchPre(long versionId) {
+    return pitchPreCache.get(versionId, this::loadPitchPreFresh);
+  }
+
+  private LoadedPitchModel loadPitchPreFresh(long versionId) {
+    ResolvedSnapshot r = resolveSnapshot(versionId);
+    try {
+      return LoadedPitchModel.loadPre(
+          versionId,
+          r.mv().modelName(),
+          r.mv().version(),
+          r.mv().featureSchemaHash(),
+          r.snapshotDir());
+    } catch (IOException | OrtException e) {
+      throw new IllegalStateException(
+          "ModelLoader: failed to load pitch PRE model "
+              + r.mv().naturalKey()
+              + " from "
+              + r.snapshotDir(),
+          e);
+    }
+  }
+
+  /**
+   * Get (or load) the POST pitch head ({@code pitch_outcome_post}) for {@code versionId} (W1). Same
+   * contract as {@link #loadPitchPre} but yields the 41-feature post-head bundle. Rule 9: separate
+   * registry model, separate cache.
+   */
+  public LoadedPitchModel loadPitchPost(long versionId) {
+    return pitchPostCache.get(versionId, this::loadPitchPostFresh);
+  }
+
+  private LoadedPitchModel loadPitchPostFresh(long versionId) {
+    ResolvedSnapshot r = resolveSnapshot(versionId);
+    try {
+      return LoadedPitchModel.loadPost(
+          versionId,
+          r.mv().modelName(),
+          r.mv().version(),
+          r.mv().featureSchemaHash(),
+          r.snapshotDir());
+    } catch (IOException | OrtException e) {
+      throw new IllegalStateException(
+          "ModelLoader: failed to load pitch POST model "
+              + r.mv().naturalKey()
+              + " from "
+              + r.snapshotDir(),
+          e);
+    }
+  }
+
+  /**
    * Resolve a registry row to its local snapshot directory, enforcing the S3-archive guard
    * (archived versions must be restored via the registry-snapshot-recovery runbook before they can
-   * load). Shared by {@link #loadBattedBallFresh} and {@link #loadAllParksFresh}.
+   * load). Shared by {@link #loadBattedBallFresh}, {@link #loadAllParksFresh}, {@link
+   * #loadPitchPreFresh}, and {@link #loadPitchPostFresh}.
    */
   private ResolvedSnapshot resolveSnapshot(long versionId) {
     ModelVersion mv =
@@ -193,6 +273,8 @@ public class ModelLoader {
   public void invalidate(long versionId) {
     battedBallCache.invalidate(versionId);
     allParksCache.invalidate(versionId);
+    pitchPreCache.invalidate(versionId);
+    pitchPostCache.invalidate(versionId);
   }
 
   @PreDestroy
@@ -201,6 +283,10 @@ public class ModelLoader {
     battedBallCache.cleanUp(); // synchronously fires the removalListener for closed sessions
     allParksCache.invalidateAll();
     allParksCache.cleanUp();
+    pitchPreCache.invalidateAll();
+    pitchPreCache.cleanUp();
+    pitchPostCache.invalidateAll();
+    pitchPostCache.cleanUp();
     log.info("ModelLoader: shut down, all cached sessions released");
   }
 }

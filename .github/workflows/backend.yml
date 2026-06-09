@@ -41,9 +41,17 @@ jobs:
         working-directory: backend
         # `test` is finalizedBy jacocoTestReport, so the coverage report is
         # produced here without a separate task invocation.
-        # -Dbullpen.it.docker=true runs the Testcontainers ITs (ClickHouse/MinIO ephemeral
-        # containers) that skip locally on macOS — the runner has Docker. The build.gradle
-        # test task forwards this system property into the forked test JVM.
+        # -Dbullpen.it.docker=true enables every @EnabledIfSystemProperty(named="bullpen.it.docker",
+        # matches="true") test. Tests in that category:
+        #   - LivePitchesRepositoryIT (existing)
+        #   - PredictionLogReconciliationIT (W3: truth-join + calibration set)
+        # Tests that run WITHOUT a Docker guard (regular unit / Spring IT with tmp SQLite):
+        #   - PitchOnnxModelTest (ORT fixture, no Spring)
+        #   - LoadedPitchModelTest (snapshot-resolved pre bundle, no Spring)
+        #   - PredictPitchRoutingIT (registry + router + log FK, tmp SQLite, no ClickHouse)
+        #   - PitchSnapshotLookupRegistrationIT (lookup copy + fail-loud, tmp SQLite)
+        # All four new tests are included in the full `test` task scope. No separate
+        # filter or include-list is required because they carry no @Disabled or skip guard.
         run: ./gradlew build test --no-daemon -Dbullpen.it.docker=true
       - name: Spotless check (format must be clean)
         working-directory: backend

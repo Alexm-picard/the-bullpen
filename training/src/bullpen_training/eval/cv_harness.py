@@ -75,8 +75,7 @@ FOLDS: tuple[FoldSpec, ...] = (
 
 
 class HasPredictProba(Protocol):
-    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
-        ...
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray: ...
 
 
 # A loader takes (start_year, end_year, fold_id) and returns a DataFrame

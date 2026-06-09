@@ -17,20 +17,30 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.junit.jupiter.EnabledIf;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
 /**
- * MockMvc tests for {@code POST /v1/predict/pitch} (Phase 2a.8).
+ * MockMvc tests for {@code POST /v1/predict/pitch} (Phase 2a.8), exercising the legacy
+ * ARTIFACT-DIRECT dev-fallback path (no registry champion).
+ *
+ * <p>W1 rewired the controller through {@link net.thebullpen.baseball.inference.InferenceRouter}:
+ * by default no champion means 503. This class sets {@code
+ * bullpen.inference.pitch.dev-direct-serving=true} so the controller serves straight off the
+ * on-disk {@link net.thebullpen.baseball.inference.PitchInferenceService} artifact when no champion
+ * is registered - the local no-registry dev scenario these parity assertions were written for. The
+ * registry-routed path is covered by {@code PredictPitchRoutingIT}.
  *
  * <p>Self-disables when the production ONNX artifact is absent, same pattern as the toy controller
- * test. Without the artifact the {@link net.thebullpen.baseball.inference.PitchInferenceService}
- * bean would throw at {@code @PostConstruct} and refuse to start the context.
+ * test. Without the artifact the {@code PitchInferenceService} bean is simply not created (its
+ * {@code @ConditionalOnExpression}), so dev-direct serving has nothing to serve.
  */
 @SpringBootTest
 @ActiveProfiles("api")
+@TestPropertySource(properties = "bullpen.inference.pitch.dev-direct-serving=true")
 @EnabledIf(
     expression =
         "#{T(java.nio.file.Files).exists(T(java.nio.file.Path).of(systemProperties['user.dir']).getParent().resolve('training/artifacts/pitch_outcome_pre/v1/model.onnx'))}")
