@@ -84,6 +84,46 @@ def _print_report(report: GateReport, snapshot_dir: Path) -> None:
         click.echo(f"    - {c}")
 
 
+def _artifact_inputs(head: str, artifacts_root: Path, version: str) -> PitchSnapshotInputs:
+    """Box hand-off: assemble from a real production export instead of fixtures.
+
+    Points at ``<artifacts_root>/<head>/<version>`` which already holds the
+    box-trained ``model.onnx`` + lookups + calibrator + training_data.parquet
+    (the LightGBM heads via ``export_{pre,post}_onnx``, the LR baseline via
+    ``export_lr_onnx``). The driver reuses the same assembly + gate so the box
+    path and the local fixture path stay identical.
+    """
+    import pandas as pd
+
+    d = artifacts_root / head / version
+    for required in (
+        "model.onnx",
+        "calibrator.json",
+        "feature_pipeline.json",
+        "training_data.parquet",
+    ):
+        if not (d / required).exists():
+            raise click.ClickException(f"{head}: missing {required} in {d}")
+    df = pd.read_parquet(d / "training_data.parquet")
+    is_primary = head in PRIMARY_HEADS
+    return PitchSnapshotInputs(
+        head=head,
+        version=version,
+        onnx_path=d / "model.onnx",
+        calibrator_path=d / "calibrator.json",
+        pitcher_te_path=d / "pitcher_te.json",
+        batter_te_path=d / "batter_te.json",
+        park_id_mapping_path=d / "park_id_mapping.json",
+        pitch_type_mapping_path=(
+            (d / "pitch_type_mapping.json") if head == "pitch_outcome_post" else None
+        ),
+        training_df=df,
+        baseline_model_name=LR_BASELINE if is_primary else None,
+        # The box experiment_results evidence row is written at register time, not here.
+        experiment_results_id=None,
+    )
+
+
 @click.command()
 @click.option(
     "--out-dir",
@@ -98,11 +138,31 @@ def _print_report(report: GateReport, snapshot_dir: Path) -> None:
     show_default=True,
 )
 @click.option(
+    "--from-artifacts",
+    "artifacts_root",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    default=None,
+    help="Assemble from real production artifacts (e.g. training/artifacts) instead of "
+    "tiny fixtures. Gates the LR baseline first, then the heads.",
+)
+@click.option(
+    "--version",
+    default="v1",
+    show_default=True,
+    help="Artifact version under --from-artifacts.",
+)
+@click.option(
     "--log-format",
     type=click.Choice(["console", "json"], case_sensitive=False),
     default="console",
 )
-def main(out_dir: Path | None, heads: str, log_format: str) -> None:
+def main(
+    out_dir: Path | None,
+    heads: str,
+    artifacts_root: Path | None,
+    version: str,
+    log_format: str,
+) -> None:
     import os
     import tempfile
 
@@ -119,10 +179,19 @@ def main(out_dir: Path | None, heads: str, log_format: str) -> None:
         "post": ["pitch_outcome_post"],
     }[heads]
 
-    for head in selected:
-        inputs = _fixture_inputs(head, fixtures_dir)
-        snap = write_snapshot(inputs, base / head / "v_fixture")
-        report = run_gate(snap, head=head, baseline_registered=True)
+    # Rule 9: the LR baseline is assembled and gated FIRST; the primaries only
+    # claim baseline_registered if the baseline gate actually passed.
+    order = [LR_BASELINE, *selected]
+    baseline_ok = False
+    for head in order:
+        if artifacts_root is not None:
+            inputs = _artifact_inputs(head, artifacts_root, version)
+        else:
+            inputs = _fixture_inputs(head, fixtures_dir)
+        snap = write_snapshot(inputs, base / head / inputs.version)
+        report = run_gate(snap, head=head, baseline_registered=(head == LR_BASELINE) or baseline_ok)
+        if head == LR_BASELINE:
+            baseline_ok = True
         _print_report(report, snap)
         click.echo("")
 

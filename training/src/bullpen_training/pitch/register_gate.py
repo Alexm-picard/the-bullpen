@@ -122,9 +122,16 @@ def run_gate(
             f"rule 9: metadata model_name {meta_name!r} != requested head {head!r}; "
             "pre and post must register as two separate model_names"
         )
-    if fp_spec.get("model_name") != head:
+    # The contract's model_name identifies which canonical /contracts file the snapshot
+    # carries. For pre/post that equals the head; the LR baseline shares the pre contract
+    # (model_name pitch_outcome_pre, decision [37]), so compare against the head's CANONICAL
+    # contract model_name, not the head itself. This still rejects a wrong contract for the
+    # head (e.g. the post contract under the pre head) since that mismatches the canonical too.
+    expected_contract_name = json.loads(contract.read_text()).get("model_name")
+    if fp_spec.get("model_name") != expected_contract_name:
         raise RegisterGateError(
-            f"rule 9: contract model_name {fp_spec.get('model_name')!r} != head {head!r}"
+            f"rule 9: contract model_name {fp_spec.get('model_name')!r} is not the "
+            f"canonical contract {expected_contract_name!r} for head {head!r}"
         )
     passed.append("rule 9 head identity (pre != post)")
 

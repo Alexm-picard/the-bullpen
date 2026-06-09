@@ -79,7 +79,10 @@ SELECT
     w.game_id, w.at_bat_index, w.pitch_number,
     nullIf(w.pp_last_28d, 0)                                       AS pitcher_pitches_last_28d,
     toUInt32(w.pp_in_game)                                          AS pitcher_pitches_in_game,
-    if(a.prev_appearance_date IS NULL, NULL,
+    -- lagInFrame on a non-Nullable Date yields 1970-01-01 (the type default), never NULL,
+    -- when no prior appearance exists in the window. Guard the epoch sentinel explicitly:
+    -- a first appearance is missing data (NULL -> NaN at serving), not a 20,000-day gap.
+    if(a.prev_appearance_date IS NULL OR a.prev_appearance_date = toDate(0), NULL,
        toUInt16(w.game_date - a.prev_appearance_date))              AS days_since_last_appearance,
     if(w.pp_last_28d = 0, NULL,
        toFloat32(w.pp_strikes_28d) / w.pp_last_28d)                 AS pitcher_strike_rate_28d,
