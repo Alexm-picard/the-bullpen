@@ -10,7 +10,9 @@
 # Environment:
 #   REPO_ROOT                — defaults to /home/$(whoami)/code/the-bullpen
 #   SNAPSHOT_DIR             — defaults to /var/lib/clickhouse-backup
-#   SQLITE_REGISTRY          — defaults to $REPO_ROOT/backend/data/registry.sqlite
+#   SQLITE_REGISTRY          - the live registry DB; defaults to BULLPEN_REGISTRY_DB
+#   BULLPEN_REGISTRY_DB      - live registry path; default /opt/bullpen/data/registry.sqlite
+#   ALLOW_NO_REGISTRY        - set =1 to permit a missing registry (skip instead of fail)
 #   BULLPEN_DISCORD_WEBHOOK  — required; failures ping this URL
 #   RETAIN_DAYS              — defaults to 14
 
@@ -18,7 +20,7 @@ set -uo pipefail
 
 REPO_ROOT="${REPO_ROOT:-/home/$(whoami)/code/the-bullpen}"
 SNAPSHOT_DIR="${SNAPSHOT_DIR:-/var/lib/clickhouse-backup}"
-SQLITE_REGISTRY="${SQLITE_REGISTRY:-${REPO_ROOT}/backend/data/registry.sqlite}"
+SQLITE_REGISTRY="${SQLITE_REGISTRY:-${BULLPEN_REGISTRY_DB:-/opt/bullpen/data/registry.sqlite}}"
 RETAIN_DAYS="${RETAIN_DAYS:-14}"
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
 NAME="auto_${TS}"
@@ -80,14 +82,27 @@ if [[ "${HAS_ROWS:-0}" -gt 0 ]]; then
   log "data parts captured: ${DATA_PARTS}"
 fi
 
-# 2. SQLite registry snapshot
+# 2. SQLite registry snapshot (model registry / A-B config / retraining queue).
+#    Sources the LIVE registry (default /opt/bullpen/data), not the repo's stale dev
+#    copy. A missing registry is a HARD FAIL (set ALLOW_NO_REGISTRY=1 to override), and
+#    the captured copy is verified non-empty + integrity-clean + schema-present before
+#    the snapshot counts as good. See decision [153] (2026-06-08 backup remediation).
 if [[ -f "$SQLITE_REGISTRY" ]]; then
   REG_DIR="${SNAPSHOT_DIR}/${NAME}_sqlite"
   mkdir -p "$REG_DIR"
-  log "SQLite registry snapshot via .backup"
-  sqlite3 "$SQLITE_REGISTRY" ".backup '${REG_DIR}/registry.sqlite'" || fail "sqlite3 .backup failed"
+  REG_OUT="${REG_DIR}/registry.sqlite"
+  log "SQLite registry snapshot via .backup ($SQLITE_REGISTRY)"
+  sqlite3 "$SQLITE_REGISTRY" ".backup '${REG_OUT}'" || fail "sqlite3 .backup failed for $SQLITE_REGISTRY"
+  OUT_BYTES=$(wc -c < "$REG_OUT" 2>/dev/null || echo 0)
+  [[ "${OUT_BYTES:-0}" -ge 16384 ]] || fail "registry capture too small (${OUT_BYTES}B < 16384) - empty or stale DB?"
+  [[ "$(sqlite3 "$REG_OUT" 'PRAGMA integrity_check;' 2>/dev/null)" == "ok" ]] || fail "registry capture failed integrity_check"
+  HAS_MV=$(sqlite3 "$REG_OUT" "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='model_versions';" 2>/dev/null || echo 0)
+  [[ "${HAS_MV:-0}" -ge 1 ]] || fail "registry capture missing model_versions table - wrong DB?"
+  log "registry captured: ${OUT_BYTES}B, integrity ok, schema present"
+elif [[ "${ALLOW_NO_REGISTRY:-0}" == "1" ]]; then
+  log "SKIP: $SQLITE_REGISTRY missing and ALLOW_NO_REGISTRY=1"
 else
-  log "SKIP: $SQLITE_REGISTRY does not exist yet (pre-Phase 0)"
+  fail "live registry $SQLITE_REGISTRY not found (set ALLOW_NO_REGISTRY=1 only for a genuinely registry-less env)"
 fi
 
 # 3. Training artifacts metadata (paths and hashes, NOT the bytes)
