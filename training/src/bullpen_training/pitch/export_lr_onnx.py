@@ -36,12 +36,12 @@ from bullpen_training.features import LABEL_CLASSES
 from bullpen_training.pitch.register_snapshot import contract_path_for, feature_columns_for
 
 DEFAULT_ARTIFACTS_DIR = Path(__file__).resolve().parents[3] / "artifacts"
-TARGET_OPSET = 15  # the pitch contract's onnx_opset pin (feature_pipeline.json)
 PARITY_ATOL = 1e-5  # linear model: float32 graph vs float64 sklearn stays well inside this
 N_PARITY_ROWS = 256
 
 
-def _verify_contract_hash(contract_path: Path) -> str:
+def _load_verified_contract(contract_path: Path) -> dict[str, Any]:
+    """Read the canonical contract and hard-fail on a stale schema_hash (rule 7)."""
     spec = cast(dict[str, Any], json.loads(contract_path.read_text()))
     canonical = copy.deepcopy(spec)
     canonical["schema_hash"] = ""
@@ -50,7 +50,7 @@ def _verify_contract_hash(contract_path: Path) -> str:
     ).hexdigest()
     if spec["schema_hash"] != recomputed:
         raise RuntimeError(f"{contract_path.name} schema_hash stale")
-    return cast(str, spec["schema_hash"])
+    return spec
 
 
 def _parity_rows(artifact_dir: Path, feature_cols: list[str]) -> np.ndarray:
@@ -76,14 +76,18 @@ def export(*, model_name: str, version: str, artifacts_dir: Path | None = None) 
         )
 
     feature_cols = list(feature_columns_for(model_name))
-    schema_hash = _verify_contract_hash(contract_path_for(model_name))
+    spec = _load_verified_contract(contract_path_for(model_name))
+    schema_hash = cast(str, spec["schema_hash"])
+    # Track the contract's opset pin dynamically (like export_pre/post_onnx) so a future
+    # contract opset bump can't silently diverge the LR graph from the pre/post heads.
+    opset = int(spec["onnx_opset"])
 
     model = cast(
         onnx.ModelProto,
         convert_sklearn(
             pipeline,
             initial_types=[("input", FloatTensorType([None, len(feature_cols)]))],
-            target_opset=TARGET_OPSET,
+            target_opset=opset,
             options={id(pipeline): {"zipmap": False}},
         ),
     )
@@ -106,7 +110,7 @@ def export(*, model_name: str, version: str, artifacts_dir: Path | None = None) 
     click.echo(
         f"wrote {onnx_path} ({onnx_path.stat().st_size // 1024} KB, sha {onnx_sha[:12]})\n"
         f"  parity vs predict_proba (incl NaN rows): max|diff|={max_diff:.2e}\n"
-        f"  schema_hash: {schema_hash}  opset: {TARGET_OPSET}"
+        f"  schema_hash: {schema_hash}  opset: {opset}"
     )
     return {"onnx_path": str(onnx_path), "onnx_sha256": onnx_sha, "parity_max_diff": max_diff}
 
