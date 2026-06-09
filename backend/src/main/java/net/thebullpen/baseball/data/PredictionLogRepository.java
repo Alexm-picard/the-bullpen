@@ -52,9 +52,12 @@ public class PredictionLogRepository {
    * pitch, not one per poll. The pitches side reads FINAL so the ReplacingMergeTree's corrected
    * re-polls collapse to one row per key.
    *
-   * <p>A LEFT JOIN keeps orphan predictions (no matching pitch): {@code matched} is 0 for them and
-   * the truth columns come back empty. The calibration query ({@link #SELECT_CALIBRATION_SET})
-   * inner-joins instead, excluding orphans per the V017 contract.
+   * <p>A LEFT JOIN keeps orphan predictions (no matching pitch). ClickHouse fills unmatched
+   * LEFT-JOIN right-side columns with the column type's default (0 / empty string), NOT NULL, so
+   * the query runs with {@code SETTINGS join_use_nulls = 1}; that makes {@code (pl.game_id IS NOT
+   * NULL)} resolve to 0 for orphans ({@code matched = false}) and the truth columns come back NULL.
+   * The calibration query ({@link #SELECT_CALIBRATION_SET}) inner-joins instead, excluding orphans
+   * per the V017 contract.
    */
   private static final String SELECT_TRUTH_JOIN =
       "SELECT pred.game_id AS game_id, pred.at_bat_index AS at_bat_index,"
@@ -77,7 +80,8 @@ public class PredictionLogRepository {
           + " ) AS pl"
           + " ON pl.game_id = pred.game_id AND pl.at_bat_index = pred.at_bat_index"
           + "    AND pl.pitch_number = pred.pitch_number"
-          + " ORDER BY pred.at_bat_index ASC, pred.pitch_number ASC";
+          + " ORDER BY pred.at_bat_index ASC, pred.pitch_number ASC"
+          + " SETTINGS join_use_nulls = 1";
 
   /**
    * The calibration set for a game: the truth-join restricted to MATCHED rows (an INNER JOIN), so
