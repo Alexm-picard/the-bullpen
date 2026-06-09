@@ -3,9 +3,11 @@ package net.thebullpen.baseball.data;
 import java.util.List;
 import javax.sql.DataSource;
 import net.thebullpen.baseball.api.dto.LatencyStat;
+import net.thebullpen.baseball.api.dto.TruthJoinedPrediction;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
 /**
@@ -39,10 +41,121 @@ public class PredictionLogRepository {
           + " GROUP BY model_name, model_version"
           + " ORDER BY model_name, model_version";
 
+  /**
+   * Truth-join (W3, issue #1): reconcile live-keyed prediction_log rows against their real pitch in
+   * pitches_live on the V017 natural key (game_id, at_bat_index, pitch_number).
+   *
+   * <p>Only live predictions participate: {@code game_id IS NOT NULL} prunes the HTTP-path / shadow
+   * rows whose key columns are NULL by construction (they correspond to no live pitch). decision
+   * [143]'s predict-the-next-pitch re-logs the same upcoming key on every poll, so the prediction
+   * side is collapsed to the latest by request_at (argMax) before the join - one prediction per
+   * pitch, not one per poll. The pitches side reads FINAL so the ReplacingMergeTree's corrected
+   * re-polls collapse to one row per key.
+   *
+   * <p>A LEFT JOIN keeps orphan predictions (no matching pitch): {@code matched} is 0 for them and
+   * the truth columns come back empty. The calibration query ({@link #SELECT_CALIBRATION_SET})
+   * inner-joins instead, excluding orphans per the V017 contract.
+   */
+  private static final String SELECT_TRUTH_JOIN =
+      "SELECT pred.game_id AS game_id, pred.at_bat_index AS at_bat_index,"
+          + " pred.pitch_number AS pitch_number, pred.model_name AS model_name,"
+          + " pred.model_version AS model_version, pred.prediction AS prediction,"
+          + " (pl.game_id IS NOT NULL) AS matched,"
+          + " pl.description AS actual_description, pl.pitch_type AS actual_pitch_type"
+          + " FROM ("
+          + "   SELECT game_id, at_bat_index, pitch_number,"
+          + "          argMax(model_name, request_at)  AS model_name,"
+          + "          argMax(model_version, request_at) AS model_version,"
+          + "          argMax(prediction, request_at)  AS prediction"
+          + "   FROM prediction_log"
+          + "   WHERE game_id = ? AND game_id IS NOT NULL AND role = 'champion'"
+          + "   GROUP BY game_id, at_bat_index, pitch_number"
+          + " ) AS pred"
+          + " LEFT JOIN ("
+          + "   SELECT game_id, at_bat_index, pitch_number, description, pitch_type"
+          + "   FROM pitches_live FINAL WHERE game_id = ?"
+          + " ) AS pl"
+          + " ON pl.game_id = pred.game_id AND pl.at_bat_index = pred.at_bat_index"
+          + "    AND pl.pitch_number = pred.pitch_number"
+          + " ORDER BY pred.at_bat_index ASC, pred.pitch_number ASC";
+
+  /**
+   * The calibration set for a game: the truth-join restricted to MATCHED rows (an INNER JOIN), so
+   * orphan predictions - a predicted pitch that never landed - are excluded from the empirical
+   * frequency denominator (V017 contract). Same argMax-per-key collapse + FINAL pitches read as
+   * {@link #SELECT_TRUTH_JOIN}.
+   */
+  private static final String SELECT_CALIBRATION_SET =
+      "SELECT pred.game_id AS game_id, pred.at_bat_index AS at_bat_index,"
+          + " pred.pitch_number AS pitch_number, pred.model_name AS model_name,"
+          + " pred.model_version AS model_version, pred.prediction AS prediction,"
+          + " 1 AS matched,"
+          + " pl.description AS actual_description, pl.pitch_type AS actual_pitch_type"
+          + " FROM ("
+          + "   SELECT game_id, at_bat_index, pitch_number,"
+          + "          argMax(model_name, request_at)  AS model_name,"
+          + "          argMax(model_version, request_at) AS model_version,"
+          + "          argMax(prediction, request_at)  AS prediction"
+          + "   FROM prediction_log"
+          + "   WHERE game_id = ? AND game_id IS NOT NULL AND role = 'champion'"
+          + "   GROUP BY game_id, at_bat_index, pitch_number"
+          + " ) AS pred"
+          + " INNER JOIN ("
+          + "   SELECT game_id, at_bat_index, pitch_number, description, pitch_type"
+          + "   FROM pitches_live FINAL WHERE game_id = ?"
+          + " ) AS pl"
+          + " ON pl.game_id = pred.game_id AND pl.at_bat_index = pred.at_bat_index"
+          + "    AND pl.pitch_number = pred.pitch_number"
+          + " ORDER BY pred.at_bat_index ASC, pred.pitch_number ASC";
+
+  private static final RowMapper<TruthJoinedPrediction> TRUTH_JOIN_MAPPER =
+      (rs, n) ->
+          new TruthJoinedPrediction(
+              rs.getLong("game_id"),
+              rs.getInt("at_bat_index"),
+              rs.getInt("pitch_number"),
+              rs.getString("model_name"),
+              rs.getString("model_version"),
+              rs.getString("prediction"),
+              // ClickHouse returns the (pl.game_id IS NOT NULL) predicate as UInt8 0/1.
+              rs.getInt("matched") != 0,
+              emptyToNull(rs.getString("actual_description")),
+              emptyToNull(rs.getString("actual_pitch_type")));
+
   private final JdbcTemplate jdbc;
 
   public PredictionLogRepository(@Qualifier("clickhouseDataSource") DataSource clickhouse) {
     this.jdbc = new JdbcTemplate(clickhouse);
+  }
+
+  /**
+   * Reconcile every champion prediction logged for {@code gameId} against its real pitch (W3, issue
+   * #1). Matched rows carry the realized outcome; orphan predictions come back with {@link
+   * TruthJoinedPrediction#matched()} {@code = false} and null truth fields. Empty list for a game
+   * with no live predictions.
+   *
+   * <p>Feeds the per-player history + reliability views the README flags as empty. Callers that
+   * need the calibration set only should use {@link #findCalibrationSet(long)}, which excludes
+   * orphans at the SQL level.
+   */
+  public List<TruthJoinedPrediction> reconcileGamePredictions(long gameId) {
+    // Params: prediction-side game_id (prunes prediction_log), pitches-side game_id (prunes
+    // pitches_live). Both bound to the same value.
+    return jdbc.query(SELECT_TRUTH_JOIN, TRUTH_JOIN_MAPPER, gameId, gameId);
+  }
+
+  /**
+   * The matched-only calibration set for {@code gameId}: predictions that have a real pitch in
+   * pitches_live, orphans excluded (V017 contract). Every returned row has {@link
+   * TruthJoinedPrediction#matched()} {@code = true} and non-null truth fields.
+   */
+  public List<TruthJoinedPrediction> findCalibrationSet(long gameId) {
+    return jdbc.query(SELECT_CALIBRATION_SET, TRUTH_JOIN_MAPPER, gameId, gameId);
+  }
+
+  /** ClickHouse returns absent LowCardinality(String) values as empty strings, not SQL NULL. */
+  private static String emptyToNull(String s) {
+    return (s == null || s.isEmpty()) ? null : s;
   }
 
   /**

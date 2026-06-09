@@ -13,6 +13,9 @@ sanity-checked by the hand-trace committed in 2a.2's leaf plan.
 
 from __future__ import annotations
 
+from datetime import date, timedelta
+from typing import Any, cast
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -22,7 +25,7 @@ from bullpen_training.features.target_encoding import (
     DEFAULT_SMOOTHING_K,
     compute_prior,
 )
-from tests.leakage.conftest import SyntheticFold
+from tests.leakage.conftest import SyntheticFold, assemble_pitch_features
 
 SAMPLE_SIZE = 10
 SAMPLE_SEED = 4242
@@ -92,4 +95,137 @@ def test_every_pitch_in_test_window_has_game_date_after_train_end(
     assert too_early.empty, (
         f"encoded frame contains {len(too_early)} rows with "
         f"game_date <= train_end ({fold.train_end}) — leakage from train window"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Pitch-head calendar-date trace: every Tier 3 rolling feature uses ONLY data
+# strictly before the pitch's instant.
+# ---------------------------------------------------------------------------
+#
+# For a sample of test-window pitches, INDEPENDENTLY re-derive each rolling-form
+# value from the raw pitches table, restricting to rows strictly earlier than the
+# traced pitch (earlier calendar days for the 28d windows; earlier in-game
+# position for the in-game count). The independently traced value must equal the
+# value the builder assembled. A builder that peeked at the pitch's own day - or
+# at the pitch itself - would diverge from this trace.
+
+PITCH_SAMPLE_SIZE = 12
+PITCH_SAMPLE_SEED = 90909
+_STRIKES = ("called_strike", "swinging_strike", "foul")
+
+
+def _count(mask: pd.Series) -> int:
+    """Number of True entries in a boolean Series (typed for pyright)."""
+    return int(cast(int, mask.to_numpy().sum()))
+
+
+def _trace_rolling_for_pitch(raw: pd.DataFrame, pitch: dict[str, Any]) -> dict[str, float]:
+    """First-principles recompute of the rolling-form columns for one pitch,
+    using ONLY raw rows strictly before it. Independent of the conftest
+    reference - this is the hand-trace the SQL window must honour.
+
+    `pitch` is a plain dict of the traced row's scalars (the caller passes
+    `row.to_dict()`), which keeps pyright out of pandas-Series indexing."""
+    d = cast(date, pitch["game_date"])
+    pid = int(pitch["pitcher_id"])
+    bid = int(pitch["batter_id"])
+    gid = int(pitch["game_id"])
+    key = (int(pitch["at_bat_index"]), int(pitch["pitch_number"]))
+    lo = d - timedelta(days=28)
+
+    p_win = raw[(raw["pitcher_id"] == pid) & (raw["game_date"] >= lo) & (raw["game_date"] < d)]
+    b_win = raw[(raw["batter_id"] == bid) & (raw["game_date"] >= lo) & (raw["game_date"] < d)]
+
+    p_n = len(p_win)
+    b_n = len(b_win)
+    in_game = raw[(raw["pitcher_id"] == pid) & (raw["game_id"] == gid)]
+    in_game_before = in_game[
+        in_game.apply(
+            lambda r, _key=key: (int(r["at_bat_index"]), int(r["pitch_number"])) < _key, axis=1
+        )
+    ]
+    prior_dates = sorted(
+        set(raw.loc[(raw["pitcher_id"] == pid) & (raw["game_date"] < d), "game_date"])
+    )
+
+    def rate(num: int, den: int) -> float:
+        return float(num) / den if den else float("nan")
+
+    p_label = cast(pd.Series, p_win["label"])
+    b_label = cast(pd.Series, b_win["label"])
+    return {
+        "pitcher_pitches_last_28d": float(p_n) if p_n else float("nan"),
+        "pitcher_pitches_in_game": float(len(in_game_before)),
+        "days_since_last_appearance": (
+            float("nan") if not prior_dates else float((d - prior_dates[-1]).days)
+        ),
+        "pitcher_strike_rate_28d": rate(_count(p_label.isin(_STRIKES)), p_n),
+        "pitcher_swstrike_rate_28d": rate(_count(p_label == "swinging_strike"), p_n),
+        "pitcher_inplay_rate_28d": rate(_count(p_label == "in_play"), p_n),
+        "batter_strike_rate_28d": rate(_count(b_label.isin(_STRIKES)), b_n),
+        "batter_inplay_rate_28d": rate(_count(b_label == "in_play"), b_n),
+        "batter_ball_rate_28d": rate(_count(b_label == "ball"), b_n),
+    }
+
+
+def test_rolling_form_recomputed_from_strictly_earlier_data_matches(
+    pitch_pitches: pd.DataFrame, pitch_fold: SyntheticFold
+) -> None:
+    """Trace a sample of assembled test-window pitches: each rolling-form value
+    must equal an independent recompute over strictly-earlier raw rows."""
+    assembled = assemble_pitch_features(pitch_pitches, pitch_fold, head="pre")
+    rng = np.random.default_rng(PITCH_SAMPLE_SEED)
+    idx_pool = rng.choice(
+        len(assembled), size=min(PITCH_SAMPLE_SIZE, len(assembled)), replace=False
+    )
+
+    for idx in idx_pool:
+        row = cast("dict[str, Any]", assembled.iloc[int(idx)].to_dict())
+        traced = _trace_rolling_for_pitch(pitch_pitches, row)
+        for col, expected in traced.items():
+            actual = float(row[col])
+            if np.isnan(expected):
+                assert np.isnan(actual), (
+                    f"{col} for traced pitch (pitcher={int(row['pitcher_id'])}, "
+                    f"date={row['game_date']}): builder gave {actual}, trace says NULL"
+                )
+            else:
+                assert actual == pytest.approx(expected, rel=1e-5, abs=1e-6), (
+                    f"{col} mismatch for traced pitch (pitcher={int(row['pitcher_id'])}, "
+                    f"date={row['game_date']}): builder {actual}, "
+                    f"strictly-earlier trace {expected}"
+                )
+
+
+def test_rolling_form_trace_canary_including_current_day_diverges(
+    pitch_pitches: pd.DataFrame, pitch_fold: SyntheticFold
+) -> None:
+    """Canary: a recompute that WIDENS the in-game window to include the pitch
+    itself must diverge from the assembled (strict) value for at least one
+    sampled pitch. If it never diverged, the trace couldn't detect an off-by-one
+    leak (the fixture would have no within-game depth)."""
+    assembled = assemble_pitch_features(pitch_pitches, pitch_fold, head="pre")
+    diverged = False
+    for idx in range(min(40, len(assembled))):
+        row = cast("dict[str, Any]", assembled.iloc[idx].to_dict())
+        gid = int(row["game_id"])
+        pid = int(row["pitcher_id"])
+        key = (int(row["at_bat_index"]), int(row["pitch_number"]))
+        in_game = pitch_pitches[
+            (pitch_pitches["pitcher_id"] == pid) & (pitch_pitches["game_id"] == gid)
+        ]
+        leaky_mask = in_game.apply(
+            # key is default-bound so this loop iteration's key is captured (B023).
+            lambda r, _key=key: (int(r["at_bat_index"]), int(r["pitch_number"])) <= _key,
+            axis=1,
+        )
+        leaky_count = float(_count(cast(pd.Series, leaky_mask)))
+        if leaky_count != float(row["pitcher_pitches_in_game"]):
+            diverged = True
+            break
+    assert diverged, (
+        "calendar-trace canary: including the pitch itself in the in-game count "
+        "never changed the value - the fixture lacks within-game depth, so the "
+        "strict-vs-leaky trace can't distinguish a CURRENT ROW off-by-one"
     )

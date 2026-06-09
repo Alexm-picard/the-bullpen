@@ -63,23 +63,39 @@ jobs:
       # combined gate is evaluated once in the report step below.
       - name: Unit tests — torch path (mlp/parks/retrodict/physics/eval)
         working-directory: training
+        # uv run python -m pytest (not bare `uv run pytest`) so the uv-managed
+        # interpreter is used even when an ambient PYTHONPATH or system pytest is
+        # on PATH. This avoids the stale-PYTHONPATH quirk where pytest resolves to
+        # a system interpreter that lacks pandas/lightgbm.
         run: |
-          uv run pytest -x --ignore=tests/leakage \
+          uv run python -m pytest -x --ignore=tests/leakage \
             --cov=src/bullpen_training --cov-branch --cov-append --cov-fail-under=0 \
             tests/battedball/mlp tests/battedball/parks \
             tests/battedball/retrodict tests/battedball/physics \
             tests/battedball/eval \
             tests/ingest tests/features \
             tests/eval/test_metrics.py tests/eval/test_cv_harness.py
-      - name: Unit tests — lightgbm path (pitch parity, toy training, lgbm baseline)
+      - name: Unit tests - lightgbm path (pitch, toy training, lgbm/lr baselines, registry, retraining)
         working-directory: training
+        # Covers:
+        #   tests/pitch/             - W1/W4b pitch ORT fixture, register_snapshot (new)
+        #   tests/battedball/lgbm_per_park/ and lr_baseline/ - both now have __init__.py
+        #     to resolve the test_export_onnx.py basename collision that breaks default
+        #     (prepend) pytest collection. W5 eval/CV additions land in tests/eval/ and
+        #     tests/battedball/ which are already globbed by this job.
+        #   tests/registry_client/   - feature-hash discipline
+        #   tests/retraining/        - trigger/dispatch/run unit tests
         run: |
-          uv run pytest -x --ignore=tests/leakage \
+          uv run python -m pytest -x --ignore=tests/leakage \
             --cov=src/bullpen_training --cov-branch --cov-append --cov-fail-under=0 \
             tests/pitch tests/eval/test_artifact.py \
             tests/battedball/test_train_toy.py \
             tests/battedball/test_python_java_parity.py \
             tests/battedball/lgbm_baseline \
+            tests/battedball/lgbm_per_park \
+            tests/battedball/lr_baseline \
+            tests/registry_client \
+            tests/retraining \
             tests/test_smoke.py
       # Coverage gate. 75% (pyproject fail_under) stays the aspirational TARGET, surfaced as a
       # warning. The ENFORCED gate is a regression FLOOR at 40% (current is ~46%): coverage may not
@@ -162,7 +178,13 @@ jobs:
           fi
       - name: Leakage suite
         working-directory: training
-        run: uv run pytest tests/leakage -v
+        # Covers all files in tests/leakage/, including:
+        #   test_pitch_head_pre_post_boundary.py (W2 pre/post head split, CLAUDE.md rules 9+10)
+        #   test_no_future_contamination.py, test_shuffled_target.py,
+        #   test_calendar_date_trace.py, test_id_consistency.py (original four categories)
+        #   test_leakage_detector_properties.py (detector meta-tests)
+        # uv run python -m pytest avoids the stale-PYTHONPATH quirk (see unit-tests job).
+        run: uv run python -m pytest tests/leakage -v
 
   # Required - DEF-H2. The four leakage tests above validate `build_fold_inmem`, a
   # pure-pandas MIRROR of the production builder, so a leak living in the real SQL
@@ -209,4 +231,5 @@ jobs:
           CLICKHOUSE_HOST: localhost
           CLICKHOUSE_PORT: "9000"
           CLICKHOUSE_PASSWORD: thebullpen
+        # uv run python -m pytest avoids the stale-PYTHONPATH quirk (see unit-tests job).
         run: uv run python -m pytest tests/leakage/test_sql_path_contamination.py -v

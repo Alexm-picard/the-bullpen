@@ -1,32 +1,32 @@
 /**
- * /home — Tonight's Slate cover-sheet (Stage 3a, decision [133] identity).
+ * /home -- Tonight's Slate cover-sheet (Stage 3a, decision [133] identity).
  *
- * Replaces the editorial-data "tech-product" home (2026-05-25, commit 7ef8958).
- * The new home is the front of the printed advance-scouting packet: masthead
- * with two-line nameplate, broadcast model-fleet ribbon, the night's slate as
- * a conditionally-formatted table, then a featured matchup pulled from that
- * table. Visual vocabulary is lifted from the Matchup Report at /players/:id.
+ * Composition order (top -> bottom, inside <ReportSheet> shell):
+ *   1. <CoverSheetHeader />      -- masthead (eyebrow + 2-line nameplate + byline)
+ *   2. <ModelFleetRibbon />      -- clickable navy strip, model chips
+ *   3. <TonightsMatchupsTable /> -- 6-col slate with cellColor EDGE tint
+ *   4. <FeaturedMatchupCard />   -- full-width card, 2 key-reads, scarlet CTA
+ *   5. <CoverSheetFooter />      -- navy strip footer (bookends the ribbon)
  *
- * Composition order (top → bottom, inside <ReportSheet> shell):
- *   1. <CoverSheetHeader />      — masthead (eyebrow + 2-line nameplate + byline)
- *   2. <ModelFleetRibbon />      — clickable navy strip, 4 model chips
- *   3. <TonightsMatchupsTable /> — 6-col slate with cellColor EDGE tint
- *   4. <FeaturedMatchupCard />   — full-width card, 2 key-reads, scarlet CTA
- *   5. <CoverSheetFooter />      — navy strip footer (bookends the ribbon)
- *
- * Fixture-driven (`home-fixtures.ts`); no API calls. Reuses Judge + Skubal
- * from matchup-fixtures.ts for the featured card.
+ * Data sourcing (W7):
+ *   - Model fleet ribbon: LIVE via useAllRegistryRows + useRouting (same
+ *     pattern as ops-page). Falls back to MODEL_CHIPS fixture when the
+ *     backend is unreachable or the registry is empty, captioned honestly.
+ *   - Tonight's slate (matchups table + featured card): showcase fixture.
+ *     No backend endpoint delivers per-game starters, edge scores, or
+ *     top-reads today. The natural hook point is GET /v1/games/today once
+ *     that endpoint carries the required fields. Captioned clearly.
  *
  * Constraints honored:
  *   - One <Title order={1}> only (the masthead h1).
- *   - No hex codes — every color via tokens or CSS-var utilities.
- *   - No live data fetches; the page is a design-system showcase in v1.
- *   - Reuses CornerStripes + SectionLabel from shared/ (extracted from
- *     players-page.tsx so both routes use the same primitives).
+ *   - No hex codes -- every color via tokens.
+ *   - TanStack Query for live ribbon data; no useEffect for server state.
  */
 
-import { Stack } from "@mantine/core";
+import { Stack, Text } from "@mantine/core";
 
+import { useAllRegistryRows, useRouting } from "../api/ops";
+import { toFleetRows } from "../api/ops-mappers";
 import { FeaturedMatchupCard } from "../components/home/featured-matchup-card";
 import { TonightsMatchupsTable } from "../components/home/tonights-matchups-table";
 import { CoverSheetFooter } from "../components/scouting/cover-sheet-footer";
@@ -41,9 +41,29 @@ import {
   MODEL_CHIPS,
   TONIGHT_MATCHUPS,
 } from "../data/home-fixtures";
+import type { ModelChip, ModelChipState } from "../data/home-fixtures";
 import { PLAYERS } from "../data/matchup-fixtures";
+import { colors } from "../design/tokens";
 
 import "./home/home.css";
+
+// ── Formatters ────────────────────────────────────────────────────────────────
+
+const ET_TIME = new Intl.DateTimeFormat("en-US", {
+  hour: "numeric",
+  minute: "2-digit",
+  hour12: false,
+  timeZone: "America/New_York",
+});
+const ET_DATE = new Intl.DateTimeFormat("en-US", {
+  weekday: "short",
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+  timeZone: "America/New_York",
+});
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function computeHandCounts() {
   let l = 0;
@@ -57,7 +77,45 @@ function computeHandCounts() {
   return { l, r };
 }
 
+/**
+ * Map live registry rows to the ModelChip shape the fleet ribbon needs.
+ * CHAMPION stage -> LIVE badge; everything else -> SHADOW. Chips link to /ops.
+ */
+function registryToChips(
+  versions: Parameters<typeof toFleetRows>[0],
+  routing: Parameters<typeof toFleetRows>[1],
+): ModelChip[] {
+  // Pass an empty latency array -- we only need state/name/version for chips.
+  const rows = toFleetRows(versions, routing, []);
+  return rows.map((r) => {
+    const state: ModelChipState = r.state === "LIVE" ? "LIVE" : "SHADOW";
+    return {
+      id: `${r.modelName}-${r.version}`,
+      label: r.modelName,
+      detail: r.version,
+      state,
+      href: "/ops",
+    };
+  });
+}
+
+const showcaseSuffix = (live: boolean) =>
+  live ? "" : " · showcase data (backend unreachable)";
+
+// ── Page component ────────────────────────────────────────────────────────────
+
 export default function HomePage() {
+  // Fleet ribbon: LIVE when the registry returns at least one row.
+  const registry = useAllRegistryRows();
+  const routing = useRouting();
+
+  const liveChips =
+    registry.data && registry.data.length > 0
+      ? registryToChips(registry.data, routing.data ?? [])
+      : null;
+  const chips = liveChips ?? MODEL_CHIPS;
+  const ribbonIsLive = liveChips !== null;
+
   const { l: lhpCount, r: rhpCount } = computeHandCounts();
   const featuredBatter = PLAYERS.judge_aaron;
   const featuredPitcher = PLAYERS.skubal_tarik;
@@ -67,37 +125,69 @@ export default function HomePage() {
     );
   }
 
+  const now = new Date();
+  const issuedAt = `${ET_TIME.format(now)} ET`;
+  const issueDate = ET_DATE.format(now).replace(",", " ·");
+
   return (
     <ReportSheet>
       <Stack gap={28}>
         <CoverSheetHeader
-          issueDate={ISSUE_META.issueDate}
+          issueDate={issueDate}
           matchupCount={TONIGHT_MATCHUPS.length}
           lhpCount={lhpCount}
           rhpCount={rhpCount}
-          issuedAt={ISSUE_META.issuedAt}
+          issuedAt={issuedAt}
           firstPitchWindow={ISSUE_META.firstPitchWindow}
         />
 
-        <ModelFleetRibbon chips={MODEL_CHIPS} />
+        {/* Fleet ribbon: live from registry when backend reachable */}
+        <div>
+          <ModelFleetRibbon chips={chips} />
+          {!ribbonIsLive && (
+            <Text
+              size="xs"
+              style={{ color: colors.textMuted, fontStyle: "italic" }}
+              mt={4}
+            >
+              Model fleet · showcase data (backend unreachable)
+            </Text>
+          )}
+        </div>
 
+        {/* Tonight's slate: showcase fixture -- no live endpoint for
+            starters, edge scores, or top-reads yet */}
         <section aria-labelledby="slate-section-label">
           <div id="slate-section-label">
             <SectionLabel>
               Tonight&rsquo;s Matchups &middot; {TONIGHT_MATCHUPS.length} Games
             </SectionLabel>
           </div>
-          <TonightsMatchupsTable matchups={TONIGHT_MATCHUPS} />
+          <TonightsMatchupsTable
+            matchups={TONIGHT_MATCHUPS}
+            caption={`Tonight's slate · edge model reads · starters${showcaseSuffix(false)}`}
+          />
         </section>
 
-        <FeaturedMatchupCard
-          batter={featuredBatter}
-          pitcher={featuredPitcher}
-          context={FEATURED_CONTEXT}
-          keyReads={FEATURED_KEY_READS}
-          ctaHref={`/players/${featuredBatter.id}`}
-          ctaLabel="Pull the full report →"
-        />
+        {/* Featured matchup: showcase fixture for the same reason */}
+        <div>
+          <FeaturedMatchupCard
+            batter={featuredBatter}
+            pitcher={featuredPitcher}
+            context={FEATURED_CONTEXT}
+            keyReads={FEATURED_KEY_READS}
+            ctaHref={`/players/${featuredBatter.id}`}
+            ctaLabel="Pull the full report &#x2192;"
+          />
+          <Text
+            size="xs"
+            style={{ color: colors.textMuted, fontStyle: "italic" }}
+            mt={4}
+          >
+            Featured matchup · showcase data (no live endpoint for
+            starters / edge / top-reads)
+          </Text>
+        </div>
 
         <CoverSheetFooter
           buildSha={ISSUE_META.buildSha}

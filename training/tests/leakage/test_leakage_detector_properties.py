@@ -35,6 +35,7 @@ from bullpen_training.features.target_encoding import (
 )
 from tests.leakage.conftest import (
     SyntheticFold,
+    assemble_pitch_features,
     build_fold_inmem,
     synthetic_pitches,
 )
@@ -180,4 +181,157 @@ def test_shuffled_target_destroys_encoding_signal(params: dict[str, object]) -> 
     assert real_peak > shuffled_peak, (
         f"shuffling labels did not reduce TE concentration "
         f"(real peak {real_peak:.3f} <= shuffled {shuffled_peak:.3f})"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Detector self-tests for the PITCH-HEAD rolling-form (Tier 3) path
+# ---------------------------------------------------------------------------
+#
+# The TE self-tests above prove the no-future-contamination and shuffled-target
+# checks have teeth on the Tier 2 encoding. These extend the same "clean PASSES,
+# leaky FIRES" discipline to the Tier 3 rolling-form streaming cutoff and to the
+# calendar-trace + id-consistency categories - so all four categories are shown
+# non-vacuous against the pitch builder, not just the TE.
+#
+# The clean pipeline = assemble_pitch_features (strict `< d` / `< position`
+# cutoff). The leaky pipeline = the same with leak_current_row=True (the window
+# includes the pitch itself), which is the canonical off-by-one temporal leak.
+
+
+def _pitch_scenario(params: dict[str, object]) -> tuple[pd.DataFrame, SyntheticFold]:
+    """A small pitch fleet + a short test window. Kept tiny: the rolling-form
+    reference is O(n^2) and Hypothesis runs it many times."""
+    n_pitchers = int(cast(int, params["n_pitchers"]))
+    pitches = synthetic_pitches(
+        n_pitchers=n_pitchers,
+        n_batters=max(8, n_pitchers),
+        n_days=40,
+        pitches_per_pitcher_per_day=3,
+        seed=int(cast(int, params["seed"])),
+    )
+    fold = SyntheticFold(
+        train_start=date(2024, 4, 1),
+        train_end=date(2024, 4, 30),
+        test_start=date(2024, 5, 1),
+        test_end=date(2024, 5, 6),
+    )
+    return pitches, fold
+
+
+# Smaller search than _data: the rolling reference is the expensive part.
+_pitch_data = st.fixed_dictionaries(
+    {
+        "n_pitchers": st.integers(min_value=6, max_value=10),
+        "seed": st.integers(min_value=0, max_value=5_000),
+    }
+)
+
+_PITCH_SETTINGS = settings(
+    max_examples=12,
+    deadline=None,
+    suppress_health_check=[HealthCheck.too_slow],
+)
+
+
+def _ingame_values(pitches: pd.DataFrame, fold: SyntheticFold, *, leak: bool) -> np.ndarray:
+    asm = assemble_pitch_features(pitches, fold, head="pre", leak_current_row=leak)
+    asm = asm.sort_values(["game_id", "at_bat_index", "pitch_number"]).reset_index(drop=True)
+    return asm["pitcher_pitches_in_game"].to_numpy()
+
+
+@_PITCH_SETTINGS
+@given(params=_pitch_data)
+def test_clean_rolling_form_starts_in_game_count_at_zero(params: dict[str, object]) -> None:
+    """calendar-trace / no-future-contamination, CLEAN side: the streaming-cutoff
+    in-game count is strictly-earlier, so the first pitch of every (pitcher,game)
+    sees 0 prior pitches. A leak would push that minimum to >= 1."""
+    pitches, fold = _pitch_scenario(params)
+    clean = _ingame_values(pitches, fold, leak=False)
+    assert clean.min() == 0.0, (
+        "clean rolling-form in-game count never hit 0 - the streaming cutoff is "
+        "not strictly-earlier (or the fixture has no game-leading pitches)"
+    )
+
+
+@_PITCH_SETTINGS
+@given(params=_pitch_data)
+def test_leaky_rolling_form_is_caught_by_current_row_inclusion(
+    params: dict[str, object],
+) -> None:
+    """no-future-contamination, LEAKY side has teeth: including the pitch itself
+    shifts the in-game count up by exactly 1 everywhere (so its minimum is >= 1).
+    The clean-vs-leaky frames therefore differ - the check can distinguish them.
+    If they were identical, the leakage test would be vacuous."""
+    pitches, fold = _pitch_scenario(params)
+    clean = _ingame_values(pitches, fold, leak=False)
+    leaky = _ingame_values(pitches, fold, leak=True)
+    assert clean.shape == leaky.shape and clean.size > 0
+    assert not np.array_equal(clean, leaky), (
+        "leaky (CURRENT ROW) rolling form matched the clean streaming-cutoff "
+        "form - the no-future-contamination check could not tell them apart"
+    )
+    # The leak is a uniform +1 on the in-game count.
+    np.testing.assert_array_equal(leaky, clean + 1.0)
+
+
+@_PITCH_SETTINGS
+@given(params=_pitch_data)
+def test_clean_rolling_form_id_consistent_under_row_permutation(
+    params: dict[str, object],
+) -> None:
+    """id-consistency, CLEAN side: the rolling form is a function of identity +
+    time only, so permuting the raw input row order leaves every per-pitch value
+    unchanged when keyed by PK."""
+    pitches, fold = _pitch_scenario(params)
+    rng = np.random.default_rng(int(cast(int, params["seed"])) + 7)
+    permuted = cast(
+        pd.DataFrame, pitches.iloc[rng.permutation(len(pitches))].reset_index(drop=True)
+    )
+    pk = ["game_id", "at_bat_index", "pitch_number"]
+    base = assemble_pitch_features(pitches, fold, head="pre").sort_values(pk).reset_index(drop=True)
+    perm = (
+        assemble_pitch_features(permuted, fold, head="pre").sort_values(pk).reset_index(drop=True)
+    )
+    np.testing.assert_array_equal(
+        base["pitcher_pitches_in_game"].to_numpy(),
+        perm["pitcher_pitches_in_game"].to_numpy(),
+        err_msg="clean rolling form changed under raw row-order permutation",
+    )
+
+
+@_PITCH_SETTINGS
+@given(params=_pitch_data)
+def test_leaky_te_full_window_is_caught_by_future_label_mutation(
+    params: dict[str, object],
+) -> None:
+    """no-future-contamination, LEAKY TE side: when TE is fit over the full
+    train+test window (the canonical target leak), mutating post-train-end labels
+    changes the encoded test-window TE. The clean (train-window-only) TE does not.
+    Proves the future-contamination check fires on the full-window-TE leak."""
+    pitches, fold = _pitch_scenario(params)
+    mutated = pitches.copy()
+    mutated.loc[mutated["game_date"] > fold.train_end, "label"] = LABEL_CLASSES[0]
+
+    def te_matrix(p: pd.DataFrame, *, leak: bool) -> np.ndarray:
+        asm = assemble_pitch_features(p, fold, head="pre", leak_te_full_window=leak)
+        asm = asm.sort_values(["game_id", "at_bat_index", "pitch_number"]).reset_index(drop=True)
+        cols = [f"pitcher_te_{c}" for c in LABEL_CLASSES] + [
+            f"batter_te_{c}" for c in LABEL_CLASSES
+        ]
+        return asm[cols].to_numpy(dtype="float64")
+
+    clean_before = te_matrix(pitches, leak=False)
+    clean_after = te_matrix(mutated, leak=False)
+    np.testing.assert_array_equal(
+        clean_before,
+        clean_after,
+        err_msg="clean (train-window) TE moved when only future labels changed",
+    )
+
+    leaky_before = te_matrix(pitches, leak=True)
+    leaky_after = te_matrix(mutated, leak=True)
+    assert not np.array_equal(leaky_before, leaky_after), (
+        "leaky full-window TE was unaffected by future-label mutation - the "
+        "future-contamination check could not distinguish it from the clean TE"
     )

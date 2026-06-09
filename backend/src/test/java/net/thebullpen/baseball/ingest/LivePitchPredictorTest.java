@@ -73,7 +73,7 @@ class LivePitchPredictorTest {
   }
 
   @Test
-  void buildEvent_carries_the_live_join_key_and_champion_role() {
+  void buildEvent_carries_the_live_join_key_role_and_real_version_fk() {
     Map<String, Double> probs = new LinkedHashMap<>();
     probs.put("ball", 0.5);
     probs.put("called_strike", 0.3);
@@ -81,12 +81,23 @@ class LivePitchPredictorTest {
 
     PredictionLogEvent ev =
         LivePitchPredictor.buildEvent(
-            ctx("R", "R", true, false, false), probs, Instant.now(), "hash123", 1.5f);
+            ctx("R", "R", true, false, false),
+            probs,
+            Instant.now(),
+            "v1",
+            42L, // routed model_version_id FK (W1b: must be real, not null)
+            "hash123",
+            PredictionLogEvent.Role.CHAMPION,
+            1.5f);
 
     assertEquals(822810L, ev.gameId(), "keyed to the predicted pitch's game");
     assertEquals(77, ev.atBatIndex());
     assertEquals(3, ev.pitchNumber());
     assertEquals(PredictionLogEvent.Role.CHAMPION, ev.role());
+    assertEquals("pitch_outcome_pre", ev.modelName());
+    assertEquals("v1", ev.modelVersion());
+    assertEquals(
+        42L, ev.modelVersionId(), "W1b: live row carries the routed registry FK, not null");
     assertEquals("hash123", ev.featureHash());
     assertEquals(1.5f, ev.latencyMs());
     assertEquals("ball", LivePitchPredictor.argmax(probs), "winner is the argmax class");

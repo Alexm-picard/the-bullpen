@@ -1,12 +1,15 @@
 /**
  * Smoke test for /about (Stage 3e colophon).
  *
- * Renders the full page inside MemoryRouter + MantineProvider and asserts
- * the masthead + all 6 SectionLabel headings + a single <h1> + the footer
- * SHA appear in the markup. The deeper component tests cover individual
- * primitives.
+ * Renders the full page inside MemoryRouter + MantineProvider +
+ * QueryClientProvider and asserts the masthead + all 6 SectionLabel
+ * headings + a single <h1> + the footer SHA appear in the markup.
+ * The QueryClientProvider is required because the page now calls
+ * useAllRegistryRows (live model fleet). In this static render the query
+ * never resolves, so the fleet section falls back to fixture rows.
  */
 import { MantineProvider } from "@mantine/core";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
@@ -17,10 +20,15 @@ import { theme } from "../design/theme";
 import AboutPage from "./about-page";
 
 function render(ui: React.ReactElement): string {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   return renderToStaticMarkup(
-    <MemoryRouter>
-      <MantineProvider theme={theme}>{ui}</MantineProvider>
-    </MemoryRouter>,
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        <MantineProvider theme={theme}>{ui}</MantineProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 
