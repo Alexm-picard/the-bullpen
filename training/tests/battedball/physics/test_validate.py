@@ -20,6 +20,7 @@ from pathlib import Path
 
 import pytest
 
+from bullpen_training.battedball.physics.spin import load_physics_calibration
 from bullpen_training.battedball.physics.validate import (
     _DISTANCE_TOL_FT_ABS,
     _DISTANCE_TOL_PCT,
@@ -66,9 +67,10 @@ def test_validation_subset_each_fixture_passes(all_fixtures: list[dict]) -> None
     enough that the full-run gate is probably broken too."""
     subset = _pick_subset(all_fixtures)
     assert subset, "physics fixture subset is empty"
+    calib = load_physics_calibration()
     failures: list[str] = []
     for fx in subset:
-        r = _evaluate_fixture(fx, _fixture_atmosphere(fx, None))
+        r = _evaluate_fixture(fx, _fixture_atmosphere(fx, None), calib)
         if not r.pass_distance:
             failures.append(
                 f"{r.fixture_id} @{r.park_id} obs={r.observed_distance_ft:.0f} "

@@ -11,10 +11,10 @@ What Statcast actually gives us (per the V003__pitches.sql schema):
 
 What it does NOT give us:
   - Ball spin rate / spin axis off the bat. Statcast measures the
-    pitch's spin (release_spin_rate) but not the bat's. We use Nathan-
-    typical priors keyed on launch_angle (2200 rpm for fly arcs, 1500
-    for liners). Residual error from spin variance is absorbed by the
-    validation tolerance (±5 % / ±15 ft).
+    pitch's spin (release_spin_rate) but not the bat's. We derive it from
+    the calibrated launch-angle spin model (``physics/spin.py``), the same
+    model the retrodiction labels + the validation gate use, so the fixture's
+    baked spin matches the physics it will be scored under.
   - Hang time. No observed hang time, so the harness reports the
     simulator's hang time for visibility but doesn't gate on it.
   - Wind / temperature / humidity at game time. Defaulted to
@@ -41,6 +41,12 @@ import subprocess
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Literal
+
+from bullpen_training.battedball.physics.spin import (
+    PhysicsCalibration,
+    batted_ball_spin,
+    load_physics_calibration,
+)
 
 # Statcast home-plate coordinates in the scaled hc_x/hc_y system.
 _HC_X_HOME = 125.42
@@ -77,7 +83,13 @@ def spray_angle_deg_from_hc(hc_x: float, hc_y: float) -> float:
 
 
 def spin_prior_for(bb_type: str, launch_angle_deg: float) -> tuple[float, float]:
-    """Return (spin_rate_rpm, spin_axis_tilt_deg) for a fixture.
+    """LEGACY flat spin prior — retained for reference only, no longer used.
+
+    Superseded by the calibrated launch-angle spin model
+    (``physics/spin.py::batted_ball_spin``). Fixtures now bake spin from that
+    model, and the validation gate recomputes it from the live calibration, so
+    this bucketed prior no longer feeds either path. Kept so the Phase-0 history
+    (decision [131], the 2200->1800 reverse-tune) stays legible in the tree.
 
     Statcast doesn't measure batted-ball spin. The simulator needs both,
     so we use Nathan-typical priors keyed on the kind of batted ball:
@@ -177,8 +189,16 @@ def _bucket_query(
     """
 
 
-def _row_to_fixture(row: list[str], bucket_label: str, idx: int) -> Fixture | None:
-    """Parse a ClickHouse TSV row into a Fixture. Returns None on bad data."""
+def _row_to_fixture(
+    row: list[str], bucket_label: str, idx: int, calib: PhysicsCalibration
+) -> Fixture | None:
+    """Parse a ClickHouse TSV row into a Fixture. Returns None on bad data.
+
+    Spin is derived from the calibrated launch-angle model (``calib.spin``) so
+    the baked value matches the physics the gate + labels run. (The gate
+    recomputes spin from the live calibration regardless, so this only keeps the
+    on-disk fixture self-consistent.)
+    """
     try:
         (
             game_id,
@@ -201,7 +221,7 @@ def _row_to_fixture(row: list[str], bucket_label: str, idx: int) -> Fixture | No
     launch_speed = float(launch_speed_mph)
     launch_angle = float(launch_angle_deg)
     spray = spray_angle_deg_from_hc(float(hc_x), float(hc_y))
-    spin_rate, tilt = spin_prior_for(bb_type, launch_angle)
+    spin_rate, tilt = batted_ball_spin(launch_speed, launch_angle, spray, calib.spin)
     observed = float(hit_distance_ft)
 
     label: Literal["home_run", "fly_ball", "line_drive"]
@@ -223,8 +243,8 @@ def _row_to_fixture(row: list[str], bucket_label: str, idx: int) -> Fixture | No
             "launch_speed_mph": launch_speed,
             "launch_angle_deg": launch_angle,
             "spray_angle_deg": round(spray, 3),
-            "spin_rate_rpm": spin_rate,
-            "spin_axis_tilt_deg": tilt,
+            "spin_rate_rpm": float(spin_rate),
+            "spin_axis_tilt_deg": float(tilt),
             "initial_height_m": 1.0,
         },
         observed_distance_ft=observed,
@@ -234,8 +254,16 @@ def _row_to_fixture(row: list[str], bucket_label: str, idx: int) -> Fixture | No
     )
 
 
-def build_fixture_set(season: int = 2024) -> list[Fixture]:
-    """Curate the 100-fixture validation set — HRs only.
+def build_fixture_set(
+    season: int = 2024, *, limit_per_park: int = 4, max_fixtures: int = 100
+) -> list[Fixture]:
+    """Curate the HR validation set — HRs only.
+
+    Defaults (``limit_per_park=4``, ``max_fixtures=100``) reproduce the committed
+    100-fixture 2c.2 gate set exactly. Bumping ``limit_per_park`` (e.g. 200) builds
+    a multi-thousand-HR set for an at-scale carry check under ``validate --weather``
+    - same population (HR, 350-500 ft, EV >= 95), same per-park cityHash ordering,
+    so it is a superset-shaped, deterministic draw, not a different sample.
 
     The original leaf called for a 50/30/20 split of HR / fly-out /
     line-drive, but Statcast's ``hit_distance_ft`` for non-HRs is the
@@ -258,6 +286,7 @@ def build_fixture_set(season: int = 2024) -> list[Fixture]:
     revision for the original-tolerance re-validation plan.
     """
     out: list[Fixture] = []
+    calib = load_physics_calibration()
     rows = _run_clickhouse_tsv(
         _bucket_query(
             events_filter="= 'home_run'",
@@ -265,12 +294,12 @@ def build_fixture_set(season: int = 2024) -> list[Fixture]:
             distance_min=350.0,
             distance_max=500.0,
             launch_speed_min=95.0,
-            limit_per_park=4,
+            limit_per_park=limit_per_park,
             season=season,
         )
     )
-    for i, row in enumerate(rows[:100]):
-        fx = _row_to_fixture(row, "hr", i + 1)
+    for i, row in enumerate(rows[:max_fixtures]):
+        fx = _row_to_fixture(row, "hr", i + 1, calib)
         if fx is not None:
             out.append(fx)
     return out
@@ -296,9 +325,24 @@ def main() -> None:
         help="Output JSON path (default: training/data/physics_validation_fixtures.json).",
     )
     parser.add_argument("--season", type=int, default=2024)
+    parser.add_argument(
+        "--limit-per-park",
+        type=int,
+        default=4,
+        help="HRs per park (default 4 = the 100-fixture gate set; 200 = ~6k at-scale set).",
+    )
+    parser.add_argument(
+        "--max",
+        type=int,
+        default=100,
+        dest="max_fixtures",
+        help="Total fixture cap (default 100 = the gate set; raise for an at-scale set).",
+    )
     args = parser.parse_args()
 
-    fixtures = build_fixture_set(season=args.season)
+    fixtures = build_fixture_set(
+        season=args.season, limit_per_park=args.limit_per_park, max_fixtures=args.max_fixtures
+    )
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(fixtures_to_json(fixtures))
     by_label: dict[str, int] = {}
