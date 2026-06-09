@@ -228,3 +228,11 @@ training-on-old-data bug.
   - Status stays Accepted — the ADR's discipline ("one S3-compatible
     abstraction, endpoint URL is the only env-specific knob") holds
     exactly as written; only the endpoint string changed.
+
+- **2026-06-08** - Reaffirmed the offsite-to-R2 backup leg after an audit
+  found it unimplemented in `infra/backup/clickhouse-snapshot.sh` and
+  `infra/backup/README.md` contradicting it ("opted to skip it"). The
+  S3-compatible discipline and the single `S3_ENDPOINT_URL` knob are
+  unchanged; the P1 registry-capture fix (live `/opt/bullpen` registry,
+  fail-loud, integrity-asserted) and the P2 R2-push re-schedule are
+  recorded in decision [153]. Status stays Accepted.

@@ -160,13 +160,13 @@ Then re-copy the system script whenever the in-repo version changes.
 
 ## Both layers, together
 
-| Scenario                                            | Recovery path                                                                                                                                       |
-| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Accidental `DROP TABLE`                             | Restore from yesterday's local snapshot (Layer 1) — ~5 min                                                                                          |
-| SQLite registry corrupted                           | Restore `registry.sqlite` from local snapshot (Layer 1) — ~1 min                                                                                    |
-| WSL2 distro broken                                  | Reinstall WSL2, restore from USB (Layer 2) — ~30 min                                                                                                |
-| Desktop SSD dead                                    | New desktop, install WSL2, restore from USB (Layer 2) — hours                                                                                       |
-| Desktop physically destroyed + USB at same location | **You're cooked.** Layer 3 (offsite cloud) would be needed; you opted to skip it. Mitigate by storing the USB at a different location periodically. |
+| Scenario                                            | Recovery path                                                                                                                                                                                                                                                                                                          |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Accidental `DROP TABLE`                             | Restore from yesterday's local snapshot (Layer 1) — ~5 min                                                                                                                                                                                                                                                             |
+| SQLite registry corrupted                           | Restore `registry.sqlite` from local snapshot (Layer 1) — ~1 min                                                                                                                                                                                                                                                       |
+| WSL2 distro broken                                  | Reinstall WSL2, restore from USB (Layer 2) — ~30 min                                                                                                                                                                                                                                                                   |
+| Desktop SSD dead                                    | New desktop, install WSL2, restore from USB (Layer 2) — hours                                                                                                                                                                                                                                                          |
+| Desktop physically destroyed + USB at same location | **Layer 3 (offsite cloud) covers this** once the R2 push lands: clickhouse-backup + the registry snapshot push to Cloudflare R2 per ADR-0007 ([13]/[128]). The offsite leg was found unimplemented and is re-scheduled as P2 (see decision [153]). Until it ships, store the USB at a different location periodically. |
 
 ## Discord webhook setup
 

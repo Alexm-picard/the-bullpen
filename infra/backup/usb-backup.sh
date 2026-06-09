@@ -34,7 +34,7 @@ set -euo pipefail
 # for this exact script path. Without the rule, you'll be prompted for sudo password once.
 # We pass through SUDO_USER and the original env so we can find the right home dir.
 if [[ $EUID -ne 0 ]]; then
-  exec sudo --preserve-env=REPO_ROOT,SNAPSHOT_DIR,USB_LABEL,MOUNT_POINT "$0" "$@"
+  exec sudo --preserve-env=REPO_ROOT,SNAPSHOT_DIR,USB_LABEL,MOUNT_POINT,SQLITE_REGISTRY,BULLPEN_REGISTRY_DB,ALLOW_NO_REGISTRY "$0" "$@"
 fi
 
 # From here on, we're root. SUDO_USER tells us who invoked us (for the default REPO_ROOT path).
@@ -84,12 +84,22 @@ if [[ -d "$SNAPSHOT_DIR" ]]; then
   fi
 fi
 
-# 2. Live SQLite registry copy
-SQLITE_REGISTRY="${REPO_ROOT}/backend/data/registry.sqlite"
+# 2. Live SQLite registry copy (the model registry, NOT the repo's stale dev copy).
+SQLITE_REGISTRY="${SQLITE_REGISTRY:-${BULLPEN_REGISTRY_DB:-/opt/bullpen/data/registry.sqlite}}"
 if [[ -f "$SQLITE_REGISTRY" ]]; then
-  log "SQLite registry"
+  log "SQLite registry ($SQLITE_REGISTRY)"
   mkdir -p "${DEST}/sqlite"
-  sqlite3 "$SQLITE_REGISTRY" ".backup '${DEST}/sqlite/registry.sqlite'"
+  REG_OUT="${DEST}/sqlite/registry.sqlite"
+  sqlite3 "$SQLITE_REGISTRY" ".backup '${REG_OUT}'"
+  OUT_BYTES=$(wc -c < "$REG_OUT" 2>/dev/null || echo 0)
+  [[ "${OUT_BYTES:-0}" -ge 16384 ]] || { log "ERROR: registry capture too small (${OUT_BYTES}B < 16384)"; exit 1; }
+  [[ "$(sqlite3 "$REG_OUT" 'PRAGMA integrity_check;' 2>/dev/null)" == "ok" ]] || { log "ERROR: registry capture failed integrity_check"; exit 1; }
+  log "registry captured: ${OUT_BYTES}B, integrity ok"
+elif [[ "${ALLOW_NO_REGISTRY:-0}" == "1" ]]; then
+  log "SKIP: $SQLITE_REGISTRY missing and ALLOW_NO_REGISTRY=1"
+else
+  log "ERROR: live registry $SQLITE_REGISTRY not found (set ALLOW_NO_REGISTRY=1 to override)"
+  exit 1
 fi
 
 # 3. Training artifacts (the bytes — these are the part you can't easily regenerate)
