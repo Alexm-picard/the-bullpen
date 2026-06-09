@@ -2,18 +2,61 @@
   "schema_version": 1,
   "n_fixtures": 100,
   "weather_mode": false,
-  "pass_rate_distance": 0.85,
-  "mae_distance_ft": 19.73,
-  "bias_distance_ft": 13.02,
+  "calibration": {
+    "schema_version": 1,
+    "cd_scale": 1.0483,
+    "spin": {
+      "b0": 973.0,
+      "b1_ev": 5.0,
+      "b2_la": 60.5,
+      "b3_la2": -0.78,
+      "k_side": 0.4
+    }
+  },
+  "pass_rate_distance": 0.93,
+  "mae_distance_ft": 18.53,
+  "bias_distance_ft": -0.14,
   "gate_pass_rate": 0.85,
   "gate_mae_distance_ft": 30.0,
   "gate_passes": true,
   "by_type": {
     "home_run": {
       "n": 100,
-      "pass_rate": 0.85,
-      "mae_distance_ft": 19.73,
-      "bias_distance_ft": 13.02
+      "pass_rate": 0.93,
+      "mae_distance_ft": 18.53,
+      "bias_distance_ft": -0.14
+    }
+  },
+  "by_launch_angle": {
+    "0-22": {
+      "n": 6,
+      "pass_rate": 0.6667,
+      "mae_distance_ft": 32.21,
+      "bias_distance_ft": 32.21
+    },
+    "22-26": {
+      "n": 31,
+      "pass_rate": 0.9032,
+      "mae_distance_ft": 18.59,
+      "bias_distance_ft": 14.95
+    },
+    "26-30": {
+      "n": 30,
+      "pass_rate": 1.0,
+      "mae_distance_ft": 11.61,
+      "bias_distance_ft": -3.1
+    },
+    "30-35": {
+      "n": 24,
+      "pass_rate": 0.9583,
+      "mae_distance_ft": 18.9,
+      "bias_distance_ft": -12.34
+    },
+    "35-90": {
+      "n": 9,
+      "pass_rate": 0.8889,
+      "mae_distance_ft": 31.23,
+      "bias_distance_ft": -31.23
     }
   },
   "failures": [
@@ -23,10 +66,10 @@
       "park_id": "AZ",
       "stand": "R",
       "observed_distance_ft": 383.0,
-      "pred_distance_ft": 435.17,
-      "pred_hang_time_s": 5.896,
-      "err_distance_ft": 52.17,
-      "err_distance_pct": 0.1362,
+      "pred_distance_ft": 423.41,
+      "pred_hang_time_s": 5.91,
+      "err_distance_ft": 40.41,
+      "err_distance_pct": 0.1055,
       "pass_distance": false
     },
     {
@@ -35,70 +78,22 @@
       "park_id": "AZ",
       "stand": "R",
       "observed_distance_ft": 377.0,
-      "pred_distance_ft": 439.35,
-      "pred_hang_time_s": 5.622,
-      "err_distance_ft": 62.35,
-      "err_distance_pct": 0.1654,
+      "pred_distance_ft": 426.53,
+      "pred_hang_time_s": 5.61,
+      "err_distance_ft": 49.53,
+      "err_distance_pct": 0.1314,
       "pass_distance": false
     },
     {
-      "fixture_id": "hr_014",
+      "fixture_id": "hr_016",
       "bb_type": "home_run",
       "park_id": "BAL",
       "stand": "L",
-      "observed_distance_ft": 410.0,
-      "pred_distance_ft": 454.27,
-      "pred_hang_time_s": 6.059,
-      "err_distance_ft": 44.27,
-      "err_distance_pct": 0.108,
-      "pass_distance": false
-    },
-    {
-      "fixture_id": "hr_019",
-      "bb_type": "home_run",
-      "park_id": "BOS",
-      "stand": "R",
-      "observed_distance_ft": 396.0,
-      "pred_distance_ft": 436.91,
-      "pred_hang_time_s": 6.095,
-      "err_distance_ft": 40.91,
-      "err_distance_pct": 0.1033,
-      "pass_distance": false
-    },
-    {
-      "fixture_id": "hr_026",
-      "bb_type": "home_run",
-      "park_id": "CIN",
-      "stand": "L",
-      "observed_distance_ft": 362.0,
-      "pred_distance_ft": 398.31,
-      "pred_hang_time_s": 6.25,
-      "err_distance_ft": 36.31,
-      "err_distance_pct": 0.1003,
-      "pass_distance": false
-    },
-    {
-      "fixture_id": "hr_027",
-      "bb_type": "home_run",
-      "park_id": "CIN",
-      "stand": "R",
-      "observed_distance_ft": 368.0,
-      "pred_distance_ft": 405.25,
-      "pred_hang_time_s": 6.037,
-      "err_distance_ft": 37.25,
-      "err_distance_pct": 0.1012,
-      "pass_distance": false
-    },
-    {
-      "fixture_id": "hr_034",
-      "bb_type": "home_run",
-      "park_id": "COL",
-      "stand": "L",
-      "observed_distance_ft": 403.0,
-      "pred_distance_ft": 454.3,
-      "pred_hang_time_s": 5.474,
-      "err_distance_ft": 51.3,
-      "err_distance_pct": 0.1273,
+      "observed_distance_ft": 395.0,
+      "pred_distance_ft": 352.83,
+      "pred_hang_time_s": 6.034,
+      "err_distance_ft": -42.17,
+      "err_distance_pct": 0.1068,
       "pass_distance": false
     },
     {
@@ -107,34 +102,10 @@
       "park_id": "CWS",
       "stand": "L",
       "observed_distance_ft": 363.0,
-      "pred_distance_ft": 457.81,
-      "pred_hang_time_s": 6.068,
-      "err_distance_ft": 94.81,
-      "err_distance_pct": 0.2612,
-      "pass_distance": false
-    },
-    {
-      "fixture_id": "hr_039",
-      "bb_type": "home_run",
-      "park_id": "CWS",
-      "stand": "R",
-      "observed_distance_ft": 352.0,
-      "pred_distance_ft": 390.63,
-      "pred_hang_time_s": 6.024,
-      "err_distance_ft": 38.63,
-      "err_distance_pct": 0.1097,
-      "pass_distance": false
-    },
-    {
-      "fixture_id": "hr_045",
-      "bb_type": "home_run",
-      "park_id": "HOU",
-      "stand": "L",
-      "observed_distance_ft": 356.0,
-      "pred_distance_ft": 401.18,
-      "pred_hang_time_s": 5.658,
-      "err_distance_ft": 45.18,
-      "err_distance_pct": 0.1269,
+      "pred_distance_ft": 443.67,
+      "pred_hang_time_s": 6.123,
+      "err_distance_ft": 80.67,
+      "err_distance_pct": 0.2222,
       "pass_distance": false
     },
     {
@@ -143,10 +114,10 @@
       "park_id": "HOU",
       "stand": "R",
       "observed_distance_ft": 352.0,
-      "pred_distance_ft": 400.28,
-      "pred_hang_time_s": 5.52,
-      "err_distance_ft": 48.28,
-      "err_distance_pct": 0.1372,
+      "pred_distance_ft": 388.54,
+      "pred_hang_time_s": 5.566,
+      "err_distance_ft": 36.54,
+      "err_distance_pct": 0.1038,
       "pass_distance": false
     },
     {
@@ -155,46 +126,22 @@
       "park_id": "LAA",
       "stand": "L",
       "observed_distance_ft": 375.0,
-      "pred_distance_ft": 436.72,
-      "pred_hang_time_s": 5.715,
-      "err_distance_ft": 61.72,
-      "err_distance_pct": 0.1646,
+      "pred_distance_ft": 424.59,
+      "pred_hang_time_s": 5.685,
+      "err_distance_ft": 49.59,
+      "err_distance_pct": 0.1322,
       "pass_distance": false
     },
     {
-      "fixture_id": "hr_058",
+      "fixture_id": "hr_066",
       "bb_type": "home_run",
-      "park_id": "LAD",
+      "park_id": "MIL",
       "stand": "L",
-      "observed_distance_ft": 400.0,
-      "pred_distance_ft": 440.14,
-      "pred_hang_time_s": 6.156,
-      "err_distance_ft": 40.14,
-      "err_distance_pct": 0.1003,
-      "pass_distance": false
-    },
-    {
-      "fixture_id": "hr_087",
-      "bb_type": "home_run",
-      "park_id": "PIT",
-      "stand": "R",
-      "observed_distance_ft": 366.0,
-      "pred_distance_ft": 403.13,
-      "pred_hang_time_s": 5.655,
-      "err_distance_ft": 37.13,
-      "err_distance_pct": 0.1014,
-      "pass_distance": false
-    },
-    {
-      "fixture_id": "hr_097",
-      "bb_type": "home_run",
-      "park_id": "SF",
-      "stand": "R",
-      "observed_distance_ft": 371.0,
-      "pred_distance_ft": 415.0,
-      "pred_hang_time_s": 5.564,
-      "err_distance_ft": 44.0,
-      "err_distance_pct": 0.1186,
+      "observed_distance_ft": 404.0,
+      "pred_distance_ft": 354.63,
+      "pred_hang_time_s": 6.475,
+      "err_distance_ft": -49.37,
+      "err_distance_pct": 0.1222,
       "pass_distance": false
     }
   ],
@@ -205,10 +152,10 @@
       "park_id": "ATH",
       "stand": "L",
       "observed_distance_ft": 441.0,
-      "pred_distance_ft": 435.29,
-      "pred_hang_time_s": 6.25,
-      "err_distance_ft": -5.71,
-      "err_distance_pct": 0.013,
+      "pred_distance_ft": 423.75,
+      "pred_hang_time_s": 6.261,
+      "err_distance_ft": -17.25,
+      "err_distance_pct": 0.0391,
       "pass_distance": true
     },
     {
@@ -217,10 +164,10 @@
       "park_id": "ATH",
       "stand": "R",
       "observed_distance_ft": 377.0,
-      "pred_distance_ft": 392.93,
-      "pred_hang_time_s": 5.459,
-      "err_distance_ft": 15.93,
-      "err_distance_pct": 0.0423,
+      "pred_distance_ft": 381.91,
+      "pred_hang_time_s": 5.477,
+      "err_distance_ft": 4.91,
+      "err_distance_pct": 0.013,
       "pass_distance": true
     },
     {
@@ -229,10 +176,10 @@
       "park_id": "ATH",
       "stand": "R",
       "observed_distance_ft": 412.0,
-      "pred_distance_ft": 447.32,
-      "pred_hang_time_s": 6.247,
-      "err_distance_ft": 35.32,
-      "err_distance_pct": 0.0857,
+      "pred_distance_ft": 431.24,
+      "pred_hang_time_s": 6.399,
+      "err_distance_ft": 19.24,
+      "err_distance_pct": 0.0467,
       "pass_distance": true
     },
     {
@@ -241,10 +188,10 @@
       "park_id": "ATH",
       "stand": "L",
       "observed_distance_ft": 409.0,
-      "pred_distance_ft": 423.74,
-      "pred_hang_time_s": 5.694,
-      "err_distance_ft": 14.74,
-      "err_distance_pct": 0.036,
+      "pred_distance_ft": 413.04,
+      "pred_hang_time_s": 5.663,
+      "err_distance_ft": 4.04,
+      "err_distance_pct": 0.0099,
       "pass_distance": true
     },
     {
@@ -253,10 +200,10 @@
       "park_id": "ATL",
       "stand": "L",
       "observed_distance_ft": 429.0,
-      "pred_distance_ft": 440.67,
-      "pred_hang_time_s": 6.327,
-      "err_distance_ft": 11.67,
-      "err_distance_pct": 0.0272,
+      "pred_distance_ft": 429.01,
+      "pred_hang_time_s": 6.347,
+      "err_distance_ft": 0.01,
+      "err_distance_pct": 0.0,
       "pass_distance": true
     },
     {
@@ -265,10 +212,10 @@
       "park_id": "ATL",
       "stand": "R",
       "observed_distance_ft": 413.0,
-      "pred_distance_ft": 427.67,
-      "pred_hang_time_s": 5.948,
-      "err_distance_ft": 14.67,
-      "err_distance_pct": 0.0355,
+      "pred_distance_ft": 416.97,
+      "pred_hang_time_s": 5.953,
+      "err_distance_ft": 3.97,
+      "err_distance_pct": 0.0096,
       "pass_distance": true
     },
     {
@@ -277,10 +224,10 @@
       "park_id": "ATL",
       "stand": "R",
       "observed_distance_ft": 374.0,
-      "pred_distance_ft": 383.06,
-      "pred_hang_time_s": 6.309,
-      "err_distance_ft": 9.06,
-      "err_distance_pct": 0.0242,
+      "pred_distance_ft": 367.4,
+      "pred_hang_time_s": 6.402,
+      "err_distance_ft": -6.6,
+      "err_distance_pct": 0.0177,
       "pass_distance": true
     },
     {
@@ -289,10 +236,10 @@
       "park_id": "ATL",
       "stand": "L",
       "observed_distance_ft": 422.0,
-      "pred_distance_ft": 459.0,
-      "pred_hang_time_s": 6.186,
-      "err_distance_ft": 37.0,
-      "err_distance_pct": 0.0877,
+      "pred_distance_ft": 445.45,
+      "pred_hang_time_s": 6.223,
+      "err_distance_ft": 23.45,
+      "err_distance_pct": 0.0556,
       "pass_distance": true
     },
     {
@@ -301,10 +248,10 @@
       "park_id": "AZ",
       "stand": "L",
       "observed_distance_ft": 394.0,
-      "pred_distance_ft": 401.01,
-      "pred_hang_time_s": 5.989,
-      "err_distance_ft": 7.01,
-      "err_distance_pct": 0.0178,
+      "pred_distance_ft": 390.25,
+      "pred_hang_time_s": 6.018,
+      "err_distance_ft": -3.75,
+      "err_distance_pct": 0.0095,
       "pass_distance": true
     },
     {
@@ -313,10 +260,10 @@
       "park_id": "AZ",
       "stand": "R",
       "observed_distance_ft": 383.0,
-      "pred_distance_ft": 435.17,
-      "pred_hang_time_s": 5.896,
-      "err_distance_ft": 52.17,
-      "err_distance_pct": 0.1362,
+      "pred_distance_ft": 423.41,
+      "pred_hang_time_s": 5.91,
+      "err_distance_ft": 40.41,
+      "err_distance_pct": 0.1055,
       "pass_distance": false
     },
     {
@@ -325,10 +272,10 @@
       "park_id": "AZ",
       "stand": "L",
       "observed_distance_ft": 412.0,
-      "pred_distance_ft": 442.84,
-      "pred_hang_time_s": 6.148,
-      "err_distance_ft": 30.84,
-      "err_distance_pct": 0.0748,
+      "pred_distance_ft": 427.1,
+      "pred_hang_time_s": 6.331,
+      "err_distance_ft": 15.1,
+      "err_distance_pct": 0.0367,
       "pass_distance": true
     },
     {
@@ -337,10 +284,10 @@
       "park_id": "AZ",
       "stand": "R",
       "observed_distance_ft": 377.0,
-      "pred_distance_ft": 439.35,
-      "pred_hang_time_s": 5.622,
-      "err_distance_ft": 62.35,
-      "err_distance_pct": 0.1654,
+      "pred_distance_ft": 426.53,
+      "pred_hang_time_s": 5.61,
+      "err_distance_ft": 49.53,
+      "err_distance_pct": 0.1314,
       "pass_distance": false
     },
     {
@@ -349,10 +296,10 @@
       "park_id": "BAL",
       "stand": "L",
       "observed_distance_ft": 422.0,
-      "pred_distance_ft": 437.9,
-      "pred_hang_time_s": 6.252,
-      "err_distance_ft": 15.9,
-      "err_distance_pct": 0.0377,
+      "pred_distance_ft": 425.05,
+      "pred_hang_time_s": 6.284,
+      "err_distance_ft": 3.05,
+      "err_distance_pct": 0.0072,
       "pass_distance": true
     },
     {
@@ -361,11 +308,11 @@
       "park_id": "BAL",
       "stand": "L",
       "observed_distance_ft": 410.0,
-      "pred_distance_ft": 454.27,
-      "pred_hang_time_s": 6.059,
-      "err_distance_ft": 44.27,
-      "err_distance_pct": 0.108,
-      "pass_distance": false
+      "pred_distance_ft": 439.75,
+      "pred_hang_time_s": 6.138,
+      "err_distance_ft": 29.75,
+      "err_distance_pct": 0.0726,
+      "pass_distance": true
     },
     {
       "fixture_id": "hr_015",
@@ -373,10 +320,10 @@
       "park_id": "BAL",
       "stand": "R",
       "observed_distance_ft": 420.0,
-      "pred_distance_ft": 414.51,
-      "pred_hang_time_s": 6.405,
-      "err_distance_ft": -5.49,
-      "err_distance_pct": 0.0131,
+      "pred_distance_ft": 402.63,
+      "pred_hang_time_s": 6.429,
+      "err_distance_ft": -17.37,
+      "err_distance_pct": 0.0414,
       "pass_distance": true
     },
     {
@@ -385,11 +332,11 @@
       "park_id": "BAL",
       "stand": "L",
       "observed_distance_ft": 395.0,
-      "pred_distance_ft": 367.42,
-      "pred_hang_time_s": 5.9,
-      "err_distance_ft": -27.58,
-      "err_distance_pct": 0.0698,
-      "pass_distance": true
+      "pred_distance_ft": 352.83,
+      "pred_hang_time_s": 6.034,
+      "err_distance_ft": -42.17,
+      "err_distance_pct": 0.1068,
+      "pass_distance": false
     },
     {
       "fixture_id": "hr_017",
@@ -397,10 +344,10 @@
       "park_id": "BOS",
       "stand": "R",
       "observed_distance_ft": 378.0,
-      "pred_distance_ft": 372.4,
-      "pred_hang_time_s": 6.34,
-      "err_distance_ft": -5.6,
-      "err_distance_pct": 0.0148,
+      "pred_distance_ft": 359.89,
+      "pred_hang_time_s": 6.373,
+      "err_distance_ft": -18.11,
+      "err_distance_pct": 0.0479,
       "pass_distance": true
     },
     {
@@ -409,10 +356,10 @@
       "park_id": "BOS",
       "stand": "R",
       "observed_distance_ft": 395.0,
-      "pred_distance_ft": 434.42,
-      "pred_hang_time_s": 6.162,
-      "err_distance_ft": 39.42,
-      "err_distance_pct": 0.0998,
+      "pred_distance_ft": 420.42,
+      "pred_hang_time_s": 6.232,
+      "err_distance_ft": 25.42,
+      "err_distance_pct": 0.0643,
       "pass_distance": true
     },
     {
@@ -421,11 +368,11 @@
       "park_id": "BOS",
       "stand": "R",
       "observed_distance_ft": 396.0,
-      "pred_distance_ft": 436.91,
-      "pred_hang_time_s": 6.095,
-      "err_distance_ft": 40.91,
-      "err_distance_pct": 0.1033,
-      "pass_distance": false
+      "pred_distance_ft": 421.57,
+      "pred_hang_time_s": 6.262,
+      "err_distance_ft": 25.57,
+      "err_distance_pct": 0.0646,
+      "pass_distance": true
     },
     {
       "fixture_id": "hr_020",
@@ -433,10 +380,10 @@
       "park_id": "BOS",
       "stand": "L",
       "observed_distance_ft": 425.0,
-      "pred_distance_ft": 408.36,
-      "pred_hang_time_s": 6.528,
-      "err_distance_ft": -16.64,
-      "err_distance_pct": 0.0392,
+      "pred_distance_ft": 394.87,
+      "pred_hang_time_s": 6.568,
+      "err_distance_ft": -30.13,
+      "err_distance_pct": 0.0709,
       "pass_distance": true
     },
     {
@@ -445,10 +392,10 @@
       "park_id": "CHC",
       "stand": "R",
       "observed_distance_ft": 376.0,
-      "pred_distance_ft": 374.35,
-      "pred_hang_time_s": 5.57,
-      "err_distance_ft": -1.65,
-      "err_distance_pct": 0.0044,
+      "pred_distance_ft": 364.33,
+      "pred_hang_time_s": 5.6,
+      "err_distance_ft": -11.67,
+      "err_distance_pct": 0.031,
       "pass_distance": true
     },
     {
@@ -457,10 +404,10 @@
       "park_id": "CHC",
       "stand": "R",
       "observed_distance_ft": 416.0,
-      "pred_distance_ft": 412.87,
-      "pred_hang_time_s": 6.764,
-      "err_distance_ft": -3.13,
-      "err_distance_pct": 0.0075,
+      "pred_distance_ft": 393.13,
+      "pred_hang_time_s": 6.881,
+      "err_distance_ft": -22.87,
+      "err_distance_pct": 0.055,
       "pass_distance": true
     },
     {
@@ -469,10 +416,10 @@
       "park_id": "CHC",
       "stand": "L",
       "observed_distance_ft": 364.0,
-      "pred_distance_ft": 392.1,
-      "pred_hang_time_s": 5.757,
-      "err_distance_ft": 28.1,
-      "err_distance_pct": 0.0772,
+      "pred_distance_ft": 380.17,
+      "pred_hang_time_s": 5.825,
+      "err_distance_ft": 16.17,
+      "err_distance_pct": 0.0444,
       "pass_distance": true
     },
     {
@@ -481,10 +428,10 @@
       "park_id": "CHC",
       "stand": "R",
       "observed_distance_ft": 439.0,
-      "pred_distance_ft": 428.67,
-      "pred_hang_time_s": 6.276,
-      "err_distance_ft": -10.33,
-      "err_distance_pct": 0.0235,
+      "pred_distance_ft": 415.57,
+      "pred_hang_time_s": 6.324,
+      "err_distance_ft": -23.43,
+      "err_distance_pct": 0.0534,
       "pass_distance": true
     },
     {
@@ -493,10 +440,10 @@
       "park_id": "CIN",
       "stand": "R",
       "observed_distance_ft": 394.0,
-      "pred_distance_ft": 394.68,
-      "pred_hang_time_s": 6.291,
-      "err_distance_ft": 0.68,
-      "err_distance_pct": 0.0017,
+      "pred_distance_ft": 382.99,
+      "pred_hang_time_s": 6.321,
+      "err_distance_ft": -11.01,
+      "err_distance_pct": 0.028,
       "pass_distance": true
     },
     {
@@ -505,11 +452,11 @@
       "park_id": "CIN",
       "stand": "L",
       "observed_distance_ft": 362.0,
-      "pred_distance_ft": 398.31,
-      "pred_hang_time_s": 6.25,
-      "err_distance_ft": 36.31,
-      "err_distance_pct": 0.1003,
-      "pass_distance": false
+      "pred_distance_ft": 380.46,
+      "pred_hang_time_s": 6.43,
+      "err_distance_ft": 18.46,
+      "err_distance_pct": 0.051,
+      "pass_distance": true
     },
     {
       "fixture_id": "hr_027",
@@ -517,11 +464,11 @@
       "park_id": "CIN",
       "stand": "R",
       "observed_distance_ft": 368.0,
-      "pred_distance_ft": 405.25,
-      "pred_hang_time_s": 6.037,
-      "err_distance_ft": 37.25,
-      "err_distance_pct": 0.1012,
-      "pass_distance": false
+      "pred_distance_ft": 391.9,
+      "pred_hang_time_s": 6.117,
+      "err_distance_ft": 23.9,
+      "err_distance_pct": 0.0649,
+      "pass_distance": true
     },
     {
       "fixture_id": "hr_028",
@@ -529,10 +476,10 @@
       "park_id": "CIN",
       "stand": "R",
       "observed_distance_ft": 400.0,
-      "pred_distance_ft": 381.7,
-      "pred_hang_time_s": 6.974,
-      "err_distance_ft": -18.3,
-      "err_distance_pct": 0.0458,
+      "pred_distance_ft": 367.33,
+      "pred_hang_time_s": 6.989,
+      "err_distance_ft": -32.67,
+      "err_distance_pct": 0.0817,
       "pass_distance": true
     },
     {
@@ -541,10 +488,10 @@
       "park_id": "CLE",
       "stand": "L",
       "observed_distance_ft": 422.0,
-      "pred_distance_ft": 420.52,
-      "pred_hang_time_s": 6.065,
-      "err_distance_ft": -1.48,
-      "err_distance_pct": 0.0035,
+      "pred_distance_ft": 405.94,
+      "pred_hang_time_s": 6.19,
+      "err_distance_ft": -16.06,
+      "err_distance_pct": 0.0381,
       "pass_distance": true
     },
     {
@@ -553,10 +500,10 @@
       "park_id": "CLE",
       "stand": "L",
       "observed_distance_ft": 366.0,
-      "pred_distance_ft": 400.22,
-      "pred_hang_time_s": 5.687,
-      "err_distance_ft": 34.22,
-      "err_distance_pct": 0.0935,
+      "pred_distance_ft": 389.09,
+      "pred_hang_time_s": 5.721,
+      "err_distance_ft": 23.09,
+      "err_distance_pct": 0.0631,
       "pass_distance": true
     },
     {
@@ -565,10 +512,10 @@
       "park_id": "CLE",
       "stand": "L",
       "observed_distance_ft": 424.0,
-      "pred_distance_ft": 407.24,
-      "pred_hang_time_s": 7.084,
-      "err_distance_ft": -16.76,
-      "err_distance_pct": 0.0395,
+      "pred_distance_ft": 391.69,
+      "pred_hang_time_s": 7.111,
+      "err_distance_ft": -32.31,
+      "err_distance_pct": 0.0762,
       "pass_distance": true
     },
     {
@@ -577,10 +524,10 @@
       "park_id": "CLE",
       "stand": "L",
       "observed_distance_ft": 356.0,
-      "pred_distance_ft": 356.9,
-      "pred_hang_time_s": 6.089,
-      "err_distance_ft": 0.9,
-      "err_distance_pct": 0.0025,
+      "pred_distance_ft": 343.5,
+      "pred_hang_time_s": 6.154,
+      "err_distance_ft": -12.5,
+      "err_distance_pct": 0.0351,
       "pass_distance": true
     },
     {
@@ -589,10 +536,10 @@
       "park_id": "COL",
       "stand": "R",
       "observed_distance_ft": 412.0,
-      "pred_distance_ft": 441.04,
-      "pred_hang_time_s": 6.135,
-      "err_distance_ft": 29.04,
-      "err_distance_pct": 0.0705,
+      "pred_distance_ft": 428.37,
+      "pred_hang_time_s": 6.216,
+      "err_distance_ft": 16.37,
+      "err_distance_pct": 0.0397,
       "pass_distance": true
     },
     {
@@ -601,11 +548,11 @@
       "park_id": "COL",
       "stand": "L",
       "observed_distance_ft": 403.0,
-      "pred_distance_ft": 454.3,
-      "pred_hang_time_s": 5.474,
-      "err_distance_ft": 51.3,
-      "err_distance_pct": 0.1273,
-      "pass_distance": false
+      "pred_distance_ft": 441.99,
+      "pred_hang_time_s": 5.483,
+      "err_distance_ft": 38.99,
+      "err_distance_pct": 0.0968,
+      "pass_distance": true
     },
     {
       "fixture_id": "hr_035",
@@ -613,10 +560,10 @@
       "park_id": "COL",
       "stand": "R",
       "observed_distance_ft": 376.0,
-      "pred_distance_ft": 407.52,
-      "pred_hang_time_s": 6.112,
-      "err_distance_ft": 31.52,
-      "err_distance_pct": 0.0838,
+      "pred_distance_ft": 393.91,
+      "pred_hang_time_s": 6.213,
+      "err_distance_ft": 17.91,
+      "err_distance_pct": 0.0476,
       "pass_distance": true
     },
     {
@@ -625,10 +572,10 @@
       "park_id": "COL",
       "stand": "R",
       "observed_distance_ft": 445.0,
-      "pred_distance_ft": 464.64,
-      "pred_hang_time_s": 6.595,
-      "err_distance_ft": 19.64,
-      "err_distance_pct": 0.0441,
+      "pred_distance_ft": 452.39,
+      "pred_hang_time_s": 6.644,
+      "err_distance_ft": 7.39,
+      "err_distance_pct": 0.0166,
       "pass_distance": true
     },
     {
@@ -637,10 +584,10 @@
       "park_id": "CWS",
       "stand": "R",
       "observed_distance_ft": 430.0,
-      "pred_distance_ft": 429.67,
-      "pred_hang_time_s": 6.556,
-      "err_distance_ft": -0.33,
-      "err_distance_pct": 0.0008,
+      "pred_distance_ft": 417.21,
+      "pred_hang_time_s": 6.584,
+      "err_distance_ft": -12.79,
+      "err_distance_pct": 0.0297,
       "pass_distance": true
     },
     {
@@ -649,10 +596,10 @@
       "park_id": "CWS",
       "stand": "L",
       "observed_distance_ft": 363.0,
-      "pred_distance_ft": 457.81,
-      "pred_hang_time_s": 6.068,
-      "err_distance_ft": 94.81,
-      "err_distance_pct": 0.2612,
+      "pred_distance_ft": 443.67,
+      "pred_hang_time_s": 6.123,
+      "err_distance_ft": 80.67,
+      "err_distance_pct": 0.2222,
       "pass_distance": false
     },
     {
@@ -661,11 +608,11 @@
       "park_id": "CWS",
       "stand": "R",
       "observed_distance_ft": 352.0,
-      "pred_distance_ft": 390.63,
-      "pred_hang_time_s": 6.024,
-      "err_distance_ft": 38.63,
-      "err_distance_pct": 0.1097,
-      "pass_distance": false
+      "pred_distance_ft": 374.6,
+      "pred_hang_time_s": 6.205,
+      "err_distance_ft": 22.6,
+      "err_distance_pct": 0.0642,
+      "pass_distance": true
     },
     {
       "fixture_id": "hr_040",
@@ -673,10 +620,10 @@
       "park_id": "CWS",
       "stand": "R",
       "observed_distance_ft": 360.0,
-      "pred_distance_ft": 367.26,
-      "pred_hang_time_s": 5.871,
-      "err_distance_ft": 7.26,
-      "err_distance_pct": 0.0202,
+      "pred_distance_ft": 353.48,
+      "pred_hang_time_s": 5.985,
+      "err_distance_ft": -6.52,
+      "err_distance_pct": 0.0181,
       "pass_distance": true
     },
     {
@@ -685,10 +632,10 @@
       "park_id": "DET",
       "stand": "R",
       "observed_distance_ft": 385.0,
-      "pred_distance_ft": 422.61,
-      "pred_hang_time_s": 6.013,
-      "err_distance_ft": 37.61,
-      "err_distance_pct": 0.0977,
+      "pred_distance_ft": 411.49,
+      "pred_hang_time_s": 6.029,
+      "err_distance_ft": 26.49,
+      "err_distance_pct": 0.0688,
       "pass_distance": true
     },
     {
@@ -697,10 +644,10 @@
       "park_id": "DET",
       "stand": "L",
       "observed_distance_ft": 356.0,
-      "pred_distance_ft": 378.13,
-      "pred_hang_time_s": 5.419,
-      "err_distance_ft": 22.13,
-      "err_distance_pct": 0.0622,
+      "pred_distance_ft": 367.96,
+      "pred_hang_time_s": 5.446,
+      "err_distance_ft": 11.96,
+      "err_distance_pct": 0.0336,
       "pass_distance": true
     },
     {
@@ -709,10 +656,10 @@
       "park_id": "DET",
       "stand": "L",
       "observed_distance_ft": 386.0,
-      "pred_distance_ft": 373.85,
-      "pred_hang_time_s": 6.243,
-      "err_distance_ft": -12.15,
-      "err_distance_pct": 0.0315,
+      "pred_distance_ft": 359.71,
+      "pred_hang_time_s": 6.311,
+      "err_distance_ft": -26.29,
+      "err_distance_pct": 0.0681,
       "pass_distance": true
     },
     {
@@ -721,10 +668,10 @@
       "park_id": "DET",
       "stand": "R",
       "observed_distance_ft": 368.0,
-      "pred_distance_ft": 378.44,
-      "pred_hang_time_s": 5.501,
-      "err_distance_ft": 10.44,
-      "err_distance_pct": 0.0284,
+      "pred_distance_ft": 367.79,
+      "pred_hang_time_s": 5.547,
+      "err_distance_ft": -0.21,
+      "err_distance_pct": 0.0006,
       "pass_distance": true
     },
     {
@@ -733,11 +680,11 @@
       "park_id": "HOU",
       "stand": "L",
       "observed_distance_ft": 356.0,
-      "pred_distance_ft": 401.18,
-      "pred_hang_time_s": 5.658,
-      "err_distance_ft": 45.18,
-      "err_distance_pct": 0.1269,
-      "pass_distance": false
+      "pred_distance_ft": 389.75,
+      "pred_hang_time_s": 5.689,
+      "err_distance_ft": 33.75,
+      "err_distance_pct": 0.0948,
+      "pass_distance": true
     },
     {
       "fixture_id": "hr_046",
@@ -745,10 +692,10 @@
       "park_id": "HOU",
       "stand": "L",
       "observed_distance_ft": 397.0,
-      "pred_distance_ft": 402.95,
-      "pred_hang_time_s": 6.099,
-      "err_distance_ft": 5.95,
-      "err_distance_pct": 0.015,
+      "pred_distance_ft": 390.63,
+      "pred_hang_time_s": 6.144,
+      "err_distance_ft": -6.37,
+      "err_distance_pct": 0.016,
       "pass_distance": true
     },
     {
@@ -757,10 +704,10 @@
       "park_id": "HOU",
       "stand": "R",
       "observed_distance_ft": 352.0,
-      "pred_distance_ft": 400.28,
-      "pred_hang_time_s": 5.52,
-      "err_distance_ft": 48.28,
-      "err_distance_pct": 0.1372,
+      "pred_distance_ft": 388.54,
+      "pred_hang_time_s": 5.566,
+      "err_distance_ft": 36.54,
+      "err_distance_pct": 0.1038,
       "pass_distance": false
     },
     {
@@ -769,10 +716,10 @@
       "park_id": "HOU",
       "stand": "R",
       "observed_distance_ft": 365.0,
-      "pred_distance_ft": 378.34,
-      "pred_hang_time_s": 5.366,
-      "err_distance_ft": 13.34,
-      "err_distance_pct": 0.0365,
+      "pred_distance_ft": 367.8,
+      "pred_hang_time_s": 5.395,
+      "err_distance_ft": 2.8,
+      "err_distance_pct": 0.0077,
       "pass_distance": true
     },
     {
@@ -781,10 +728,10 @@
       "park_id": "KC",
       "stand": "L",
       "observed_distance_ft": 417.0,
-      "pred_distance_ft": 395.64,
-      "pred_hang_time_s": 6.513,
-      "err_distance_ft": -21.36,
-      "err_distance_pct": 0.0512,
+      "pred_distance_ft": 383.66,
+      "pred_hang_time_s": 6.537,
+      "err_distance_ft": -33.34,
+      "err_distance_pct": 0.0799,
       "pass_distance": true
     },
     {
@@ -793,10 +740,10 @@
       "park_id": "KC",
       "stand": "L",
       "observed_distance_ft": 406.0,
-      "pred_distance_ft": 400.84,
-      "pred_hang_time_s": 6.562,
-      "err_distance_ft": -5.16,
-      "err_distance_pct": 0.0127,
+      "pred_distance_ft": 382.77,
+      "pred_hang_time_s": 6.674,
+      "err_distance_ft": -23.23,
+      "err_distance_pct": 0.0572,
       "pass_distance": true
     },
     {
@@ -805,10 +752,10 @@
       "park_id": "KC",
       "stand": "R",
       "observed_distance_ft": 389.0,
-      "pred_distance_ft": 409.1,
-      "pred_hang_time_s": 5.642,
-      "err_distance_ft": 20.1,
-      "err_distance_pct": 0.0517,
+      "pred_distance_ft": 397.03,
+      "pred_hang_time_s": 5.708,
+      "err_distance_ft": 8.03,
+      "err_distance_pct": 0.0206,
       "pass_distance": true
     },
     {
@@ -817,10 +764,10 @@
       "park_id": "KC",
       "stand": "R",
       "observed_distance_ft": 398.0,
-      "pred_distance_ft": 411.82,
-      "pred_hang_time_s": 6.063,
-      "err_distance_ft": 13.82,
-      "err_distance_pct": 0.0347,
+      "pred_distance_ft": 395.71,
+      "pred_hang_time_s": 6.269,
+      "err_distance_ft": -2.29,
+      "err_distance_pct": 0.0058,
       "pass_distance": true
     },
     {
@@ -829,10 +776,10 @@
       "park_id": "LAA",
       "stand": "L",
       "observed_distance_ft": 375.0,
-      "pred_distance_ft": 436.72,
-      "pred_hang_time_s": 5.715,
-      "err_distance_ft": 61.72,
-      "err_distance_pct": 0.1646,
+      "pred_distance_ft": 424.59,
+      "pred_hang_time_s": 5.685,
+      "err_distance_ft": 49.59,
+      "err_distance_pct": 0.1322,
       "pass_distance": false
     },
     {
@@ -841,10 +788,10 @@
       "park_id": "LAA",
       "stand": "R",
       "observed_distance_ft": 394.0,
-      "pred_distance_ft": 393.45,
-      "pred_hang_time_s": 5.854,
-      "err_distance_ft": -0.55,
-      "err_distance_pct": 0.0014,
+      "pred_distance_ft": 382.1,
+      "pred_hang_time_s": 5.893,
+      "err_distance_ft": -11.9,
+      "err_distance_pct": 0.0302,
       "pass_distance": true
     },
     {
@@ -853,10 +800,10 @@
       "park_id": "LAA",
       "stand": "L",
       "observed_distance_ft": 410.0,
-      "pred_distance_ft": 400.59,
-      "pred_hang_time_s": 5.688,
-      "err_distance_ft": -9.41,
-      "err_distance_pct": 0.0229,
+      "pred_distance_ft": 390.82,
+      "pred_hang_time_s": 5.684,
+      "err_distance_ft": -19.18,
+      "err_distance_pct": 0.0468,
       "pass_distance": true
     },
     {
@@ -865,10 +812,10 @@
       "park_id": "LAA",
       "stand": "R",
       "observed_distance_ft": 419.0,
-      "pred_distance_ft": 419.56,
-      "pred_hang_time_s": 6.242,
-      "err_distance_ft": 0.56,
-      "err_distance_pct": 0.0013,
+      "pred_distance_ft": 408.27,
+      "pred_hang_time_s": 6.26,
+      "err_distance_ft": -10.73,
+      "err_distance_pct": 0.0256,
       "pass_distance": true
     },
     {
@@ -877,10 +824,10 @@
       "park_id": "LAD",
       "stand": "R",
       "observed_distance_ft": 427.0,
-      "pred_distance_ft": 432.88,
-      "pred_hang_time_s": 6.495,
-      "err_distance_ft": 5.88,
-      "err_distance_pct": 0.0138,
+      "pred_distance_ft": 420.18,
+      "pred_hang_time_s": 6.526,
+      "err_distance_ft": -6.82,
+      "err_distance_pct": 0.016,
       "pass_distance": true
     },
     {
@@ -889,11 +836,11 @@
       "park_id": "LAD",
       "stand": "L",
       "observed_distance_ft": 400.0,
-      "pred_distance_ft": 440.14,
-      "pred_hang_time_s": 6.156,
-      "err_distance_ft": 40.14,
-      "err_distance_pct": 0.1003,
-      "pass_distance": false
+      "pred_distance_ft": 425.45,
+      "pred_hang_time_s": 6.258,
+      "err_distance_ft": 25.45,
+      "err_distance_pct": 0.0636,
+      "pass_distance": true
     },
     {
       "fixture_id": "hr_059",
@@ -901,10 +848,10 @@
       "park_id": "LAD",
       "stand": "L",
       "observed_distance_ft": 413.0,
-      "pred_distance_ft": 399.03,
-      "pred_hang_time_s": 7.281,
-      "err_distance_ft": -13.97,
-      "err_distance_pct": 0.0338,
+      "pred_distance_ft": 382.77,
+      "pred_hang_time_s": 7.298,
+      "err_distance_ft": -30.23,
+      "err_distance_pct": 0.0732,
       "pass_distance": true
     },
     {
@@ -913,10 +860,10 @@
       "park_id": "LAD",
       "stand": "R",
       "observed_distance_ft": 403.0,
-      "pred_distance_ft": 395.78,
-      "pred_hang_time_s": 6.321,
-      "err_distance_ft": -7.22,
-      "err_distance_pct": 0.0179,
+      "pred_distance_ft": 384.33,
+      "pred_hang_time_s": 6.346,
+      "err_distance_ft": -18.67,
+      "err_distance_pct": 0.0463,
       "pass_distance": true
     },
     {
@@ -925,10 +872,10 @@
       "park_id": "MIA",
       "stand": "R",
       "observed_distance_ft": 396.0,
-      "pred_distance_ft": 404.88,
-      "pred_hang_time_s": 5.957,
-      "err_distance_ft": 8.88,
-      "err_distance_pct": 0.0224,
+      "pred_distance_ft": 394.51,
+      "pred_hang_time_s": 5.968,
+      "err_distance_ft": -1.49,
+      "err_distance_pct": 0.0038,
       "pass_distance": true
     },
     {
@@ -937,10 +884,10 @@
       "park_id": "MIA",
       "stand": "R",
       "observed_distance_ft": 427.0,
-      "pred_distance_ft": 417.38,
-      "pred_hang_time_s": 6.453,
-      "err_distance_ft": -9.62,
-      "err_distance_pct": 0.0225,
+      "pred_distance_ft": 405.37,
+      "pred_hang_time_s": 6.477,
+      "err_distance_ft": -21.63,
+      "err_distance_pct": 0.0507,
       "pass_distance": true
     },
     {
@@ -949,10 +896,10 @@
       "park_id": "MIA",
       "stand": "R",
       "observed_distance_ft": 395.0,
-      "pred_distance_ft": 421.93,
-      "pred_hang_time_s": 6.435,
-      "err_distance_ft": 26.93,
-      "err_distance_pct": 0.0682,
+      "pred_distance_ft": 406.6,
+      "pred_hang_time_s": 6.515,
+      "err_distance_ft": 11.6,
+      "err_distance_pct": 0.0294,
       "pass_distance": true
     },
     {
@@ -961,10 +908,10 @@
       "park_id": "MIA",
       "stand": "R",
       "observed_distance_ft": 413.0,
-      "pred_distance_ft": 430.55,
-      "pred_hang_time_s": 6.187,
-      "err_distance_ft": 17.55,
-      "err_distance_pct": 0.0425,
+      "pred_distance_ft": 419.1,
+      "pred_hang_time_s": 6.199,
+      "err_distance_ft": 6.1,
+      "err_distance_pct": 0.0148,
       "pass_distance": true
     },
     {
@@ -973,10 +920,10 @@
       "park_id": "MIL",
       "stand": "L",
       "observed_distance_ft": 381.0,
-      "pred_distance_ft": 409.08,
-      "pred_hang_time_s": 5.613,
-      "err_distance_ft": 28.08,
-      "err_distance_pct": 0.0737,
+      "pred_distance_ft": 397.9,
+      "pred_hang_time_s": 5.626,
+      "err_distance_ft": 16.9,
+      "err_distance_pct": 0.0444,
       "pass_distance": true
     },
     {
@@ -985,11 +932,11 @@
       "park_id": "MIL",
       "stand": "L",
       "observed_distance_ft": 404.0,
-      "pred_distance_ft": 373.34,
-      "pred_hang_time_s": 6.326,
-      "err_distance_ft": -30.66,
-      "err_distance_pct": 0.0759,
-      "pass_distance": true
+      "pred_distance_ft": 354.63,
+      "pred_hang_time_s": 6.475,
+      "err_distance_ft": -49.37,
+      "err_distance_pct": 0.1222,
+      "pass_distance": false
     },
     {
       "fixture_id": "hr_067",
@@ -997,10 +944,10 @@
       "park_id": "MIL",
       "stand": "R",
       "observed_distance_ft": 392.0,
-      "pred_distance_ft": 387.39,
-      "pred_hang_time_s": 5.669,
-      "err_distance_ft": -4.61,
-      "err_distance_pct": 0.0118,
+      "pred_distance_ft": 378.05,
+      "pred_hang_time_s": 5.676,
+      "err_distance_ft": -13.95,
+      "err_distance_pct": 0.0356,
       "pass_distance": true
     },
     {
@@ -1009,10 +956,10 @@
       "park_id": "MIL",
       "stand": "R",
       "observed_distance_ft": 376.0,
-      "pred_distance_ft": 366.36,
-      "pred_hang_time_s": 6.751,
-      "err_distance_ft": -9.64,
-      "err_distance_pct": 0.0256,
+      "pred_distance_ft": 350.0,
+      "pred_hang_time_s": 6.795,
+      "err_distance_ft": -26.0,
+      "err_distance_pct": 0.0692,
       "pass_distance": true
     },
     {
@@ -1021,10 +968,10 @@
       "park_id": "MIN",
       "stand": "L",
       "observed_distance_ft": 441.0,
-      "pred_distance_ft": 445.79,
-      "pred_hang_time_s": 6.17,
-      "err_distance_ft": 4.79,
-      "err_distance_pct": 0.0109,
+      "pred_distance_ft": 433.65,
+      "pred_hang_time_s": 6.189,
+      "err_distance_ft": -7.35,
+      "err_distance_pct": 0.0167,
       "pass_distance": true
     },
     {
@@ -1033,10 +980,10 @@
       "park_id": "MIN",
       "stand": "L",
       "observed_distance_ft": 427.0,
-      "pred_distance_ft": 414.55,
-      "pred_hang_time_s": 6.209,
-      "err_distance_ft": -12.45,
-      "err_distance_pct": 0.0292,
+      "pred_distance_ft": 403.46,
+      "pred_hang_time_s": 6.232,
+      "err_distance_ft": -23.54,
+      "err_distance_pct": 0.0551,
       "pass_distance": true
     },
     {
@@ -1045,10 +992,10 @@
       "park_id": "MIN",
       "stand": "L",
       "observed_distance_ft": 382.0,
-      "pred_distance_ft": 373.0,
-      "pred_hang_time_s": 6.924,
-      "err_distance_ft": -9.0,
-      "err_distance_pct": 0.0236,
+      "pred_distance_ft": 353.48,
+      "pred_hang_time_s": 6.988,
+      "err_distance_ft": -28.52,
+      "err_distance_pct": 0.0747,
       "pass_distance": true
     },
     {
@@ -1057,10 +1004,10 @@
       "park_id": "MIN",
       "stand": "L",
       "observed_distance_ft": 410.0,
-      "pred_distance_ft": 409.52,
-      "pred_hang_time_s": 5.929,
-      "err_distance_ft": -0.48,
-      "err_distance_pct": 0.0012,
+      "pred_distance_ft": 399.08,
+      "pred_hang_time_s": 5.945,
+      "err_distance_ft": -10.92,
+      "err_distance_pct": 0.0266,
       "pass_distance": true
     },
     {
@@ -1069,10 +1016,10 @@
       "park_id": "NYM",
       "stand": "L",
       "observed_distance_ft": 395.0,
-      "pred_distance_ft": 413.86,
-      "pred_hang_time_s": 5.946,
-      "err_distance_ft": 18.86,
-      "err_distance_pct": 0.0477,
+      "pred_distance_ft": 402.42,
+      "pred_hang_time_s": 5.968,
+      "err_distance_ft": 7.42,
+      "err_distance_pct": 0.0188,
       "pass_distance": true
     },
     {
@@ -1081,10 +1028,10 @@
       "park_id": "NYM",
       "stand": "R",
       "observed_distance_ft": 408.0,
-      "pred_distance_ft": 402.85,
-      "pred_hang_time_s": 6.566,
-      "err_distance_ft": -5.15,
-      "err_distance_pct": 0.0126,
+      "pred_distance_ft": 384.76,
+      "pred_hang_time_s": 6.678,
+      "err_distance_ft": -23.24,
+      "err_distance_pct": 0.057,
       "pass_distance": true
     },
     {
@@ -1093,10 +1040,10 @@
       "park_id": "NYM",
       "stand": "L",
       "observed_distance_ft": 412.0,
-      "pred_distance_ft": 441.45,
-      "pred_hang_time_s": 6.372,
-      "err_distance_ft": 29.45,
-      "err_distance_pct": 0.0715,
+      "pred_distance_ft": 424.02,
+      "pred_hang_time_s": 6.545,
+      "err_distance_ft": 12.02,
+      "err_distance_pct": 0.0292,
       "pass_distance": true
     },
     {
@@ -1105,10 +1052,10 @@
       "park_id": "NYM",
       "stand": "R",
       "observed_distance_ft": 408.0,
-      "pred_distance_ft": 428.69,
-      "pred_hang_time_s": 6.13,
-      "err_distance_ft": 20.69,
-      "err_distance_pct": 0.0507,
+      "pred_distance_ft": 416.21,
+      "pred_hang_time_s": 6.162,
+      "err_distance_ft": 8.21,
+      "err_distance_pct": 0.0201,
       "pass_distance": true
     },
     {
@@ -1117,10 +1064,10 @@
       "park_id": "NYY",
       "stand": "R",
       "observed_distance_ft": 388.0,
-      "pred_distance_ft": 368.91,
-      "pred_hang_time_s": 6.576,
-      "err_distance_ft": -19.09,
-      "err_distance_pct": 0.0492,
+      "pred_distance_ft": 352.51,
+      "pred_hang_time_s": 6.638,
+      "err_distance_ft": -35.49,
+      "err_distance_pct": 0.0915,
       "pass_distance": true
     },
     {
@@ -1129,10 +1076,10 @@
       "park_id": "NYY",
       "stand": "R",
       "observed_distance_ft": 384.0,
-      "pred_distance_ft": 384.31,
-      "pred_hang_time_s": 5.92,
-      "err_distance_ft": 0.31,
-      "err_distance_pct": 0.0008,
+      "pred_distance_ft": 372.02,
+      "pred_hang_time_s": 5.983,
+      "err_distance_ft": -11.98,
+      "err_distance_pct": 0.0312,
       "pass_distance": true
     },
     {
@@ -1141,10 +1088,10 @@
       "park_id": "NYY",
       "stand": "L",
       "observed_distance_ft": 418.0,
-      "pred_distance_ft": 416.28,
-      "pred_hang_time_s": 6.103,
-      "err_distance_ft": -1.72,
-      "err_distance_pct": 0.0041,
+      "pred_distance_ft": 405.41,
+      "pred_hang_time_s": 6.116,
+      "err_distance_ft": -12.59,
+      "err_distance_pct": 0.0301,
       "pass_distance": true
     },
     {
@@ -1153,10 +1100,10 @@
       "park_id": "NYY",
       "stand": "R",
       "observed_distance_ft": 356.0,
-      "pred_distance_ft": 383.95,
-      "pred_hang_time_s": 6.311,
-      "err_distance_ft": 27.95,
-      "err_distance_pct": 0.0785,
+      "pred_distance_ft": 368.45,
+      "pred_hang_time_s": 6.399,
+      "err_distance_ft": 12.45,
+      "err_distance_pct": 0.035,
       "pass_distance": true
     },
     {
@@ -1165,10 +1112,10 @@
       "park_id": "PHI",
       "stand": "L",
       "observed_distance_ft": 388.0,
-      "pred_distance_ft": 369.03,
-      "pred_hang_time_s": 6.34,
-      "err_distance_ft": -18.97,
-      "err_distance_pct": 0.0489,
+      "pred_distance_ft": 354.05,
+      "pred_hang_time_s": 6.408,
+      "err_distance_ft": -33.95,
+      "err_distance_pct": 0.0875,
       "pass_distance": true
     },
     {
@@ -1177,10 +1124,10 @@
       "park_id": "PHI",
       "stand": "R",
       "observed_distance_ft": 383.0,
-      "pred_distance_ft": 412.32,
-      "pred_hang_time_s": 6.035,
-      "err_distance_ft": 29.32,
-      "err_distance_pct": 0.0766,
+      "pred_distance_ft": 400.84,
+      "pred_hang_time_s": 6.06,
+      "err_distance_ft": 17.84,
+      "err_distance_pct": 0.0466,
       "pass_distance": true
     },
     {
@@ -1189,10 +1136,10 @@
       "park_id": "PHI",
       "stand": "L",
       "observed_distance_ft": 380.0,
-      "pred_distance_ft": 366.54,
-      "pred_hang_time_s": 5.908,
-      "err_distance_ft": -13.46,
-      "err_distance_pct": 0.0354,
+      "pred_distance_ft": 352.28,
+      "pred_hang_time_s": 6.028,
+      "err_distance_ft": -27.72,
+      "err_distance_pct": 0.073,
       "pass_distance": true
     },
     {
@@ -1201,10 +1148,10 @@
       "park_id": "PHI",
       "stand": "L",
       "observed_distance_ft": 367.0,
-      "pred_distance_ft": 401.7,
-      "pred_hang_time_s": 5.055,
-      "err_distance_ft": 34.7,
-      "err_distance_pct": 0.0945,
+      "pred_distance_ft": 394.88,
+      "pred_hang_time_s": 5.215,
+      "err_distance_ft": 27.88,
+      "err_distance_pct": 0.076,
       "pass_distance": true
     },
     {
@@ -1213,10 +1160,10 @@
       "park_id": "PIT",
       "stand": "R",
       "observed_distance_ft": 408.0,
-      "pred_distance_ft": 410.26,
-      "pred_hang_time_s": 5.722,
-      "err_distance_ft": 2.26,
-      "err_distance_pct": 0.0055,
+      "pred_distance_ft": 399.09,
+      "pred_hang_time_s": 5.743,
+      "err_distance_ft": -8.91,
+      "err_distance_pct": 0.0218,
       "pass_distance": true
     },
     {
@@ -1225,10 +1172,10 @@
       "park_id": "PIT",
       "stand": "R",
       "observed_distance_ft": 370.0,
-      "pred_distance_ft": 379.54,
-      "pred_hang_time_s": 6.016,
-      "err_distance_ft": 9.54,
-      "err_distance_pct": 0.0258,
+      "pred_distance_ft": 364.52,
+      "pred_hang_time_s": 6.146,
+      "err_distance_ft": -5.48,
+      "err_distance_pct": 0.0148,
       "pass_distance": true
     },
     {
@@ -1237,11 +1184,11 @@
       "park_id": "PIT",
       "stand": "R",
       "observed_distance_ft": 366.0,
-      "pred_distance_ft": 403.13,
-      "pred_hang_time_s": 5.655,
-      "err_distance_ft": 37.13,
-      "err_distance_pct": 0.1014,
-      "pass_distance": false
+      "pred_distance_ft": 390.88,
+      "pred_hang_time_s": 5.747,
+      "err_distance_ft": 24.88,
+      "err_distance_pct": 0.068,
+      "pass_distance": true
     },
     {
       "fixture_id": "hr_088",
@@ -1249,10 +1196,10 @@
       "park_id": "PIT",
       "stand": "L",
       "observed_distance_ft": 411.0,
-      "pred_distance_ft": 420.53,
-      "pred_hang_time_s": 5.939,
-      "err_distance_ft": 9.53,
-      "err_distance_pct": 0.0232,
+      "pred_distance_ft": 408.39,
+      "pred_hang_time_s": 5.98,
+      "err_distance_ft": -2.61,
+      "err_distance_pct": 0.0064,
       "pass_distance": true
     },
     {
@@ -1261,10 +1208,10 @@
       "park_id": "SD",
       "stand": "R",
       "observed_distance_ft": 431.0,
-      "pred_distance_ft": 424.63,
-      "pred_hang_time_s": 6.629,
-      "err_distance_ft": -6.37,
-      "err_distance_pct": 0.0148,
+      "pred_distance_ft": 410.0,
+      "pred_hang_time_s": 6.679,
+      "err_distance_ft": -21.0,
+      "err_distance_pct": 0.0487,
       "pass_distance": true
     },
     {
@@ -1273,10 +1220,10 @@
       "park_id": "SD",
       "stand": "L",
       "observed_distance_ft": 381.0,
-      "pred_distance_ft": 385.09,
-      "pred_hang_time_s": 6.211,
-      "err_distance_ft": 4.09,
-      "err_distance_pct": 0.0107,
+      "pred_distance_ft": 367.14,
+      "pred_hang_time_s": 6.387,
+      "err_distance_ft": -13.86,
+      "err_distance_pct": 0.0364,
       "pass_distance": true
     },
     {
@@ -1285,10 +1232,10 @@
       "park_id": "SD",
       "stand": "R",
       "observed_distance_ft": 387.0,
-      "pred_distance_ft": 396.54,
-      "pred_hang_time_s": 5.829,
-      "err_distance_ft": 9.54,
-      "err_distance_pct": 0.0247,
+      "pred_distance_ft": 386.02,
+      "pred_hang_time_s": 5.846,
+      "err_distance_ft": -0.98,
+      "err_distance_pct": 0.0025,
       "pass_distance": true
     },
     {
@@ -1297,10 +1244,10 @@
       "park_id": "SD",
       "stand": "L",
       "observed_distance_ft": 412.0,
-      "pred_distance_ft": 425.06,
-      "pred_hang_time_s": 6.618,
-      "err_distance_ft": 13.06,
-      "err_distance_pct": 0.0317,
+      "pred_distance_ft": 405.69,
+      "pred_hang_time_s": 6.767,
+      "err_distance_ft": -6.31,
+      "err_distance_pct": 0.0153,
       "pass_distance": true
     },
     {
@@ -1309,10 +1256,10 @@
       "park_id": "SEA",
       "stand": "R",
       "observed_distance_ft": 399.0,
-      "pred_distance_ft": 426.69,
-      "pred_hang_time_s": 6.177,
-      "err_distance_ft": 27.69,
-      "err_distance_pct": 0.0694,
+      "pred_distance_ft": 413.59,
+      "pred_hang_time_s": 6.226,
+      "err_distance_ft": 14.59,
+      "err_distance_pct": 0.0366,
       "pass_distance": true
     },
     {
@@ -1321,10 +1268,10 @@
       "park_id": "SEA",
       "stand": "R",
       "observed_distance_ft": 413.0,
-      "pred_distance_ft": 447.9,
-      "pred_hang_time_s": 5.865,
-      "err_distance_ft": 34.9,
-      "err_distance_pct": 0.0845,
+      "pred_distance_ft": 436.25,
+      "pred_hang_time_s": 5.828,
+      "err_distance_ft": 23.25,
+      "err_distance_pct": 0.0563,
       "pass_distance": true
     },
     {
@@ -1333,10 +1280,10 @@
       "park_id": "SEA",
       "stand": "L",
       "observed_distance_ft": 383.0,
-      "pred_distance_ft": 372.75,
-      "pred_hang_time_s": 5.858,
-      "err_distance_ft": -10.25,
-      "err_distance_pct": 0.0268,
+      "pred_distance_ft": 361.07,
+      "pred_hang_time_s": 5.913,
+      "err_distance_ft": -21.93,
+      "err_distance_pct": 0.0573,
       "pass_distance": true
     },
     {
@@ -1345,10 +1292,10 @@
       "park_id": "SEA",
       "stand": "L",
       "observed_distance_ft": 356.0,
-      "pred_distance_ft": 367.27,
-      "pred_hang_time_s": 5.536,
-      "err_distance_ft": 11.27,
-      "err_distance_pct": 0.0317,
+      "pred_distance_ft": 355.77,
+      "pred_hang_time_s": 5.627,
+      "err_distance_ft": -0.23,
+      "err_distance_pct": 0.0006,
       "pass_distance": true
     },
     {
@@ -1357,11 +1304,11 @@
       "park_id": "SF",
       "stand": "R",
       "observed_distance_ft": 371.0,
-      "pred_distance_ft": 415.0,
-      "pred_hang_time_s": 5.564,
-      "err_distance_ft": 44.0,
-      "err_distance_pct": 0.1186,
-      "pass_distance": false
+      "pred_distance_ft": 402.5,
+      "pred_hang_time_s": 5.638,
+      "err_distance_ft": 31.5,
+      "err_distance_pct": 0.0849,
+      "pass_distance": true
     },
     {
       "fixture_id": "hr_098",
@@ -1369,10 +1316,10 @@
       "park_id": "SF",
       "stand": "R",
       "observed_distance_ft": 418.0,
-      "pred_distance_ft": 429.37,
-      "pred_hang_time_s": 6.063,
-      "err_distance_ft": 11.37,
-      "err_distance_pct": 0.0272,
+      "pred_distance_ft": 418.24,
+      "pred_hang_time_s": 6.067,
+      "err_distance_ft": 0.24,
+      "err_distance_pct": 0.0006,
       "pass_distance": true
     },
     {
@@ -1381,10 +1328,10 @@
       "park_id": "SF",
       "stand": "R",
       "observed_distance_ft": 400.0,
-      "pred_distance_ft": 409.46,
-      "pred_hang_time_s": 5.907,
-      "err_distance_ft": 9.46,
-      "err_distance_pct": 0.0236,
+      "pred_distance_ft": 398.9,
+      "pred_hang_time_s": 5.915,
+      "err_distance_ft": -1.1,
+      "err_distance_pct": 0.0027,
       "pass_distance": true
     },
     {
@@ -1393,10 +1340,10 @@
       "park_id": "SF",
       "stand": "L",
       "observed_distance_ft": 382.0,
-      "pred_distance_ft": 380.98,
-      "pred_hang_time_s": 6.403,
-      "err_distance_ft": -1.02,
-      "err_distance_pct": 0.0027,
+      "pred_distance_ft": 365.59,
+      "pred_hang_time_s": 6.476,
+      "err_distance_ft": -16.41,
+      "err_distance_pct": 0.043,
       "pass_distance": true
     }
   ]

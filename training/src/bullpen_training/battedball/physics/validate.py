@@ -7,6 +7,15 @@ report is written to ``training/data/physics_validation_report.json``
 and gates the rest of Phase 2c — per decision [49], no model in 2c can
 train until ``pass_rate_distance >= 0.95`` and ``mae_distance_ft <= 20``.
 
+The harness applies the SAME calibrated physics the retrodiction labels use
+(``retrodict/labels.py``): spin is recomputed per fixture from EV/LA/spray via
+the calibrated launch-angle spin model and the calibrated global drag scale
+(``physics_calibration.json``) is passed to the simulator. The flat spin prior
+baked into each fixture at build time is informational only — overriding it here
+keeps the gate a test of the real label-generating physics rather than an
+obsolete prior. (Before this wiring the gate silently validated the legacy flat
+1800 rpm + cd_scale=1.0, diverging from the labels it was meant to gate.)
+
 Pass criterion per fixture (REVISED — see decisions.md gate-revision
 entry; original leaf was ±5 % / ±15 ft / 95 % gate, which is unachievable
 without measured spin + game-day weather):
@@ -36,6 +45,11 @@ from typing import Any
 from bullpen_training.battedball.physics.atmosphere import Atmosphere
 from bullpen_training.battedball.physics.parks import park_atmosphere
 from bullpen_training.battedball.physics.simulator import LaunchParams, simulate
+from bullpen_training.battedball.physics.spin import (
+    PhysicsCalibration,
+    batted_ball_spin,
+    load_physics_calibration,
+)
 
 # Pass tolerance constants. REVISED from the original leaf — see the module
 # docstring + decisions.md entry. Tighten back to (0.05, 15.0, 0.95, 20.0)
@@ -44,6 +58,16 @@ _DISTANCE_TOL_PCT = 0.10
 _DISTANCE_TOL_FT_ABS = 25.0
 _REPORT_PASS_RATE_GATE = 0.85
 _REPORT_MAE_DISTANCE_FT_GATE = 30.0
+
+# Launch-angle buckets for the informational per-LA breakdown (issue #24's carry
+# gradient). Outer bounds (0, 90) so every HR lands in exactly one bucket.
+_LA_BUCKETS: tuple[tuple[float, float], ...] = (
+    (0.0, 22.0),
+    (22.0, 26.0),
+    (26.0, 30.0),
+    (30.0, 35.0),
+    (35.0, 90.0),
+)
 
 
 @dataclass(frozen=True)
@@ -90,10 +114,27 @@ def _fixture_atmosphere(
     )
 
 
-def _evaluate_fixture(fixture: dict[str, Any], atmo: Atmosphere) -> FixtureResult:
-    """Simulate one fixture under ``atmo`` and score it against observed."""
-    launch = LaunchParams(**fixture["launch"])
-    traj = simulate(launch, atmo)
+def _evaluate_fixture(
+    fixture: dict[str, Any], atmo: Atmosphere, calib: PhysicsCalibration
+) -> FixtureResult:
+    """Simulate one fixture under ``atmo`` + ``calib`` and score it against observed.
+
+    Spin is recomputed from the fixture's EV/LA/spray via the calibrated
+    launch-angle spin model (NOT the legacy flat prior baked into the fixture),
+    and the calibrated global drag scale is applied — identical to the physics
+    the retrodiction labels run (``retrodict/labels.py``).
+    """
+    launch_kwargs = dict(fixture["launch"])
+    rate, tilt = batted_ball_spin(
+        launch_kwargs["launch_speed_mph"],
+        launch_kwargs["launch_angle_deg"],
+        launch_kwargs["spray_angle_deg"],
+        calib.spin,
+    )
+    launch_kwargs["spin_rate_rpm"] = float(rate)
+    launch_kwargs["spin_axis_tilt_deg"] = float(tilt)
+    launch = LaunchParams(**launch_kwargs)
+    traj = simulate(launch, atmo, cd_scale=calib.cd_scale)
     pred_distance_ft = traj.distance_ft
     observed = float(fixture["observed_distance_ft"])
     err_ft = pred_distance_ft - observed
@@ -114,16 +155,25 @@ def _evaluate_fixture(fixture: dict[str, Any], atmo: Atmosphere) -> FixtureResul
 
 
 def run_validation(
-    fixtures_path: Path, *, use_weather: bool = False, container: str = "bullpen-clickhouse"
+    fixtures_path: Path,
+    *,
+    use_weather: bool = False,
+    container: str = "bullpen-clickhouse",
+    calibration: PhysicsCalibration | None = None,
 ) -> dict[str, Any]:
     """Run the harness on a fixtures JSON, return the aggregate report.
 
     ``use_weather`` joins per-game ``weather_observed`` (the desktop re-baseline);
     requires fixtures carrying ``game_id`` + a populated weather table. Default
     False keeps the legacy no-wind park-default behaviour (CI / offline).
+
+    ``calibration`` is the spin+drag physics calibration applied to every fixture;
+    ``None`` loads the canonical committed artifact (``physics_calibration.json``)
+    so the gate tracks the same physics as the labels.
     """
     data = json.loads(fixtures_path.read_text())
     fixtures: list[dict[str, Any]] = data["fixtures"]
+    calib = calibration if calibration is not None else load_physics_calibration()
 
     weather_by_game: dict[int, Any] | None = None
     if use_weather:
@@ -138,7 +188,9 @@ def run_validation(
             f"{covered}/{len(fixtures)} fixtures covered"
         )
 
-    results = [_evaluate_fixture(fx, _fixture_atmosphere(fx, weather_by_game)) for fx in fixtures]
+    results = [
+        _evaluate_fixture(fx, _fixture_atmosphere(fx, weather_by_game), calib) for fx in fixtures
+    ]
     n = len(results)
     pass_rate = sum(r.pass_distance for r in results) / n if n else 0.0
     mae_ft = sum(abs(r.err_distance_ft) for r in results) / n if n else 0.0
@@ -154,12 +206,30 @@ def run_validation(
             "mae_distance_ft": round(sum(abs(r.err_distance_ft) for r in subset) / len(subset), 2),
             "bias_distance_ft": round(sum(r.err_distance_ft for r in subset) / len(subset), 2),
         }
+    # Per-launch-angle breakdown: surfaces the carry gradient (issue #24) that the
+    # mean bias hides — informative, not gated. Buckets keyed off the fixture's LA.
+    by_launch_angle: dict[str, dict[str, Any]] = {}
+    for lo, hi in _LA_BUCKETS:
+        subset = [
+            r
+            for r, fx in zip(results, fixtures, strict=True)
+            if lo <= fx["launch"]["launch_angle_deg"] < hi
+        ]
+        if not subset:
+            continue
+        by_launch_angle[f"{lo:g}-{hi:g}"] = {
+            "n": len(subset),
+            "pass_rate": round(sum(r.pass_distance for r in subset) / len(subset), 4),
+            "mae_distance_ft": round(sum(abs(r.err_distance_ft) for r in subset) / len(subset), 2),
+            "bias_distance_ft": round(sum(r.err_distance_ft for r in subset) / len(subset), 2),
+        }
     failures = [asdict(r) for r in results if not r.pass_distance]
     gate_ok = pass_rate >= _REPORT_PASS_RATE_GATE and mae_ft <= _REPORT_MAE_DISTANCE_FT_GATE
     return {
         "schema_version": 1,
         "n_fixtures": n,
         "weather_mode": use_weather,
+        "calibration": calib.to_dict(),
         "pass_rate_distance": round(pass_rate, 4),
         "mae_distance_ft": round(mae_ft, 2),
         "bias_distance_ft": round(bias_ft, 2),
@@ -167,6 +237,7 @@ def run_validation(
         "gate_mae_distance_ft": _REPORT_MAE_DISTANCE_FT_GATE,
         "gate_passes": gate_ok,
         "by_type": by_type,
+        "by_launch_angle": by_launch_angle,
         "failures": failures,
         "results": [asdict(r) for r in results],
     }
@@ -205,6 +276,13 @@ def _print_summary(
             f"    {label:>10}  n={stats['n']:>3}  pass={stats['pass_rate']:.0%}  "
             f"mae={stats['mae_distance_ft']:.1f}  bias={stats['bias_distance_ft']:+.1f}"
         )
+    if report.get("by_launch_angle"):
+        print("  by launch angle (carry gradient — informational, not gated):")
+        for label, stats in report["by_launch_angle"].items():
+            print(
+                f"    LA {label:>7}  n={stats['n']:>4}  pass={stats['pass_rate']:.0%}  "
+                f"mae={stats['mae_distance_ft']:.1f}  bias={stats['bias_distance_ft']:+.1f}"
+            )
     if failures is not None:
         worst = sorted(failures, key=lambda f: -abs(f["err_distance_ft"]))[:10]
         if worst:
@@ -245,12 +323,29 @@ def main() -> None:
         ),
     )
     parser.add_argument("--container", default="bullpen-clickhouse")
+    parser.add_argument(
+        "--calibration",
+        type=Path,
+        default=None,
+        help=(
+            "Path to a physics_calibration.json (spin coeffs + cd_scale). "
+            "Default: the canonical committed artifact via load_physics_calibration."
+        ),
+    )
     args = parser.parse_args()
 
-    report = run_validation(args.fixtures, use_weather=args.weather, container=args.container)
+    calibration = load_physics_calibration(args.calibration) if args.calibration else None
+    report = run_validation(
+        args.fixtures,
+        use_weather=args.weather,
+        container=args.container,
+        calibration=calibration,
+    )
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(report, indent=2))
     _print_summary(report, report["failures"])
+    calib = report["calibration"]
+    print(f"  calibration: cd_scale={calib['cd_scale']:.4f}  spin={calib['spin']}")
     print(f"wrote report -> {args.report}")
     if args.enforce_gate:
         assert_gate(report)
