@@ -24,10 +24,15 @@ def test_sql_guards_the_epoch_sentinel() -> None:
     os.environ.get("BULLPEN_REQUIRE_CH") != "1", reason="needs the box/CI ClickHouse"
 )
 def test_features_table_dsla_bounded() -> None:
+    from typing import cast
+
     from bullpen_training.ingest.clickhouse_client import make_client
 
     client = make_client()
-    bad = client.query(
-        "SELECT countIf(days_since_last_appearance > 400) FROM features"
-    ).result_rows[0][0]
+    # clickhouse_driver's execute() is typed as a broad union; this SELECT returns row tuples.
+    rows = cast(
+        "list[tuple[int, ...]]",
+        client.execute("SELECT countIf(days_since_last_appearance > 400) FROM features"),
+    )
+    bad = rows[0][0]
     assert bad == 0, f"{bad} rows carry days_since_last_appearance > 400 (epoch garbage)"
