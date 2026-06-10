@@ -84,8 +84,8 @@ public class PsiFeatureJob {
       return 0;
     }
     List<DriftMetric> rows = new ArrayList<>();
-    for (ModelVersion champ : serving) {
-      rows.addAll(computeForChampion(champ, computedAt, windowStart, computedAt));
+    for (ModelVersion mv : serving) {
+      rows.addAll(computeForChampion(mv, computedAt, windowStart, computedAt));
     }
     if (rows.isEmpty()) {
       log.info("PsiFeatureJob: no PSI rows to write (no training distributions or no traffic)");

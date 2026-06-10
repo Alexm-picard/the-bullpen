@@ -38,7 +38,7 @@ public class DiscordNotifier {
     CRITICAL;
   }
 
-  private final String webhookUrl;
+  private final URI webhookUri;
   private final HttpClient http;
   private final ObjectMapper mapper;
 
@@ -49,16 +49,47 @@ public class DiscordNotifier {
 
   /** Test seam: inject a stub HttpClient so the POST path is exercised without real network. */
   DiscordNotifier(String webhookUrl, HttpClient http, ObjectMapper mapper) {
-    this.webhookUrl = webhookUrl;
     this.http = http;
     this.mapper = mapper;
-    if (webhookUrl == null || webhookUrl.isBlank()) {
+    this.webhookUri = parseWebhook(webhookUrl);
+    if (webhookUri == null) {
       log.info(
-          "DiscordNotifier: stubbed (no webhook URL set) - notices will be logged only,"
-              + " not posted to Discord. Set DISCORD_WEBHOOK_URL to enable delivery.");
+          "DiscordNotifier: stubbed (no/invalid webhook URL) - notices will be logged only,"
+              + " not posted to Discord. Set a valid http(s) DISCORD_WEBHOOK_URL to enable"
+              + " delivery.");
     } else {
       log.info("DiscordNotifier: webhook configured - notices will be POSTed to Discord");
     }
+  }
+
+  /**
+   * Parse the configured webhook into an absolute http(s) URI ONCE, at construction. A null/blank
+   * or malformed value (or a non-http(s) scheme / missing host) yields {@code null} -> the notifier
+   * is stubbed (log-only). Doing this here, not per-send, keeps {@link #post} free of {@link
+   * IllegalArgumentException}: a misconfigured {@code DISCORD_WEBHOOK_URL} must degrade to
+   * log-only, never throw up into the drift/reconciliation job that called {@code send()}.
+   */
+  private static URI parseWebhook(String url) {
+    if (url == null || url.isBlank()) {
+      return null;
+    }
+    URI uri;
+    try {
+      uri = URI.create(url.trim());
+    } catch (IllegalArgumentException e) {
+      log.warn(
+          "DiscordNotifier: DISCORD_WEBHOOK_URL is not a valid URI; falling back to log-only", e);
+      return null;
+    }
+    String scheme = uri.getScheme();
+    boolean httpScheme = "http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme);
+    if (!httpScheme || uri.getHost() == null) {
+      log.warn(
+          "DiscordNotifier: DISCORD_WEBHOOK_URL must be an absolute http(s) URL with a host;"
+              + " falling back to log-only");
+      return null;
+    }
+    return uri;
   }
 
   /**
@@ -88,7 +119,7 @@ public class DiscordNotifier {
     }
     try {
       HttpRequest request =
-          HttpRequest.newBuilder(URI.create(webhookUrl))
+          HttpRequest.newBuilder(webhookUri)
               .timeout(TIMEOUT)
               .header("Content-Type", "application/json")
               .POST(HttpRequest.BodyPublishers.ofString(body))
@@ -117,6 +148,6 @@ public class DiscordNotifier {
   }
 
   boolean isStubbed() {
-    return webhookUrl == null || webhookUrl.isBlank();
+    return webhookUri == null;
   }
 }

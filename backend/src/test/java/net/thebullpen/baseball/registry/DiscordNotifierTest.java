@@ -68,6 +68,23 @@ class DiscordNotifierTest {
   }
 
   @Test
+  void a_malformed_or_non_http_url_falls_back_to_log_only() throws Exception {
+    HttpClient http = mock(HttpClient.class);
+    // URI.create throws IllegalArgumentException on this (illegal space) - it must NOT escape into
+    // the caller; the notifier degrades to log-only.
+    assertThatCode(
+            () ->
+                new DiscordNotifier("h ttp://bad url", http, mapper)
+                    .send(DiscordNotifier.Severity.WARN, "x"))
+        .doesNotThrowAnyException();
+    // Syntactically-valid but non-http(s) / scheme-less values are also rejected -> log-only.
+    new DiscordNotifier("ftp://example.com/hook", http, mapper)
+        .send(DiscordNotifier.Severity.WARN, "x");
+    new DiscordNotifier("example.com/hook", http, mapper).send(DiscordNotifier.Severity.WARN, "x");
+    verify(http, never()).send(any(), any());
+  }
+
+  @Test
   @SuppressWarnings("unchecked")
   void an_io_failure_is_swallowed() throws Exception {
     HttpClient http = mock(HttpClient.class);

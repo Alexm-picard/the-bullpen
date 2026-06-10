@@ -69,8 +69,8 @@ public class CalibrationJob {
       return 0;
     }
     List<DriftMetric> rows = new ArrayList<>();
-    for (ModelVersion champ : serving) {
-      rows.addAll(computeForChampion(champ, computedAt, windowStart, windowEnd));
+    for (ModelVersion mv : serving) {
+      rows.addAll(computeForChampion(mv, computedAt, windowStart, windowEnd));
     }
     if (rows.isEmpty()) {
       log.info("CalibrationJob: no rows to write (no truth-joined pairs in window)");
