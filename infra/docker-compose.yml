@@ -40,6 +40,7 @@ services:
       - "9090:9090"
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
       - prometheus-data:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
@@ -60,6 +61,42 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on:
       - prometheus
+
+  # --- WS4: watchdog stack (host metrics + alert routing) ---
+  # Behind the `monitoring` profile so the default `docker compose up` stays lean (Prometheus
+  # tolerates a missing Alertmanager) and dev does not need the Discord secret. On the prod box:
+  #   docker compose -f infra/docker-compose.yml --profile monitoring up -d
+  # (after creating infra/alertmanager/secrets/discord_slack_url from the .example).
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: bullpen-node-exporter
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    pid: host
+    command:
+      - "--path.rootfs=/host"
+      # Snapshot-freshness metric written by clickhouse-snapshot.sh on the host (textfile collector).
+      - "--collector.textfile.directory=/var/lib/node_exporter"
+    volumes:
+      - "/:/host:ro,rslave"
+      - "/var/lib/node_exporter:/var/lib/node_exporter:ro"
+    ports:
+      - "9100:9100"
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: bullpen-alertmanager
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./alertmanager/secrets:/etc/alertmanager/secrets:ro
+      - alertmanager-data:/alertmanager
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
 
   # --- A6 (ADR-0008): self-hosted error tracking via GlitchTip (Sentry-compatible) ---
   # Behind the `errortracking` profile so the default `docker compose up` stays lean
@@ -141,4 +178,5 @@ volumes:
   clickhouse-logs:
   prometheus-data:
   grafana-data:
+  alertmanager-data:
   glitchtip-pg-data:

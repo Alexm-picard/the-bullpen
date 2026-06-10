@@ -1,0 +1,63 @@
+# WS4 watchdogs. The minimum set that turns "the worker silently died and nobody noticed"
+# (the 2026-06-04 blindspot) into a paged alert, plus host-RAM, JVM-heap, and snapshot-freshness.
+# Validate on the box before trusting: `promtool check rules infra/prometheus/rules/bullpen-alerts.yml`.
+groups:
+  - name: bullpen
+    rules:
+      # The worker profile (drift jobs, retraining, live poller) is scraped at :8081. up==0 for 2m
+      # means systemd could not keep it running - the exact gap that went unnoticed on 2026-06-04.
+      - alert: WorkerDown
+        expr: up{job="thebullpen-worker"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Bullpen worker is down"
+          description: "The worker (job=thebullpen-worker, :8081) has not been scrapeable for 2m. Drift jobs, retraining, and the live poller are not running. Check `systemctl status bullpen-worker` + `journalctl -u bullpen-worker`."
+
+      # The api profile mirror of the same check (a down api = the public site is dark).
+      - alert: ApiDown
+        expr: up{job="thebullpen-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Bullpen API is down"
+          description: "The api (job=thebullpen-api, :8080) has not been scrapeable for 2m. The public site is likely dark. Check `systemctl status bullpen-api`."
+
+      # The 12 GiB WSL2 pool is shared by ClickHouse + both JVMs + Docker. < 800 MiB available is the
+      # danger zone where the OOM killer starts reaping (ClickHouse and the worker are the usual victims).
+      - alert: HostMemoryLow
+        expr: node_memory_MemAvailable_bytes < 800 * 1024 * 1024
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host available memory below 800 MiB"
+          description: "node_memory_MemAvailable_bytes={{ $value | humanize1024 }}B for 5m on the WSL2 host. The OOM killer is near; check the ClickHouse memory cap and the JVM heaps."
+
+      # JVM heap saturation on either profile - a leak or an undersized -Xmx surfaces here before the
+      # OutOfMemoryError that would crash the unit.
+      - alert: JvmHeapHigh
+        expr: |
+          sum by (profile) (jvm_memory_used_bytes{area="heap"})
+            / sum by (profile) (jvm_memory_max_bytes{area="heap"}) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "JVM heap above 90% ({{ $labels.profile }})"
+          description: "The {{ $labels.profile }} profile heap has been > 90% of -Xmx for 5m. Investigate before the unit OOMs."
+
+      # Snapshot freshness (internal half of the dead-man; the external half is the Healthchecks.io
+      # ping in clickhouse-snapshot.sh, which survives a full host-down that this rule cannot).
+      # The snapshot script writes bullpen_snapshot_last_success_timestamp_seconds to the node_exporter
+      # textfile collector on success; > 26h stale means the daily 03:00 snapshot has missed a cycle.
+      - alert: SnapshotStale
+        expr: time() - bullpen_snapshot_last_success_timestamp_seconds > 26 * 3600
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ClickHouse/registry snapshot is stale (> 26h)"
+          description: "No successful snapshot in over 26h (last success {{ $value | humanizeDuration }} ago). The daily 03:00 timer has missed a cycle - backups are not current. Check `systemctl status bullpen-snapshot.timer` and the last clickhouse-snapshot.sh run."

@@ -1,0 +1,67 @@
+# Monitoring + watchdogs (WS4)
+
+The watchdog stack that gates the live-data flip: host metrics, alert routing to Discord, and a
+snapshot dead-man's switch. The goal is that a silently-dead worker (the 2026-06-04 blindspot), an
+OOM-pressured host, a heap-saturated JVM, or a missed nightly backup all page someone instead of
+being discovered by accident.
+
+## What landed in code
+
+| Piece                                                                                         | File                                        |
+| --------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| `node-exporter` (host RAM/CPU/disk) + `alertmanager`, behind the `monitoring` compose profile | `infra/docker-compose.yml`                  |
+| Prometheus `alerting` + `rule_files` + the `node` scrape job                                  | `infra/prometheus/prometheus.yml`           |
+| 5 alert rules (WorkerDown, ApiDown, HostMemoryLow, JvmHeapHigh, SnapshotStale)                | `infra/prometheus/rules/bullpen-alerts.yml` |
+| Alertmanager -> Discord (via Discord's Slack-compatible endpoint)                             | `infra/alertmanager/alertmanager.yml`       |
+| Worker `:8081` smoke + rollback on a half-up deploy                                           | `deploy.sh`                                 |
+| Snapshot freshness: node_exporter textfile metric + Healthchecks.io ping                      | `infra/backup/clickhouse-snapshot.sh`       |
+
+## Box bring-up (prod, WSL2 desktop)
+
+1. **Discord secret for Alertmanager.** Create the gitignored secret from the example, using the same
+   webhook as `DISCORD_WEBHOOK_URL` but with `/slack` appended (Discord's Slack-compatible endpoint):
+
+   ```bash
+   cp infra/alertmanager/secrets/discord_slack_url.example \
+      infra/alertmanager/secrets/discord_slack_url
+   # edit it to the real https://discord.com/api/webhooks/<id>/<token>/slack
+   ```
+
+2. **Validate the configs before starting** (no promtool/amtool in CI - this is the gate):
+
+   ```bash
+   promtool check config infra/prometheus/prometheus.yml
+   promtool check rules  infra/prometheus/rules/bullpen-alerts.yml
+   amtool check-config   infra/alertmanager/alertmanager.yml
+   docker compose -f infra/docker-compose.yml --profile monitoring config >/dev/null
+   ```
+
+3. **Start the monitoring profile** (node-exporter + alertmanager join the default stack):
+
+   ```bash
+   docker compose -f infra/docker-compose.yml --profile monitoring up -d
+   ```
+
+4. **Snapshot env.** Set `BULLPEN_HC_PING_URL` (the Healthchecks.io ping URL, below) in the
+   `bullpen-snapshot` unit's environment. The script writes
+   `bullpen_snapshot_last_success_timestamp_seconds` into `/var/lib/node_exporter/` on success; ensure
+   that dir exists and is writable by the snapshot user, and that node-exporter mounts it.
+
+5. **Verify end-to-end:** stop `bullpen-worker` for >2m and confirm a Discord alert fires; restart and
+   confirm a resolve message. Then re-enable.
+
+## Console side (operator, NOT code)
+
+- **Healthchecks.io** - create a check (period 1 day, grace ~2h) for the nightly snapshot; put its
+  ping URL in `BULLPEN_HC_PING_URL`. This is the external dead-man: it fires even if the whole host
+  (and Prometheus with it) is down, which the internal `SnapshotStale` rule cannot.
+- **Uptime Robot** - add a monitor on the worker via the Cloudflare Tunnel (or an internal health URL)
+  so a worker-down is caught even if Alertmanager/Prometheus are themselves down.
+
+## Notes
+
+- Alertmanager + node-exporter are behind the `monitoring` profile so the default `docker compose up`
+  stays lean and dev does not need the Discord secret (Prometheus tolerates an absent Alertmanager).
+- `SnapshotStale` is deliberately doubled: the internal Prometheus rule (textfile metric) for the
+  dashboard + the external Healthchecks.io dead-man for the host-down case. A backup is exactly where
+  a single internal watchdog is insufficient.
