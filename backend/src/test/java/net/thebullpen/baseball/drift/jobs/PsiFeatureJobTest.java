@@ -50,7 +50,7 @@ class PsiFeatureJobTest {
 
   @Test
   void no_active_champions_results_in_zero_rows_and_no_writes() throws Exception {
-    when(registryRepo.findAllNameVersionPairs()).thenReturn(List.of());
+    when(registryRepo.findActiveServingVersions()).thenReturn(List.of());
     int rows = job.runOnce(Instant.now());
     assertThat(rows).isEqualTo(0);
     verify(driftRepo, never()).insertBatch(any());
@@ -59,9 +59,7 @@ class PsiFeatureJobTest {
   @Test
   void champion_with_no_training_distributions_writes_no_rows() throws Exception {
     ModelVersion champ = champion("model_a", 1L, "/tmp/no_meta.json");
-    when(registryRepo.findAllNameVersionPairs())
-        .thenReturn(List.<String[]>of(new String[] {"model_a", "v1"}));
-    when(registryRepo.findByName("model_a")).thenReturn(List.of(champ));
+    when(registryRepo.findActiveServingVersions()).thenReturn(List.of(champ));
     when(trainingLoader.load(eq(1L), any(Path.class))).thenReturn(ReferenceDistributions.empty());
 
     int rows = job.runOnce(Instant.now());
@@ -72,9 +70,7 @@ class PsiFeatureJobTest {
   @Test
   void continuous_feature_with_no_observed_sample_is_skipped() throws Exception {
     ModelVersion champ = champion("model_a", 1L, "/tmp/meta.json");
-    when(registryRepo.findAllNameVersionPairs())
-        .thenReturn(List.<String[]>of(new String[] {"model_a", "v1"}));
-    when(registryRepo.findByName("model_a")).thenReturn(List.of(champ));
+    when(registryRepo.findActiveServingVersions()).thenReturn(List.of(champ));
     ReferenceDistributions refs =
         new ReferenceDistributions(
             Map.of("launch_speed", new double[] {88.0, 90.0, 92.0, 94.0, 96.0}), Map.of());
@@ -90,9 +86,7 @@ class PsiFeatureJobTest {
   @Test
   void continuous_feature_with_observed_sample_writes_psi_row() throws Exception {
     ModelVersion champ = champion("model_a", 1L, "/tmp/meta.json");
-    when(registryRepo.findAllNameVersionPairs())
-        .thenReturn(List.<String[]>of(new String[] {"model_a", "v1"}));
-    when(registryRepo.findByName("model_a")).thenReturn(List.of(champ));
+    when(registryRepo.findActiveServingVersions()).thenReturn(List.of(champ));
     double[] ref = new double[1000];
     java.util.Random r = new java.util.Random(42);
     for (int i = 0; i < ref.length; i++) {
@@ -127,9 +121,7 @@ class PsiFeatureJobTest {
   @Test
   void categorical_feature_writes_chi_squared_row() throws Exception {
     ModelVersion champ = champion("model_a", 1L, "/tmp/meta.json");
-    when(registryRepo.findAllNameVersionPairs())
-        .thenReturn(List.<String[]>of(new String[] {"model_a", "v1"}));
-    when(registryRepo.findByName("model_a")).thenReturn(List.of(champ));
+    when(registryRepo.findActiveServingVersions()).thenReturn(List.of(champ));
     Map<String, Integer> ref = Map.of("NYY", 1000, "BOS", 800);
     when(trainingLoader.load(eq(1L), any(Path.class)))
         .thenReturn(new ReferenceDistributions(Map.of(), Map.of("park_id", ref)));
@@ -152,9 +144,7 @@ class PsiFeatureJobTest {
   void s3_archived_metadata_is_skipped_with_log() throws Exception {
     ModelVersion champ =
         champion("model_a", 1L, "s3://bucket/models-archive/model_a/v1/metadata.json");
-    when(registryRepo.findAllNameVersionPairs())
-        .thenReturn(List.<String[]>of(new String[] {"model_a", "v1"}));
-    when(registryRepo.findByName("model_a")).thenReturn(List.of(champ));
+    when(registryRepo.findActiveServingVersions()).thenReturn(List.of(champ));
 
     int rows = job.runOnce(Instant.now());
     assertThat(rows).isEqualTo(0);

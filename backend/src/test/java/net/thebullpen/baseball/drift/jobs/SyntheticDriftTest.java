@@ -57,9 +57,7 @@ class SyntheticDriftTest {
     DriftMetricsRepository driftRepo = mock(DriftMetricsRepository.class);
 
     ModelVersion champ = champion("model_a", 1L);
-    when(registryRepo.findAllNameVersionPairs())
-        .thenReturn(List.<String[]>of(new String[] {"model_a", "v1"}));
-    when(registryRepo.findByName("model_a")).thenReturn(List.of(champ));
+    when(registryRepo.findActiveServingVersions()).thenReturn(List.of(champ));
 
     Random r = new Random(42);
     int n = 10_000;
@@ -93,9 +91,7 @@ class SyntheticDriftTest {
     DriftMetricsRepository driftRepo = mock(DriftMetricsRepository.class);
 
     ModelVersion champ = champion("model_a", 1L);
-    when(registryRepo.findAllNameVersionPairs())
-        .thenReturn(List.<String[]>of(new String[] {"model_a", "v1"}));
-    when(registryRepo.findByName("model_a")).thenReturn(List.of(champ));
+    when(registryRepo.findActiveServingVersions()).thenReturn(List.of(champ));
 
     Random r = new Random(42);
     int n = 10_000;
@@ -130,9 +126,7 @@ class SyntheticDriftTest {
     DriftMetricsRepository driftRepo = mock(DriftMetricsRepository.class);
 
     ModelVersion champ = champion("pitch_outcome_pre", 1L);
-    when(registryRepo.findAllNameVersionPairs())
-        .thenReturn(List.<String[]>of(new String[] {"pitch_outcome_pre", "v1"}));
-    when(registryRepo.findByName("pitch_outcome_pre")).thenReturn(List.of(champ));
+    when(registryRepo.findActiveServingVersions()).thenReturn(List.of(champ));
 
     Random r = new Random(7);
     int n = 5000;
@@ -170,9 +164,7 @@ class SyntheticDriftTest {
     DriftMetricsRepository driftRepo = mock(DriftMetricsRepository.class);
 
     ModelVersion champ = champion("model_a", 1L);
-    when(registryRepo.findAllNameVersionPairs())
-        .thenReturn(List.<String[]>of(new String[] {"model_a", "v1"}));
-    when(registryRepo.findByName("model_a")).thenReturn(List.of(champ));
+    when(registryRepo.findActiveServingVersions()).thenReturn(List.of(champ));
 
     // 1000 predictions all at 0.9 confidence for class 0, but only ~50% actually class 0.
     // ECE = |0.9 - 0.5| = 0.4 ≫ 0.1.
@@ -204,9 +196,7 @@ class SyntheticDriftTest {
     DriftMetricsRepository driftRepo = mock(DriftMetricsRepository.class);
 
     ModelVersion champ = champion("model_a", 1L);
-    when(registryRepo.findAllNameVersionPairs())
-        .thenReturn(List.<String[]>of(new String[] {"model_a", "v1"}));
-    when(registryRepo.findByName("model_a")).thenReturn(List.of(champ));
+    when(registryRepo.findActiveServingVersions()).thenReturn(List.of(champ));
 
     List<TruthJoinedRow> joined = new ArrayList<>();
     for (int i = 0; i < 1000; i++) {
