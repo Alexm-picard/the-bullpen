@@ -14,6 +14,13 @@
 #   BULLPEN_REGISTRY_DB      - live registry path; default /opt/bullpen/data/registry.sqlite
 #   ALLOW_NO_REGISTRY        - set =1 to permit a missing registry (skip instead of fail)
 #   BULLPEN_DISCORD_WEBHOOK  — required; failures ping this URL
+#   BULLPEN_HC_PING_URL      - optional Healthchecks.io ping URL; success pings it, failure pings
+#                              $URL/fail. The external snapshot dead-man's switch - if the daily run
+#                              stops pinging, Healthchecks alerts, and unlike the internal Prometheus
+#                              SnapshotStale rule it survives a full host-down.
+#   NODE_TEXTFILE_DIR        - node_exporter textfile dir (default /var/lib/node_exporter); on success
+#                              a bullpen_snapshot_last_success_timestamp_seconds metric is written here
+#                              for the internal SnapshotStale Prometheus rule.
 #   RETAIN_DAYS              — defaults to 14
 
 set -uo pipefail
@@ -32,7 +39,14 @@ NAME="auto_${TS}"
 CH_CONTAINER="${CH_CONTAINER:-bullpen-clickhouse}"
 CB_HOST_BINARY="${CB_HOST_BINARY:-/usr/bin/clickhouse-backup}"
 
+NODE_TEXTFILE_DIR="${NODE_TEXTFILE_DIR:-/var/lib/node_exporter}"
+
 log()  { printf '[%s] %s\n' "$(date -u +%FT%TZ)" "$*"; }
+# Healthchecks.io ping; $1 is an optional path suffix (e.g. /fail). No-op when the URL is unset.
+hc_ping() {
+  [[ -n "${BULLPEN_HC_PING_URL:-}" ]] || return 0
+  curl -fsS -m 10 --retry 3 "${BULLPEN_HC_PING_URL}${1:-}" >/dev/null 2>&1 || true
+}
 fail() {
   log "FAIL: $*"
   if [[ -n "${BULLPEN_DISCORD_WEBHOOK:-}" ]]; then
@@ -40,6 +54,7 @@ fail() {
       -d "$(printf '{"content":"[bullpen] snapshot %s failed: %s"}' "$NAME" "$*")" \
       "$BULLPEN_DISCORD_WEBHOOK" >/dev/null 2>&1 || true
   fi
+  hc_ping /fail
   exit 1
 }
 
@@ -125,5 +140,22 @@ find "$SNAPSHOT_DIR" -maxdepth 1 -mtime "+${RETAIN_DAYS}" -name 'auto_*' -exec r
 
 # Touch a sentinel file the destructive-CH hook checks for recency
 touch "${SNAPSHOT_DIR}/.last_snapshot_ok"
+
+# WS4: publish snapshot freshness on success. The node_exporter textfile metric drives the internal
+# SnapshotStale Prometheus rule; the Healthchecks.io success ping is the external dead-man (it fires
+# even if the whole host - and Prometheus with it - is down). Atomic write (tmp + mv) so the textfile
+# collector never reads a half-written file.
+if mkdir -p "$NODE_TEXTFILE_DIR" 2>/dev/null; then
+  TEXTFILE="${NODE_TEXTFILE_DIR}/bullpen_snapshot.prom"
+  TMP_TEXTFILE="${TEXTFILE}.$$"
+  {
+    echo "# HELP bullpen_snapshot_last_success_timestamp_seconds Unix time of the last successful snapshot."
+    echo "# TYPE bullpen_snapshot_last_success_timestamp_seconds gauge"
+    echo "bullpen_snapshot_last_success_timestamp_seconds $(date +%s)"
+  } > "$TMP_TEXTFILE" && mv -f "$TMP_TEXTFILE" "$TEXTFILE" || log "WARN: could not write $TEXTFILE"
+else
+  log "WARN: NODE_TEXTFILE_DIR ${NODE_TEXTFILE_DIR} not writable; skipping snapshot freshness metric"
+fi
+hc_ping
 
 log "DONE: $NAME"

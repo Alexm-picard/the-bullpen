@@ -49,6 +49,32 @@ done
 log() { printf '[deploy %s] %s\n' "$TAG" "$*"; }
 die() { printf '[deploy %s] ERROR: %s\n' "$TAG" "$*" >&2; exit 1; }
 
+# Poll one profile's /actuator/health for up to 30s; 0 = went UP, 1 = did not.
+smoke_health() {
+  local port="$1" name="$2"
+  for i in $(seq 1 30); do
+    sleep 1
+    if curl -fsS "http://localhost:${port}/actuator/health" 2>/dev/null \
+        | grep -q '"status":"UP"'; then
+      log "smoke OK: ${name} (:${port}) up after ${i}s"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Swap the symlink back to the previous release and restart both units.
+rollback() {
+  if [[ -n "${PREVIOUS_TARGET:-}" ]]; then
+    sudo ln -snf "$PREVIOUS_TARGET" "$TMP_LINK"
+    sudo mv -Tf "$TMP_LINK" "$APP_SYMLINK"
+    sudo systemctl restart bullpen-api bullpen-worker
+    log "rolled back to $PREVIOUS_TARGET"
+  else
+    log "no previous release to roll back to"
+  fi
+}
+
 # --- 1. Pre-flight -----------------------------------------------------------
 
 if ! command -v java >/dev/null 2>&1; then
@@ -114,29 +140,19 @@ sudo systemctl restart bullpen-api bullpen-worker
 if [[ "$SKIP_SMOKE" == "true" ]]; then
   log "smoke skipped (--skip-smoke)"
 else
-  log "smoke: waiting up to 30s for /actuator/health to go green"
-  HEALTH_OK=false
-  for i in $(seq 1 30); do
-    sleep 1
-    if curl -fsS "http://localhost:${BULLPEN_API_PORT:-8080}/actuator/health" 2>/dev/null \
-        | grep -q '"status":"UP"'; then
-      HEALTH_OK=true
-      log "smoke OK after ${i}s"
-      break
-    fi
-  done
-
-  if [[ "$HEALTH_OK" != "true" ]]; then
-    log "smoke FAILED — attempting rollback"
-    if [[ -n "$PREVIOUS_TARGET" ]]; then
-      sudo ln -snf "$PREVIOUS_TARGET" "$TMP_LINK"
-      sudo mv -Tf "$TMP_LINK" "$APP_SYMLINK"
-      sudo systemctl restart bullpen-api bullpen-worker
-      log "rolled back to $PREVIOUS_TARGET"
-    else
-      log "no previous release to roll back to"
-    fi
-    die "deploy aborted; health check did not go UP within 30s"
+  log "smoke: waiting for api (:${BULLPEN_API_PORT:-8080}) AND worker (:${BULLPEN_WORKER_PORT:-8081}) to go green"
+  if ! smoke_health "${BULLPEN_API_PORT:-8080}" "api"; then
+    log "smoke FAILED: api did not go UP within 30s — attempting rollback"
+    rollback
+    die "deploy aborted; api health did not go UP within 30s"
+  fi
+  # WS4: the worker (:8081) restarts alongside the api but was never smoked. A worker that fails to
+  # boot used to deploy 'green' and die silently (the 2026-06-04 blindspot). Smoke it too, and roll
+  # back the WHOLE deploy if it does not come up — a half-up deploy (api yes, worker no) is a defect.
+  if ! smoke_health "${BULLPEN_WORKER_PORT:-8081}" "worker"; then
+    log "smoke FAILED: worker did not go UP within 30s — attempting rollback"
+    rollback
+    die "deploy aborted; worker health did not go UP within 30s"
   fi
 fi
 
