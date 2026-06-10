@@ -62,3 +62,11 @@ snapshots/
 # --- Local logs ---
 *.log
 logs/
+
+# --- Local run products (D4: kept biting us as accidental commits) ---
+# New deploy records written by deploy.sh during local/test runs, and nohup output.
+# Already-tracked deploy records under docs/deploys/ stay tracked; this only stops NEW ones
+# from being swept in by `git add .`.
+docs/deploys/*.md
+!docs/deploys/.gitkeep
+nohup.out
