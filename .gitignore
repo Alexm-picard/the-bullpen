@@ -18,7 +18,11 @@ backend/.gradle/
 backend/build/
 backend/out/
 backend/bin/
-backend/data/                  # local SQLite registry; the schema lives in src/main/resources/db/migration
+# Ignore the local SQLite registry contents (schema lives in src/main/resources/db/migration), but
+# KEEP the directory via .gitkeep so the jdbc:sqlite datasource has a parent dir to create into on a
+# fresh checkout (untracking registry.sqlite without this broke app boot in CI).
+backend/data/*
+!backend/data/.gitkeep
 backend/HELP.md
 
 # --- Python / uv ---
