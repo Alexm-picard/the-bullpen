@@ -11,11 +11,11 @@ import java.util.Locale;
 import org.springframework.stereotype.Component;
 
 /**
- * Pure parser for the two MLB Stats API documents the live poller consumes: the schedule ({@code
- * /api/v1/schedule}) and the GUMBO live feed ({@code /api/v1.1/game/{pk}/feed/live}). No HTTP lives
- * here - the transport is {@link MlbStatsApiClient} - so this class is unit-tested against captured
- * real-game fixtures (the MLB HTTP boundary is the one place mocking is allowed, per the CLAUDE.md
- * testing posture).
+ * Pure parser for the MLB Stats API documents the worker consumes: the schedule ({@code
+ * /api/v1/schedule}), the GUMBO live feed ({@code /api/v1.1/game/{pk}/feed/live}), and the player
+ * roster ({@code /api/v1/sports/1/players}). No HTTP lives here - the transport is {@link
+ * MlbStatsApiClient} - so this class is unit-tested against captured real fixtures (the MLB HTTP
+ * boundary is the one place mocking is allowed, per the CLAUDE.md testing posture).
  *
  * <p>Navigation is defensive ({@code path()} not {@code get()}): GUMBO is large and partially
  * optional, and an unexpected-missing field must degrade (null / skip) rather than NPE the worker.
@@ -168,6 +168,45 @@ public class MlbFeedParser {
         textOrNull(away.path("abbreviation")),
         pitches,
         parseNextPitch(root, gamePk, gameDate, parkId));
+  }
+
+  /**
+   * Parse the roster document ({@code /api/v1/sports/1/players?season=N}) into rows for the {@code
+   * players} dimension (V014, DP3). Entries without a positive id or a non-blank fullName are
+   * skipped (the table key is the id and the search UI is name-driven).
+   *
+   * <p>Width clamps match V014's FixedString columns: {@code primary_position} is FixedString(2),
+   * so the one 3-char abbreviation in the wild ("TWP", two-way player) stores as "TW"; bats /
+   * throws are single-letter FixedString(1) codes. Missing codes store as "" (FixedString
+   * zero-pads; the read side trims).
+   */
+  public List<MlbPlayer> parsePlayers(String json) throws IOException {
+    JsonNode root = mapper.readTree(json);
+    List<MlbPlayer> players = new ArrayList<>();
+    for (JsonNode p : root.path("people")) {
+      long id = p.path("id").asLong(0);
+      String name = textOrNull(p.path("fullName"));
+      if (id <= 0 || name == null || name.isBlank()) {
+        continue;
+      }
+      players.add(
+          new MlbPlayer(
+              id,
+              name,
+              clamp(p.path("primaryPosition").path("abbreviation"), 2),
+              clamp(p.path("batSide").path("code"), 1),
+              clamp(p.path("pitchHand").path("code"), 1),
+              p.path("active").asBoolean(false)));
+    }
+    return players;
+  }
+
+  private static String clamp(JsonNode n, int maxLen) {
+    String s = textOrNull(n);
+    if (s == null) {
+      return "";
+    }
+    return s.length() <= maxLen ? s : s.substring(0, maxLen);
   }
 
   /**

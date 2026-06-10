@@ -70,6 +70,11 @@ public class MlbStatsApiClient {
     return parser.parseLiveFeed(getWithRetry(baseUrl + "/api/v1.1/game/" + gamePk + "/feed/live"));
   }
 
+  /** The full player roster for one season, for the players-dimension refresh (DP3). */
+  public List<MlbPlayer> fetchPlayers(int season) throws IOException {
+    return parser.parsePlayers(getWithRetry(baseUrl + "/api/v1/sports/1/players?season=" + season));
+  }
+
   String getWithRetry(String url) throws IOException {
     IOException last = null;
     for (int attempt = 0; attempt <= maxRetries; attempt++) {
