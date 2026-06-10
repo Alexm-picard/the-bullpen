@@ -58,9 +58,16 @@ public class PitcherFormRepository {
           + "        toFloat32(countIf(description = 'in_play') / count()) AS inplay_rate_28d,"
           + "        toUInt16(today() - max(game_date)) AS days_since_last_appearance"
           + " FROM pitches FINAL"
-          + " WHERE description != 'unknown' AND game_date >= today() - 28"
+          // game_date <= today() makes the past-only contract LOCAL to this query (defense in
+          // depth): pitches is historical-only today (live data lands in pitches_live), but an
+          // explicit upper bound means a future backfill cannot make today()-max(game_date) wrap
+          // negative through toUInt16. (ml-leakage-auditor note.)
+          + " WHERE description != 'unknown'"
+          + "   AND game_date >= today() - 28 AND game_date <= today()"
           + " GROUP BY pitcher_id";
 
+  // Non-FINAL is correct here: the REFRESH above just wrote exactly one row per pitcher at today's
+  // as_of_date, so today's partition has nothing to dedup yet. (Reads of older rows use FINAL.)
   private static final String COUNT_TODAY =
       "SELECT count(DISTINCT pitcher_id) FROM pitcher_form_current WHERE as_of_date = today()";
 

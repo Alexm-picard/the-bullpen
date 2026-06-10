@@ -44,7 +44,11 @@ class PitcherFormRepositoryIT {
   static final ClickHouseContainer CH =
       new ClickHouseContainer("clickhouse/clickhouse-server:24.12-alpine")
           .withUsername("default")
-          .withPassword("test");
+          .withPassword("test")
+          // Pin the server TZ so CH today() matches the JVM's LocalDate.now(UTC) the fixture dates
+          // use (the days_since_last_appearance == 3 assertion depends on it); removes the reliance
+          // on the base image's undocumented UTC default and the midnight-crossing flake.
+          .withEnv("TZ", "UTC");
 
   @DynamicPropertySource
   static void props(DynamicPropertyRegistry registry) {
