@@ -4,6 +4,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.util.concurrent.CompletionException;
 import net.thebullpen.baseball.inference.ModelUnavailableException;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
@@ -41,6 +42,25 @@ class ApiErrorAdviceTest {
         .andExpect(jsonPath("$.error.code").value("internal_error"));
   }
 
+  @Test
+  void routed_model_unavailable_wrapped_in_completion_exception_maps_to_503() throws Exception {
+    // The A/B router runs the champion on a CompletableFuture; join() wraps the cause in a
+    // CompletionException, and a controller supplier may re-wrap once more in a RuntimeException.
+    // The cause-walk must still surface 503 (the stale-routing-row case C2 actually targets).
+    mvc.perform(get("/test/wrapped-model-unavailable"))
+        .andExpect(status().isServiceUnavailable())
+        .andExpect(jsonPath("$.error.code").value("model_unavailable"));
+  }
+
+  @Test
+  void completion_exception_with_a_non_model_cause_stays_500() throws Exception {
+    // A CompletionException whose cause is NOT a model-load failure is a genuine internal error and
+    // must not be downgraded to a retryable 503.
+    mvc.perform(get("/test/wrapped-bug"))
+        .andExpect(status().isInternalServerError())
+        .andExpect(jsonPath("$.error.code").value("internal_error"));
+  }
+
   @RestController
   static class ThrowingController {
     @GetMapping("/test/model-unavailable")
@@ -51,6 +71,17 @@ class ApiErrorAdviceTest {
     @GetMapping("/test/illegal-state")
     String illegalState() {
       throw new IllegalStateException("a genuine bug");
+    }
+
+    @GetMapping("/test/wrapped-model-unavailable")
+    String wrappedModelUnavailable() {
+      throw new CompletionException(
+          new RuntimeException(new ModelUnavailableException("routed champion won't load")));
+    }
+
+    @GetMapping("/test/wrapped-bug")
+    String wrappedBug() {
+      throw new CompletionException(new IllegalStateException("a genuine async bug"));
     }
   }
 }

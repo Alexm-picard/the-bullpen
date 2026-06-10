@@ -10,7 +10,13 @@ package net.thebullpen.baseball.inference;
  *
  * <ul>
  *   <li>the HTTP path maps it to a structured 503 (retryable), not an opaque 500 ({@code
- *       ApiErrorAdvice});
+ *       ApiErrorAdvice}). This holds on the direct/synchronous serving path AND across the A/B
+ *       router's async boundary - {@code CompletableFuture.join} wraps the cause in a {@code
+ *       CompletionException}, which the advice unwraps. (Known edge, moot today: the single-park
+ *       pitch/toy controllers re-wrap a load failure in a plain {@code RuntimeException} on the
+ *       synchronous fallback, which still surfaces 500 - pitch is champion-less per decision [154]
+ *       and the toy path never calls the loader, so neither is reachable; unwrapping those is a
+ *       follow-up.)
  *   <li>the live poller degrades that one game's prediction instead of aborting the whole tick
  *       ({@code LivePollingService#predictNextPitch}).
  * </ul>

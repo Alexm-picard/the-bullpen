@@ -2,6 +2,7 @@ package net.thebullpen.baseball.api;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import java.util.List;
+import java.util.concurrent.CompletionException;
 import net.thebullpen.baseball.api.dto.ApiError;
 import net.thebullpen.baseball.api.dto.ApiError.FieldError;
 import net.thebullpen.baseball.config.CorrelationIdFilter;
@@ -141,6 +142,25 @@ public class ApiErrorAdvice {
     log.warn("model unavailable correlation_id={} message={}", cid, ex.getMessage(), ex);
     ApiError body = ApiError.of("model_unavailable", "the model is temporarily unavailable", cid);
     return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+  }
+
+  /**
+   * The A/B router runs the champion on a {@link java.util.concurrent.CompletableFuture}; {@code
+   * join()} wraps a thrown {@link ModelUnavailableException} in a {@link CompletionException} (and
+   * a controller supplier may re-wrap it once more in a RuntimeException). Walk the cause chain so
+   * a ROUTED champion that cannot load - the stale-routing-row case C2 targets, e.g. the live
+   * batted-ball all-parks champion - still maps to 503 instead of an opaque 500. Any other cause is
+   * a genuine internal error and falls through to {@link #handleAnyOther} as a 500, so non-model
+   * failures are not silently downgraded to retryable. (C2.)
+   */
+  @ExceptionHandler(CompletionException.class)
+  public ResponseEntity<ApiError> handleCompletion(CompletionException ex) {
+    for (Throwable t = ex.getCause(); t != null; t = t.getCause()) {
+      if (t instanceof ModelUnavailableException mue) {
+        return handleModelUnavailable(mue);
+      }
+    }
+    return handleAnyOther(ex);
   }
 
   @ExceptionHandler(Exception.class)
