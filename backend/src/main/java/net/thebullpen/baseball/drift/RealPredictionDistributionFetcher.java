@@ -2,7 +2,6 @@ package net.thebullpen.baseball.drift;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -47,10 +46,16 @@ public class RealPredictionDistributionFetcher implements PredictionDistribution
       LoggerFactory.getLogger(RealPredictionDistributionFetcher.class);
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
+  // Window bounds are bound as epoch-millis longs and reconstructed server-side with
+  // fromUnixTimestamp64Milli, NOT as bound java.sql.Timestamps. clickhouse-jdbc mishandles a
+  // Timestamp param in a DateTime64 WHERE comparison (the existing CH queries all use the relative
+  // `now() - INTERVAL ? DAY` form, never a bound absolute timestamp), so this keeps every bind a
+  // String or a long.
   private static final String SELECT_PREDICTIONS =
       "SELECT prediction FROM prediction_log"
           + " WHERE model_name = ? AND model_version_id = ?"
-          + "   AND request_at >= ? AND request_at <= ?";
+          + "   AND request_at >= fromUnixTimestamp64Milli(?, 'UTC')"
+          + "   AND request_at <= fromUnixTimestamp64Milli(?, 'UTC')";
 
   private final JdbcTemplate jdbc;
 
@@ -68,8 +73,8 @@ public class RealPredictionDistributionFetcher implements PredictionDistribution
             (rs, n) -> rs.getString(1),
             modelName,
             modelVersionId,
-            Timestamp.from(windowStart),
-            Timestamp.from(windowEnd));
+            windowStart.toEpochMilli(),
+            windowEnd.toEpochMilli());
 
     // Insertion-ordered so the class order is stable for logging / tests.
     Map<String, List<Double>> perClass = new LinkedHashMap<>();
