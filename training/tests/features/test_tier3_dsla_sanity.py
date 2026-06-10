@@ -29,10 +29,12 @@ def test_features_table_dsla_bounded() -> None:
     from bullpen_training.ingest.clickhouse_client import make_client
 
     client = make_client()
-    # clickhouse_driver's execute() is typed as a broad union; this SELECT returns row tuples.
+    # FINAL: features is written as a ReplacingMergeTree, so without it a re-ingested fold could
+    # show a stale pre-fix value and mask (or fake) the epoch garbage. clickhouse_driver's execute()
+    # is typed as a broad union; this SELECT returns row tuples.
     rows = cast(
         "list[tuple[int, ...]]",
-        client.execute("SELECT countIf(days_since_last_appearance > 400) FROM features"),
+        client.execute("SELECT countIf(days_since_last_appearance > 400) FROM features FINAL"),
     )
     bad = rows[0][0]
     assert bad == 0, f"{bad} rows carry days_since_last_appearance > 400 (epoch garbage)"
