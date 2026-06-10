@@ -13,7 +13,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useRef } from "react";
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8080";
+import { API_BASE } from "./base";
 
 export type GameSummary = {
   gameId: number;
@@ -63,6 +63,13 @@ export class GameApiError extends Error {
 export function statusPollIntervalMs(
   status: string | undefined,
 ): number | false {
+  // FE-H2: status not yet loaded (the game query is still in flight) - poll at the live cadence so a
+  // live game's pitches start flowing immediately, instead of being frozen at the 5-min fallback for
+  // the first poll (the "frozen first five minutes" bug). The real status takes over once it arrives;
+  // a genuinely unrecognised (non-undefined) status still falls to the conservative 5-min default.
+  if (status === undefined) {
+    return 12_000;
+  }
   switch (status) {
     case "IN_PROGRESS":
     case "MID_INNING":
