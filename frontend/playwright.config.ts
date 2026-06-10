@@ -26,5 +26,10 @@ export default defineConfig({
     url: "http://localhost:4173",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
+    // This is a PRODUCTION build (vite build), so VITE_API_BASE must be set or src/api/base.ts
+    // (FE-C1) fails fast at load and the SPA never boots. The smoke pages render from fixtures
+    // without a backend, so the value just needs to be a valid base - localhost:8080 matches the
+    // pre-FE-C1 default. Merged onto process.env by Playwright.
+    env: { VITE_API_BASE: "http://localhost:8080" },
   },
 });
