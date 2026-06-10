@@ -208,6 +208,17 @@ public class LivePitchPredictor {
         null);
   }
 
+  /**
+   * True when the GUMBO payload carries the matchup the pre-head needs (pitcher + batter
+   * handedness). Early {@code currentPlay} payloads can omit these for a sub-second window at the
+   * top of an at-bat; the poller skips prediction until they populate (C5) rather than feed nulls
+   * to the model (which would be a degraded prediction on missing matchup data, or an NPE
+   * downstream of {@link #resolveBatSide}).
+   */
+  static boolean hasResolvableMatchup(LiveNextPitch np) {
+    return np.pitchHand() != null && np.batSide() != null;
+  }
+
   /** Switch hitters bat opposite the pitcher's hand; the model expects a resolved {@code L|R}. */
   static String resolveBatSide(String batSide, String pitchHand) {
     if (!"S".equals(batSide)) {
