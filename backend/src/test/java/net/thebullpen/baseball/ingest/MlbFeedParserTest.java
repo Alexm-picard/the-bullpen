@@ -164,4 +164,61 @@ class MlbFeedParserTest {
     // The full-game fixture is Final and carries no currentPlay -> nothing to predict.
     assertNull(parser.parseLiveFeed(resource("/mlb/feed_live_824753.json")).nextPitch());
   }
+
+  @Test
+  void parsePlayers_reads_the_captured_roster() throws IOException {
+    // Trimmed real capture of /api/v1/sports/1/players?season=2026 (2026-06-10): five players
+    // covering a two-way player, a pitcher, a catcher, a switch hitter, and a shortstop.
+    List<MlbPlayer> players = parser.parsePlayers(resource("/mlb/players_2026.json"));
+
+    assertEquals(5, players.size());
+
+    MlbPlayer ohtani = players.stream().filter(p -> p.id() == 660271L).findFirst().orElseThrow();
+    assertEquals("Shohei Ohtani", ohtani.name());
+    assertEquals("TW", ohtani.primaryPosition(), "TWP clamps to V014's FixedString(2)");
+    assertEquals("L", ohtani.bats());
+    assertEquals("R", ohtani.throwsHand());
+    assertTrue(ohtani.active());
+
+    MlbPlayer albies = players.stream().filter(p -> p.id() == 645277L).findFirst().orElseThrow();
+    assertEquals("Ozzie Albies", albies.name());
+    assertEquals("2B", albies.primaryPosition());
+    assertEquals("S", albies.bats(), "switch hitter keeps the S code");
+
+    MlbPlayer abbott = players.stream().filter(p -> p.id() == 671096L).findFirst().orElseThrow();
+    assertEquals("P", abbott.primaryPosition());
+    assertEquals("L", abbott.throwsHand());
+  }
+
+  @Test
+  void parsePlayers_skips_unusable_entries_and_defaults_missing_codes() throws IOException {
+    // Hand-written degenerate document: only the first entry is usable; it is missing every
+    // optional code (older-season payload defensiveness) so the codes default to "".
+    String json =
+        """
+        {"people": [
+          {"id": 123, "fullName": "No Codes Guy"},
+          {"fullName": "Missing Id"},
+          {"id": 0, "fullName": "Zero Id"},
+          {"id": 9, "fullName": "   "},
+          {"id": -4, "fullName": "Negative Id"}
+        ]}
+        """;
+
+    List<MlbPlayer> players = parser.parsePlayers(json);
+
+    assertEquals(1, players.size());
+    MlbPlayer p = players.get(0);
+    assertEquals(123L, p.id());
+    assertEquals("No Codes Guy", p.name());
+    assertEquals("", p.primaryPosition());
+    assertEquals("", p.bats());
+    assertEquals("", p.throwsHand());
+    assertFalse(p.active(), "missing active defaults to false");
+  }
+
+  @Test
+  void parsePlayers_returns_empty_for_a_document_without_people() throws IOException {
+    assertTrue(parser.parsePlayers("{}").isEmpty());
+  }
 }

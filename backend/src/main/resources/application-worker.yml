@@ -20,3 +20,9 @@ bullpen:
       schedule-refresh-min: ${BULLPEN_INGEST_LIVE_SCHEDULE_REFRESH_MIN:15}
       timeout-ms: ${BULLPEN_INGEST_LIVE_TIMEOUT_MS:5000}
       max-retries: ${BULLPEN_INGEST_LIVE_MAX_RETRIES:3}
+    players:
+      # DP3 players-dimension refresh: backfill-on-empty at worker startup plus a weekly
+      # Monday 03:40 ET re-pull of the current season. Deliberately independent of the live
+      # poller flag above - this is a bounded roster pull (~1 call/season, ~12 calls once),
+      # not game polling, so it defaults ON.
+      enabled: ${BULLPEN_INGEST_PLAYERS_ENABLED:true}
