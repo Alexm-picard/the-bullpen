@@ -63,8 +63,12 @@ describe("statusPollIntervalMs", () => {
     expect(statusPollIntervalMs("SUSPENDED")).toBe(600_000);
   });
 
-  it("defaults unknown values to a sane fallback", () => {
-    expect(statusPollIntervalMs(undefined)).toBe(300_000);
+  it("polls fast while status is still loading (undefined), not the 5-min fallback", () => {
+    // FE-H2: the "frozen first five minutes" fix - an unloaded status must not stall a live game.
+    expect(statusPollIntervalMs(undefined)).toBe(12_000);
+  });
+
+  it("defaults an unrecognised (non-undefined) status to the conservative fallback", () => {
     expect(statusPollIntervalMs("something_new")).toBe(300_000);
   });
 });

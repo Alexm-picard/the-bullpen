@@ -9,7 +9,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import type { OpsLogEntry, OpsLogType } from "../data/ops-fixtures";
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8080";
+import { API_BASE } from "./base";
 
 export type ModelVersion = {
   id: number;

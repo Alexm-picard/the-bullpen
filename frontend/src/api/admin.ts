@@ -8,7 +8,7 @@
  */
 import type { RoutingConfig } from "./ops";
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8080";
+import { API_BASE } from "./base";
 
 export type AdminCreds = { user: string; password: string };
 

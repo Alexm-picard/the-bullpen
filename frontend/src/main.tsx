@@ -24,7 +24,11 @@ if (sentryDsn) {
 }
 
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: 1, staleTime: 5_000 } },
+  // FE-M2: refetchOnWindowFocus off - polling owns freshness here (refetchInterval per view), so a
+  // tab-focus refetch is wasted requests against the self-hosted backend's polling budget.
+  defaultOptions: {
+    queries: { retry: 1, staleTime: 5_000, refetchOnWindowFocus: false },
+  },
 });
 
 createRoot(document.getElementById("root")!).render(
