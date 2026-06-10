@@ -20,22 +20,25 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Orchestrates registry operations on top of {@link RegistryRepository} — owns the artifact-
- * presence check, the state machine, and the atomic CHAMPION promotion (archive prior champion in
- * the same transaction).
- *
- * <p>Validation that belongs to other leaves stays out of here:
+ * Orchestrates registry operations on top of {@link RegistryRepository}. It owns the registration-
+ * and promotion-time discipline:
  *
  * <ul>
- *   <li>Feature schema hash check vs {@code contracts/feature_pipeline.json} — Leaf 3a.3.
- *   <li>Snapshot upload to S3 / R2 — Leaf 3a.5.
- *   <li>HTTP exposure of these calls — Leaf 3a.4.
- *   <li>Pre-declared promotion criteria gate (rule 5) — Leaf 3a.4's promote endpoint.
+ *   <li>artifact-presence check (the ONNX + metadata + pipeline files exist);
+ *   <li>the feature-schema-hash check (rule 7) via {@link FeatureSchemaHasher} against {@code
+ *       contracts/feature_pipeline.json} - a mismatch is a HARD FAIL at registration;
+ *   <li>the lifecycle state machine + the atomic CHAMPION promotion (archive the prior champion in
+ *       the same transaction);
+ *   <li>the rule-5 promotion-criteria gate ({@link #assertPromotionCriteriaMet}): SHADOW -&gt;
+ *       CHAMPION requires a passing {@code experiment_results} row (decision [145]).
  * </ul>
  *
- * <p>Register is idempotent on {@code (model_name, version)} (decision [65] + leaf 3a.2): a second
- * register call with the same key returns the existing row unchanged. Repeated registrations are
- * the common case when retrains finish — the trainer doesn't track what's already registered.
+ * <p>What stays out of here: the snapshot copy to S3 / R2 (handled in the storage layer) and the
+ * HTTP exposure of these calls (the registry admin controller).
+ *
+ * <p>Register is idempotent on {@code (model_name, version)} (decision [65]): a second register
+ * call with the same key returns the existing row unchanged. Repeated registrations are the common
+ * case when retrains finish - the trainer doesn't track what's already registered.
  */
 @Service
 public class RegistryService {

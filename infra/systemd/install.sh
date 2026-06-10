@@ -60,6 +60,18 @@ if [[ "$UNINSTALL" == "true" ]]; then
       log "removed ${TARGET_DIR}/${u}"
     fi
   done
+  # WS6 / D1: also tear down the snapshot timer + template service.
+  if systemctl list-unit-files | grep -q "^bullpen-snapshot.timer"; then
+    log "stop + disable bullpen-snapshot.timer"
+    sudo systemctl stop bullpen-snapshot.timer 2>/dev/null || true
+    sudo systemctl disable bullpen-snapshot.timer 2>/dev/null || true
+  fi
+  for f in bullpen-snapshot.timer "bullpen-snapshot@.service"; do
+    if [[ -f "${TARGET_DIR}/${f}" ]]; then
+      sudo rm "${TARGET_DIR}/${f}"
+      log "removed ${TARGET_DIR}/${f}"
+    fi
+  done
   sudo systemctl daemon-reload
   log "uninstall complete (NOTE: ${INSTALL_DIR} and user ${SVC_USER} left in place)"
   exit 0
@@ -89,8 +101,35 @@ for u in "${UNITS[@]}"; do
   log "  installed ${dst}"
 done
 
+# WS6 / D1: also install the daily snapshot units (rule 8 forcing function). The .service is a
+# TEMPLATE - it uses %i for the user (ExecStart=/home/%i/...), so it installs under the systemd
+# template name bullpen-snapshot@.service; the committed timer drives the bullpen-snapshot@alepic
+# instance. The timer (not the service) is what gets enabled.
+SNAPSHOT_SVC_SRC="${REPO_ROOT}/infra/backup/bullpen-snapshot.service"
+SNAPSHOT_TIMER_SRC="${REPO_ROOT}/infra/backup/bullpen-snapshot.timer"
+INSTALL_SNAPSHOT=false
+if [[ -f "$SNAPSHOT_SVC_SRC" && -f "$SNAPSHOT_TIMER_SRC" ]]; then
+  sudo install -o root -g root -m 0644 "$SNAPSHOT_SVC_SRC" "${TARGET_DIR}/bullpen-snapshot@.service"
+  sudo install -o root -g root -m 0644 "$SNAPSHOT_TIMER_SRC" "${TARGET_DIR}/bullpen-snapshot.timer"
+  log "  installed ${TARGET_DIR}/bullpen-snapshot@.service + bullpen-snapshot.timer"
+  INSTALL_SNAPSHOT=true
+else
+  log "  WARN: snapshot units not found under infra/backup; skipping the snapshot timer"
+fi
+
 log "daemon-reload"
 sudo systemctl daemon-reload
+
+# Enable the snapshot timer regardless of the app.jar (it does not depend on the running service).
+if [[ "$INSTALL_SNAPSHOT" == "true" ]]; then
+  if [[ "$NO_START" == "true" ]]; then
+    sudo systemctl enable bullpen-snapshot.timer
+    log "enabled (not started): bullpen-snapshot.timer"
+  else
+    sudo systemctl enable --now bullpen-snapshot.timer
+    log "enabled + started: bullpen-snapshot.timer (fires daily at 03:00 local)"
+  fi
+fi
 
 if [[ "$NO_START" == "true" ]]; then
   for u in "${UNITS[@]}"; do

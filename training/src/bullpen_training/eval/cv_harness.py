@@ -22,11 +22,12 @@ each metric per fold, then reports mean ± std.
 Within-fold val/test are full calendar years (decision [59]); finer
 splits MUST be by-date if they're ever needed (never by game/pitch).
 
-A reminder about the feature-table state: 2a.1's tier_1_2 built
-features rows with train_end = test_year - 1 (val year included in
-the TE training window). For a leakage-clean run of THIS harness, the
-features table needs to be rebuilt with train_end = test_year - 2
-before any model trains. The rebuild lands as a 2a.5 prereq.
+This harness assumes the `features` table was built leakage-clean:
+train_end = test_year - 2, so the target-encoding training window
+excludes BOTH the validation and the test year. (The first 2a.1 build
+used train_end = test_year - 1, which leaked the val year into the TE
+window; train_end = test_year - 2 is the standard the leakage tests
+now enforce.)
 """
 
 from __future__ import annotations

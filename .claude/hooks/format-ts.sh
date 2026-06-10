@@ -12,6 +12,12 @@ case "$FILE" in
   *.ts|*.tsx|*.js|*.jsx|*.json|*.css|*.html|*.md) ;;
   *) exit 0 ;;
 esac
+# Never reformat the append-only decision log or the ADRs. Prettier rewrites markdown emphasis
+# (*x* -> _x_) and escapes on every edit, which silently violates the decisions.md append-only rule
+# (enforced by the block-retro-decisions hook) and needlessly churns ADRs. Both are authored by hand.
+case "$FILE" in
+  */docs/decisions.md|docs/decisions.md|*/docs/adr/*.md|docs/adr/*.md) exit 0 ;;
+esac
 [[ ! -f "$FILE" ]] && exit 0
 
 REPO_ROOT="${REPO_ROOT:-/home/$(whoami)/code/thebullpen}"
