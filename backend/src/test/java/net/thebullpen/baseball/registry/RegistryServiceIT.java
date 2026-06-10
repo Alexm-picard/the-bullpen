@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import net.thebullpen.baseball.registry.dto.ModelVersion;
 import net.thebullpen.baseball.registry.dto.RegisterRequest;
@@ -54,6 +55,7 @@ class RegistryServiceIT {
   }
 
   @Autowired private RegistryService service;
+  @Autowired private RegistryRepository registryRepo;
   @Autowired private JdbcTemplate jdbc;
 
   @TempDir Path artifactDir;
@@ -105,6 +107,40 @@ class RegistryServiceIT {
     ModelVersion second = service.register(req);
     assertThat(second.id()).isEqualTo(first.id());
     assertThat(second.createdAt()).isEqualTo(first.createdAt());
+  }
+
+  @Test
+  void findActiveServingVersions_returns_champion_and_shadow_only() {
+    // C3 (WS2): the drift jobs watch the CHAMPION + SHADOW set. CANDIDATE (not yet serving) and
+    // ARCHIVED (terminal) are excluded. Insert directly at each stage (the repo write is raw; the
+    // lifecycle gate lives in the service, which is not the unit under test here).
+    long champ = insertAt("model_a", "v2", Stage.CHAMPION);
+    long shadow = insertAt("model_a", "v3", Stage.SHADOW);
+    insertAt("model_b", "v1", Stage.CANDIDATE);
+    insertAt("model_c", "v1", Stage.ARCHIVED);
+
+    List<ModelVersion> serving = registryRepo.findActiveServingVersions();
+
+    assertThat(serving).extracting(ModelVersion::id).containsExactlyInAnyOrder(champ, shadow);
+    assertThat(serving).extracting(ModelVersion::stage).containsOnly(Stage.CHAMPION, Stage.SHADOW);
+  }
+
+  private long insertAt(String name, String version, Stage stage) {
+    return registryRepo
+        .insert(
+            name,
+            version,
+            "/tmp/" + name + "/" + version + "/model.onnx",
+            "/tmp/" + name + "/" + version + "/metadata.json",
+            "h-train",
+            "[2024-01-01,2024-12-31]",
+            "schema-" + name + version,
+            "{}",
+            Instant.now(),
+            stage,
+            "RegistryServiceIT",
+            "C3 fixture")
+        .id();
   }
 
   @Test

@@ -17,7 +17,6 @@ import net.thebullpen.baseball.drift.algorithms.Psi;
 import net.thebullpen.baseball.registry.RegistryRepository;
 import net.thebullpen.baseball.registry.SnapshotStorage;
 import net.thebullpen.baseball.registry.dto.ModelVersion;
-import net.thebullpen.baseball.registry.dto.Stage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Profile;
@@ -78,13 +77,14 @@ public class PsiFeatureJob {
    */
   public int runOnce(Instant computedAt) {
     Instant windowStart = computedAt.minus(24, ChronoUnit.HOURS);
-    List<ModelVersion> champions = activeChampions();
-    if (champions.isEmpty()) {
-      log.info("PsiFeatureJob: no active champions registered — nothing to compute");
+    List<ModelVersion> serving = registryRepo.findActiveServingVersions();
+    if (serving.isEmpty()) {
+      log.info(
+          "PsiFeatureJob: no active serving versions (champion or shadow) - nothing to compute");
       return 0;
     }
     List<DriftMetric> rows = new ArrayList<>();
-    for (ModelVersion champ : champions) {
+    for (ModelVersion champ : serving) {
       rows.addAll(computeForChampion(champ, computedAt, windowStart, computedAt));
     }
     if (rows.isEmpty()) {
@@ -97,9 +97,9 @@ public class PsiFeatureJob {
       throw new RuntimeException("PsiFeatureJob: failed to insert drift_metrics batch", e);
     }
     log.info(
-        "PsiFeatureJob: wrote {} drift_metric row(s) across {} champion(s)",
+        "PsiFeatureJob: wrote {} drift_metric row(s) across {} serving version(s)",
         rows.size(),
-        champions.size());
+        serving.size());
     return rows.size();
   }
 
@@ -162,28 +162,6 @@ public class PsiFeatureJob {
               sampleSize,
               windowStart,
               windowEnd));
-    }
-    return out;
-  }
-
-  /** Pull every model_name's current CHAMPION row from the registry. */
-  private List<ModelVersion> activeChampions() {
-    List<String> seenNames = new ArrayList<>();
-    List<ModelVersion> out = new ArrayList<>();
-    for (String[] pair : registryRepo.findAllNameVersionPairs()) {
-      String name = pair[0];
-      if (seenNames.contains(name)) {
-        continue;
-      }
-      seenNames.add(name);
-    }
-    for (String name : seenNames) {
-      for (ModelVersion v : registryRepo.findByName(name)) {
-        if (v.stage() == Stage.CHAMPION) {
-          out.add(v);
-          break;
-        }
-      }
     }
     return out;
   }

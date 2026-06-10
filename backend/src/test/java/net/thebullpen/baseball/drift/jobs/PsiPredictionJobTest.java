@@ -45,18 +45,32 @@ class PsiPredictionJobTest {
   }
 
   @Test
-  void no_champions_writes_zero_rows() throws Exception {
-    when(registryRepo.findAllNameVersionPairs()).thenReturn(List.of());
+  void no_serving_versions_writes_zero_rows() throws Exception {
+    when(registryRepo.findActiveServingVersions()).thenReturn(List.of());
     assertThat(job.runOnce(Instant.now())).isEqualTo(0);
     verify(driftRepo, never()).insertBatch(any());
   }
 
   @Test
+  void a_shadow_version_is_observed_too() throws Exception {
+    // C3: the drift jobs now watch SHADOW versions, not just the champion, so a shadow challenger
+    // that nothing else observes still gets PSI computed. findActiveServingVersions() returns the
+    // CHAMPION + SHADOW set; the job processes whatever it returns.
+    ModelVersion shadow = serving("pitch_outcome_pre", 7L, "/tmp/meta.json", Stage.SHADOW);
+    when(registryRepo.findActiveServingVersions()).thenReturn(List.of(shadow));
+    when(trainingLoader.loadPerClassPredictionReference(eq(7L), any(Path.class)))
+        .thenReturn(Map.of("ball", new double[] {0.3, 0.4, 0.5}));
+    when(fetcher.fetchPerClassProbabilities(
+            eq("pitch_outcome_pre"), eq(7L), any(Instant.class), any(Instant.class)))
+        .thenReturn(Map.of("ball", List.of(0.31, 0.39, 0.52)));
+
+    assertThat(job.runOnce(Instant.now())).isEqualTo(1);
+  }
+
+  @Test
   void empty_reference_writes_zero_rows() throws Exception {
     ModelVersion champ = champion("model_a", 1L, "/tmp/meta.json");
-    when(registryRepo.findAllNameVersionPairs())
-        .thenReturn(List.<String[]>of(new String[] {"model_a", "v1"}));
-    when(registryRepo.findByName("model_a")).thenReturn(List.of(champ));
+    when(registryRepo.findActiveServingVersions()).thenReturn(List.of(champ));
     when(trainingLoader.loadPerClassPredictionReference(eq(1L), any(Path.class)))
         .thenReturn(Map.of());
 
@@ -66,9 +80,7 @@ class PsiPredictionJobTest {
   @Test
   void empty_observed_distributions_writes_zero_rows() throws Exception {
     ModelVersion champ = champion("model_a", 1L, "/tmp/meta.json");
-    when(registryRepo.findAllNameVersionPairs())
-        .thenReturn(List.<String[]>of(new String[] {"model_a", "v1"}));
-    when(registryRepo.findByName("model_a")).thenReturn(List.of(champ));
+    when(registryRepo.findActiveServingVersions()).thenReturn(List.of(champ));
     when(trainingLoader.loadPerClassPredictionReference(eq(1L), any(Path.class)))
         .thenReturn(Map.of("ball", new double[] {0.3, 0.4, 0.5}));
     when(fetcher.fetchPerClassProbabilities(
@@ -81,9 +93,7 @@ class PsiPredictionJobTest {
   @Test
   void per_class_psi_rows_are_written_per_class() throws Exception {
     ModelVersion champ = champion("pitch_outcome_pre", 1L, "/tmp/meta.json");
-    when(registryRepo.findAllNameVersionPairs())
-        .thenReturn(List.<String[]>of(new String[] {"pitch_outcome_pre", "v1"}));
-    when(registryRepo.findByName("pitch_outcome_pre")).thenReturn(List.of(champ));
+    when(registryRepo.findActiveServingVersions()).thenReturn(List.of(champ));
 
     Random r = new Random(42);
     Map<String, double[]> refs = new HashMap<>();
@@ -118,9 +128,7 @@ class PsiPredictionJobTest {
   @Test
   void class_in_reference_but_not_in_observed_is_skipped() throws Exception {
     ModelVersion champ = champion("model_a", 1L, "/tmp/meta.json");
-    when(registryRepo.findAllNameVersionPairs())
-        .thenReturn(List.<String[]>of(new String[] {"model_a", "v1"}));
-    when(registryRepo.findByName("model_a")).thenReturn(List.of(champ));
+    when(registryRepo.findActiveServingVersions()).thenReturn(List.of(champ));
     when(trainingLoader.loadPerClassPredictionReference(eq(1L), any(Path.class)))
         .thenReturn(Map.of("class_a", new double[] {0.1, 0.2}, "class_b", new double[] {0.3, 0.4}));
     when(fetcher.fetchPerClassProbabilities(
@@ -135,9 +143,7 @@ class PsiPredictionJobTest {
   void s3_archived_metadata_is_skipped() throws Exception {
     ModelVersion champ =
         champion("model_a", 1L, "s3://bucket/models-archive/model_a/v1/metadata.json");
-    when(registryRepo.findAllNameVersionPairs())
-        .thenReturn(List.<String[]>of(new String[] {"model_a", "v1"}));
-    when(registryRepo.findByName("model_a")).thenReturn(List.of(champ));
+    when(registryRepo.findActiveServingVersions()).thenReturn(List.of(champ));
 
     int rows = job.runOnce(Instant.now());
     assertThat(rows).isEqualTo(0);
@@ -145,6 +151,10 @@ class PsiPredictionJobTest {
   }
 
   private static ModelVersion champion(String name, long id, String metadataPath) {
+    return serving(name, id, metadataPath, Stage.CHAMPION);
+  }
+
+  private static ModelVersion serving(String name, long id, String metadataPath, Stage stage) {
     return new ModelVersion(
         id,
         name,
@@ -157,7 +167,7 @@ class PsiPredictionJobTest {
         "{}",
         Instant.now(),
         Instant.now(),
-        Stage.CHAMPION,
+        stage,
         "test",
         null,
         Instant.now(),

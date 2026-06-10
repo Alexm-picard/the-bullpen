@@ -250,6 +250,20 @@ public class RegistryRepository {
     return findByNameAndStage(modelName, Stage.SHADOW);
   }
 
+  /**
+   * Every CHAMPION and SHADOW version across all registered models - the "active serving" set the
+   * drift jobs watch (C3 / WS2). Unlike a champion-only scan this includes SHADOW challengers, so a
+   * shadow model that nothing else observes still gets PSI / calibration drift computed against the
+   * live window. CANDIDATE (not yet serving / logging) and ARCHIVED (terminal) are excluded.
+   */
+  public List<ModelVersion> findActiveServingVersions() {
+    return jdbc.query(
+        SELECT_ALL_COLUMNS
+            + " WHERE stage IN ('champion', 'shadow')"
+            + " ORDER BY model_name ASC, stage ASC, created_at DESC, id DESC",
+        MODEL_VERSION_MAPPER);
+  }
+
   private Optional<ModelVersion> findByNameAndStage(String modelName, Stage stage) {
     // The (model_name, stage) composite index from V010's idx_mv_model_stage carries this query;
     // there should be at most one row per (model_name, stage) for SHADOW + CHAMPION (enforced by

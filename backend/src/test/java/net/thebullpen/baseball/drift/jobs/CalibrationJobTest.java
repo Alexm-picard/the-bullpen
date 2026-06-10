@@ -41,7 +41,7 @@ class CalibrationJobTest {
 
   @Test
   void no_champions_writes_zero_rows() throws Exception {
-    when(registryRepo.findAllNameVersionPairs()).thenReturn(List.of());
+    when(registryRepo.findActiveServingVersions()).thenReturn(List.of());
     assertThat(job.runOnce(Instant.now())).isEqualTo(0);
     verify(driftRepo, never()).insertBatch(any());
   }
@@ -49,9 +49,7 @@ class CalibrationJobTest {
   @Test
   void empty_truth_join_writes_zero_rows() throws Exception {
     ModelVersion champ = champion("model_a", 1L);
-    when(registryRepo.findAllNameVersionPairs())
-        .thenReturn(List.<String[]>of(new String[] {"model_a", "v1"}));
-    when(registryRepo.findByName("model_a")).thenReturn(List.of(champ));
+    when(registryRepo.findActiveServingVersions()).thenReturn(List.of(champ));
     when(fetcher.fetch(eq("model_a"), eq(1L), any(Instant.class), any(Instant.class)))
         .thenReturn(List.of());
 
@@ -63,9 +61,7 @@ class CalibrationJobTest {
   void single_champion_with_perfect_predictions_writes_two_rows_brier_zero_ece_zero()
       throws Exception {
     ModelVersion champ = champion("model_a", 1L);
-    when(registryRepo.findAllNameVersionPairs())
-        .thenReturn(List.<String[]>of(new String[] {"model_a", "v1"}));
-    when(registryRepo.findByName("model_a")).thenReturn(List.of(champ));
+    when(registryRepo.findActiveServingVersions()).thenReturn(List.of(champ));
     List<TruthJoinedRow> joined = new ArrayList<>();
     for (int i = 0; i < 100; i++) {
       joined.add(new TruthJoinedRow(new double[] {1.0, 0.0}, 0));
@@ -92,9 +88,7 @@ class CalibrationJobTest {
   @Test
   void window_is_24h_lag_behind_computed_at() throws Exception {
     ModelVersion champ = champion("model_a", 1L);
-    when(registryRepo.findAllNameVersionPairs())
-        .thenReturn(List.<String[]>of(new String[] {"model_a", "v1"}));
-    when(registryRepo.findByName("model_a")).thenReturn(List.of(champ));
+    when(registryRepo.findActiveServingVersions()).thenReturn(List.of(champ));
     ArgumentCaptor<Instant> startCap = ArgumentCaptor.forClass(Instant.class);
     ArgumentCaptor<Instant> endCap = ArgumentCaptor.forClass(Instant.class);
     when(fetcher.fetch(eq("model_a"), eq(1L), startCap.capture(), endCap.capture()))
@@ -114,12 +108,7 @@ class CalibrationJobTest {
   void multiple_champions_each_get_two_rows() throws Exception {
     ModelVersion champA = champion("model_a", 1L);
     ModelVersion champB = champion("model_b", 2L);
-    when(registryRepo.findAllNameVersionPairs())
-        .thenReturn(
-            java.util.List.<String[]>of(
-                new String[] {"model_a", "v1"}, new String[] {"model_b", "v1"}));
-    when(registryRepo.findByName("model_a")).thenReturn(List.of(champA));
-    when(registryRepo.findByName("model_b")).thenReturn(List.of(champB));
+    when(registryRepo.findActiveServingVersions()).thenReturn(List.of(champA, champB));
     List<TruthJoinedRow> joined = java.util.List.of(new TruthJoinedRow(new double[] {0.7, 0.3}, 0));
     when(fetcher.fetch(any(String.class), anyLong(), any(Instant.class), any(Instant.class)))
         .thenReturn(joined);
