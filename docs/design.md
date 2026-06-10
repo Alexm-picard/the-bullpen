@@ -269,6 +269,13 @@ Promotion requires a row in `experiment_results` showing criteria were
 met. No promotion without a passing experiment record. This prevents
 peeking and noise-driven promotions.
 
+The first-version exemption is mechanics-only: a FIRST champion has no
+prior champion to compare against, so the challenger-vs-champion
+`experiment_results` row is waived - but the model must still clear its
+declared primary (or an honestly re-aimed primary it genuinely passes).
+The exemption never waves a model through a primary it failed (see
+ADR-0011 / decision [154]).
+
 **Logging**: every prediction (champion + shadow + challenger) logged to
 ClickHouse `prediction_log`, partitioned by month, joined to outcomes
 table at query time (NOT updated in place — ClickHouse mutations are
