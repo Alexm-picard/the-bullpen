@@ -140,7 +140,7 @@ public class ModelLoader {
           r.snapshotDir(),
           snapshotContract);
     } catch (IOException | OrtException e) {
-      throw new IllegalStateException(
+      throw new ModelUnavailableException(
           "ModelLoader: failed to load batted-ball model "
               + r.mv().naturalKey()
               + " from "
@@ -170,7 +170,7 @@ public class ModelLoader {
           r.mv().featureSchemaHash(),
           r.snapshotDir());
     } catch (IOException | OrtException e) {
-      throw new IllegalStateException(
+      throw new ModelUnavailableException(
           "ModelLoader: failed to load all-parks model "
               + r.mv().naturalKey()
               + " from "
@@ -198,7 +198,7 @@ public class ModelLoader {
           r.mv().featureSchemaHash(),
           r.snapshotDir());
     } catch (IOException | OrtException e) {
-      throw new IllegalStateException(
+      throw new ModelUnavailableException(
           "ModelLoader: failed to load pitch PRE model "
               + r.mv().naturalKey()
               + " from "
@@ -226,7 +226,7 @@ public class ModelLoader {
           r.mv().featureSchemaHash(),
           r.snapshotDir());
     } catch (IOException | OrtException e) {
-      throw new IllegalStateException(
+      throw new ModelUnavailableException(
           "ModelLoader: failed to load pitch POST model "
               + r.mv().naturalKey()
               + " from "
@@ -250,7 +250,7 @@ public class ModelLoader {
                     new IllegalArgumentException(
                         "ModelLoader: no model_version with id " + versionId));
     if (SnapshotStorage.isS3Uri(mv.artifactPath())) {
-      throw new IllegalStateException(
+      throw new ModelUnavailableException(
           "ModelLoader: model_version "
               + versionId
               + " ("

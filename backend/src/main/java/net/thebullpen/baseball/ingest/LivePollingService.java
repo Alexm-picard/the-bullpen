@@ -1,6 +1,5 @@
 package net.thebullpen.baseball.ingest;
 
-import ai.onnxruntime.OrtException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -52,6 +51,7 @@ public class LivePollingService {
   private final Map<Long, Instant> lastPollAt = new ConcurrentHashMap<>();
   private final Map<Long, Long> lastCursorByGame = new ConcurrentHashMap<>();
   private final Map<Long, Long> lastPredictedKeyByGame = new ConcurrentHashMap<>();
+  private final Map<Long, Long> lastFailedKeyByGame = new ConcurrentHashMap<>();
   private volatile List<ScheduledGame> schedule = List.of();
   private volatile Instant scheduleFetchedAt = Instant.EPOCH;
   private long lastApiCallMs;
@@ -77,7 +77,14 @@ public class LivePollingService {
         GameStatus status = statusByGame.getOrDefault(g.gamePk(), g.status());
         if (GameStateMachine.shouldPoll(status) && isDue(g.gamePk(), status)) {
           rateLimit();
-          pollGame(g.gamePk());
+          try {
+            pollGame(g.gamePk());
+          } catch (Exception e) {
+            // Per-game isolation (C1): a failure polling/predicting one game must not abort the
+            // whole tick and starve every other live game. The next tick retries this game on its
+            // own cadence. The outer catch below stays as the schedule-iteration backstop.
+            log.warn("live poll failed for game {}; continuing the tick", g.gamePk(), e);
+          }
         }
       }
     } catch (Exception e) {
@@ -124,15 +131,31 @@ public class LivePollingService {
     if (np == null || predictor.isEmpty()) {
       return;
     }
+    if (!LivePitchPredictor.hasResolvableMatchup(np)) {
+      // Early GUMBO payload before the matchup populates (null pitchHand/batSide). Skip WITHOUT
+      // advancing a cursor so a later poll retries once the hand fills in (C5). debug, not warn:
+      // this is an expected sub-second transient at the top of an at-bat, not an error.
+      log.debug(
+          "live prediction skipped for game {}: matchup (pitchHand/batSide) not yet populated",
+          gamePk);
+      return;
+    }
     long key = (long) np.atBatIndex() * 100 + np.pitchNumber();
-    if (key == lastPredictedKeyByGame.getOrDefault(gamePk, -1L)) {
-      return; // already predicted this upcoming pitch on an earlier poll
+    if (key == lastPredictedKeyByGame.getOrDefault(gamePk, -1L)
+        || key == lastFailedKeyByGame.getOrDefault(gamePk, -1L)) {
+      return; // already predicted (or already failed) this upcoming pitch on an earlier poll
     }
     try {
       predictor.get().predictAndLog(np);
       lastPredictedKeyByGame.put(gamePk, key);
-    } catch (OrtException e) {
-      log.warn("live prediction failed for game {}", gamePk, e);
+    } catch (Exception e) {
+      // Containment + failure-dedup (C1/C2): any model-load or inference failure - e.g. a stale
+      // routing row whose snapshot will not load (ModelUnavailableException) - degrades THIS game's
+      // prediction instead of escaping the tick. Record the failed key so the same doomed pitch is
+      // not re-attempted every tick (no hot-loop); a NEW pitch (new key) is still attempted, so a
+      // transient failure self-heals.
+      lastFailedKeyByGame.put(gamePk, key);
+      log.warn("live prediction failed for game {} at key {}; skipping this pitch", gamePk, key, e);
     }
   }
 

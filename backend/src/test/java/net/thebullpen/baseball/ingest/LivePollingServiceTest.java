@@ -1,8 +1,11 @@
 package net.thebullpen.baseball.ingest;
 
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -12,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import net.thebullpen.baseball.data.LivePitchesRepository;
+import net.thebullpen.baseball.inference.ModelUnavailableException;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -152,5 +156,176 @@ class LivePollingServiceTest {
     new LivePollingService(client, repo, Optional.empty(), 0L, 15L).pollGame(822810L);
 
     verify(repo, times(1)).insertPitches(any());
+  }
+
+  // --- WS1 robustness (C1 / C2 / C5) ------------------------------------
+
+  @Test
+  void tick_isolates_a_failing_game_so_other_games_still_poll() throws Exception {
+    MlbStatsApiClient client = mock(MlbStatsApiClient.class);
+    LivePitchesRepository repo = mock(LivePitchesRepository.class);
+    LivePitchPredictor predictor = mock(LivePitchPredictor.class);
+
+    long gameA = 822810L;
+    long gameB = 822811L;
+    when(client.fetchSchedule(any()))
+        .thenReturn(
+            List.of(
+                new ScheduledGame(gameA, GameStatus.IN_PROGRESS, "TOR", "BAL"),
+                new ScheduledGame(gameB, GameStatus.IN_PROGRESS, "NYY", "BOS")));
+    when(client.fetchLiveFeed(gameA))
+        .thenReturn(feedFor(gameA, List.of(pitchFor(gameA, 1, 1)), nextPitchFor(gameA, 1, 2)));
+    when(client.fetchLiveFeed(gameB))
+        .thenReturn(feedFor(gameB, List.of(pitchFor(gameB, 1, 1)), nextPitchFor(gameB, 1, 2)));
+    // Game A's model is unavailable (a stale routing row whose snapshot won't load); game B's
+    // serves.
+    when(predictor.predictAndLog(argThat(np -> np != null && np.gameId() == gameA)))
+        .thenThrow(new ModelUnavailableException("stale routing row for game A"));
+    when(predictor.predictAndLog(argThat(np -> np != null && np.gameId() == gameB)))
+        .thenReturn(Map.of("ball", 1.0));
+
+    // The whole tick must not abort on game A's failure.
+    assertThatCode(() -> service(client, repo, predictor).tick()).doesNotThrowAnyException();
+
+    // Game B is fully serviced even though game A blew up: B's pitches were written and B's next
+    // pitch was predicted. A's pitches were still ingested (write precedes predict).
+    verify(predictor, times(1)).predictAndLog(argThat(np -> np.gameId() == gameB));
+    verify(repo, times(1)).insertPitches(argThat(f -> f.gamePk() == gameB));
+    verify(repo, times(1)).insertPitches(argThat(f -> f.gamePk() == gameA));
+  }
+
+  @Test
+  void pollGame_ingests_and_degrades_when_the_model_is_unavailable() throws Exception {
+    MlbStatsApiClient client = mock(MlbStatsApiClient.class);
+    LivePitchesRepository repo = mock(LivePitchesRepository.class);
+    LivePitchPredictor predictor = mock(LivePitchPredictor.class);
+    when(predictor.predictAndLog(any()))
+        .thenThrow(new ModelUnavailableException("snapshot will not load"));
+    when(client.fetchLiveFeed(822810L)).thenReturn(feed(List.of(pitch(1, 1)), nextPitch(1, 2)));
+
+    // A load/inference failure degrades the prediction; it does NOT escape pollGame, and ingest of
+    // the landed pitch still happens (C2).
+    assertThatCode(() -> service(client, repo, predictor).pollGame(822810L))
+        .doesNotThrowAnyException();
+    verify(repo, times(1)).insertPitches(any());
+    verify(predictor, times(1)).predictAndLog(any());
+  }
+
+  @Test
+  void pollGame_does_not_reattempt_a_failed_prediction_for_the_same_pitch() throws Exception {
+    MlbStatsApiClient client = mock(MlbStatsApiClient.class);
+    LivePitchesRepository repo = mock(LivePitchesRepository.class);
+    LivePitchPredictor predictor = mock(LivePitchPredictor.class);
+    when(predictor.predictAndLog(any()))
+        .thenThrow(new ModelUnavailableException("snapshot will not load"));
+    when(client.fetchLiveFeed(822810L)).thenReturn(feed(List.of(pitch(1, 1)), nextPitch(1, 2)));
+
+    LivePollingService svc = service(client, repo, predictor);
+    svc.pollGame(822810L);
+    svc.pollGame(822810L); // same feed, same upcoming-pitch key, still failing
+
+    // Failure-dedup (C1): the same doomed pitch is attempted once, not re-hit every poll/tick.
+    verify(predictor, times(1)).predictAndLog(any());
+  }
+
+  @Test
+  void pollGame_skips_prediction_but_still_ingests_when_the_matchup_is_not_populated()
+      throws Exception {
+    MlbStatsApiClient client = mock(MlbStatsApiClient.class);
+    LivePitchesRepository repo = mock(LivePitchesRepository.class);
+    LivePitchPredictor predictor = mock(LivePitchPredictor.class);
+    // Early GUMBO payload: pitchHand / batSide not yet populated.
+    when(client.fetchLiveFeed(822810L))
+        .thenReturn(feed(List.of(pitch(1, 1)), nullMatchupNextPitch(1, 2)));
+
+    service(client, repo, predictor).pollGame(822810L);
+
+    // C5: prediction skipped (no nulls fed to the model), ingest proceeds.
+    verify(repo, times(1)).insertPitches(any());
+    verify(predictor, never()).predictAndLog(any());
+  }
+
+  // --- parameterized helpers for multi-game / null-matchup cases --------
+
+  private static LivePitch pitchFor(long gameId, int atBat, int pitchNumber) {
+    return new LivePitch(
+        gameId,
+        atBat,
+        pitchNumber,
+        9,
+        false,
+        689296L,
+        676391L,
+        "R",
+        "R",
+        0,
+        0,
+        0,
+        false,
+        false,
+        false,
+        0,
+        0,
+        "ball",
+        "SI",
+        95.0,
+        0.0,
+        0.0,
+        false);
+  }
+
+  private static LiveNextPitch nextPitchFor(long gameId, int atBat, int pitchNumber) {
+    return new LiveNextPitch(
+        gameId,
+        atBat,
+        pitchNumber,
+        9,
+        false,
+        689296L,
+        676391L,
+        "R",
+        "R",
+        0,
+        0,
+        0,
+        false,
+        false,
+        false,
+        "TOR",
+        LocalDate.of(2026, 6, 5));
+  }
+
+  private static LiveGameFeed feedFor(long gameId, List<LivePitch> pitches, LiveNextPitch next) {
+    return new LiveGameFeed(
+        gameId,
+        GameStatus.IN_PROGRESS,
+        LocalDate.of(2026, 6, 5),
+        1,
+        2,
+        "TOR",
+        "BAL",
+        pitches,
+        next);
+  }
+
+  private static LiveNextPitch nullMatchupNextPitch(int atBat, int pitchNumber) {
+    return new LiveNextPitch(
+        822810L,
+        atBat,
+        pitchNumber,
+        9,
+        false,
+        689296L,
+        676391L,
+        null,
+        null,
+        0,
+        0,
+        0,
+        false,
+        false,
+        false,
+        "TOR",
+        LocalDate.of(2026, 6, 5));
   }
 }

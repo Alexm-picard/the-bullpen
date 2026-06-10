@@ -5,6 +5,7 @@ import java.util.List;
 import net.thebullpen.baseball.api.dto.ApiError;
 import net.thebullpen.baseball.api.dto.ApiError.FieldError;
 import net.thebullpen.baseball.config.CorrelationIdFilter;
+import net.thebullpen.baseball.inference.ModelUnavailableException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -123,6 +124,23 @@ public class ApiErrorAdvice {
     String message = ex.getReason() != null ? ex.getReason() : status.getReasonPhrase();
     ApiError body = ApiError.of(code, message, correlationId());
     return ResponseEntity.status(status).body(body);
+  }
+
+  /**
+   * A registered model exists but cannot be loaded or served right now (stale/archived snapshot,
+   * missing artifact, ORT load failure at serve time). This is a transient condition, not a bad
+   * request and not an opaque internal bug, so it maps to 503 (retryable) rather than 500. Only the
+   * {@link ModelUnavailableException} subtype is singled out; a plain {@link IllegalStateException}
+   * (a contract/programming bug) has no handler here and still falls through to {@link
+   * #handleAnyOther} as a 500. The cause is logged (so a genuinely broken model is still visible)
+   * but its message is not leaked to the client. (C2.)
+   */
+  @ExceptionHandler(ModelUnavailableException.class)
+  public ResponseEntity<ApiError> handleModelUnavailable(ModelUnavailableException ex) {
+    String cid = correlationId();
+    log.warn("model unavailable correlation_id={} message={}", cid, ex.getMessage(), ex);
+    ApiError body = ApiError.of("model_unavailable", "the model is temporarily unavailable", cid);
+    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
   }
 
   @ExceptionHandler(Exception.class)
