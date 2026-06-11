@@ -1,5 +1,6 @@
 # WS4: route every Bullpen alert to the Discord webhook via Alertmanager's NATIVE Discord
-# receiver (discord_configs; webhook_url_file needs v0.27+ - the compose pins v0.27.0).
+# receiver (discord_configs; webhook_url_file needs v0.28+ - the compose pins v0.28.1. v0.27
+# accepts this config in amtool but rejects it at server load: "no discord webhook URL provided").
 #
 # History: the first cut used Discord's Slack-compatible endpoint (webhook URL + /slack suffix
 # through slack_configs). DEAD END - Discord 400s Alertmanager's Slack payload with
