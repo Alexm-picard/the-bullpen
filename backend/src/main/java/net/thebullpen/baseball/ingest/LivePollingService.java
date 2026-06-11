@@ -108,8 +108,18 @@ public class LivePollingService {
     lastPollAt.put(gamePk, Instant.now());
     // Persist status only on a transition (step 7b) so the api read path can surface it; the
     // in-memory map alone is invisible across the profile/process boundary.
-    if ((prev == null || prev != current) && feed.gameDate() != null) {
-      repo.upsertGameStatus(gamePk, feed.gameDate(), current.name());
+    if (prev == null || prev != current) {
+      if (feed.gameDate() != null) {
+        repo.upsertGameStatus(gamePk, feed.gameDate(), current.name());
+      } else {
+        // No parseable gameData.datetime in the feed: the row cannot key into live_game_status,
+        // so /v1/games/today will not surface this game (C-3 replay finding, 2026-06-11).
+        log.debug(
+            "game {} status transition {} -> {} not persisted: feed carried no gameDate",
+            gamePk,
+            prev,
+            current);
+      }
     }
     writeNewPitches(gamePk, feed);
     predictNextPitch(gamePk, feed);

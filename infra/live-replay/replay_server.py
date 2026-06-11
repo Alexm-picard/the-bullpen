@@ -50,6 +50,21 @@ _DEFAULT_GAME_PK = (
 )
 
 
+def _validated_game_date(s: str) -> str:
+    """Normalize + validate the date injected as gameData.datetime.officialDate.
+
+    An empty or non-ISO value must never reach the wire (C-3 box finding, 2026-06-11): the Java
+    side (MlbFeedParser.parseGameDate) treats a blank officialDate as missing and falls back to
+    the fixture's REAL dateTime, so pitches_live / live_game_status rows land under the fixture's
+    original date instead of today - invisible to /v1/games/today and the today-scoped
+    verification queries. Blank normalizes to today; garbage raises ValueError (fail at startup,
+    not on the wire)."""
+    s = (s or "").strip()
+    if not s:
+        return _dt.date.today().isoformat()
+    return _dt.date.fromisoformat(s).isoformat()
+
+
 class Replay:
     """Holds the loaded full-game feed and builds progressive, deterministic snapshots."""
 
@@ -68,7 +83,7 @@ class Replay:
         self.game_pk = game_pk
         self.game_data = full["gameData"]
         self.all_plays = full["liveData"]["plays"]["allPlays"]
-        self.game_date = game_date
+        self.game_date = _validated_game_date(game_date)
         self.advance_per_request = max(1, advance_per_request)
         self._reveal = max(1, start_at)
         self._requests = 0
@@ -199,6 +214,14 @@ def _self_test(replay: Replay) -> int:
     last_n = -1
     for _ in range(replay.n_at_bats + 2):
         snap = replay.snapshot()
+        # C-3 finding (2026-06-11): a blank/foreign officialDate keys the box's rows under the
+        # fixture's ORIGINAL date (Java falls back to gameData.datetime.dateTime), hiding them
+        # from /v1/games/today. The served date must be the validated replay date, always.
+        official = snap["gameData"]["datetime"]["officialDate"]
+        assert (
+            official == replay.game_date
+        ), "served officialDate must equal the replay game date"
+        _dt.date.fromisoformat(official)  # and it must be ISO-parseable
         plays = snap["liveData"]["plays"]
         n = len(plays["allPlays"])
         assert n >= last_n, "allPlays must grow monotonically"
@@ -220,7 +243,7 @@ def _self_test(replay: Replay) -> int:
     ), "reveal exhausts to Final"
     print(
         f"SELF-TEST PASS: {replay.n_at_bats} at-bats, {len(set(seen_next))} unique upcoming pitches,"
-        " monotonic allPlays, exhausts to Final."
+        f" monotonic allPlays, exhausts to Final, officialDate {replay.game_date}."
     )
     return 0
 
@@ -268,9 +291,17 @@ def main() -> int:
             " real-range gamePk would let replay rows masquerade as real data"
         )
 
-    replay = Replay(
-        args.feed, args.game_date, args.start_at, args.advance_per_request, args.game_pk
-    )
+    try:
+        replay = Replay(
+            args.feed,
+            args.game_date,
+            args.start_at,
+            args.advance_per_request,
+            args.game_pk,
+        )
+    except ValueError as e:
+        p.error(f"--game-date {args.game_date!r} is not YYYY-MM-DD ({e})")
+        raise AssertionError("unreachable")  # p.error exits; keeps type-checkers honest
     if args.self_test:
         return _self_test(replay)
 

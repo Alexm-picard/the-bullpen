@@ -108,6 +108,25 @@ class LivePollingServiceTest {
   }
 
   @Test
+  void pollGame_skips_the_status_write_when_the_feed_carries_no_gameDate() throws Exception {
+    MlbStatsApiClient client = mock(MlbStatsApiClient.class);
+    LivePitchesRepository repo = mock(LivePitchesRepository.class);
+    LivePitchPredictor predictor = mock(LivePitchPredictor.class);
+    // A feed with no parseable gameData.datetime (C-3 replay finding): the status transition
+    // cannot key into live_game_status, so the write is skipped (and debug-logged) instead of
+    // attempted with a null date.
+    when(client.fetchLiveFeed(822810L))
+        .thenReturn(
+            new LiveGameFeed(
+                822810L, GameStatus.IN_PROGRESS, null, 1, 2, "TOR", "BAL", List.of(), null));
+
+    assertThatCode(() -> service(client, repo, predictor).pollGame(822810L))
+        .doesNotThrowAnyException();
+
+    verify(repo, never()).upsertGameStatus(anyLong(), any(), any());
+  }
+
+  @Test
   void pollGame_does_not_rewrite_or_repredict_an_unchanged_feed() throws Exception {
     MlbStatsApiClient client = mock(MlbStatsApiClient.class);
     LivePitchesRepository repo = mock(LivePitchesRepository.class);
