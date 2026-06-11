@@ -144,6 +144,7 @@ class PredictPitchRoutingIT {
 
   @Test
   void serves_registered_champion_through_router_and_logs_real_version_fk() throws Exception {
+    registerLrBaseline(); // B4: pre cannot reach CHAMPION without its baseline registered
     long championId = registerPitchVersion("v1");
     registryService.transitionStage(championId, Stage.CHAMPION);
 
@@ -176,6 +177,7 @@ class PredictPitchRoutingIT {
 
   @Test
   void shadow_challenger_runs_in_parallel_and_is_logged_with_its_own_fk() throws Exception {
+    registerLrBaseline(); // B4: pre cannot reach CHAMPION without its baseline registered
     long championId = registerPitchVersion("v1");
     registryService.transitionStage(championId, Stage.CHAMPION);
     long challengerId = registerPitchVersion("v2");
@@ -237,6 +239,38 @@ class PredictPitchRoutingIT {
     ModelVersion mv = registryService.register(req);
     placeLookups(mv.id());
     return mv.id();
+  }
+
+  /**
+   * B4 (rule 9): {@code pitch_outcome_pre} cannot reach CHAMPION without its partner LR baseline
+   * registered. Minimal registration - same canonical contract family (feature_pipeline.json), so
+   * the same fixture files satisfy both the B1 canonical gate and the artifact checks. Mirrors
+   * production truth: the box registry carries {@code pitch_outcome_lr_baseline} as a shadow.
+   */
+  private void registerLrBaseline() throws Exception {
+    Path baselineSource = Files.createDirectories(sourceDir.resolve("lr-baseline"));
+    Path artifact = baselineSource.resolve("model.onnx");
+    URL onnx = getClass().getResource("/onnx/pitch_outcome_fixture.onnx");
+    Files.copy(
+        Path.of(Objects.requireNonNull(onnx, "pitch fixture missing from classpath").toURI()),
+        artifact);
+    Path metadata = baselineSource.resolve("metadata.json");
+    Files.writeString(metadata, "{\"model_name\":\"pitch_outcome_lr_baseline\"}");
+    Path pipeline = baselineSource.resolve("feature_pipeline.json");
+    Files.copy(CONTRACT, pipeline);
+    registryService.register(
+        new RegisterRequest(
+            "pitch_outcome_lr_baseline",
+            "v1",
+            artifact.toString(),
+            metadata.toString(),
+            pipeline.toString(),
+            "train-h-pitch-lr",
+            "[2015-01-01,2023-12-31]",
+            "{\"ece\":0.012}",
+            java.time.Instant.now(),
+            "pitch-routing-it",
+            "baseline registered by PredictPitchRoutingIT (rule 9)"));
   }
 
   /**

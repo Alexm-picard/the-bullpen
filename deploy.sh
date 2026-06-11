@@ -115,6 +115,17 @@ sudo install -d -o bullpen -g bullpen -m 0755 "$RELEASE_DIR"
 sudo install -o bullpen -g bullpen -m 0644 "$JAR_SRC" "${RELEASE_DIR}/app.jar"
 log "staged ${RELEASE_DIR}/app.jar"
 
+# B1 (PR-3): stage the canonical /contracts dir where the units expect it
+# (BULLPEN_REGISTRY_CONTRACTSDIR=/opt/bullpen/contracts). The registry's
+# bootstrap-registration gate hashes these files; without them a first-ever
+# registration of a known model family fails loud with a pointer here.
+CONTRACTS_DST="${INSTALL_DIR}/contracts"
+sudo install -d -o bullpen -g bullpen -m 0755 "$CONTRACTS_DST"
+for f in contracts/*.json contracts/README.md; do
+  [[ -f "$f" ]] && sudo install -o bullpen -g bullpen -m 0644 "$f" "${CONTRACTS_DST}/$(basename "$f")"
+done
+log "staged canonical contracts -> ${CONTRACTS_DST}"
+
 # --- 4. Atomic symlink swap --------------------------------------------------
 
 PREVIOUS_TARGET=""

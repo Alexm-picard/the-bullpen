@@ -180,6 +180,22 @@ class PredictAllParksControllerTest {
             null,
             null);
     ModelVersion mv = service.register(req);
+    // B4 (rule 9): battedball_outcome's partner baseline must exist in the registry before the
+    // primary reaches CHAMPION - mirrors production truth (the box carries lr_baseline_batted_ball
+    // as a shadow). Same canonical contract family, so the same source files pass the B1 gate.
+    service.register(
+        new RegisterRequest(
+            "lr_baseline_batted_ball",
+            "v1",
+            artifact.toString(),
+            metadata.toString(),
+            pipeline.toString(),
+            "train-h-allparks-baseline",
+            "[2024-01-01,2024-12-31]",
+            "{\"ece\":0.05}",
+            Instant.now(),
+            null,
+            null));
     // First-ever champion for this model: no experiment gate (RegistryServiceIT).
     service.transitionStage(mv.id(), Stage.CHAMPION);
   }

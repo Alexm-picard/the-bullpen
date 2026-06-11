@@ -25,12 +25,17 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <ul>
  *   <li>artifact-presence check (the ONNX + metadata + pipeline files exist);
- *   <li>the feature-schema-hash check (rule 7) via {@link FeatureSchemaHasher} against {@code
- *       contracts/feature_pipeline.json} - a mismatch is a HARD FAIL at registration;
+ *   <li>the feature-schema-hash check (rule 7) via {@link FeatureSchemaHasher}, in two layers (B1):
+ *       a BOOTSTRAP registration (first version of a model) must hash equal to the family's
+ *       canonical {@code /contracts} file ({@link CanonicalContracts}); every later version must
+ *       match the bootstrap-pinned hash. Either mismatch is a HARD FAIL at registration;
  *   <li>the lifecycle state machine + the atomic CHAMPION promotion (archive the prior champion in
  *       the same transaction);
  *   <li>the rule-5 promotion-criteria gate ({@link #assertPromotionCriteriaMet}): SHADOW -&gt;
- *       CHAMPION requires a passing {@code experiment_results} row (decision [145]).
+ *       CHAMPION requires a passing {@code experiment_results} row recorded against the CURRENT
+ *       champion and fresh within {@link #PROMOTION_EVIDENCE_MAX_AGE} (decision [145], B2);
+ *   <li>the rule-9 baseline-presence gate (B4): a primary head cannot reach CHAMPION while its
+ *       partner LR baseline has never been registered.
  * </ul>
  *
  * <p>What stays out of here: the snapshot copy to S3 / R2 (handled in the storage layer) and the
@@ -48,10 +53,32 @@ public class RegistryService {
   /** Reads {@code lookup_path} declarations out of a model's {@code feature_pipeline.json}. */
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
+  /**
+   * B2: promotion evidence older than this is stale - the monthly scheduled-retrain floor (decision
+   * [79]) means a >30d-old comparison spans at least one retrain generation, and the champion /
+   * data distribution it measured may no longer be the one being displaced.
+   */
+  static final java.time.Duration PROMOTION_EVIDENCE_MAX_AGE = java.time.Duration.ofDays(30);
+
+  /**
+   * B4 / rule 9: each primary head's partner LR baseline. Promotion of a key to CHAMPION requires
+   * at least one non-archived registered version of the value. Hardcoded (vs a baseline_model_name
+   * column) deliberately: the pairing is a design-time fact from decision [37]/[46], the map is
+   * tiny, and it avoids a migration into the L5-noted duplicate-numbering minefield. Baseline model
+   * names themselves are absent from the map, so baselines promote without self-reference.
+   */
+  private static final Map<String, String> BASELINE_FOR_PRIMARY =
+      Map.of(
+          "pitch_outcome_pre", "pitch_outcome_lr_baseline",
+          "pitch_outcome_post", "pitch_outcome_lr_baseline",
+          "battedball_outcome", "lr_baseline_batted_ball",
+          "battedball_lgbm_per_park", "lr_baseline_batted_ball");
+
   private final RegistryRepository repo;
   private final FeatureSchemaHasher hasher;
   private final ExperimentResultsRepository experimentRepo;
   private final SnapshotStorage snapshotStorage;
+  private final CanonicalContracts canonicalContracts;
   // @Lazy breaks the circular dep: RoutingService -> RegistryService (challenger lookup) and
   // RegistryService -> RoutingService (ensureRoutingForChampion on promote). The Spring-injected
   // proxy resolves on first call, so by the time we promote the bean is fully constructed.
@@ -62,12 +89,14 @@ public class RegistryService {
       FeatureSchemaHasher hasher,
       ExperimentResultsRepository experimentRepo,
       SnapshotStorage snapshotStorage,
+      CanonicalContracts canonicalContracts,
       @org.springframework.context.annotation.Lazy
           net.thebullpen.baseball.inference.routing.RoutingService routingService) {
     this.repo = repo;
     this.hasher = hasher;
     this.experimentRepo = experimentRepo;
     this.snapshotStorage = snapshotStorage;
+    this.canonicalContracts = canonicalContracts;
     this.routingService = routingService;
   }
 
@@ -110,8 +139,28 @@ public class RegistryService {
     String candidateHash = hasher.compute(Path.of(req.featurePipelinePath()));
     Optional<String> bootstrapHash = repo.findBootstrapFeatureHash(req.modelName());
     if (bootstrapHash.isEmpty()) {
-      log.info(
-          "registry: bootstrap feature schema hash for {} = {}", req.modelName(), candidateHash);
+      // B1: a bootstrap pin must equal the family's CANONICAL /contracts hash - before this
+      // check, the first-ever registration pinned whatever the caller submitted and /contracts
+      // was never read on the Java side. An unmapped family (no canonical contract yet) keeps
+      // the pin-as-submitted behaviour, loudly; registerWithBootstrap stays the deliberate
+      // schema-reset path and is exempt by design.
+      Optional<String> canonicalHash = canonicalContracts.canonicalHashFor(req.modelName());
+      if (canonicalHash.isPresent() && !canonicalHash.get().equals(candidateHash)) {
+        throw new RegistryException.FeatureSchemaMismatch(
+            req.modelName(), canonicalHash.get(), candidateHash);
+      }
+      if (canonicalHash.isEmpty()) {
+        log.warn(
+            "registry: no canonical contract mapped for {} - pinning the submitted hash {};"
+                + " add the family to CanonicalContracts when it becomes a real model",
+            req.modelName(),
+            candidateHash);
+      } else {
+        log.info(
+            "registry: bootstrap feature schema hash for {} = {} (matches canonical contract)",
+            req.modelName(),
+            candidateHash);
+      }
     } else if (!bootstrapHash.get().equals(candidateHash)) {
       throw new RegistryException.FeatureSchemaMismatch(
           req.modelName(), bootstrapHash.get(), candidateHash);
@@ -413,6 +462,7 @@ public class RegistryService {
       throw new RegistryException.IllegalTransition(current.stage(), newStage);
     }
     if (newStage == Stage.CHAMPION) {
+      assertBaselineRegistered(current);
       assertPromotionCriteriaMet(current);
       promoteToChampionAtomically(current);
     } else if (current.stage() == Stage.CHAMPION && newStage == Stage.SHADOW) {
@@ -460,9 +510,71 @@ public class RegistryService {
           incoming.id());
       return;
     }
-    if (experimentRepo.findLatestPassing(incoming.modelName(), incoming.id()).isEmpty()) {
+    // B2: the evidence row must be FRESH and must have been measured against the CURRENT
+    // champion - a months-old pass, or a pass against a since-replaced champion, no longer
+    // describes the comparison this promotion is making.
+    java.time.Instant cutoff = java.time.Instant.now().minus(PROMOTION_EVIDENCE_MAX_AGE);
+    Optional<ModelVersion> champion = repo.findChampion(incoming.modelName());
+    Optional<net.thebullpen.baseball.registry.dto.ExperimentResult> evidence;
+    if (champion.isPresent()) {
+      evidence =
+          experimentRepo.findLatestPassing(
+              incoming.modelName(), incoming.id(), champion.get().id(), cutoff);
+    } else {
+      // No current champion (e.g. post-[150] rollback on a multi-version model): there is no
+      // champion id to bind the evidence to, so accept a fresh pass against ANY champion -
+      // blocking here would wedge rollback recovery. Logged loudly because it is the weaker
+      // form of the gate.
+      evidence =
+          experimentRepo.findLatestPassingAnyChampion(incoming.modelName(), incoming.id(), cutoff);
+      evidence.ifPresent(
+          e ->
+              log.warn(
+                  "registry: promoting {}/{} (id={}) with NO current champion - accepting fresh"
+                      + " evidence row id={} measured against champion_version_id={}",
+                  incoming.modelName(),
+                  incoming.version(),
+                  incoming.id(),
+                  e.id(),
+                  e.championVersionId()));
+    }
+    if (evidence.isEmpty()) {
       throw new RegistryException.PromotionCriteriaMissing(
-          incoming.modelName(), incoming.id(), incoming.version());
+          incoming.modelName(),
+          incoming.id(),
+          incoming.version(),
+          champion
+              .map(
+                  c ->
+                      "no passing experiment_results row against the CURRENT champion (id="
+                          + c.id()
+                          + ") within the last "
+                          + PROMOTION_EVIDENCE_MAX_AGE.toDays()
+                          + " days (rule 5 + decision [72]; B2: a stale pass, or a pass against a"
+                          + " replaced champion, does not count)")
+              .orElse(
+                  "no passing experiment_results row within the last "
+                      + PROMOTION_EVIDENCE_MAX_AGE.toDays()
+                      + " days (rule 5 + decision [72]; no current champion - the any-champion"
+                      + " fallback also found nothing)"));
+    }
+  }
+
+  /**
+   * B4 / rule 9: a primary head cannot reach CHAMPION while its partner LR baseline (decision
+   * [37]/[46], {@link #BASELINE_FOR_PRIMARY}) has never been registered. Any non-archived stage
+   * counts - the baseline only has to EXIST in the registry, not serve. Until now this rule lived
+   * only in the Python dry-run gate; nothing in the JVM enforced it.
+   */
+  private void assertBaselineRegistered(ModelVersion incoming) {
+    String baseline = BASELINE_FOR_PRIMARY.get(incoming.modelName());
+    if (baseline == null) {
+      return; // not a mapped primary (baselines themselves land here)
+    }
+    boolean present = repo.findByName(baseline).stream().anyMatch(v -> v.stage() != Stage.ARCHIVED);
+    if (!present) {
+      throw new RegistryException.BaselineMissing(
+          incoming.modelName(), incoming.version(), baseline);
     }
   }
 

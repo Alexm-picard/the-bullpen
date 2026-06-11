@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -69,9 +68,23 @@ class RegistryServiceIT {
     jdbc.update("DELETE FROM model_versions");
   }
 
-  /** Seed a passing experiment_results row for the rule-5 promotion gate. */
+  /**
+   * Seed a passing experiment_results row for the rule-5 promotion gate, ended {@code endedAgo}
+   * before now. Timestamps bind as the TEXT format {@code CURRENT_TIMESTAMP} writes ("yyyy-MM-dd
+   * HH:mm:ss" UTC) so the B2 recency comparison sees the same SQLite type class as production rows
+   * (a numeric epoch would silently sort below every TEXT value).
+   */
   private void seedPassingExperiment(
       String modelName, long championVersionId, long challengerVersionId) {
+    seedPassingExperiment(
+        modelName, championVersionId, challengerVersionId, java.time.Duration.ofSeconds(60));
+  }
+
+  private void seedPassingExperiment(
+      String modelName,
+      long championVersionId,
+      long challengerVersionId,
+      java.time.Duration endedAgo) {
     jdbc.update(
         "INSERT INTO experiment_results (model_name, champion_version_id, challenger_version_id,"
             + " started_at, ended_at, primary_metric, primary_threshold, guardrails,"
@@ -82,8 +95,14 @@ class RegistryServiceIT {
         modelName,
         championVersionId,
         challengerVersionId,
-        Timestamp.from(Instant.now().minusSeconds(7200)),
-        Timestamp.from(Instant.now().minusSeconds(60)));
+        sqliteTs(Instant.now().minus(endedAgo).minusSeconds(7200)),
+        sqliteTs(Instant.now().minus(endedAgo)));
+  }
+
+  private static String sqliteTs(Instant instant) {
+    return java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+        .withZone(java.time.ZoneOffset.UTC)
+        .format(instant);
   }
 
   // --- register -----------------------------------------------------------
@@ -536,6 +555,144 @@ class RegistryServiceIT {
    * Default sample uses a per-model salt so two models hash differently but two versions of one
    * model hash the same.
    */
+  // --- B1: canonical-contract gate at bootstrap registration ---------------
+
+  @Test
+  void bootstrap_registration_of_a_known_family_must_match_the_canonical_contract()
+      throws Exception {
+    // battedball_outcome is a mapped family; a temp-salted pipeline hashes differently from
+    // contracts/feature_pipeline_battedball.json, so the FIRST registration must be refused -
+    // before B1 it would have pinned the bogus hash and /contracts was never consulted.
+    assertThatThrownBy(() -> service.register(sampleRequest("battedball_outcome", "v1")))
+        .isInstanceOf(RegistryException.FeatureSchemaMismatch.class)
+        .hasMessageContaining("battedball_outcome");
+    assertThat(service.findByName("battedball_outcome")).isEmpty();
+  }
+
+  @Test
+  void bootstrap_registration_matching_canonical_pins_and_later_versions_hold() throws Exception {
+    ModelVersion v1 = service.register(canonicalFamilyRequest("battedball_outcome", "v1"));
+    assertThat(v1.stage()).isEqualTo(Stage.CANDIDATE);
+
+    // Later version with the same canonical content passes the pin-equality layer.
+    ModelVersion v2 = service.register(canonicalFamilyRequest("battedball_outcome", "v2"));
+    assertThat(v2.id()).isNotEqualTo(v1.id());
+
+    // ... and a drifted pipeline is still refused against the pin.
+    assertThatThrownBy(() -> service.register(sampleRequest("battedball_outcome", "v3")))
+        .isInstanceOf(RegistryException.FeatureSchemaMismatch.class);
+  }
+
+  @Test
+  void registerWithBootstrap_remains_the_escape_hatch_for_a_known_family() throws Exception {
+    // The deliberate-friction reset path may pin a NON-canonical hash (that is its purpose:
+    // schema evolution lands here first, /contracts follows in the same change).
+    ModelVersion reset =
+        service.registerWithBootstrap(
+            sampleRequest("battedball_outcome", "v9"),
+            new ResetFeatureSchemaConfirmation("battedball_outcome", "schema evolution test"));
+    assertThat(reset.stage()).isEqualTo(Stage.CANDIDATE);
+  }
+
+  // --- B2: evidence staleness + champion binding ---------------------------
+
+  @Test
+  void promotion_rejects_evidence_older_than_the_recency_window() throws Exception {
+    ModelVersion champ = service.register(sampleRequest("stale_evidence_model", "v1"));
+    service.transitionStage(champ.id(), Stage.CHAMPION);
+    ModelVersion chall = service.register(sampleRequest("stale_evidence_model", "v2"));
+    service.transitionStage(chall.id(), Stage.SHADOW);
+    seedPassingExperiment(
+        "stale_evidence_model",
+        champ.id(),
+        chall.id(),
+        RegistryService.PROMOTION_EVIDENCE_MAX_AGE.plusDays(1));
+
+    assertThatThrownBy(() -> service.transitionStage(chall.id(), Stage.CHAMPION))
+        .isInstanceOf(RegistryException.PromotionCriteriaMissing.class)
+        .hasMessageContaining("within the last");
+  }
+
+  @Test
+  void promotion_rejects_evidence_measured_against_a_replaced_champion() throws Exception {
+    ModelVersion champ = service.register(sampleRequest("rebound_model", "v1"));
+    service.transitionStage(champ.id(), Stage.CHAMPION);
+    ModelVersion chall = service.register(sampleRequest("rebound_model", "v2"));
+    service.transitionStage(chall.id(), Stage.SHADOW);
+    // Fresh pass, but recorded against a champion id that is NOT the current champion.
+    seedPassingExperiment("rebound_model", chall.id() + 999, chall.id());
+
+    assertThatThrownBy(() -> service.transitionStage(chall.id(), Stage.CHAMPION))
+        .isInstanceOf(RegistryException.PromotionCriteriaMissing.class)
+        .hasMessageContaining("CURRENT champion");
+
+    // The same row against the real current champion green-lights it.
+    seedPassingExperiment("rebound_model", champ.id(), chall.id());
+    assertThat(service.transitionStage(chall.id(), Stage.CHAMPION).stage())
+        .isEqualTo(Stage.CHAMPION);
+  }
+
+  @Test
+  void promotion_with_no_current_champion_accepts_fresh_evidence_against_any_champion()
+      throws Exception {
+    // Post-[150] rollback shape: v1 was champion, got demoted, no champion serves. v2 promotes
+    // on fresh evidence recorded against v1 - blocking would wedge rollback recovery.
+    ModelVersion v1 = service.register(sampleRequest("rollback_recovery_model", "v1"));
+    service.transitionStage(v1.id(), Stage.CHAMPION);
+    ModelVersion v2 = service.register(sampleRequest("rollback_recovery_model", "v2"));
+    service.transitionStage(v2.id(), Stage.SHADOW);
+    service.transitionStage(v1.id(), Stage.SHADOW); // [150] rollback - champion slot now empty
+    seedPassingExperiment("rollback_recovery_model", v1.id(), v2.id());
+
+    assertThat(service.transitionStage(v2.id(), Stage.CHAMPION).stage()).isEqualTo(Stage.CHAMPION);
+  }
+
+  // --- B4: rule-9 baseline presence at promote-to-CHAMPION -----------------
+
+  @Test
+  void primary_head_cannot_reach_champion_without_its_registered_baseline() throws Exception {
+    ModelVersion pre = service.register(canonicalFamilyRequest("pitch_outcome_pre", "v1"));
+
+    assertThatThrownBy(() -> service.transitionStage(pre.id(), Stage.CHAMPION))
+        .isInstanceOf(RegistryException.BaselineMissing.class)
+        .hasMessageContaining("pitch_outcome_lr_baseline");
+    assertThat(service.findChampion("pitch_outcome_pre")).isEmpty();
+
+    // Registering the partner baseline (any non-archived stage) unblocks the promotion;
+    // rule-5 is covered by the bootstrap exemption (pre has one ever-registered version).
+    service.register(canonicalFamilyRequest("pitch_outcome_lr_baseline", "v1"));
+    assertThat(service.transitionStage(pre.id(), Stage.CHAMPION).stage()).isEqualTo(Stage.CHAMPION);
+  }
+
+  /**
+   * A register request for a REAL model family whose submitted pipeline is a byte-copy of the
+   * family's canonical {@code /contracts} file - the only content the B1 gate admits at bootstrap.
+   * {@code ../contracts} resolves from the Gradle test working directory ({@code backend/}), the
+   * same geometry as {@link CanonicalContracts}' dev default.
+   */
+  private RegisterRequest canonicalFamilyRequest(String modelName, String version)
+      throws Exception {
+    String contractFile =
+        CanonicalContracts.contractFileFor(modelName)
+            .orElseThrow(() -> new AssertionError(modelName + " is not a mapped family"));
+    Path artifact = writeArtifact(modelName + "-" + version + "-model.onnx");
+    Path metadata = writeArtifact(modelName + "-" + version + "-metadata.json");
+    Path pipeline = artifactDir.resolve(modelName + "-" + version + "-feature_pipeline.json");
+    Files.copy(Path.of("../contracts").resolve(contractFile), pipeline);
+    return new RegisterRequest(
+        modelName,
+        version,
+        artifact.toString(),
+        metadata.toString(),
+        pipeline.toString(),
+        "train-hash-" + version,
+        "[2024-01-01,2024-12-31]",
+        "{\"brier\":0.18}",
+        Instant.now(),
+        "test",
+        "registered by RegistryServiceIT (canonical content)");
+  }
+
   private RegisterRequest sampleRequest(String modelName, String version) throws Exception {
     return sampleRequest(modelName, version, modelName /* salt = modelName so versions match */);
   }

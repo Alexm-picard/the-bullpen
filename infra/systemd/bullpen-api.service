@@ -26,6 +26,10 @@ EnvironmentFile=-/etc/default/bullpen
 Environment=SPRING_PROFILES_ACTIVE=api
 Environment=BULLPEN_PORT=8080
 Environment=BULLPEN_REGISTRY_DB=/opt/bullpen/data/registry.sqlite
+# B1: the canonical /contracts dir deploy.sh stages on every deploy - the registry's
+# bootstrap-registration gate hashes these. (Spring relaxed binding maps this env name
+# to bullpen.registry.contracts-dir; the hyphen is dropped, so no underscore before DIR.)
+Environment=BULLPEN_REGISTRY_CONTRACTSDIR=/opt/bullpen/contracts
 Environment=LOG_FORMAT=json
 
 # Heap defaults err small (this WSL2 host has 15 GiB total and shares with

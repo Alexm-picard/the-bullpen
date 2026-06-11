@@ -192,7 +192,9 @@ public class RegistryAdminController {
               + " → "
               + after.stage());
       return after;
-    } catch (RegistryException.IllegalTransition | RegistryException.PromotionCriteriaMissing e) {
+    } catch (RegistryException.IllegalTransition
+        | RegistryException.PromotionCriteriaMissing
+        | RegistryException.BaselineMissing e) {
       throw new ResponseStatusException(HttpStatus.CONFLICT, e.getMessage(), e);
     }
   }

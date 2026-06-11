@@ -13,6 +13,7 @@ public sealed class RegistryException extends RuntimeException
         RegistryException.FeatureSchemaMismatch,
         RegistryException.ResetConfirmationMissing,
         RegistryException.PromotionCriteriaMissing,
+        RegistryException.BaselineMissing,
         RegistryException.ModelLoadFailed {
 
   protected RegistryException(String message) {
@@ -123,6 +124,18 @@ public sealed class RegistryException extends RuntimeException
     private final long challengerVersionId;
 
     public PromotionCriteriaMissing(String modelName, long challengerVersionId, String version) {
+      this(
+          modelName,
+          challengerVersionId,
+          version,
+          "no passing experiment_results row found"
+              + " (rule 5 + decision [72]: pre-declared promotion criteria + recorded passing"
+              + " experiment required before promotion)");
+    }
+
+    /** B2 variant: the gate found rows but none acceptable - {@code detail} says why. */
+    public PromotionCriteriaMissing(
+        String modelName, long challengerVersionId, String version, String detail) {
       super(
           "registry: cannot promote "
               + modelName
@@ -130,9 +143,8 @@ public sealed class RegistryException extends RuntimeException
               + version
               + " (id="
               + challengerVersionId
-              + ") to CHAMPION — no passing experiment_results row found"
-              + " (rule 5 + decision [72]: pre-declared promotion criteria + recorded passing"
-              + " experiment required before promotion)");
+              + ") to CHAMPION — "
+              + detail);
       this.modelName = modelName;
       this.challengerVersionId = challengerVersionId;
     }
@@ -143,6 +155,26 @@ public sealed class RegistryException extends RuntimeException
 
     public long challengerVersionId() {
       return challengerVersionId;
+    }
+  }
+
+  /**
+   * B4 / rule 9: the primary head's partner LR baseline has never been registered (no non-archived
+   * version exists), so the primary cannot reach CHAMPION. "No primary without a baseline"
+   * (decisions [37] [46]) previously lived only in the Python dry-run gate. Maps to 409 like the
+   * other promotion-governance failures.
+   */
+  public static final class BaselineMissing extends RegistryException {
+    public BaselineMissing(String modelName, String version, String baselineModelName) {
+      super(
+          "registry: cannot promote "
+              + modelName
+              + "/"
+              + version
+              + " to CHAMPION — partner baseline '"
+              + baselineModelName
+              + "' has no registered (non-archived) version (rule 9: no primary without its LR"
+              + " baseline; register the baseline first)");
     }
   }
 
