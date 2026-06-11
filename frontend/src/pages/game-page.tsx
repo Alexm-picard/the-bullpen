@@ -134,7 +134,10 @@ export function GamePage() {
   const mostRecent = pitches.pitches[0];
   const issueDate = todayIssueDate();
   const issuedAt = nowEt();
-  const modelLabel = "pitch_outcome_pre v3.2 LIVE";
+  // Honest label per decision [154]: live is ingest-only until a pitch head clears its
+  // promotion gate, so no model version is claimed here. Pitch cards render predictions
+  // as n/a until a champion exists.
+  const modelLabel = "ingest live · pitch model pending";
 
   return (
     <ReportSheet>

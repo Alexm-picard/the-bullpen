@@ -1,13 +1,16 @@
 /**
- * Page-level smoke test for /games (the Live Game variant of the Matchup
- * Report, Stage 3d).
+ * Page-level smoke test for /games - the LIVE slate (FE-H1).
  *
- * Strategy mirrors the prior stages: render to static markup with the
- * MantineProvider + MemoryRouter; assert presence of the six section labels
- * and the masthead h1, plus the one-h1-only constraint that the cover-sheet
- * pattern requires.
+ * The page wires `useTodaysGames()` against the live backend, so coverage
+ * here is intentionally narrow (same posture as game-page.test.tsx): the
+ * report-sheet shell + header render, the one-h1 constraint holds, and the
+ * initial query state shows the loading copy. Data-driven states (rows /
+ * empty) are covered by todays-slate-table.test.tsx as a pure component and
+ * by the Playwright e2e at the network layer.
  */
 import { MantineProvider } from "@mantine/core";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
@@ -16,59 +19,41 @@ import { theme } from "../design/theme";
 
 import GamesPage from "./games-page";
 
-function render(ui: React.ReactElement): string {
+function render(node: ReactNode): string {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   return renderToStaticMarkup(
-    <MantineProvider theme={theme}>
-      <MemoryRouter>{ui}</MemoryRouter>
-    </MantineProvider>,
+    <QueryClientProvider client={client}>
+      <MantineProvider theme={theme}>
+        <MemoryRouter initialEntries={["/games"]}>{node}</MemoryRouter>
+      </MantineProvider>
+    </QueryClientProvider>,
   );
 }
 
-describe("GamesPage", () => {
-  it("renders the masthead nameplate", () => {
+describe("GamesPage (live slate)", () => {
+  it("renders the report-sheet shell with the live-slate masthead", () => {
     const html = render(<GamesPage />);
-    expect(html).toContain("Live Game");
-    expect(html).toContain("NYY @ DET");
+    expect(html).toContain("report-sheet__shell");
+    expect(html).toContain("Live Slate");
+    expect(html).toContain("Games");
   });
 
-  it("renders exactly one <h1> (the masthead)", () => {
+  it("renders exactly one <h1>", () => {
     const html = render(<GamesPage />);
     const matches = html.match(/<h1\b/g) ?? [];
     expect(matches.length).toBe(1);
   });
 
-  it("renders all five primary section labels", () => {
+  it("renders the slate section label and the loading state initially", () => {
     const html = render(<GamesPage />);
-    expect(html).toContain("Pitch Log");
-    expect(html).toContain("Now Batting");
-    expect(html).toContain("Agreement By Inning");
-    expect(html).toContain("Other Games");
+    expect(html).toContain("Slate");
+    expect(html).toContain("Loading today");
   });
 
-  it("renders the game state strip with all five cells", () => {
+  it("renders the colophon footer", () => {
     const html = render(<GamesPage />);
-    expect(html).toContain("Inning");
-    expect(html).toContain("Score");
-    expect(html).toContain("Count");
-    expect(html).toContain("Runners");
-    expect(html).toContain("Model Agr");
-  });
-
-  it("renders the navy footer with build SHA + date", () => {
-    const html = render(<GamesPage />);
-    expect(html).toContain("stage3d");
-    expect(html).toContain("2026.05.30");
-  });
-
-  it("renders the now-batting pair with both players", () => {
-    const html = render(<GamesPage />);
-    expect(html).toContain("Aaron Judge");
-    expect(html).toContain("Tarik Skubal");
-  });
-
-  it("renders the other-games switcher with at least one other game", () => {
-    const html = render(<GamesPage />);
-    // The first chip in the fixture is LAA @ HOU.
-    expect(html).toContain("LAA @ HOU");
+    expect(html.toLowerCase()).toContain("the bullpen");
   });
 });

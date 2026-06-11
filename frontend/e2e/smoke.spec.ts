@@ -39,3 +39,76 @@ test("player lookup renders its search input", async ({ page }) => {
   await expect(page.locator("input").first()).toBeVisible();
   expect(errors, "uncaught errors on /players").toEqual([]);
 });
+
+// --- /games live slate (FE-H1) — network mocked at the route layer ---------
+
+const SLATE_GAME = {
+  gameId: 745804,
+  gameDate: "2026-06-11",
+  homeTeam: "BOS",
+  awayTeam: "BAL",
+  homeScore: 2,
+  awayScore: 1,
+  inning: 6,
+  status: "IN_PROGRESS",
+  detailedState: "In Progress",
+};
+
+test("games slate renders the live empty state when the API returns []", async ({
+  page,
+}) => {
+  const errors = trackPageErrors(page);
+  await page.route("**/v1/games/today", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: "[]",
+    }),
+  );
+  await page.goto("/games");
+  await expect(page.getByText("No games yet today")).toBeVisible();
+  expect(errors, "uncaught errors on empty /games").toEqual([]);
+});
+
+test("games slate renders a row and its numeric link opens the live game page", async ({
+  page,
+}) => {
+  const errors = trackPageErrors(page);
+  await page.route("**/v1/games/today", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([SLATE_GAME]),
+    }),
+  );
+  // The per-game page's own queries are stubbed too, so the click asserts
+  // routing (numeric id accepted), not backend availability.
+  await page.route("**/v1/games/745804", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(SLATE_GAME),
+    }),
+  );
+  await page.route("**/v1/games/745804/pitches*", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: "[]",
+    }),
+  );
+
+  await page.goto("/games");
+  await expect(page.getByText("BAL")).toBeVisible();
+  const open = page.getByRole("link", {
+    name: /open live view for BAL at BOS/i,
+  });
+  await expect(open).toHaveAttribute("href", "/games/745804");
+
+  await open.click();
+  await expect(page).toHaveURL(/\/games\/745804$/);
+  // The numeric id parses — the slug-era "Invalid game id" must not render.
+  await expect(page.getByText("Invalid game id")).toHaveCount(0);
+  await expect(page.locator("h1").first()).toBeVisible();
+  expect(errors, "uncaught errors navigating the live slate").toEqual([]);
+});

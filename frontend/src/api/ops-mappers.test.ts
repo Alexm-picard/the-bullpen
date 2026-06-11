@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 
 import type {
+  DriftMetric,
   LatencyStat,
   ModelVersion,
   RetrainingTrigger,
   RoutingConfig,
 } from "./ops";
-import { toFleetRows, toLatencyRows, toRetrainEntries } from "./ops-mappers";
+import {
+  toDriftRows,
+  toFleetRows,
+  toLatencyRows,
+  toRetrainEntries,
+} from "./ops-mappers";
 
 function mv(
   over: Partial<ModelVersion> & Pick<ModelVersion, "id">,
@@ -94,6 +100,108 @@ describe("toFleetRows", () => {
     );
     expect(rows).toHaveLength(1);
     expect(rows[0]?.version).toBe("v4");
+  });
+
+  it("maps CANDIDATE to AWAITING-PROMOTION so the header count works (FE-M1)", () => {
+    const rows = toFleetRows(
+      [
+        mv({ id: 1, stage: "CHAMPION" }),
+        mv({ id: 2, version: "v4", stage: "CANDIDATE" }),
+        mv({ id: 3, version: "v5", stage: "SHADOW" }),
+      ],
+      [],
+      [],
+    );
+    expect(rows.find((r) => r.version === "v3")?.state).toBe("LIVE");
+    expect(rows.find((r) => r.version === "v4")?.state).toBe(
+      "AWAITING-PROMOTION",
+    );
+    expect(rows.find((r) => r.version === "v5")?.state).toBe("SHADOW");
+  });
+});
+
+describe("toDriftRows", () => {
+  const WATCHED_FEATURES = [
+    { feature: "release_speed", byModel: {} },
+    { feature: "launch_angle", byModel: {} },
+  ];
+  const WATCHED_OUTPUTS = [{ output: "in_play", byModel: {} }];
+
+  function dm(over: Partial<DriftMetric>): DriftMetric {
+    return {
+      computedAt: "2026-06-11T06:00:00Z",
+      modelName: "battedball_outcome",
+      modelVersionId: 1,
+      metricType: "PSI_FEATURE",
+      featureOrSegment: "release_speed",
+      metricValue: 0.04,
+      sampleSize: 1000,
+      windowStart: "2026-06-04",
+      windowEnd: "2026-06-11",
+      ...over,
+    };
+  }
+
+  it("renders the watched-surface skeleton untouched when drift_metrics is empty", () => {
+    const { psiByFeature, eceByOutput } = toDriftRows(
+      [],
+      WATCHED_FEATURES,
+      WATCHED_OUTPUTS,
+    );
+    expect(psiByFeature.map((f) => f.feature)).toEqual([
+      "release_speed",
+      "launch_angle",
+    ]);
+    expect(psiByFeature[0]?.byModel).toEqual({});
+    expect(eceByOutput[0]?.byModel).toEqual({});
+  });
+
+  it("overlays the NEWEST psi value per (feature, model) cell", () => {
+    const { psiByFeature } = toDriftRows(
+      [
+        dm({ metricValue: 0.31, computedAt: "2026-06-10T06:00:00Z" }),
+        dm({ metricValue: 0.04, computedAt: "2026-06-11T06:00:00Z" }),
+        dm({ modelName: "pitch_outcome_pre", metricValue: 0.12 }),
+      ],
+      WATCHED_FEATURES,
+      WATCHED_OUTPUTS,
+    );
+    const release = psiByFeature.find((f) => f.feature === "release_speed");
+    expect(release?.byModel["battedball_outcome"]).toBe(0.04);
+    expect(release?.byModel["pitch_outcome_pre"]).toBe(0.12);
+  });
+
+  it("routes CALIBRATION_ERROR rows to the output table, not the feature table", () => {
+    const { psiByFeature, eceByOutput } = toDriftRows(
+      [
+        dm({
+          metricType: "CALIBRATION_ERROR",
+          featureOrSegment: "in_play",
+          metricValue: 0.008,
+        }),
+      ],
+      WATCHED_FEATURES,
+      WATCHED_OUTPUTS,
+    );
+    expect(
+      eceByOutput.find((o) => o.output === "in_play")?.byModel[
+        "battedball_outcome"
+      ],
+    ).toBe(0.008);
+    expect(psiByFeature[0]?.byModel).toEqual({});
+  });
+
+  it("appends an observed feature the watch list doesn't carry, after the canonical rows", () => {
+    const { psiByFeature } = toDriftRows(
+      [dm({ featureOrSegment: "spray_angle" })],
+      WATCHED_FEATURES,
+      WATCHED_OUTPUTS,
+    );
+    expect(psiByFeature.map((f) => f.feature)).toEqual([
+      "release_speed",
+      "launch_angle",
+      "spray_angle",
+    ]);
   });
 });
 
