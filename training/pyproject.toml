@@ -27,6 +27,7 @@ dependencies = [
     "umap-learn>=0.5.12",
     "shap>=0.50.0",
     "nvidia-cuda-nvcc-cu12==12.9.86 ; sys_platform == 'linux'",
+    "boto3>=1.43.27",
 ]
 
 [dependency-groups]
