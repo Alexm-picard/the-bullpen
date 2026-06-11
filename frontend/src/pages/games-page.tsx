@@ -1,119 +1,108 @@
 /**
- * /games — Live Game variant of the Matchup Report (Stage 3d, decision [133]
- * identity).
+ * /games - the LIVE slate (FE-H1 closure, 2026-06-11).
  *
- * Replaces the editorial-data "Today's games" table (leaves 4d.1) — the old
- * `TodaysGamesPage` export in `game-page.tsx` was a holdover from the
- * tech-product redesign. The new /games is the live-game scouting packet:
- * same shell, masthead, and chrome vocabulary as /home and /players/:id,
- * with the pitch log as the hero.
+ * Replaces the Stage-3d fixture showcase as the default route; the showcase
+ * moved intact to /games/demo (games-demo-page.tsx) as the design-system
+ * reference. This page is live data only:
  *
- * Composition order (top → bottom, inside the report-sheet shell):
- *   1. <LiveGameHeader />          — masthead (eyebrow + 2-line nameplate +
- *                                    byline + mono context)
- *   2. <GameStateStrip />          — navy lower-third bar, 5 cells
- *   3. <LivePitchLog />            — the hero — 20 PitchCards stacked
- *   4. <NowBattingPair />          — compact 2-col pitcher / batter ID block
- *   5. <AgreementByInningTable />  — per-inning agreement summary StatTable
- *   6. <OtherGamesSwitcher />      — horizontal chip strip → /games/{id}
- *   7. <CoverSheetFooter />        — navy footer strip (reused)
+ *   - `useTodaysGames()` polls GET /v1/games/today (60s cadence).
+ *   - Each row links to /games/{gameId} with the NUMERIC gamePk - the
+ *     per-game live page does Number(id), so slug hrefs were dead links.
+ *   - [] is a first-class empty state: a game appears only after its first
+ *     OBSERVED status transition (~first pitch), not at schedule time. A
+ *     worker restart mid-game defers that game's row to its next transition
+ *     (known edge, ledger L1).
  *
- * Fixture-driven (`games-fixtures.ts`); no API calls. The api/games.ts hooks
- * (useTodaysGames, useGame, useLivePitches) are reserved for the per-game-
- * detail leaf at /games/:id, which is unchanged by this stage.
- *
- * Constraints honored:
- *   - One <Title order={1}> only (the masthead h1 inside LiveGameHeader).
- *   - No hex codes — every color via tokens or CSS-var utilities.
- *   - No live data fetches; the page is a design-system showcase in v1.
- *   - Reuses CornerStripes + SectionLabel + CoverSheetFooter + PitchCard
- *     + StatTable from prior stages.
- *   - No useEffect for server state, no WebSockets, no polling (rules out
- *     useQuery against /v1/games/* on this page in v1).
+ * Loading + error states render INSIDE the report sheet so the identity
+ * reads even before the API answers (same posture as /games/:id).
  */
+import { Stack, Text, Title } from "@mantine/core";
 
-import { Stack } from "@mantine/core";
-
-import { AgreementByInningTable } from "../components/games/agreement-by-inning-table";
-import { GameStateStrip } from "../components/games/game-state-strip";
-import { LiveGameHeader } from "../components/games/live-game-header";
-import { LivePitchLog } from "../components/games/live-pitch-log";
-import { NowBattingPair } from "../components/games/now-batting-pair";
-import { OtherGamesSwitcher } from "../components/games/other-games-switcher";
+import { useTodaysGames } from "../api/games";
+import { TodaysSlateTable } from "../components/games/todays-slate-table";
 import { CoverSheetFooter } from "../components/scouting/cover-sheet-footer";
+import { HeroEyebrow } from "../components/shared/hero-eyebrow";
 import { ReportSheet } from "../components/shared/report-sheet";
 import { SectionLabel } from "../components/shared/section-label";
-import {
-  AGREEMENT_BY_INNING,
-  GAME_STATE_CELLS,
-  LIVE_GAME_CONTEXT,
-  LIVE_PITCHES,
-  NOW_BATTING,
-  OTHER_GAMES,
-} from "../data/games-fixtures";
+import { colors, typography } from "../design/tokens";
 
-import "./games/games.css";
+/** Stable build metadata fallback so the colophon footer always renders. */
+const BUILD_FALLBACK = {
+  sha: "live",
+  date: new Date().toISOString().slice(0, 10),
+};
+
+function todayIssueDate(): string {
+  return new Intl.DateTimeFormat("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date());
+}
 
 export default function GamesPage() {
+  const games = useTodaysGames();
+  const slate = games.data ?? [];
+
   return (
     <ReportSheet>
       <Stack gap={24}>
-        <LiveGameHeader
-          issueDate={LIVE_GAME_CONTEXT.issueDate}
-          awayTeam={LIVE_GAME_CONTEXT.awayTeam}
-          homeTeam={LIVE_GAME_CONTEXT.homeTeam}
-          awayScore={LIVE_GAME_CONTEXT.awayScore}
-          homeScore={LIVE_GAME_CONTEXT.homeScore}
-          halfInning={LIVE_GAME_CONTEXT.halfInning}
-          batterName={LIVE_GAME_CONTEXT.batterName}
-          pitcherName={LIVE_GAME_CONTEXT.pitcherName}
-          issuedAt={LIVE_GAME_CONTEXT.issuedAt}
-          modelLabel={LIVE_GAME_CONTEXT.modelLabel}
-        />
+        <header>
+          <HeroEyebrow>Live Slate &middot; The Bullpen</HeroEyebrow>
+          <Title
+            order={1}
+            style={{
+              fontFamily: typography.fonts.display,
+              fontWeight: typography.weights.bold,
+              textTransform: "uppercase",
+              letterSpacing: "0.01em",
+              color: colors.textStrong,
+              marginTop: 4,
+            }}
+          >
+            Today&rsquo;s Games
+          </Title>
+          <Text
+            style={{
+              fontFamily: typography.fonts.mono,
+              fontSize: 12,
+              color: colors.textMuted,
+              letterSpacing: "0.02em",
+            }}
+          >
+            {todayIssueDate()} &middot; live ingest &middot; slate fills as
+            games go live
+          </Text>
+        </header>
 
-        <GameStateStrip cells={GAME_STATE_CELLS} />
-
-        <section aria-labelledby="games-pitch-log-label">
-          <div id="games-pitch-log-label">
+        <section aria-labelledby="games-slate-label">
+          <div id="games-slate-label">
             <SectionLabel>
-              Pitch Log · Most Recent {LIVE_PITCHES.length}
+              Today&rsquo;s Slate
+              {slate.length > 0 ? ` · ${slate.length} Tracked` : ""}
             </SectionLabel>
           </div>
-          <LivePitchLog pitches={LIVE_PITCHES} />
-        </section>
-
-        <section aria-labelledby="games-now-batting-label">
-          <div id="games-now-batting-label">
-            <SectionLabel>Now Batting</SectionLabel>
-          </div>
-          <NowBattingPair
-            batter={NOW_BATTING.batter}
-            pitcher={NOW_BATTING.pitcher}
-          />
-        </section>
-
-        <section aria-labelledby="games-agreement-label">
-          <div id="games-agreement-label">
-            <SectionLabel>Agreement By Inning</SectionLabel>
-          </div>
-          <AgreementByInningTable
-            rows={AGREEMENT_BY_INNING}
-            caption={`per-inning model agreement · this game · ${LIVE_GAME_CONTEXT.modelLabel}`}
-          />
-        </section>
-
-        <section aria-labelledby="games-others-label">
-          <div id="games-others-label">
-            <SectionLabel>
-              Tonight&rsquo;s Other Games · {OTHER_GAMES.length} Live
-            </SectionLabel>
-          </div>
-          <OtherGamesSwitcher chips={OTHER_GAMES} />
+          {games.isError ? (
+            <Text style={{ color: colors.scarlet, fontWeight: 600 }}>
+              Could not load today&rsquo;s games
+              {games.error instanceof Error ? `: ${games.error.message}` : ""}.
+            </Text>
+          ) : games.isLoading ? (
+            <Text style={{ color: colors.textMuted }}>
+              Loading today&rsquo;s slate&hellip;
+            </Text>
+          ) : (
+            <TodaysSlateTable
+              games={slate}
+              caption={`live game tracker · ${todayIssueDate()}`}
+            />
+          )}
         </section>
 
         <CoverSheetFooter
-          buildSha={LIVE_GAME_CONTEXT.buildSha}
-          buildDate={LIVE_GAME_CONTEXT.buildDate}
+          buildSha={BUILD_FALLBACK.sha}
+          buildDate={BUILD_FALLBACK.date}
         />
       </Stack>
     </ReportSheet>

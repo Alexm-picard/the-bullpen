@@ -5,7 +5,7 @@
  * Hooks default to a 30-second staleTime since dashboard data doesn't change
  * by the second (drift / routing / queue are all on minutes-to-hours scales).
  */
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 
 import type { OpsLogEntry, OpsLogType } from "../data/ops-fixtures";
 
@@ -134,6 +134,27 @@ export function useDrift(modelName: string | null) {
     enabled: modelName != null,
     staleTime: 30_000,
     refetchInterval: 30_000,
+  });
+}
+
+/**
+ * Drift metrics for EVERY model on the dashboard, one query per model name
+ * (the endpoint requires {@code ?model=}), merged flat. {@code drift_metrics}
+ * being empty (pre-traffic) resolves to an empty array per model - the
+ * dashboard renders the watched-surface em-dashes, never an error.
+ */
+export function useDriftForModels(modelNames: string[]) {
+  return useQueries({
+    queries: modelNames.map((m) => ({
+      queryKey: ["ops", "drift", m] as const,
+      queryFn: () => fetchDrift(m),
+      staleTime: 30_000,
+      refetchInterval: 30_000,
+    })),
+    combine: (results) => ({
+      metrics: results.flatMap((r) => r.data ?? []),
+      isLoading: results.some((r) => r.isLoading),
+    }),
   });
 }
 

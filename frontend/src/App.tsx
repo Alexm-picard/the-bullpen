@@ -39,6 +39,8 @@ const PlayerProfilePage = lazy(() =>
 );
 
 const GamesPage = lazy(() => import("./pages/games-page"));
+// Stage-3d fixture showcase, preserved at /games/demo when /games went live (FE-H1).
+const GamesDemoPage = lazy(() => import("./pages/games-demo-page"));
 const GamePage = lazy(() =>
   import("./pages/game-page").then((m) => ({ default: m.GamePage })),
 );
@@ -120,6 +122,7 @@ export default function App() {
           <Route path="players" element={<PlayersPage />} />
           <Route path="players/:id" element={<PlayerProfilePage />} />
           <Route path="games" element={<GamesPage />} />
+          <Route path="games/demo" element={<GamesDemoPage />} />
           <Route path="games/:id" element={<GamePage />} />
           <Route path="ops" element={<OpsPage />} />
           <Route path="admin/routing" element={<AdminRoutingPage />} />

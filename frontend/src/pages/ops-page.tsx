@@ -28,16 +28,19 @@
  */
 
 import { Stack, Text } from "@mantine/core";
+import { useMemo } from "react";
 
 import {
   opsEventToLogEntry,
   useAllRegistryRows,
+  useDriftForModels,
   useLatency,
   useOpsEvents,
   useRetrainQueue,
   useRouting,
 } from "../api/ops";
 import {
+  toDriftRows,
   toFleetRows,
   toLatencyRows,
   toRetrainEntries,
@@ -101,6 +104,20 @@ export default function OpsPage() {
   const retrain = useRetrainQueue();
   const opsEvents = useOpsEvents();
 
+  // Drift: one query per non-archived model name (the endpoint requires ?model=).
+  // Memoised so the queryKey set only changes when the registry roster changes.
+  const driftModelNames = useMemo(
+    () => [
+      ...new Set(
+        (registry.data ?? [])
+          .filter((v) => v.stage.toUpperCase() !== "ARCHIVED")
+          .map((v) => v.modelName),
+      ),
+    ],
+    [registry.data],
+  );
+  const drift = useDriftForModels(driftModelNames);
+
   // Fleet: live registry × routing × latency. Fall back to the showcase fixture
   // only when the registry call returned nothing (offline / empty registry).
   const liveFleet =
@@ -125,10 +142,21 @@ export default function OpsPage() {
     ? toRetrainEntries(retrain.data ?? [])
     : RETRAIN_QUEUE;
 
-  const opsLog =
-    opsEvents.data && opsEvents.data.length > 0
-      ? opsEvents.data.map(opsEventToLogEntry)
-      : OPS_LOG;
+  // Ops log: live whenever the query resolved - an empty list is a legitimate
+  // "no events yet" state (the table has its own empty path), never the fixture.
+  const opsLogIsLive = opsEvents.data !== undefined;
+  const opsLog = opsLogIsLive
+    ? opsEvents.data.map(opsEventToLogEntry)
+    : OPS_LOG;
+
+  // Drift snapshot: live values overlaid on the watched-surface skeleton.
+  // While drift_metrics is empty (no traffic yet) this renders the same
+  // honest em-dash grid the skeleton did.
+  const { psiByFeature, eceByOutput } = toDriftRows(
+    drift.metrics,
+    PSI_SKELETON,
+    ECE_SKELETON,
+  );
 
   const now = new Date();
   const issuedAt = `${ET_TIME.format(now)} ET`;
@@ -170,13 +198,13 @@ export default function OpsPage() {
             <SectionLabel>Drift Snapshot · PSI | ECE Δ</SectionLabel>
           </div>
           <Text size="sm" style={{ color: colors.textMuted }} mb={8}>
-            Monitored surface shown; PSI and calibration drift populate once the
-            nightly drift jobs run during live operation.
+            Monitored surface shown; cells fill from the nightly drift jobs
+            (champions and shadows both watched) as predictions accumulate.
           </Text>
           <DriftSnapshotGrid
             models={fleet}
-            psiByFeature={PSI_SKELETON}
-            eceByOutput={ECE_SKELETON}
+            psiByFeature={psiByFeature}
+            eceByOutput={eceByOutput}
           />
         </section>
 
@@ -194,7 +222,10 @@ export default function OpsPage() {
 
         <section aria-labelledby="ops-log-section-label">
           <div id="ops-log-section-label">
-            <SectionLabel>Ops Log · Recent Events</SectionLabel>
+            <SectionLabel>
+              Ops Log · Recent Events
+              {opsLogIsLive ? "" : " · showcase data (backend unreachable)"}
+            </SectionLabel>
           </div>
           <OpsLogTable entries={opsLog} />
         </section>
