@@ -38,6 +38,11 @@ services:
     restart: unless-stopped
     ports:
       - "9090:9090"
+    # On native dockerd (the WSL2 box), host.docker.internal does not resolve by default
+    # (Docker Desktop magic only) - map it to the docker gateway so the api/worker JVM
+    # scrape targets in prometheus.yml reach the host. No-op on Docker Desktop (Mac dev).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/rules:/etc/prometheus/rules:ro
