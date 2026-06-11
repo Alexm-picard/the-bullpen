@@ -9,7 +9,11 @@ Standard intake for new models. Every model entering the registry must pass thes
 
 ## Inputs you need from the user
 
-- Path to the ONNX artifact (typically `/training/artifacts/<run_id>/model.onnx`)
+- Path to the ONNX artifact - **for pitch heads this MUST be the ASSEMBLED snapshot dir
+  (`write_snapshot` / `register_pitch` output), never the raw training artifacts**: raw
+  metadata lacks the head discriminator the serving loaders need and the registry returns
+  a 422 (L2 lesson, 2026-06-10). Typically `/training/artifacts/<run_id>/model.onnx` for
+  models without an assembly step.
 - Path to the metadata JSON (typically alongside the ONNX file)
 - Model role: `pre_pitch_outcome`, `post_pitch_outcome`, `batted_ball`, or `lr_baseline_<role>`
 - Initial routing state: should always be `SHADOW` (never `LIVE` at registration time)
@@ -35,6 +39,7 @@ If the model role is a primary model (not LR baseline), confirm the LR baseline 
 ## Hard exits
 
 Refuse and roll back if:
+
 - Schema hash mismatch (rule 7)
 - LR baseline missing for a primary model (rule 9)
 - Calibrator file missing or fails to load

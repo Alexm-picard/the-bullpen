@@ -79,6 +79,22 @@ it; the summary:
 - Optional: `BULLPEN_DISCORD_WEBHOOK` (drift/uptime alerts), `BULLPEN_INGEST_LIVE_ENABLED`
   (default `false`, the live poller).
 
+### Discord webhook: THREE surfaces, TWO env names (L3 - do not unify casually)
+
+The same webhook URL is consumed in three places under different names; missing any one of
+them silently mutes that surface:
+
+| Surface                               | Name                                                  | Form                               |
+| ------------------------------------- | ----------------------------------------------------- | ---------------------------------- |
+| App (DiscordNotifier: drift/registry) | `DISCORD_WEBHOOK_URL` (`bullpen.discord.webhook-url`) | raw URL, in `/etc/default/bullpen` |
+| Snapshot script failure ping          | `BULLPEN_DISCORD_WEBHOOK`                             | raw URL, in `/etc/default/bullpen` |
+| Alertmanager (watchdog alerts)        | `infra/alertmanager/secrets/discord_url`              | raw URL, gitignored secret file    |
+
+Unifying the two env names is a code change that breaks the box env - if you do it, change
+both readers in one commit, say so loudly in the commit message, and update this table plus
+`/etc/default/bullpen` in the same deploy window. When ROTATING the webhook (L9), re-stage
+all three surfaces.
+
 ---
 
 ## 3. Access + health (observe-only)

@@ -22,12 +22,14 @@ each metric per fold, then reports mean ± std.
 Within-fold val/test are full calendar years (decision [59]); finer
 splits MUST be by-date if they're ever needed (never by game/pitch).
 
-This harness assumes the `features` table was built leakage-clean:
-train_end = test_year - 2, so the target-encoding training window
-excludes BOTH the validation and the test year. (The first 2a.1 build
-used train_end = test_year - 1, which leaked the val year into the TE
-window; train_end = test_year - 2 is the standard the leakage tests
-now enforce.)
+The `features` table must be built leakage-clean: the target-encoding
+window ends at train_end = test_year - 2, excluding BOTH the validation
+and the test year. (The first 2a.1 build used test_year - 1, which
+leaked the val year into the TE window.) Since the DP1 rebuild this is
+ENFORCED rather than assumed: the four CI leakage tests plus the
+CH-gated ``test_features_table_dsla_bounded`` (run with
+``BULLPEN_REQUIRE_CH=1`` against ``features FINAL``) red-bar a dirty
+table before any training consumes it.
 """
 
 from __future__ import annotations

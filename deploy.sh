@@ -66,6 +66,14 @@ smoke_health() {
 # Swap the symlink back to the previous release and restart both units.
 rollback() {
   if [[ -n "${PREVIOUS_TARGET:-}" ]]; then
+    # D2 guard: the previous release may have been PRUNED (step 9 keeps only 5) or otherwise
+    # vanished - swapping the symlink to a dead path would leave the service unstartable, which
+    # is worse than staying on the new (smoke-failing) release. Fail loud for the operator.
+    if [[ ! -f "$PREVIOUS_TARGET" ]]; then
+      log "ROLLBACK ABORTED: previous release $PREVIOUS_TARGET no longer exists (pruned?)"
+      log "staying on the new release; operator action required (docs/runbooks/ROLLBACK.md)"
+      return 1
+    fi
     sudo ln -snf "$PREVIOUS_TARGET" "$TMP_LINK"
     sudo mv -Tf "$TMP_LINK" "$APP_SYMLINK"
     sudo systemctl restart bullpen-api bullpen-worker
