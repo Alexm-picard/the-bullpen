@@ -9,7 +9,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
@@ -316,6 +315,11 @@ class RegistryControllerIT {
 
   private void seedPassingExperiment(
       String modelName, long championVersionId, long challengerVersionId) {
+    // TEXT timestamps matching CURRENT_TIMESTAMP's format - the B2 recency cutoff compares as
+    // TEXT, and a numeric epoch would silently sort below every TEXT value in SQLite.
+    java.time.format.DateTimeFormatter fmt =
+        java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+            .withZone(java.time.ZoneOffset.UTC);
     jdbc.update(
         "INSERT INTO experiment_results (model_name, champion_version_id, challenger_version_id,"
             + " started_at, ended_at, primary_metric, primary_threshold, guardrails,"
@@ -326,8 +330,8 @@ class RegistryControllerIT {
         modelName,
         championVersionId,
         challengerVersionId,
-        Timestamp.from(Instant.now().minusSeconds(7200)),
-        Timestamp.from(Instant.now().minusSeconds(60)));
+        fmt.format(Instant.now().minusSeconds(7200)),
+        fmt.format(Instant.now().minusSeconds(60)));
   }
 
   private static String featurePipelineJson(String salt) {

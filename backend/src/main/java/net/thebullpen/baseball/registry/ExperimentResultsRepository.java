@@ -35,21 +35,60 @@ public class ExperimentResultsRepository {
   }
 
   /**
-   * Latest {@link Status#PASSED} row for the given {@code (modelName, challengerVersionId)} — empty
-   * if no such row exists yet. Ordered by {@code ended_at DESC, id DESC} so the freshest pass wins
-   * (matters when the same challenger has been re-evaluated multiple times against different
-   * champions over its lifetime).
+   * SQLite stores {@code started_at} / {@code ended_at} as TEXT via {@code CURRENT_TIMESTAMP}
+   * ("YYYY-MM-DD HH:MM:SS", UTC). Recency cutoffs therefore bind as the SAME text format so the
+   * comparison is lexicographic-equals-chronological; binding a numeric epoch would silently
+   * compare across SQLite type classes (every TEXT row sorts above every number). Seeds in tests
+   * must write TEXT timestamps for the same reason.
    */
-  public Optional<ExperimentResult> findLatestPassing(String modelName, long challengerVersionId) {
+  private static final java.time.format.DateTimeFormatter SQLITE_TS =
+      java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+          .withZone(java.time.ZoneOffset.UTC);
+
+  /**
+   * Latest {@link Status#PASSED} row for {@code (modelName, challengerVersionId)} that was measured
+   * against the given {@code championVersionId} AND ended at/after {@code cutoff} — empty
+   * otherwise. B2: a pass against a since-replaced champion, or a stale pass, must not green-light
+   * a promotion. Ordered by {@code ended_at DESC, id DESC} so the freshest acceptable pass wins.
+   */
+  public Optional<ExperimentResult> findLatestPassing(
+      String modelName, long challengerVersionId, long championVersionId, Instant cutoff) {
+    try {
+      ExperimentResult row =
+          jdbc.queryForObject(
+              SELECT_ALL_COLUMNS
+                  + " WHERE model_name = ? AND challenger_version_id = ? AND"
+                  + " champion_version_id = ? AND status = 'passed' AND ended_at >= ?"
+                  + " ORDER BY ended_at DESC, id DESC LIMIT 1",
+              EXPERIMENT_MAPPER,
+              modelName,
+              challengerVersionId,
+              championVersionId,
+              SQLITE_TS.format(cutoff));
+      return Optional.ofNullable(row);
+    } catch (EmptyResultDataAccessException e) {
+      return Optional.empty();
+    }
+  }
+
+  /**
+   * B2's no-current-champion fallback (post-[150] rollback recovery): the freshest passing row for
+   * the challenger within the recency window, against whichever champion served at experiment time.
+   * The service logs loudly when it relies on this weaker form.
+   */
+  public Optional<ExperimentResult> findLatestPassingAnyChampion(
+      String modelName, long challengerVersionId, Instant cutoff) {
     try {
       ExperimentResult row =
           jdbc.queryForObject(
               SELECT_ALL_COLUMNS
                   + " WHERE model_name = ? AND challenger_version_id = ? AND status = 'passed'"
+                  + " AND ended_at >= ?"
                   + " ORDER BY ended_at DESC, id DESC LIMIT 1",
               EXPERIMENT_MAPPER,
               modelName,
-              challengerVersionId);
+              challengerVersionId,
+              SQLITE_TS.format(cutoff));
       return Optional.ofNullable(row);
     } catch (EmptyResultDataAccessException e) {
       return Optional.empty();

@@ -79,8 +79,16 @@ class RoutingServiceIT {
         modelName,
         championId,
         challengerId,
-        java.sql.Timestamp.from(Instant.now().minusSeconds(7200)),
-        java.sql.Timestamp.from(Instant.now().minusSeconds(60)));
+        // TEXT timestamps matching CURRENT_TIMESTAMP's format - the B2 recency cutoff compares
+        // as TEXT, and a numeric epoch silently sorts below every TEXT value in SQLite.
+        sqliteTs(Instant.now().minusSeconds(7200)),
+        sqliteTs(Instant.now().minusSeconds(60)));
+  }
+
+  private static String sqliteTs(Instant instant) {
+    return java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+        .withZone(java.time.ZoneOffset.UTC)
+        .format(instant);
   }
 
   // --- auto-create on first CHAMPION promotion ---------------------------

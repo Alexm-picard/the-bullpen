@@ -18,6 +18,8 @@ EnvironmentFile=-/etc/default/bullpen
 Environment=SPRING_PROFILES_ACTIVE=worker
 Environment=BULLPEN_PORT=8081
 Environment=BULLPEN_REGISTRY_DB=/opt/bullpen/data/registry.sqlite
+# B1: same canonical-contracts pointer as the api unit (see bullpen-api.service).
+Environment=BULLPEN_REGISTRY_CONTRACTSDIR=/opt/bullpen/contracts
 Environment=LOG_FORMAT=json
 Environment=JAVA_OPTS_WORKER=-Xms128m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200
 
