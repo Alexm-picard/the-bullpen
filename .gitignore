@@ -61,7 +61,7 @@ infra/grafana-data/
 infra/prometheus-data/
 
 # --- WS4: Alertmanager Discord webhook secret (the .example is committed; the real URL is not) ---
-infra/alertmanager/secrets/discord_slack_url
+infra/alertmanager/secrets/discord_url
 
 # --- Local snapshots (created by the destructive-CH hook gate on dev boxes) ---
 snapshots/

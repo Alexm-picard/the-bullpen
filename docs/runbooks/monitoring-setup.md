@@ -12,19 +12,21 @@ being discovered by accident.
 | `node-exporter` (host RAM/CPU/disk) + `alertmanager`, behind the `monitoring` compose profile | `infra/docker-compose.yml`                  |
 | Prometheus `alerting` + `rule_files` + the `node` scrape job                                  | `infra/prometheus/prometheus.yml`           |
 | 5 alert rules (WorkerDown, ApiDown, HostMemoryLow, JvmHeapHigh, SnapshotStale)                | `infra/prometheus/rules/bullpen-alerts.yml` |
-| Alertmanager -> Discord (via Discord's Slack-compatible endpoint)                             | `infra/alertmanager/alertmanager.yml`       |
+| Alertmanager -> Discord (native `discord_configs` receiver)                                   | `infra/alertmanager/alertmanager.yml`       |
 | Worker `:8081` smoke + rollback on a half-up deploy                                           | `deploy.sh`                                 |
 | Snapshot freshness: node_exporter textfile metric + Healthchecks.io ping                      | `infra/backup/clickhouse-snapshot.sh`       |
 
 ## Box bring-up (prod, WSL2 desktop)
 
-1. **Discord secret for Alertmanager.** Create the gitignored secret from the example, using the same
-   webhook as `DISCORD_WEBHOOK_URL` but with `/slack` appended (Discord's Slack-compatible endpoint):
+1. **Discord secret for Alertmanager.** Create the gitignored secret from the example, using the
+   same RAW webhook URL as `BULLPEN_DISCORD_WEBHOOK` - no suffix. (Do NOT append `/slack`: the
+   Slack-compat endpoint 400s Alertmanager's payload, box-proven 2026-06-11; the config now uses
+   the native `discord_configs` receiver.)
 
    ```bash
-   cp infra/alertmanager/secrets/discord_slack_url.example \
-      infra/alertmanager/secrets/discord_slack_url
-   # edit it to the real https://discord.com/api/webhooks/<id>/<token>/slack
+   cp infra/alertmanager/secrets/discord_url.example \
+      infra/alertmanager/secrets/discord_url
+   # edit it to the real https://discord.com/api/webhooks/<id>/<token>
    ```
 
 2. **Validate the configs before starting** (no promtool/amtool in CI - this is the gate):
@@ -49,6 +51,34 @@ being discovered by accident.
 
 5. **Verify end-to-end:** stop `bullpen-worker` for >2m and confirm a Discord alert fires; restart and
    confirm a resolve message. Then re-enable.
+
+## Native-dockerd quirks (the WSL2 box; box-found 2026-06-11)
+
+Dev Macs run Docker Desktop; the prod box runs native dockerd inside WSL2. Two behaviors differ,
+and both bit during the first bring-up:
+
+- **`host.docker.internal` does not resolve on native dockerd** (Docker Desktop magic only), which
+  broke Prometheus's api/worker JVM scrape targets. Fixed in code: the `prometheus` service maps it
+  via `extra_hosts: ["host.docker.internal:host-gateway"]` (commit 3017a8f). No box action needed
+  beyond pulling.
+- **node-exporter needs shared mount propagation on `/`.** Its `rslave` root bind fails on WSL2's
+  default private propagation; the container dies until the host runs:
+
+  ```bash
+  sudo mount --make-rshared /
+  ```
+
+  That command is SESSION-SCOPED - it does not survive a WSL restart. Persist it in `/etc/wsl.conf`
+  on the box:
+
+  ```ini
+  [boot]
+  command = mount --make-rshared /
+  ```
+
+  This line is part of the box's documented bootstrap (ADR-0006: box-only state must be
+  reconstructable from the repo + documented bootstrap) and belongs on the reboot-drill checklist:
+  after any cold boot, verify `bullpen-node-exporter` is up before trusting host-memory alerts.
 
 ## Console side (operator, NOT code)
 

@@ -1,11 +1,16 @@
-# WS4: route every Bullpen alert to the EXISTING Discord webhook via Discord's Slack-compatible
-# endpoint (append /slack to the webhook URL). The webhook is a secret, so Alertmanager reads it from
-# a mounted file (slack_api_url_file) - never committed. Put the full URL INCLUDING the /slack suffix
-# in infra/alertmanager/secrets/discord_slack_url (gitignored); see discord_slack_url.example.
+# WS4: route every Bullpen alert to the Discord webhook via Alertmanager's NATIVE Discord
+# receiver (discord_configs; webhook_url_file needs v0.27+ - the compose pins v0.27.0).
+#
+# History: the first cut used Discord's Slack-compatible endpoint (webhook URL + /slack suffix
+# through slack_configs). DEAD END - Discord 400s Alertmanager's Slack payload with
+# {"attachments":["0"]}, so no /slack-suffix arrangement can ever deliver (box-proven 2026-06-11).
+#
+# The webhook is a secret, so Alertmanager reads it from a mounted file - never committed. Put the
+# RAW webhook URL (https://discord.com/api/webhooks/<id>/<token>, NO suffix) in
+# infra/alertmanager/secrets/discord_url (gitignored); see discord_url.example.
 # Validate on the box before trusting: `amtool check-config infra/alertmanager/alertmanager.yml`.
 global:
   resolve_timeout: 5m
-  slack_api_url_file: /etc/alertmanager/secrets/discord_slack_url
 
 route:
   receiver: discord
@@ -21,12 +26,11 @@ route:
 
 receivers:
   - name: discord
-    slack_configs:
-      # Discord's Slack endpoint ignores `channel`, but the slack_config schema requires it.
-      - channel: "#bullpen-alerts"
+    discord_configs:
+      - webhook_url_file: /etc/alertmanager/secrets/discord_url
         send_resolved: true
         title: "[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}"
-        text: >-
-          {{ range .Alerts }}*{{ .Annotations.summary }}*
+        message: >-
+          {{ range .Alerts }}**{{ .Annotations.summary }}**
           {{ .Annotations.description }}
           {{ end }}

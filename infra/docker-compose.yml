@@ -71,7 +71,7 @@ services:
   # Behind the `monitoring` profile so the default `docker compose up` stays lean (Prometheus
   # tolerates a missing Alertmanager) and dev does not need the Discord secret. On the prod box:
   #   docker compose -f infra/docker-compose.yml --profile monitoring up -d
-  # (after creating infra/alertmanager/secrets/discord_slack_url from the .example).
+  # (after creating infra/alertmanager/secrets/discord_url from the .example).
   node-exporter:
     image: prom/node-exporter:v1.8.2
     container_name: bullpen-node-exporter
