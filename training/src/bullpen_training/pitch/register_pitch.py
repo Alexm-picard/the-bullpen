@@ -195,6 +195,13 @@ def main(
         _print_report(report, snap)
         click.echo("")
 
+    # L2: the 422 lesson - raw training artifacts lack the head discriminator the registry's
+    # loaders need; only the ASSEMBLED snapshot (write_snapshot output above) is registrable.
+    click.echo(
+        "REGISTER THE ASSEMBLED SNAPSHOT DIRS ABOVE (write_snapshot output) - "
+        "never the raw training artifacts; raw metadata lacks the head discriminator "
+        "and the registry will 422."
+    )
     log.info("pitch register->serve dry-run complete", out_dir=str(base))
 
 

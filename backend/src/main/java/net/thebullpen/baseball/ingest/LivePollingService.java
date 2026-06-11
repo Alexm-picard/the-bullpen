@@ -48,6 +48,12 @@ public class LivePollingService {
   private final long scheduleRefreshMin;
 
   private final Map<Long, GameStatus> statusByGame = new ConcurrentHashMap<>();
+  // L1: games whose status row this PROCESS has written. Empty after a worker restart, so the
+  // first poll of every game re-persists its current status even without a transition -
+  // refreshScheduleIfStale primes statusByGame from the schedule, which otherwise swallows the
+  // first write (restart mid-game left the game invisible to /v1/games/today until its next
+  // transition).
+  private final java.util.Set<Long> statusPersisted = ConcurrentHashMap.newKeySet();
   private final Map<Long, Instant> lastPollAt = new ConcurrentHashMap<>();
   private final Map<Long, Long> lastCursorByGame = new ConcurrentHashMap<>();
   private final Map<Long, Long> lastPredictedKeyByGame = new ConcurrentHashMap<>();
@@ -106,11 +112,14 @@ public class LivePollingService {
         stateMachine.transition(gamePk, prev == null ? GameStatus.SCHEDULED : prev, feed.status());
     statusByGame.put(gamePk, current);
     lastPollAt.put(gamePk, Instant.now());
-    // Persist status only on a transition (step 7b) so the api read path can surface it; the
-    // in-memory map alone is invisible across the profile/process boundary.
-    if (prev == null || prev != current) {
+    // Persist status on a transition (step 7b) OR on this process's first poll of the game (L1:
+    // restart-robustness - the schedule prime makes prev == current after a mid-game restart, so
+    // transition-only persistence left the game invisible to /v1/games/today until its next
+    // transition). The ReplacingMergeTree dedups the re-write.
+    if (prev == null || prev != current || !statusPersisted.contains(gamePk)) {
       if (feed.gameDate() != null) {
         repo.upsertGameStatus(gamePk, feed.gameDate(), current.name());
+        statusPersisted.add(gamePk);
       } else {
         // No parseable gameData.datetime in the feed: the row cannot key into live_game_status,
         // so /v1/games/today will not surface this game (C-3 replay finding, 2026-06-11).

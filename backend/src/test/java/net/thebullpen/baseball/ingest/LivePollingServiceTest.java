@@ -180,6 +180,29 @@ class LivePollingServiceTest {
   // --- WS1 robustness (C1 / C2 / C5) ------------------------------------
 
   @Test
+  void restart_mid_game_persists_the_status_row_on_first_poll_without_a_transition()
+      throws Exception {
+    MlbStatsApiClient client = mock(MlbStatsApiClient.class);
+    LivePitchesRepository repo = mock(LivePitchesRepository.class);
+    LivePitchPredictor predictor = mock(LivePitchPredictor.class);
+    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    // Restart-mid-game shape (L1): the schedule already reports the game IN_PROGRESS, so the
+    // prime sets prev == current and the old transition-only persistence never wrote the row -
+    // the game stayed invisible to /v1/games/today until its NEXT transition.
+    when(client.fetchSchedule(any()))
+        .thenReturn(List.of(new ScheduledGame(822810L, GameStatus.IN_PROGRESS, "BOS", "BAL")));
+    when(client.fetchLiveFeed(822810L)).thenReturn(feed(List.of(pitch(1, 1)), nextPitch(1, 2)));
+
+    LivePollingService svc = service(client, repo, predictor);
+    svc.tick();
+    verify(repo, times(1)).upsertGameStatus(anyLong(), any(), any());
+
+    // A later poll of the same game (no transition, already persisted) does not re-write.
+    svc.pollGame(822810L);
+    verify(repo, times(1)).upsertGameStatus(anyLong(), any(), any());
+  }
+
+  @Test
   void tick_isolates_a_failing_game_so_other_games_still_poll() throws Exception {
     MlbStatsApiClient client = mock(MlbStatsApiClient.class);
     LivePitchesRepository repo = mock(LivePitchesRepository.class);

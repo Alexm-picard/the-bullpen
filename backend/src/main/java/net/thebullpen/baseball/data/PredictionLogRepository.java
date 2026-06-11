@@ -190,10 +190,20 @@ public class PredictionLogRepository {
                 rs.getString("model_name"),
                 rs.getString("model_version"),
                 rs.getLong("n"),
-                rs.getDouble("p50"),
-                rs.getDouble("p95"),
-                rs.getDouble("p99"),
-                rs.getDouble("p999")),
+                finiteOrZero(rs.getDouble("p50")),
+                finiteOrZero(rs.getDouble("p95")),
+                finiteOrZero(rs.getDouble("p99")),
+                finiteOrZero(rs.getDouble("p999"))),
         lookbackDays);
+  }
+
+  /**
+   * L7 hardening: a ClickHouse quantile over a degenerate group can return NaN, and Jackson
+   * serializes NaN/Infinity as bare tokens that are invalid JSON - the ops page's JSON.parse then
+   * fails on the whole payload. Groups always have >= 1 row so this should not occur; if it does,
+   * 0.0 renders as a visible zero rather than breaking the dashboard.
+   */
+  private static double finiteOrZero(double v) {
+    return Double.isFinite(v) ? v : 0.0;
   }
 }
