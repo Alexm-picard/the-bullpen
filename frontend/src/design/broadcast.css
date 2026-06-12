@@ -40,6 +40,15 @@
   animation: broadcast-live-pulse 2s ease-in-out infinite;
 }
 
+/* Slate strips: a quiet hover lift (background only - no motion). */
+.broadcast-strip {
+  transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.broadcast-strip:hover,
+.broadcast-strip:focus-visible {
+  background-color: var(--broadcast-field-subtle, #edf0f4);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .broadcast-ticker__track {
     animation: none;
