@@ -1,26 +1,21 @@
 /**
- * `/games/:id` — per-game live-detail page on the scouting-report identity
- * (Stage 4 follow-up D, decision [133]).
+ * `/games/:id` - per-game live page, FIRST screen on the broadcast identity
+ * (redesign PR-2, decision [160]).
  *
- * This is the ONE leaf in the app that wires real live data (not fixtures):
- * the `useGame` / `useLivePitches` hooks from `api/games.ts` poll on a
- * status-driven interval (12s while in-progress, longer when warming up or
- * delayed). Stage 3d's `/games` slate page is a design showcase; this leaf
- * is the actual live game in progress.
+ * Composition (light field under dark chrome):
+ *   1. Masthead - condensed-italic matchup h1 + context line + <Scorebug>
+ *      (team-color wells, wedge state, gold on-air dot, last-pitch detail)
+ *   2. State band - <BigStat> row (count / outs / last pitch / pitches seen)
+ *   3. <LowerThird> "Live Pitch Log" + <LivePitchBoard> (the hero)
+ *   4. <TickerStrip> - decorative recent-pitch crawl (aria-hidden; the same
+ *      facts live in the board), dead under prefers-reduced-motion
+ *   5. Chrome footer strip
  *
- * Composition (inside the locked `<ReportSheet>` shell):
- *   1. `<LiveGameHeader />`     — masthead synthesized from the GameSummary
- *   2. `<GameStateStrip />`     — game state cells synthesized from the
- *                                 most recent pitch (count, outs, inning,
- *                                 score, last pitch type/velocity)
- *   3. `<LivePitchLog />`       — the live pitch log; pitches come straight
- *                                 from the API (shapes already align)
- *   4. `<CoverSheetFooter />`   — bookends the shell
- *
- * Loading + error states render INSIDE the sheet (not bare loaders) so the
- * identity reads even before the first pitch arrives.
+ * Data wiring is UNCHANGED from the paper-era page: `useGame` /
+ * `useLivePitches` poll on the status-driven cadence; this PR is presentation
+ * only. This page imports ONLY the broadcast token namespace ([160] migration
+ * rule: one namespace per screen).
  */
-import { Stack, Text } from "@mantine/core";
 import { useParams } from "react-router-dom";
 
 import {
@@ -29,27 +24,19 @@ import {
   type GameSummary,
   type LivePitchRow,
 } from "../api/games";
-import { GameStateStrip } from "../components/games/game-state-strip";
-import { LiveGameHeader } from "../components/games/live-game-header";
-import { LivePitchLog } from "../components/games/live-pitch-log";
-import { CoverSheetFooter } from "../components/scouting/cover-sheet-footer";
-import { ReportSheet } from "../components/shared/report-sheet";
-import { SectionLabel } from "../components/shared/section-label";
-import type { GameStateCell } from "../data/games-fixtures";
-import { colors } from "../design/tokens";
+import { BigStat } from "../components/broadcast/big-stat";
+import { BroadcastPanel } from "../components/broadcast/broadcast-panel";
+import { LowerThird } from "../components/broadcast/lower-third";
+import { Scorebug } from "../components/broadcast/scorebug";
+import { TickerStrip } from "../components/broadcast/ticker-strip";
+import { LivePitchBoard } from "../components/games/live-pitch-board";
+import { colors, layouts, typography } from "../design/broadcast";
 
-/** Stable build metadata fallback so the colophon footer always renders. */
+/** Stable build metadata fallback so the footer always renders. */
 const BUILD_FALLBACK = {
   sha: "live",
   date: new Date().toISOString().slice(0, 10),
 };
-
-function formatHalfInning(summary: GameSummary | undefined): string {
-  if (!summary) return "—";
-  // The API exposes `inning` but not top/bottom — show the integer with TOP/BOT
-  // unknown. Use "INN" prefix as a neutral marker.
-  return `INN ${summary.inning}`;
-}
 
 function todayIssueDate(): string {
   return new Intl.DateTimeFormat("en-US", {
@@ -60,55 +47,64 @@ function todayIssueDate(): string {
   }).format(new Date());
 }
 
-function nowEt(): string {
-  return new Intl.DateTimeFormat("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-    timeZone: "America/New_York",
-  }).format(new Date());
+/** Scorebug state read. The API exposes `inning` but not top/bottom - the
+ * neutral "INN n" marker carries over from the paper-era page. */
+function scorebugState(summary: GameSummary | undefined): string {
+  if (!summary) return "—";
+  switch (summary.status) {
+    case "COMPLETED":
+      return "FINAL";
+    case "WARMUP":
+      return "WARMUP";
+    case "SCHEDULED":
+      return "PREGAME";
+    default:
+      return `INN ${summary.inning}`;
+  }
 }
 
-/**
- * Derive the 5-cell GameStateStrip from the most recent live pitch. When no
- * pitch has arrived yet the cells render as "—" so the strip still draws
- * (better than an empty space).
- */
-function deriveStateCells(
-  summary: GameSummary | undefined,
-  mostRecent: LivePitchRow | undefined,
-): GameStateCell[] {
-  return [
-    {
-      label: "Inning",
-      value: summary ? String(summary.inning) : "—",
-    },
-    {
-      label: "Score",
-      value: summary
-        ? `${summary.awayTeam} ${summary.awayScore} — ${summary.homeTeam} ${summary.homeScore}`
-        : "—",
-    },
-    {
-      label: "Count",
-      value: mostRecent ? `${mostRecent.balls}-${mostRecent.strikes}` : "—",
-    },
-    {
-      label: "Outs",
-      value: mostRecent ? String(mostRecent.outs) : "—",
-    },
-    {
-      label: "Last Pitch",
-      value: mostRecent
-        ? `${mostRecent.pitchType || "—"}${
-            mostRecent.releaseSpeedMph != null
-              ? ` · ${mostRecent.releaseSpeedMph.toFixed(1)}`
-              : ""
-          }`
-        : "—",
-    },
-  ];
+function isLive(summary: GameSummary | undefined): boolean {
+  return summary?.status === "IN_PROGRESS" || summary?.status === "MID_INNING";
 }
+
+function lastPitchRead(p: LivePitchRow | undefined): string {
+  if (!p) return "—";
+  const type = p.pitchType || "—";
+  return p.releaseSpeedMph != null
+    ? `${type} · ${p.releaseSpeedMph.toFixed(1)}`
+    : type;
+}
+
+function tickerItems(pitches: LivePitchRow[]): string[] {
+  return pitches
+    .slice(0, 12)
+    .map(
+      (p) =>
+        `${p.pitchType || "?"} ${
+          p.releaseSpeedMph != null ? p.releaseSpeedMph.toFixed(1) : "—"
+        } → ${p.description.replace(/_/g, " ")}`,
+    );
+}
+
+const fieldStyle: React.CSSProperties = {
+  backgroundColor: colors.field,
+  minHeight: "100%",
+  padding: "24px 16px 0",
+};
+
+const columnStyle: React.CSSProperties = {
+  maxWidth: layouts.broadcastMaxWidth,
+  margin: "0 auto",
+  display: "flex",
+  flexDirection: "column",
+  gap: 24,
+};
+
+const errorTextStyle: React.CSSProperties = {
+  fontFamily: typography.fonts.body,
+  fontWeight: typography.weights.semibold,
+  color: colors.goldInk,
+};
 
 export function GamePage() {
   const { id } = useParams<{ id: string }>();
@@ -120,84 +116,133 @@ export function GamePage() {
 
   if (!valid) {
     return (
-      <ReportSheet>
-        <Stack gap={16}>
-          <Text style={{ color: colors.scarlet, fontWeight: 600 }}>
-            Invalid game id.
-          </Text>
-        </Stack>
-      </ReportSheet>
+      <div style={fieldStyle}>
+        <div style={columnStyle}>
+          <p style={errorTextStyle}>Invalid game id.</p>
+        </div>
+      </div>
     );
   }
 
   const summary = game.data;
   const mostRecent = pitches.pitches[0];
-  const issueDate = todayIssueDate();
-  const issuedAt = nowEt();
-  // Honest label per decision [154]: live is ingest-only until a pitch head clears its
-  // promotion gate, so no model version is claimed here. Pitch cards render predictions
-  // as n/a until a champion exists.
-  const modelLabel = "ingest live · pitch model pending";
 
   return (
-    <ReportSheet>
-      <Stack gap={24}>
-        <LiveGameHeader
-          issueDate={issueDate}
-          awayTeam={summary?.awayTeam ?? "—"}
-          homeTeam={summary?.homeTeam ?? "—"}
-          awayScore={summary?.awayScore ?? 0}
-          homeScore={summary?.homeScore ?? 0}
-          halfInning={formatHalfInning(summary)}
-          batterName={
-            mostRecent
-              ? `Batter #${mostRecent.batterId}`
-              : "Awaiting first pitch"
-          }
-          pitcherName={
-            mostRecent
-              ? `Pitcher #${mostRecent.pitcherId}`
-              : "Awaiting first pitch"
-          }
-          issuedAt={issuedAt}
-          modelLabel={modelLabel}
-        />
-
-        <GameStateStrip cells={deriveStateCells(summary, mostRecent)} />
+    <div style={fieldStyle}>
+      <div style={columnStyle}>
+        <header>
+          <h1
+            style={{
+              margin: 0,
+              fontFamily: typography.fonts.display,
+              fontStyle: "italic",
+              fontWeight: typography.weights.heavy,
+              fontSize: typography.scale[6],
+              lineHeight: typography.lineHeights.display,
+              letterSpacing: "0.01em",
+              textTransform: "uppercase",
+              color: colors.ink,
+            }}
+          >
+            {summary?.awayTeam ?? "—"}{" "}
+            <span style={{ color: colors.textMuted, fontWeight: 600 }}>@</span>{" "}
+            {summary?.homeTeam ?? "—"}
+          </h1>
+          <p
+            style={{
+              margin: "2px 0 12px",
+              fontFamily: typography.fonts.mono,
+              fontSize: 12,
+              fontFeatureSettings: '"tnum" 1',
+              letterSpacing: "0.02em",
+              color: colors.textMuted,
+            }}
+          >
+            {todayIssueDate()} · live ingest · pitch model pending
+          </p>
+          <Scorebug
+            awayTeam={summary?.awayTeam ?? "—"}
+            homeTeam={summary?.homeTeam ?? "—"}
+            awayScore={summary?.awayScore ?? 0}
+            homeScore={summary?.homeScore ?? 0}
+            state={scorebugState(summary)}
+            live={isLive(summary)}
+            detail={mostRecent ? lastPitchRead(mostRecent) : undefined}
+          />
+        </header>
 
         {game.isError ? (
-          <Text style={{ color: colors.scarlet, fontWeight: 600 }}>
+          <p style={errorTextStyle}>
             Could not load game
             {game.error instanceof Error ? `: ${game.error.message}` : ""}.
-          </Text>
+          </p>
         ) : null}
 
+        <BroadcastPanel cut>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 40 }}>
+            <BigStat
+              label="Count"
+              value={
+                mostRecent ? `${mostRecent.balls}-${mostRecent.strikes}` : "—"
+              }
+            />
+            <BigStat
+              label="Outs"
+              value={mostRecent ? String(mostRecent.outs) : "—"}
+            />
+            <BigStat label="Last Pitch" value={lastPitchRead(mostRecent)} />
+            <BigStat
+              label="Pitches"
+              value={String(pitches.pitches.length)}
+              tone="gold"
+            />
+          </div>
+        </BroadcastPanel>
+
         <section aria-labelledby="game-pitch-log-label">
-          <div id="game-pitch-log-label">
-            <SectionLabel>Live Pitch Log</SectionLabel>
+          <div style={{ marginBottom: 12 }}>
+            <LowerThird
+              id="game-pitch-log-label"
+              meta={`NEWEST ${Math.min(pitches.pitches.length, 50)}`}
+            >
+              Live Pitch Log
+            </LowerThird>
           </div>
           {pitches.isError ? (
-            <Text style={{ color: colors.scarlet, fontWeight: 600 }}>
+            <p style={errorTextStyle}>
               Could not load pitches
               {pitches.error instanceof Error
                 ? `: ${pitches.error.message}`
                 : ""}
               .
-            </Text>
-          ) : pitches.isLoading && pitches.pitches.length === 0 ? (
-            <Text style={{ color: colors.textMuted }}>
-              Waiting for the first pitch…
-            </Text>
+            </p>
           ) : (
-            <LivePitchLog pitches={pitches.pitches.slice(0, 50)} />
+            <LivePitchBoard pitches={pitches.pitches} />
           )}
         </section>
 
-        <CoverSheetFooter
-          buildSha={BUILD_FALLBACK.sha}
-          buildDate={BUILD_FALLBACK.date}
-        />
-      </Stack>
-    </ReportSheet>
+        <TickerStrip items={tickerItems(pitches.pitches)} />
+
+        <footer
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            margin: "0 -16px",
+            padding: "10px 16px",
+            backgroundColor: colors.chromeDeep,
+            fontFamily: typography.fonts.mono,
+            fontSize: 11,
+            letterSpacing: "0.04em",
+            color: colors.textOnChromeMuted,
+          }}
+        >
+          <span>THE BULLPEN · LIVE GAME</span>
+          <span>
+            build {BUILD_FALLBACK.sha} · {BUILD_FALLBACK.date}
+          </span>
+        </footer>
+      </div>
+    </div>
   );
 }
