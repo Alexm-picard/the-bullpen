@@ -13,7 +13,7 @@
  */
 
 import type { FleetRow, FleetRowState } from "../../data/about-fixtures";
-import { radii, colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/broadcast";
 
 export type AboutModelFleetProps = {
   paragraphs: string[];
@@ -26,24 +26,24 @@ function stateCellStyle(state: FleetRowState): React.CSSProperties {
   // are warm-cream variants from the printed-sheet palette.
   if (state === "LIVE") {
     return {
-      backgroundColor: colors.bgEmphasis,
-      color: colors.textStrong,
+      backgroundColor: colors.rule,
+      color: colors.ink,
       fontWeight: typography.weights.bold,
     };
   }
   return {
-    backgroundColor: colors.bgSubtle,
+    backgroundColor: colors.fieldSubtle,
     color: colors.textMuted,
     fontWeight: typography.weights.semibold,
   };
 }
 
 export function AboutModelFleet({ paragraphs, rows }: AboutModelFleetProps) {
-  const border = `1px solid ${colors.bgEmphasis}`;
+  const border = `1px solid ${colors.rule}`;
 
   const headerCellStyle: React.CSSProperties = {
-    backgroundColor: colors.navy,
-    color: colors.textOnNavy,
+    backgroundColor: colors.chrome,
+    color: colors.textOnChrome,
     fontFamily: typography.fonts.display,
     fontSize: 14,
     fontWeight: typography.weights.bold,
@@ -61,24 +61,24 @@ export function AboutModelFleet({ paragraphs, rows }: AboutModelFleetProps) {
   const monoCellStyle: React.CSSProperties = {
     fontFamily: typography.fonts.mono,
     fontSize: 14,
-    color: colors.textStrong,
+    color: colors.ink,
     padding: "7px 12px",
     borderBottom: border,
     borderRight: border,
     verticalAlign: "middle",
-    backgroundColor: colors.bgSheet,
+    backgroundColor: colors.panel,
     whiteSpace: "nowrap",
   };
 
   const backboneCellStyle: React.CSSProperties = {
     fontFamily: typography.fonts.body,
     fontSize: 14,
-    color: colors.textDefault,
+    color: colors.text,
     padding: "7px 12px",
     borderBottom: border,
     borderRight: border,
     verticalAlign: "middle",
-    backgroundColor: colors.bgSheet,
+    backgroundColor: colors.panel,
   };
 
   return (
@@ -92,7 +92,7 @@ export function AboutModelFleet({ paragraphs, rows }: AboutModelFleetProps) {
           fontFamily: typography.fonts.body,
           fontSize: typography.scale[2], // 16
           lineHeight: 1.55,
-          color: colors.textDefault,
+          color: colors.text,
         }}
       >
         {paragraphs.map((p, i) => (
@@ -107,14 +107,14 @@ export function AboutModelFleet({ paragraphs, rows }: AboutModelFleetProps) {
           overflowX: "auto",
           border,
           borderRadius: radii.sm,
-          backgroundColor: colors.bgSheet,
+          backgroundColor: colors.panel,
         }}
       >
         <table
           style={{
             borderCollapse: "collapse",
             width: "100%",
-            backgroundColor: colors.bgSheet,
+            backgroundColor: colors.panel,
             tableLayout: "auto",
           }}
         >

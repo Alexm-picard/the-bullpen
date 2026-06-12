@@ -10,7 +10,7 @@
  * labels, not links.
  */
 
-import { radii, colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/broadcast";
 
 export type AboutRejectedAlternativesProps = {
   paragraph: string;
@@ -30,7 +30,7 @@ export function AboutRejectedAlternatives({
           fontFamily: typography.fonts.body,
           fontSize: typography.scale[2], // 16
           lineHeight: 1.55,
-          color: colors.textDefault,
+          color: colors.text,
         }}
       >
         {paragraph}
@@ -54,8 +54,8 @@ export function AboutRejectedAlternatives({
               color: colors.textMuted,
               letterSpacing: "0.02em",
               padding: "4px 8px",
-              backgroundColor: colors.bgSubtle,
-              border: `1px solid ${colors.bgEmphasis}`,
+              backgroundColor: colors.fieldSubtle,
+              border: `1px solid ${colors.rule}`,
               borderRadius: radii.sm,
               display: "inline-flex",
               alignItems: "center",
@@ -65,7 +65,7 @@ export function AboutRejectedAlternatives({
             <span
               aria-hidden="true"
               style={{
-                color: colors.scarlet,
+                color: colors.goldInk,
                 fontWeight: typography.weights.bold,
               }}
             >

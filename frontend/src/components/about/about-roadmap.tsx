@@ -6,7 +6,7 @@
  * paragraph; the page composes it under the ROADMAP HONESTY section label.
  */
 
-import { colors, typography } from "../../design/tokens";
+import { colors, typography } from "../../design/broadcast";
 
 export type AboutRoadmapProps = {
   paragraph: string;
@@ -21,7 +21,7 @@ export function AboutRoadmap({ paragraph }: AboutRoadmapProps) {
         fontFamily: typography.fonts.body,
         fontSize: typography.scale[2], // 16
         lineHeight: 1.55,
-        color: colors.textDefault,
+        color: colors.text,
       }}
     >
       {paragraph}

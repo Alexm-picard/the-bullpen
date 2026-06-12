@@ -15,7 +15,7 @@
  * Below 600px, stacks vertically via about.css (.about-cover__footer).
  */
 
-import { radii, colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/broadcast";
 
 export type AboutColophonFooterProps = {
   buildSha: string;
@@ -31,7 +31,7 @@ export function AboutColophonFooter({
   const itemStyle: React.CSSProperties = {
     fontFamily: typography.fonts.mono,
     fontSize: 12,
-    color: colors.textOnNavy,
+    color: colors.textOnChrome,
     letterSpacing: "0.06em",
     textTransform: "uppercase",
   };
@@ -40,7 +40,7 @@ export function AboutColophonFooter({
     <footer
       className="about-cover__footer"
       style={{
-        backgroundColor: colors.navy,
+        backgroundColor: colors.chrome,
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",

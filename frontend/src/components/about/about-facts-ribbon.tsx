@@ -20,7 +20,7 @@
  */
 
 import type { FactCell } from "../../data/about-fixtures";
-import { radii, colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/broadcast";
 
 export type AboutFactsRibbonProps = {
   cells: FactCell[];
@@ -33,7 +33,7 @@ export function AboutFactsRibbon({ cells }: AboutFactsRibbonProps) {
       role="group"
       aria-label="Project artifact counts"
       style={{
-        backgroundColor: colors.navy,
+        backgroundColor: colors.chrome,
         display: "grid",
         gridTemplateColumns: `repeat(${cells.length}, 1fr)`,
         columnGap: 1,
@@ -50,9 +50,9 @@ export function AboutFactsRibbon({ cells }: AboutFactsRibbonProps) {
             justifyContent: "center",
             gap: 4,
             padding: "16px 14px",
-            backgroundColor: colors.navy,
+            backgroundColor: colors.chrome,
             borderRight:
-              i < cells.length - 1 ? `1px solid ${colors.navyDeep}` : "none",
+              i < cells.length - 1 ? `1px solid ${colors.chromeDeep}` : "none",
             minHeight: 88,
           }}
         >
@@ -63,7 +63,7 @@ export function AboutFactsRibbon({ cells }: AboutFactsRibbonProps) {
               fontWeight: typography.weights.semibold,
               textTransform: "uppercase",
               letterSpacing: "0.08em",
-              color: colors.silver,
+              color: colors.textOnChromeMuted,
             }}
           >
             {cell.eyebrow}
@@ -73,7 +73,7 @@ export function AboutFactsRibbon({ cells }: AboutFactsRibbonProps) {
               fontFamily: typography.fonts.mono,
               fontSize: typography.scale[5], // 32
               fontWeight: typography.weights.bold,
-              color: colors.textOnNavy,
+              color: colors.textOnChrome,
               lineHeight: 1.05,
               letterSpacing: "0.01em",
             }}
@@ -87,7 +87,7 @@ export function AboutFactsRibbon({ cells }: AboutFactsRibbonProps) {
               fontWeight: typography.weights.bold,
               textTransform: "uppercase",
               letterSpacing: "0.08em",
-              color: colors.textOnNavy,
+              color: colors.textOnChrome,
             }}
           >
             {cell.unit}

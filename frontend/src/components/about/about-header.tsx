@@ -20,8 +20,7 @@
 
 import { Stack, Title } from "@mantine/core";
 
-import { colors, typography } from "../../design/tokens";
-import { HeroEyebrow } from "../shared/hero-eyebrow";
+import { colors, typography } from "../../design/broadcast";
 
 export type AboutHeaderProps = {
   /** ISO date, e.g. "2026-05-30". Rendered in the mono context line. */
@@ -45,7 +44,18 @@ export function AboutHeader({
 }: AboutHeaderProps) {
   return (
     <Stack gap={10}>
-      <HeroEyebrow>The Bullpen · Colophon · Back Matter</HeroEyebrow>
+      <span
+        style={{
+          fontFamily: typography.fonts.mono,
+          fontSize: 12,
+          fontWeight: typography.weights.semibold,
+          letterSpacing: "0.12em",
+          textTransform: "uppercase",
+          color: colors.goldInk,
+        }}
+      >
+        The Bullpen · Colophon · Back Matter
+      </span>
       <Title
         order={1}
         className="about-cover__title"
@@ -53,7 +63,7 @@ export function AboutHeader({
           fontFamily: typography.fonts.display,
           fontSize: typography.scale[7], // 64
           fontWeight: typography.weights.heavy,
-          color: colors.textStrong,
+          color: colors.ink,
           textTransform: "uppercase",
           letterSpacing: "0.005em",
           lineHeight: typography.lineHeights.display,
@@ -71,11 +81,11 @@ export function AboutHeader({
           flexWrap: "wrap",
           fontFamily: typography.fonts.body,
           fontSize: typography.scale[2], // 16
-          color: colors.textDefault,
+          color: colors.text,
           paddingTop: 6,
           paddingBottom: 6,
-          borderTop: `1px solid ${colors.bgEmphasis}`,
-          borderBottom: `1px solid ${colors.bgEmphasis}`,
+          borderTop: `1px solid ${colors.rule}`,
+          borderBottom: `1px solid ${colors.rule}`,
         }}
       >
         <span style={{ fontWeight: typography.weights.semibold }}>

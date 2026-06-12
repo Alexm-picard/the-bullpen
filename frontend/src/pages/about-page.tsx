@@ -28,10 +28,9 @@
  *   - No anchor on the repo placeholder (plain text only, locked pick R2).
  */
 
-import { Stack, Text } from "@mantine/core";
-
 import { useAllRegistryRows } from "../api/ops";
 import { AboutColophonFooter } from "../components/about/about-colophon-footer";
+import { LowerThird } from "../components/broadcast/lower-third";
 import { AboutDiscipline } from "../components/about/about-discipline";
 import { AboutFactsRibbon } from "../components/about/about-facts-ribbon";
 import { AboutHeader } from "../components/about/about-header";
@@ -40,8 +39,6 @@ import { AboutOpeningPitch } from "../components/about/about-opening-pitch";
 import { AboutRejectedAlternatives } from "../components/about/about-rejected-alternatives";
 import { AboutRoadmap } from "../components/about/about-roadmap";
 import { AboutStackTable } from "../components/about/about-stack-table";
-import { ReportSheet } from "../components/shared/report-sheet";
-import { SectionLabel } from "../components/shared/section-label";
 import {
   ABOUT_META,
   DISCIPLINE_NOTES,
@@ -56,7 +53,7 @@ import {
 } from "../data/about-fixtures";
 import type { FleetRow, FleetRowState } from "../data/about-fixtures";
 import type { ModelVersion } from "../api/ops";
-import { colors } from "../design/tokens";
+import { colors, layouts, typography } from "../design/broadcast";
 
 import "./about/about.css";
 
@@ -102,6 +99,27 @@ function registryToFleetRows(versions: ModelVersion[]): FleetRow[] {
 
 // ── Page component ────────────────────────────────────────────────────────────
 
+const fieldStyle: React.CSSProperties = {
+  backgroundColor: colors.field,
+  minHeight: "100%",
+  padding: "24px 16px 0",
+};
+
+const columnStyle: React.CSSProperties = {
+  maxWidth: layouts.broadcastMaxWidth,
+  margin: "0 auto",
+  display: "flex",
+  flexDirection: "column",
+  gap: 28,
+};
+
+const noteStyle: React.CSSProperties = {
+  margin: "0 0 8px",
+  fontFamily: typography.fonts.body,
+  fontSize: 13,
+  color: colors.textMuted,
+};
+
 export default function AboutPage() {
   // Model fleet: LIVE when the registry returns at least one row.
   const registry = useAllRegistryRows();
@@ -117,8 +135,8 @@ export default function AboutPage() {
     live ? "" : " · showcase data (backend unreachable)";
 
   return (
-    <ReportSheet>
-      <Stack gap={28}>
+    <div style={fieldStyle}>
+      <div style={columnStyle}>
         <AboutHeader
           issueDate={ABOUT_META.issueDate}
           builtBy={ABOUT_META.builtBy}
@@ -130,46 +148,48 @@ export default function AboutPage() {
         <AboutFactsRibbon cells={FACTS_RIBBON} />
 
         <section aria-labelledby="about-opening-pitch-label">
-          <div id="about-opening-pitch-label">
-            <SectionLabel>Opening Pitch</SectionLabel>
+          <div style={{ marginBottom: 12 }}>
+            <LowerThird id="about-opening-pitch-label">
+              Opening Pitch
+            </LowerThird>
           </div>
           <AboutOpeningPitch paragraphs={OPENING_PITCH_PARAS} />
         </section>
 
         <section aria-labelledby="about-stack-label">
-          <div id="about-stack-label">
-            <SectionLabel>The Stack</SectionLabel>
+          <div style={{ marginBottom: 12 }}>
+            <LowerThird id="about-stack-label">The Stack</LowerThird>
           </div>
           <AboutStackTable rows={STACK_ROWS} />
         </section>
 
         <section aria-labelledby="about-fleet-label">
-          <div id="about-fleet-label">
-            <SectionLabel>Model Fleet</SectionLabel>
+          <div style={{ marginBottom: 12 }}>
+            <LowerThird id="about-fleet-label">Model Fleet</LowerThird>
           </div>
           {!fleetIsLive && (
-            <Text
-              size="sm"
-              style={{ color: colors.textMuted }}
-              mb={8}
-            >
-              Showcase data{showcaseSuffix(false)} -- showing fixture rows.
-              Live registry reflects actual registered models.
-            </Text>
+            <p style={noteStyle}>
+              Showcase data{showcaseSuffix(false)} -- showing fixture rows. Live
+              registry reflects actual registered models.
+            </p>
           )}
           <AboutModelFleet paragraphs={MODEL_FLEET_PARAS} rows={fleetRows} />
         </section>
 
         <section aria-labelledby="about-discipline-label">
-          <div id="about-discipline-label">
-            <SectionLabel>Operational Discipline</SectionLabel>
+          <div style={{ marginBottom: 12 }}>
+            <LowerThird id="about-discipline-label">
+              Operational Discipline
+            </LowerThird>
           </div>
           <AboutDiscipline notes={DISCIPLINE_NOTES} />
         </section>
 
         <section aria-labelledby="about-rejected-label">
-          <div id="about-rejected-label">
-            <SectionLabel>Intentionally Not Here</SectionLabel>
+          <div style={{ marginBottom: 12 }}>
+            <LowerThird id="about-rejected-label">
+              Intentionally Not Here
+            </LowerThird>
           </div>
           <AboutRejectedAlternatives
             paragraph={REJECTED_PARA}
@@ -178,8 +198,8 @@ export default function AboutPage() {
         </section>
 
         <section aria-labelledby="about-roadmap-label">
-          <div id="about-roadmap-label">
-            <SectionLabel>Roadmap Honesty</SectionLabel>
+          <div style={{ marginBottom: 12 }}>
+            <LowerThird id="about-roadmap-label">Roadmap Honesty</LowerThird>
           </div>
           <AboutRoadmap paragraph={ROADMAP_PARA} />
         </section>
@@ -189,7 +209,7 @@ export default function AboutPage() {
           buildDate={ABOUT_META.buildDate}
           repoPlaceholder={ABOUT_META.repoPlaceholder}
         />
-      </Stack>
-    </ReportSheet>
+      </div>
+    </div>
   );
 }

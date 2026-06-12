@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 
 import type { FactCell } from "../../data/about-fixtures";
 import { theme } from "../../design/theme";
-import { colors } from "../../design/tokens";
+import { colors } from "../../design/broadcast";
 
 import { AboutFactsRibbon } from "./about-facts-ribbon";
 
@@ -61,7 +61,7 @@ describe("AboutFactsRibbon", () => {
 
   it("uses the navy chrome background", () => {
     const html = render(<AboutFactsRibbon cells={CELLS} />);
-    expect(html.toLowerCase()).toContain(colors.navy.toLowerCase());
+    expect(html.toLowerCase()).toContain(colors.chrome.toLowerCase());
   });
 
   it("has a role=group landmark with an aria-label", () => {
