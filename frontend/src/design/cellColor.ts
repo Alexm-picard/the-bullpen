@@ -56,13 +56,38 @@ export type MetricMeta = {
  * The ordered 5-stop diverging ramp. Index 0 = strongly bad, index 4 = strongly
  * good. The neutral midpoint is index 2 (league-average / no read).
  */
-const RAMP: [string, string, string, string, string] = [
+export type CondFormatRamp = [string, string, string, string, string];
+
+const RAMP: CondFormatRamp = [
   colors.condFormat.bad3, // 0 — strongly unfavorable
   colors.condFormat.bad1, // 1 — mildly unfavorable
   colors.condFormat.neutral, // 2 — league-average
   colors.condFormat.good1, // 3 — mildly favorable
   colors.condFormat.good3, // 4 — strongly favorable
 ];
+
+/**
+ * Build the ramp array from a condFormat token group - [160] migration
+ * support: screens on the broadcast namespace pass
+ * `rampFrom(broadcast.colors.condFormat)` to {@link cellColorWith} so the
+ * signature primitive renders from THEIR tokens. The mapping logic
+ * (percentiles, direction, thresholds) is identical across identities.
+ */
+export function rampFrom(condFormat: {
+  bad3: string;
+  bad1: string;
+  neutral: string;
+  good1: string;
+  good3: string;
+}): CondFormatRamp {
+  return [
+    condFormat.bad3,
+    condFormat.bad1,
+    condFormat.neutral,
+    condFormat.good1,
+    condFormat.good3,
+  ];
+}
 
 // ── Internal utilities ───────────────────────────────────────────────────────
 
@@ -150,8 +175,20 @@ function percentileToRampIndex(percentile: number): 0 | 1 | 2 | 3 | 4 {
  * @param metric  The MetricMeta descriptor with direction + reference dist.
  */
 export function cellColor(value: number | null, metric: MetricMeta): string {
+  return cellColorWith(RAMP, value, metric);
+}
+
+/**
+ * {@link cellColor} against an explicit ramp (see {@link rampFrom}) - the
+ * broadcast-identity screens' entry point during the [160] migration.
+ */
+export function cellColorWith(
+  ramp: CondFormatRamp,
+  value: number | null,
+  metric: MetricMeta,
+): string {
   if (value === null || !Number.isFinite(value)) {
-    return colors.condFormat.neutral;
+    return ramp[2];
   }
 
   const ref = metric.reference;
@@ -175,7 +212,7 @@ export function cellColor(value: number | null, metric: MetricMeta): string {
     // Invert: distance 0 → percentile 1 (good), distance 1 → percentile 0 (bad).
     const invertedPct = 1 - distancePct;
     const rampIndex = percentileToRampIndex(invertedPct);
-    return RAMP[rampIndex];
+    return ramp[rampIndex];
   }
 
   const rawPct = estimatePercentile(clamped, ref);
@@ -190,5 +227,5 @@ export function cellColor(value: number | null, metric: MetricMeta): string {
   }
 
   const rampIndex = percentileToRampIndex(goodPct);
-  return RAMP[rampIndex];
+  return ramp[rampIndex];
 }
