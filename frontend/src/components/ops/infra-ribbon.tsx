@@ -18,7 +18,7 @@
  */
 
 import type { InfraService, InfraServiceState } from "../../data/ops-fixtures";
-import { radii, colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/broadcast";
 
 export type InfraRibbonProps = {
   services: InfraService[];
@@ -26,8 +26,8 @@ export type InfraRibbonProps = {
 
 function stateColor(state: InfraServiceState): string {
   if (state === "UP") return colors.condFormat.good3;
-  if (state === "DEGRADED") return colors.viz.categorical[3]; // gold
-  return colors.scarlet;
+  if (state === "DEGRADED") return colors.gold;
+  return colors.condFormat.bad3; // DOWN reads alarming, fills-only
 }
 
 export function InfraRibbon({ services }: InfraRibbonProps) {
@@ -36,7 +36,7 @@ export function InfraRibbon({ services }: InfraRibbonProps) {
       className="ops-infra-ribbon"
       aria-label="Infrastructure services"
       style={{
-        backgroundColor: colors.navy,
+        backgroundColor: colors.chrome,
         display: "grid",
         gridTemplateColumns: `repeat(${services.length}, 1fr)`,
         columnGap: 1,
@@ -52,10 +52,12 @@ export function InfraRibbon({ services }: InfraRibbonProps) {
             alignItems: "center",
             justifyContent: "space-between",
             padding: "10px 14px",
-            color: colors.textOnNavy,
-            backgroundColor: colors.navy,
+            color: colors.textOnChrome,
+            backgroundColor: colors.chrome,
             borderRight:
-              i < services.length - 1 ? `1px solid ${colors.navyDeep}` : "none",
+              i < services.length - 1
+                ? `1px solid ${colors.chromeDeep}`
+                : "none",
             minHeight: 48,
           }}
         >
@@ -67,7 +69,7 @@ export function InfraRibbon({ services }: InfraRibbonProps) {
                 fontWeight: typography.weights.bold,
                 textTransform: "uppercase",
                 letterSpacing: "0.06em",
-                color: colors.textOnNavy,
+                color: colors.textOnChrome,
               }}
             >
               {svc.label}
@@ -76,7 +78,7 @@ export function InfraRibbon({ services }: InfraRibbonProps) {
               style={{
                 fontFamily: typography.fonts.mono,
                 fontSize: 11,
-                color: colors.silver,
+                color: colors.textOnChromeMuted,
                 letterSpacing: "0.02em",
               }}
             >

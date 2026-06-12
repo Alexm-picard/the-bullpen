@@ -14,7 +14,7 @@
 
 import { Stack, Title } from "@mantine/core";
 
-import { colors, typography } from "../../design/tokens";
+import { colors, typography } from "../../design/broadcast";
 import { HeroEyebrow } from "../shared/hero-eyebrow";
 
 export type OpsHeaderProps = {
@@ -48,9 +48,9 @@ export function OpsHeader({
   issuedAt,
   window,
 }: OpsHeaderProps) {
-  const alertColor = alertCount > 0 ? colors.scarlet : colors.textMuted;
+  const alertColor = alertCount > 0 ? colors.goldInk : colors.textMuted;
   const awaitingColor =
-    awaitingPromotionCount > 0 ? colors.scarlet : colors.textMuted;
+    awaitingPromotionCount > 0 ? colors.goldInk : colors.textMuted;
 
   return (
     <Stack gap={10}>
@@ -62,7 +62,7 @@ export function OpsHeader({
           fontFamily: typography.fonts.display,
           fontSize: typography.scale[7], // 64
           fontWeight: typography.weights.heavy,
-          color: colors.textStrong,
+          color: colors.ink,
           textTransform: "uppercase",
           letterSpacing: "0.005em",
           lineHeight: typography.lineHeights.display,
@@ -80,11 +80,11 @@ export function OpsHeader({
           flexWrap: "wrap",
           fontFamily: typography.fonts.body,
           fontSize: typography.scale[2], // 16
-          color: colors.textDefault,
+          color: colors.text,
           paddingTop: 6,
           paddingBottom: 6,
-          borderTop: `1px solid ${colors.bgEmphasis}`,
-          borderBottom: `1px solid ${colors.bgEmphasis}`,
+          borderTop: `1px solid ${colors.rule}`,
+          borderBottom: `1px solid ${colors.rule}`,
         }}
       >
         <span style={{ fontWeight: typography.weights.semibold }}>

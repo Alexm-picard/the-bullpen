@@ -13,6 +13,7 @@
 
 import type { LatencyRow } from "../../data/ops-fixtures";
 import { LATENCY_METRIC } from "../../data/ops-fixtures";
+import { broadcastStatTablePalette } from "../broadcast/palettes";
 import { StatTable } from "../shared/stat-table";
 import type { StatTableColumn, StatTableRow } from "../shared/stat-table";
 
@@ -47,6 +48,7 @@ function rowsFor(rows: LatencyRow[]): StatTableRow[] {
 export function LatencyDetailTable({ rows, caption }: LatencyDetailTableProps) {
   return (
     <StatTable
+      palette={broadcastStatTablePalette}
       columns={latencyColumns()}
       rows={rowsFor(rows)}
       caption={caption}

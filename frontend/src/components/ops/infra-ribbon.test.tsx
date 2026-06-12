@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 
 import { INFRA_SERVICES, type InfraService } from "../../data/ops-fixtures";
 import { theme } from "../../design/theme";
-import { colors } from "../../design/tokens";
+import { colors } from "../../design/broadcast";
 
 import { InfraRibbon } from "./infra-ribbon";
 
@@ -52,7 +52,7 @@ describe("InfraRibbon", () => {
 
   it("renders the navy chrome", () => {
     const html = render(<InfraRibbon services={INFRA_SERVICES} />);
-    expect(html.toLowerCase()).toContain(colors.navy.toLowerCase());
+    expect(html.toLowerCase()).toContain(colors.chrome.toLowerCase());
   });
 
   it("uses the good3 green for UP state badges", () => {
@@ -60,7 +60,7 @@ describe("InfraRibbon", () => {
     expect(html.toLowerCase()).toContain(colors.condFormat.good3.toLowerCase());
   });
 
-  it("uses scarlet for DOWN state badges", () => {
+  it("uses the alarm red (condFormat.bad3) for DOWN state badges", () => {
     const downService: InfraService = {
       id: "test-down",
       label: "Test service",
@@ -69,7 +69,7 @@ describe("InfraRibbon", () => {
     };
     const html = render(<InfraRibbon services={[downService]} />);
     expect(html).toContain("DOWN");
-    expect(html.toLowerCase()).toContain(colors.scarlet.toLowerCase());
+    expect(html.toLowerCase()).toContain(colors.condFormat.bad3.toLowerCase());
   });
 
   it("uses gold for DEGRADED state badges", () => {
@@ -82,7 +82,7 @@ describe("InfraRibbon", () => {
     const html = render(<InfraRibbon services={[degradedService]} />);
     expect(html).toContain("DEGRADED");
     expect(html.toLowerCase()).toContain(
-      colors.viz.categorical[3].toLowerCase(),
+      colors.gold.toLowerCase(),
     );
   });
 

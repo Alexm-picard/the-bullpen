@@ -10,7 +10,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { theme } from "../../design/theme";
-import { colors } from "../../design/tokens";
+import { colors } from "../../design/broadcast";
 
 import { OpsHeader } from "./ops-header";
 
@@ -51,7 +51,7 @@ describe("OpsHeader", () => {
   it("uses scarlet for alert count when > 0", () => {
     const html = render(<OpsHeader {...BASE_PROPS} />);
     expect(html).toContain("2 alerts");
-    expect(html.toLowerCase()).toContain(colors.scarlet.toLowerCase());
+    expect(html.toLowerCase()).toContain(colors.goldInk.toLowerCase());
   });
 
   it("uses muted color for alert count when 0", () => {

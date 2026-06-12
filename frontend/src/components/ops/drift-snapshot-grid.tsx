@@ -22,6 +22,7 @@ import type {
 } from "../../data/ops-fixtures";
 import { ECE_DELTA_METRIC, PSI_METRIC } from "../../data/ops-fixtures";
 import { SectionLabel } from "../shared/section-label";
+import { broadcastStatTablePalette } from "../broadcast/palettes";
 import { StatTable } from "../shared/stat-table";
 import type { StatTableColumn, StatTableRow } from "../shared/stat-table";
 
@@ -105,6 +106,7 @@ export function DriftSnapshotGrid({
       <div className="ops-drift__pair">
         <div>
           <StatTable
+            palette={broadcastStatTablePalette}
             columns={psiCols}
             rows={psiRows(psiByFeature)}
             caption="PSI by feature · 0 stable / 0.20 action"
@@ -112,6 +114,7 @@ export function DriftSnapshotGrid({
         </div>
         <div>
           <StatTable
+            palette={broadcastStatTablePalette}
             columns={eceCols}
             rows={eceRows(eceByOutput)}
             caption="ECE Δ by output · target 0 / |Δ| > 0.01 action"

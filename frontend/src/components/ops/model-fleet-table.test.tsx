@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 
 import { MODEL_FLEET } from "../../data/ops-fixtures";
 import { theme } from "../../design/theme";
-import { colors } from "../../design/tokens";
+import { colors } from "../../design/broadcast";
 
 import { ModelFleetTable } from "./model-fleet-table";
 

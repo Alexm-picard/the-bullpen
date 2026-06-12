@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 
 import { LATENCY_BY_MODEL } from "../../data/ops-fixtures";
 import { theme } from "../../design/theme";
-import { colors } from "../../design/tokens";
+import { colors } from "../../design/broadcast";
 
 import { LatencyDetailTable } from "./latency-detail-table";
 
