@@ -26,9 +26,9 @@
 import { useState } from "react";
 
 import type { CondFormatRamp, MetricMeta } from "../../design/cellColor";
-import { cellColorWith, rampFrom } from "../../design/cellColor";
-import { radii, colors, typography } from "../../design/tokens";
-
+import { cellColorWith } from "../../design/cellColor";
+import { broadcastStatTablePalette } from "../broadcast/palettes";
+import { radii, typography } from "../../design/broadcast";
 
 // ── Identity palette ([160] migration) ───────────────────────────────────────
 
@@ -52,23 +52,6 @@ export type StatTablePalette = {
   bodyFont: string;
   monoFont: string;
   ramp: CondFormatRamp;
-};
-
-const LEGACY_PALETTE: StatTablePalette = {
-  border: colors.bgEmphasis,
-  surface: colors.bgSheet,
-  headerBg: colors.navy,
-  headerText: colors.textOnNavy,
-  headerSortInactive: "rgba(247, 244, 236, 0.4)", // textOnNavy at 40%
-  headerFontStyle: "normal",
-  labelBg: colors.silver,
-  labelText: colors.textStrong,
-  valueText: colors.textStrong,
-  mutedText: colors.textMuted,
-  displayFont: typography.fonts.display,
-  bodyFont: typography.fonts.body,
-  monoFont: typography.fonts.mono,
-  ramp: rampFrom(colors.condFormat),
 };
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -106,7 +89,7 @@ export type StatTableRow = {
 export type StatTableProps = {
   columns: StatTableColumn[];
   rows: StatTableRow[];
-  /** Identity palette; defaults to the legacy scouting-report identity. */
+  /** Identity palette; defaults to the broadcast identity ([160]); pass another palette for a future identity. */
   palette?: StatTablePalette;
   /**
    * Optional caption displayed above the table.
@@ -161,7 +144,7 @@ export function StatTable({
   columns,
   rows,
   caption,
-  palette = LEGACY_PALETTE,
+  palette = broadcastStatTablePalette,
 }: StatTableProps) {
   const [sort, setSort] = useState<SortState>(null);
 

@@ -68,8 +68,8 @@ describe("AboutHeader", () => {
     expect(html).toContain("2026-05-30");
   });
 
-  it("uses the Saira display font on the h1", () => {
+  it("uses the Barlow Condensed display font on the h1", () => {
     const html = render(<AboutHeader {...DEFAULT_PROPS} />);
-    expect(html).toContain("Saira Condensed");
+    expect(html).toContain("Barlow Condensed");
   });
 });

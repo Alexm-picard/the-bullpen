@@ -13,7 +13,8 @@
  * but the visual cadence will tighten — the page caps at 3 by convention.
  */
 
-import { radii, colors, typography } from "../../design/tokens";
+import { broadcastKeyNotesPalette } from "../broadcast/palettes";
+import { typography } from "../../design/broadcast";
 
 export type KeyNotesPalette = {
   surface: string;
@@ -30,27 +31,16 @@ export type KeyNotesPalette = {
   radius: number;
 };
 
-const LEGACY_PALETTE: KeyNotesPalette = {
-  surface: colors.bgSheet,
-  border: colors.bgEmphasis,
-  headerBg: colors.navy,
-  headerText: colors.textOnNavy,
-  headerFontStyle: "normal",
-  noteText: colors.textDefault,
-  numberAccent: colors.scarlet,
-  displayFont: typography.fonts.display,
-  bodyFont: typography.fonts.body,
-  monoFont: typography.fonts.mono,
-  radius: radii.sm,
-};
-
 export type KeyNotesProps = {
   notes: string[];
   /** Identity palette; defaults to the legacy scouting-report identity. */
   palette?: KeyNotesPalette;
 };
 
-export function KeyNotes({ notes, palette = LEGACY_PALETTE }: KeyNotesProps) {
+export function KeyNotes({
+  notes,
+  palette = broadcastKeyNotesPalette,
+}: KeyNotesProps) {
   return (
     <section
       style={{

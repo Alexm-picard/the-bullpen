@@ -1,46 +1,58 @@
-/* Tailwind 4 @theme block — exposes scouting-report design tokens as CSS custom
- * properties + utility classes (bg-bgBase, text-textStrong, bg-navy, text-scarlet,
- * etc.). Lives inside src/design/ so it's the only place outside tokens.ts that
- * holds raw hex literals — the lint:hex-codes script's allowlist (src/design/)
- * covers it.
+/* Tailwind 4 @theme block — exposes BROADCAST design tokens as CSS custom
+ * properties + utility classes. Lives inside src/design/ so it's a legal hex
+ * source for the lint:hex-codes allowlist.
  *
- * Values mirror src/design/tokens.ts exactly. If you change one, change both.
- * Updated 2026-05-29: scouting-report identity per decision [133].
+ * Values mirror src/design/broadcast.ts exactly (decision [160]). If you
+ * change one, change both. The paper-era tokens.ts mirror was deleted in the
+ * redesign cleanup PR.
  *
- * NOTE: The conditional-format ramp (condFormat.*), sequential ramps (heatWarm,
- * spray), and colorblind alt are intentionally OMITTED from this @theme block.
- * They're consumed only via cellColor()/SVG — not as Tailwind utility classes.
- * Keeping them out of @theme prevents bg-condFormatGood3 etc. from polluting
- * the generated CSS. */
+ * NOTE: the conditional-format ramp, sequential ramps, and colorblind alt are
+ * intentionally OMITTED — consumed only via cellColor()/SVG, never as Tailwind
+ * utilities.
+ *
+ * Legacy var names (--color-bgBase/--color-scarlet/--font-ui/--font-data and
+ * friends) are kept as ALIASES to the broadcast values because page-level CSS
+ * consumes them; they retire as those files migrate to the new names. */
 
 @theme {
-  /* ── Backgrounds ── */
-  --color-bgBase: #f7f4ec;
-  --color-bgSheet: #ffffff;
-  --color-bgSubtle: #efebe0;
-  --color-bgEmphasis: #e0dbcd;
+  /* ── The analytical field ── */
+  --color-field: #f6f7f9;
+  --color-panel: #ffffff;
+  --color-fieldSubtle: #edf0f4;
+  --color-rule: #d9dee7;
 
   /* ── Broadcast chrome ── */
-  --color-navy: #142a4c;
-  --color-navyDeep: #0d1b33;
-  --color-silver: #c9cdd4;
-  --color-scarlet: #c8102e;
+  --color-chrome: #0e1b33;
+  --color-chromeDeep: #080f1f;
+  --color-chromeEdge: #26365c;
+  --color-steel: #8b95a7;
+
+  /* ── Accent ── */
+  --color-gold: #f2a900;
+  --color-goldInk: #9a6b00;
 
   /* ── Text ── */
-  --color-textStrong: #14171c;
-  --color-textDefault: #2b2f36;
-  --color-textMuted: #6a6f78;
-  --color-textOnNavy: #f7f4ec;
+  --color-ink: #10141b;
+  --color-text: #272d38;
+  --color-textMuted: #5e6878;
+  --color-textOnChrome: #f4f6fa;
 
   /* ── Typography ── */
-  --font-display: "Saira Condensed", "Arial Narrow", sans-serif;
-  --font-body:
-    "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --font-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono:
-    "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
-  /* Legacy aliases consumed by index.css :root{} — point to new font names. */
-  --font-ui: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* ── Legacy aliases (consumed by page CSS + index.css; retire on contact) ── */
+  --color-bgBase: #f6f7f9;
+  --color-bgSheet: #ffffff;
+  --color-bgSubtle: #edf0f4;
+  --color-bgEmphasis: #d9dee7;
+  --color-scarlet: #9a6b00; /* alias -> goldInk: legacy accent reads as the broadcast accent */
+  --color-textStrong: #10141b;
+  --color-textDefault: #272d38;
+  --color-textOnNavy: #f4f6fa;
+  --font-ui: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-data:
-    "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }

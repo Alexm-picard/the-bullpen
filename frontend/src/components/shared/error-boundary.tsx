@@ -21,7 +21,7 @@
 import { Button, Container, Stack, Text, Title } from "@mantine/core";
 import { Component, type ErrorInfo, type ReactNode } from "react";
 
-import { colors } from "../../design/tokens";
+import { colors } from "../../design/broadcast";
 
 type Props = { children: ReactNode };
 type State = { error: Error | null };
@@ -57,7 +57,7 @@ export class ErrorBoundary extends Component<Props, State> {
         style={{ minHeight: "60vh", display: "grid", placeItems: "center" }}
       >
         <Stack gap="sm" align="center" ta="center">
-          <Text size="sm" fw={700} style={{ color: colors.scarlet }}>
+          <Text size="sm" fw={700} style={{ color: colors.goldInk }}>
             SOMETHING WENT WRONG
           </Text>
           <Title order={2}>This page hit an unexpected error</Title>

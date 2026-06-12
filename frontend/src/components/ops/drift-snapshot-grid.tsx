@@ -21,7 +21,7 @@ import type {
   ModelRegistryRow,
 } from "../../data/ops-fixtures";
 import { ECE_DELTA_METRIC, PSI_METRIC } from "../../data/ops-fixtures";
-import { SectionLabel } from "../shared/section-label";
+import { LowerThird } from "../broadcast/lower-third";
 import { broadcastStatTablePalette } from "../broadcast/palettes";
 import { StatTable } from "../shared/stat-table";
 import type { StatTableColumn, StatTableRow } from "../shared/stat-table";
@@ -101,7 +101,9 @@ export function DriftSnapshotGrid({
   return (
     <section aria-labelledby="ops-drift-section-label">
       <div id="ops-drift-section-label">
-        <SectionLabel>Drift Snapshot · Last 24h Window</SectionLabel>
+        <LowerThird as="h3" meta="LAST 24H WINDOW">
+          Drift Snapshot
+        </LowerThird>
       </div>
       <div className="ops-drift__pair">
         <div>
