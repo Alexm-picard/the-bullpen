@@ -11,7 +11,7 @@
  * as a small uppercase mono line.
  */
 
-import { colors, typography } from "../../design/tokens";
+import { colors, typography } from "../../design/broadcast";
 
 export type ParkHeatmapGridProps = {
   /** 12×12 normalized [0,1] grid. */
@@ -80,7 +80,7 @@ function Legend() {
               width: 24,
               height: 8,
               backgroundColor: c,
-              border: `1px solid ${colors.bgEmphasis}`,
+              border: `1px solid ${colors.rule}`,
             }}
           />
         ))}
@@ -124,8 +124,8 @@ export function ParkHeatmapGrid({ grid, caption }: ParkHeatmapGridProps) {
         viewBox={`0 0 ${SVG_SIZE} ${SVG_SIZE}`}
         style={{
           display: "block",
-          border: `1px solid ${colors.bgEmphasis}`,
-          backgroundColor: colors.bgSheet,
+          border: `1px solid ${colors.rule}`,
+          backgroundColor: colors.panel,
         }}
       >
         <title>{ariaLabel}</title>
@@ -148,7 +148,7 @@ export function ParkHeatmapGrid({ grid, caption }: ParkHeatmapGridProps) {
           d={`M ${homeX - outfieldR} ${homeY}
               A ${outfieldR} ${outfieldR} 0 0 1 ${homeX + outfieldR} ${homeY}`}
           fill="none"
-          stroke={colors.navy}
+          stroke={colors.chrome}
           strokeWidth={1.5}
           strokeOpacity={0.7}
         />

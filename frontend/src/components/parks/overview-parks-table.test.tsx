@@ -13,7 +13,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { PARK_ROWS } from "../../data/parks-fixtures";
-import { colors } from "../../design/tokens";
+import { colors } from "../../design/broadcast";
 import { theme } from "../../design/theme";
 
 import { OverviewParksTable } from "./overview-parks-table";
@@ -72,12 +72,12 @@ describe("OverviewParksTable", () => {
 
   it("renders the navy table header chrome", () => {
     const html = render(<OverviewParksTable rows={PARK_ROWS} />);
-    expect(html.toLowerCase()).toContain(colors.navy.toLowerCase());
+    expect(html.toLowerCase()).toContain(colors.chrome.toLowerCase());
   });
 
   it("renders the silver row-label column chrome", () => {
     const html = render(<OverviewParksTable rows={PARK_ROWS} />);
-    expect(html.toLowerCase()).toContain(colors.silver.toLowerCase());
+    expect(html.toLowerCase()).toContain(colors.fieldSubtle.toLowerCase());
   });
 
   it("formats numeric factor cells to 2 decimal places", () => {

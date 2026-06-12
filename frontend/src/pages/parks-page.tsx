@@ -1,52 +1,58 @@
 /**
- * /parks -- Park Factors appendix (Stage 3c, decision [133] identity).
+ * /parks - the Park Factors appendix on the BROADCAST identity (redesign
+ * PR-6, decision [160]).
  *
- * Composition order (top -> bottom, inside <ReportSheet> shell):
- *   1. <ParksHeader />         -- masthead (eyebrow + 2-line nameplate + byline)
- *   2. <ParksMethodology />    -- single mono strip
- *   3. <OverviewParksTable />  -- 30-row StatTable
- *   4. <ParkSwitcherStrip />   -- horizontal scroll of 30 mini-thumbs
- *   5. <ParkSpotlight />       -- two-column field + heatmap | factors + notes
- *   6. <CoverSheetFooter />    -- navy footer strip (reused from /home)
- *
- * Data sourcing (W7):
- *   All three data surfaces are showcase fixtures from parks-fixtures.ts.
- *   No backend endpoint exists today for park factors. The natural slot
- *   is GET /v1/parks/factors -- listed as a cross-team ask. The existing
- *   POST /v1/predict/batted-ball/all-parks delivers P(HR) per park for
- *   specific launch params; it is a prediction endpoint, not a factor
- *   table, and does not map to these rows without a backend aggregation
- *   layer. Every section is captioned honestly per the C4 rule.
- *
- * Constraints honored:
- *   - One <Title order={1}> only (the masthead h1 inside ParksHeader).
- *   - No hex codes -- every color via tokens.
+ * Composition unchanged: ParksHeader, ParksMethodology, the 30-park overview
+ * table (StatTable through the broadcast palette), the mini-heatmap switcher
+ * strip (gold active ring), and the Coors spotlight (field SVG + heatmap grid
+ * + factor strip + KeyNotes through the broadcast palette). All sections stay
+ * showcase fixtures with their honest captions - GET /v1/parks/factors is not
+ * implemented yet (the all-parks predict endpoint is a prediction surface,
+ * not a factor table). This page imports ONLY the broadcast namespace.
  */
 
-import { Stack, Text } from "@mantine/core";
 import { useState } from "react";
 
+import { LowerThird } from "../components/broadcast/lower-third";
 import { OverviewParksTable } from "../components/parks/overview-parks-table";
 import { ParkSpotlight } from "../components/parks/park-spotlight";
 import { ParkSwitcherStrip } from "../components/parks/park-switcher-strip";
 import { ParksHeader } from "../components/parks/parks-header";
 import { ParksMethodology } from "../components/parks/parks-methodology";
-import { CoverSheetFooter } from "../components/scouting/cover-sheet-footer";
-import { ReportSheet } from "../components/shared/report-sheet";
-import { SectionLabel } from "../components/shared/section-label";
 import {
   COORS_SPOTLIGHT,
   PARK_ROWS,
   PARK_THUMBNAILS,
   PARKS_META,
 } from "../data/parks-fixtures";
-import { colors } from "../design/tokens";
+import { colors, layouts, typography } from "../design/broadcast";
 
 import "./parks/parks.css";
 
 // Shared caption for all fixture-backed sections on this page.
 const SHOWCASE_NOTE =
   "Showcase data -- GET /v1/parks/factors not yet implemented.";
+
+const fieldStyle: React.CSSProperties = {
+  backgroundColor: colors.field,
+  minHeight: "100%",
+  padding: "24px 16px 0",
+};
+
+const columnStyle: React.CSSProperties = {
+  maxWidth: layouts.broadcastMaxWidth,
+  margin: "0 auto",
+  display: "flex",
+  flexDirection: "column",
+  gap: 28,
+};
+
+const noteStyle: React.CSSProperties = {
+  margin: "0 0 8px",
+  fontFamily: typography.fonts.body,
+  fontSize: 13,
+  color: colors.textMuted,
+};
 
 export default function ParksPage() {
   // The switcher tracks the active park id so the spotlight ring stays
@@ -66,8 +72,8 @@ export default function ParksPage() {
   };
 
   return (
-    <ReportSheet>
-      <Stack gap={28}>
+    <div style={fieldStyle}>
+      <div style={columnStyle}>
         <ParksHeader
           edition={PARKS_META.edition}
           sampleN={PARKS_META.sampleN}
@@ -78,30 +84,22 @@ export default function ParksPage() {
         <ParksMethodology line={PARKS_META.methodologyLine} />
 
         <section aria-labelledby="parks-overview-label">
-          <div id="parks-overview-label">
-            <SectionLabel>Overview &middot; 30 Parks</SectionLabel>
+          <div style={{ marginBottom: 12 }}>
+            <LowerThird id="parks-overview-label" meta="30 PARKS">
+              Overview
+            </LowerThird>
           </div>
-          <Text
-            size="sm"
-            style={{ color: colors.textMuted }}
-            mb={8}
-          >
-            {SHOWCASE_NOTE}
-          </Text>
+          <p style={noteStyle}>{SHOWCASE_NOTE}</p>
           <OverviewParksTable rows={PARK_ROWS} />
         </section>
 
         <section aria-labelledby="parks-switcher-label">
-          <div id="parks-switcher-label">
-            <SectionLabel>Park Switcher &middot; Mini Heatmaps</SectionLabel>
+          <div style={{ marginBottom: 12 }}>
+            <LowerThird id="parks-switcher-label">
+              Park Switcher · Mini Heatmaps
+            </LowerThird>
           </div>
-          <Text
-            size="sm"
-            style={{ color: colors.textMuted }}
-            mb={8}
-          >
-            {SHOWCASE_NOTE}
-          </Text>
+          <p style={noteStyle}>{SHOWCASE_NOTE}</p>
           <ParkSwitcherStrip
             thumbnails={PARK_THUMBNAILS}
             rows={PARK_ROWS}
@@ -111,24 +109,35 @@ export default function ParksPage() {
         </section>
 
         <section aria-labelledby="parks-spotlight-label">
-          <div id="parks-spotlight-label">
-            <SectionLabel>Spotlight &middot; Coors Field</SectionLabel>
+          <div style={{ marginBottom: 12 }}>
+            <LowerThird id="parks-spotlight-label">
+              Spotlight · Coors Field
+            </LowerThird>
           </div>
-          <Text
-            size="sm"
-            style={{ color: colors.textMuted }}
-            mb={8}
-          >
-            {SHOWCASE_NOTE}
-          </Text>
+          <p style={noteStyle}>{SHOWCASE_NOTE}</p>
           <ParkSpotlight spotlight={COORS_SPOTLIGHT} />
         </section>
 
-        <CoverSheetFooter
-          buildSha={PARKS_META.buildSha}
-          buildDate={PARKS_META.buildDate}
-        />
-      </Stack>
-    </ReportSheet>
+        <footer
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            margin: "0 -16px",
+            padding: "10px 16px",
+            backgroundColor: colors.chromeDeep,
+            fontFamily: typography.fonts.mono,
+            fontSize: 11,
+            letterSpacing: "0.04em",
+            color: colors.textOnChromeMuted,
+          }}
+        >
+          <span>THE BULLPEN · PARK FACTORS</span>
+          <span>
+            build {PARKS_META.buildSha} · {PARKS_META.buildDate}
+          </span>
+        </footer>
+      </div>
+    </div>
   );
 }

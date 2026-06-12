@@ -18,7 +18,7 @@
  */
 
 import { cellColor } from "../../design/cellColor";
-import { radii, colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/broadcast";
 import {
   FACTOR_METRIC,
   type ParkSpotlightFactor,
@@ -35,7 +35,7 @@ function NumericBlock({ block }: { block: ParkSpotlightFactor }) {
     <div
       style={{
         backgroundColor: bg,
-        border: `1px solid ${colors.bgEmphasis}`,
+        border: `1px solid ${colors.rule}`,
         borderRadius: radii.sm,
         padding: "12px 16px",
         display: "flex",
@@ -50,7 +50,7 @@ function NumericBlock({ block }: { block: ParkSpotlightFactor }) {
           fontWeight: typography.weights.bold,
           textTransform: "uppercase",
           letterSpacing: "0.06em",
-          color: colors.textStrong,
+          color: colors.ink,
         }}
       >
         {block.label}
@@ -61,7 +61,7 @@ function NumericBlock({ block }: { block: ParkSpotlightFactor }) {
           fontSize: 48,
           fontWeight: typography.weights.heavy,
           lineHeight: 1,
-          color: colors.textStrong,
+          color: colors.ink,
           fontFeatureSettings: '"tnum" 1',
         }}
       >
@@ -87,8 +87,8 @@ function WindBlock({ block }: { block: ParkSpotlightWindBlock }) {
   return (
     <div
       style={{
-        backgroundColor: colors.bgSheet,
-        border: `1px solid ${colors.bgEmphasis}`,
+        backgroundColor: colors.panel,
+        border: `1px solid ${colors.rule}`,
         borderRadius: radii.sm,
         padding: "12px 16px",
         display: "flex",
@@ -103,7 +103,7 @@ function WindBlock({ block }: { block: ParkSpotlightWindBlock }) {
           fontWeight: typography.weights.bold,
           textTransform: "uppercase",
           letterSpacing: "0.06em",
-          color: colors.textStrong,
+          color: colors.ink,
         }}
       >
         {block.label}
@@ -114,7 +114,7 @@ function WindBlock({ block }: { block: ParkSpotlightWindBlock }) {
           fontSize: 32,
           fontWeight: typography.weights.heavy,
           lineHeight: 1.1,
-          color: colors.textStrong,
+          color: colors.ink,
           textTransform: "uppercase",
           letterSpacing: "0.02em",
         }}
