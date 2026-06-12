@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { colors } from "../../design/tokens";
+import { colors } from "../../design/broadcast";
 
 import { viridis } from "./_viridis";
 

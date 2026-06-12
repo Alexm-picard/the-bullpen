@@ -12,7 +12,7 @@
 import { describe, expect, it } from "vitest";
 
 import { cellColor } from "./cellColor";
-import { colors } from "./tokens";
+import { colors } from "./broadcast";
 
 const REF = { min: 0, p25: 25, median: 50, p75: 75, max: 100 };
 

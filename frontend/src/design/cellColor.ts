@@ -16,7 +16,7 @@
  * @module
  */
 
-import { colors } from "./tokens";
+import { colors } from "./broadcast";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

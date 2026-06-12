@@ -14,7 +14,7 @@ import { MantineProvider } from "@mantine/core";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { colors } from "../../design/tokens";
+import { colors } from "../../design/broadcast";
 import { theme } from "../../design/theme";
 import type { MetricMeta } from "../../design/cellColor";
 import { StatTable } from "./stat-table";
@@ -84,7 +84,7 @@ describe("StatTable", () => {
   it("applies bgSheet background to plain (no metricMeta) cells", () => {
     const html = render(<StatTable columns={COLUMNS} rows={ROWS} />);
     // bgSheet color should appear for the plain "PA" column cells
-    expect(html.toLowerCase()).toContain(colors.bgSheet.toLowerCase());
+    expect(html.toLowerCase()).toContain(colors.panel.toLowerCase());
   });
 
   it("renders a caption when provided", () => {
@@ -106,12 +106,12 @@ describe("StatTable", () => {
 
   it("renders the navy header background", () => {
     const html = render(<StatTable columns={COLUMNS} rows={ROWS} />);
-    expect(html.toLowerCase()).toContain(colors.navy.toLowerCase());
+    expect(html.toLowerCase()).toContain(colors.chrome.toLowerCase());
   });
 
   it("renders the silver row-label column background", () => {
     const html = render(<StatTable columns={COLUMNS} rows={ROWS} />);
-    expect(html.toLowerCase()).toContain(colors.silver.toLowerCase());
+    expect(html.toLowerCase()).toContain(colors.fieldSubtle.toLowerCase());
   });
 
   it("includes aria-sort attribute on sortable column headers", () => {

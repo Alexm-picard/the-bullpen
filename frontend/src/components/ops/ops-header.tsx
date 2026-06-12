@@ -15,7 +15,7 @@
 import { Stack, Title } from "@mantine/core";
 
 import { colors, typography } from "../../design/broadcast";
-import { HeroEyebrow } from "../shared/hero-eyebrow";
+import { Eyebrow } from "../broadcast/eyebrow";
 
 export type OpsHeaderProps = {
   /** Human-friendly issue date, e.g. "Wed · May 30, 2026". */
@@ -54,7 +54,7 @@ export function OpsHeader({
 
   return (
     <Stack gap={10}>
-      <HeroEyebrow>The Bullpen · Operations Desk</HeroEyebrow>
+      <Eyebrow>The Bullpen · Operations Desk</Eyebrow>
       <Title
         order={1}
         className="ops-cover__title"

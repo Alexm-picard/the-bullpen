@@ -1,52 +1,48 @@
 /**
- * Mantine theme built from `./tokens.ts` — the single source of truth.
- *
- * Scouting-report / broadcast-graphics identity per decision [133].
- * Supersedes the editorial-data theme (2026-05-25).
+ * Mantine theme built from `./broadcast.ts` — the single source of truth
+ * (decision [160], broadcast-package identity; supersedes the [133]
+ * scouting-packet theme whose tokens.ts mirror was deleted in the cleanup PR).
  *
  * Two custom Mantine color ramps:
- *   - `scarlet`: 10-shade ramp around #C8102E — the primary accent (CTAs, key
- *     marks, active state). `primaryColor: "scarlet"`.
- *   - `navy`: 10-shade ramp around #142A4C — broadcast chrome (header rows,
- *     lower-third bars). Accessed directly in components, not as primaryColor.
+ *   - `gold`: 10-shade ramp around #F2A900 — the broadcast accent.
+ *     `primaryColor: "gold"` (anchors, focus, CTAs).
+ *   - `chrome`: 10-shade ramp around #0E1B33 — the telecast chrome navy.
  *
- * Headings use Saira Condensed (the condensed display face) at weight 700 so
- * Mantine <Title> components automatically render in the broadcast voice.
- * Body text uses IBM Plex Sans. Monospace uses IBM Plex Mono.
+ * Headings render in Barlow Condensed so Mantine <Title> speaks the broadcast
+ * voice automatically; body is Inter; mono is JetBrains Mono.
  */
 
 import { createTheme, type MantineColorsTuple } from "@mantine/core";
 
-import { colors, radii, shadows, spacing, typography } from "./tokens";
+import { colors, radii, shadows, spacing, typography } from "./broadcast";
 
-// 10-shade ramp from #C8102E scarlet.
-// [0..3] tints (surfaces, hover), [4..6] core, [7..9] shades (emphasis on light).
-const scarlet: MantineColorsTuple = [
-  "#FCEAED",
-  "#F8C5CC",
-  "#F29AA4",
-  "#EA6E7B",
-  "#E04A5A",
-  "#D62B40",
-  colors.scarlet, // 6 — canonical scarlet (#C8102E)
-  "#A60D26",
-  "#840A1E",
-  "#620717",
+// 10-shade ramp around #F2A900 broadcast gold.
+// [0..3] tints, [4..6] core (6 = canonical), [7..9] ink shades for text-on-light.
+const gold: MantineColorsTuple = [
+  "#FFF6E0",
+  "#FCE5B0",
+  "#F9D37E",
+  "#F6C14C",
+  "#F4B526",
+  "#F3AC0F",
+  colors.gold, // 6 — canonical gold (#F2A900)
+  "#C68A00",
+  "#9A6B00", // 8 — goldInk (text-safe on light)
+  "#6E4C00",
 ];
 
-// 10-shade ramp from #142A4C navy.
-// Used for table header rows, lower-third chrome, headline-on-light contexts.
-const navy: MantineColorsTuple = [
-  "#E8EDF5",
-  "#C5D0E6",
-  "#9DAFD3",
-  "#748DBF",
-  "#4F70AD",
-  "#35589C",
-  "#1F4289",
-  colors.navy, // 7 — canonical navy (#142A4C)
-  "#0D1B33",
-  "#060E1A",
+// 10-shade ramp around #0E1B33 chrome navy.
+const chrome: MantineColorsTuple = [
+  "#E7EBF3",
+  "#C3CDE1",
+  "#9AAACB",
+  "#7187B2",
+  "#4D6797",
+  "#304C7C",
+  "#1C3258",
+  colors.chrome, // 7 — canonical chrome (#0E1B33)
+  "#080F1F", // 8 — chromeDeep
+  "#040810",
 ];
 
 export const theme = createTheme({
@@ -76,8 +72,8 @@ export const theme = createTheme({
     },
   },
   fontFamilyMonospace: typography.fonts.mono,
-  primaryColor: "scarlet",
-  colors: { scarlet, navy },
+  primaryColor: "gold",
+  colors: { gold, chrome },
   // Spacing maps to the 8-point grid: [4, 8, 12, 16, 24, 32, 48, 64, 96].
   spacing: {
     xs: `${spacing[0]}px`, // 4
@@ -86,22 +82,22 @@ export const theme = createTheme({
     lg: `${spacing[4]}px`, // 24
     xl: `${spacing[5]}px`, // 32
   },
-  // Tighter radii — scouting packets read as printed reports, not SaaS cards.
+  // Broadcast graphics are SHARP — everything sits on the 2px radius.
   radius: {
-    xs: `${radii.sm}px`, // 2
-    sm: `${radii.sm}px`, // 2
-    md: `${radii.md}px`, // 4
-    lg: `${radii.lg}px`, // 6
-    xl: `${radii.lg}px`, // 6
+    xs: `${radii.sm}px`,
+    sm: `${radii.sm}px`,
+    md: `${radii.sm}px`,
+    lg: `${radii.sm}px`,
+    xl: `${radii.sm}px`,
   },
   shadows: {
-    xs: shadows.card,
-    sm: shadows.card,
+    xs: "none",
+    sm: "none",
     md: shadows.popover,
     lg: shadows.popover,
     xl: shadows.popover,
   },
-  // Report-sheet identity: white cards on cream base.
-  white: colors.bgSheet,
-  black: colors.textStrong,
+  // Broadcast identity: white panels on the cool field; ink text.
+  white: colors.panel,
+  black: colors.ink,
 });

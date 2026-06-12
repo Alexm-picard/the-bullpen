@@ -81,8 +81,8 @@ describe("OpsHeader", () => {
     expect(html).toContain("WINDOW LAST 24H");
   });
 
-  it("uses the Saira display font on the h1", () => {
+  it("uses the Barlow Condensed display font on the h1", () => {
     const html = render(<OpsHeader {...BASE_PROPS} />);
-    expect(html).toContain("Saira Condensed");
+    expect(html).toContain("Barlow Condensed");
   });
 });

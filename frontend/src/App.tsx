@@ -18,7 +18,7 @@ import {
 
 import HomePage from "./pages/home-page";
 import { ErrorBoundary } from "./components/shared/error-boundary";
-import { TokenSampleCard } from "./components/_token-sample";
+import { colors, typography } from "./design/broadcast";
 
 /**
  * Every non-home page is lazy-loaded so the initial chunk is just the layout
@@ -39,8 +39,6 @@ const PlayerProfilePage = lazy(() =>
 );
 
 const GamesPage = lazy(() => import("./pages/games-page"));
-// Stage-3d fixture showcase, preserved at /games/demo when /games went live (FE-H1).
-const GamesDemoPage = lazy(() => import("./pages/games-demo-page"));
 const GamePage = lazy(() =>
   import("./pages/game-page").then((m) => ({ default: m.GamePage })),
 );
@@ -48,32 +46,72 @@ const GamePage = lazy(() =>
 // Unlisted in the public nav — operator routing override (B7), reached by URL.
 const AdminRoutingPage = lazy(() => import("./pages/admin-routing-page"));
 
+// Broadcast chrome nav ([160] cleanup PR): the global frame is the dark
+// telecast masthead - wordmark in Barlow italic with a gold tick, nav links
+// on chrome. Team color never appears here (the frame is brand, not matchup).
+const navLinkStyle: React.CSSProperties = {
+  fontFamily: typography.fonts.display,
+  fontStyle: "italic",
+  fontWeight: typography.weights.semibold,
+  fontSize: 15,
+  letterSpacing: "0.06em",
+  textTransform: "uppercase",
+  color: colors.textOnChrome,
+  textDecoration: "none",
+};
+
 function Layout() {
   return (
     <AppShell header={{ height: 56 }} padding={0}>
-      <AppShell.Header>
+      <AppShell.Header
+        style={{
+          backgroundColor: colors.chrome,
+          borderBottom: `2px solid ${colors.gold}`,
+        }}
+      >
         <Container size="lg" h="100%">
           <Group h="100%" justify="space-between">
-            <Title order={3} style={{ fontWeight: 700 }}>
-              the bullpen
-            </Title>
+            <Group gap={8}>
+              <span
+                aria-hidden="true"
+                style={{
+                  width: 6,
+                  height: 22,
+                  backgroundColor: colors.gold,
+                  display: "inline-block",
+                }}
+              />
+              <Title
+                order={3}
+                style={{
+                  fontFamily: typography.fonts.display,
+                  fontStyle: "italic",
+                  fontWeight: typography.weights.heavy,
+                  letterSpacing: "0.04em",
+                  textTransform: "uppercase",
+                  color: colors.textOnChrome,
+                }}
+              >
+                The Bullpen
+              </Title>
+            </Group>
             <Group gap="md">
-              <Anchor component={NavLink} to="/" end>
+              <Anchor component={NavLink} to="/" end style={navLinkStyle}>
                 home
               </Anchor>
-              <Anchor component={NavLink} to="/parks">
+              <Anchor component={NavLink} to="/parks" style={navLinkStyle}>
                 parks
               </Anchor>
-              <Anchor component={NavLink} to="/players">
+              <Anchor component={NavLink} to="/players" style={navLinkStyle}>
                 players
               </Anchor>
-              <Anchor component={NavLink} to="/games">
+              <Anchor component={NavLink} to="/games" style={navLinkStyle}>
                 games
               </Anchor>
-              <Anchor component={NavLink} to="/ops">
+              <Anchor component={NavLink} to="/ops" style={navLinkStyle}>
                 ops
               </Anchor>
-              <Anchor component={NavLink} to="/about">
+              <Anchor component={NavLink} to="/about" style={navLinkStyle}>
                 about
               </Anchor>
             </Group>
@@ -122,12 +160,10 @@ export default function App() {
           <Route path="players" element={<PlayersPage />} />
           <Route path="players/:id" element={<PlayerProfilePage />} />
           <Route path="games" element={<GamesPage />} />
-          <Route path="games/demo" element={<GamesDemoPage />} />
           <Route path="games/:id" element={<GamePage />} />
           <Route path="ops" element={<OpsPage />} />
           <Route path="admin/routing" element={<AdminRoutingPage />} />
           <Route path="about" element={<AboutPage />} />
-          <Route path="tokens" element={<TokenSampleCard />} />
         </Route>
       </Routes>
     </BrowserRouter>

@@ -20,7 +20,7 @@
 import { Stack, Title } from "@mantine/core";
 
 import { colors, typography } from "../../design/broadcast";
-import { HeroEyebrow } from "../shared/hero-eyebrow";
+import { Eyebrow } from "../broadcast/eyebrow";
 
 export type ParksHeaderProps = {
   /** Human-friendly edition string, e.g. "2026.05.30". */
@@ -46,9 +46,7 @@ export function ParksHeader({
 }: ParksHeaderProps) {
   return (
     <Stack gap={10}>
-      <HeroEyebrow>
-        The Bullpen &middot; Park Factors &middot; Appendix A
-      </HeroEyebrow>
+      <Eyebrow>The Bullpen &middot; Park Factors &middot; Appendix A</Eyebrow>
       <Title
         order={1}
         className="parks__title"

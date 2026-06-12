@@ -34,7 +34,7 @@ describe("DriftSnapshotGrid", () => {
       />,
     );
     expect(html).toContain("Drift Snapshot");
-    expect(html).toContain("Last 24h Window");
+    expect(html).toContain("LAST 24H WINDOW");
   });
 
   it("renders all PSI feature row labels", () => {

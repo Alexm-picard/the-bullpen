@@ -17,7 +17,7 @@ import { Stack, Title } from "@mantine/core";
 
 import type { ScoutingPlayer } from "../../data/matchup-fixtures";
 import { colors, typography } from "../../design/broadcast";
-import { HeroEyebrow } from "../shared/hero-eyebrow";
+import { Eyebrow } from "../broadcast/eyebrow";
 
 export type MatchupHeaderProps = {
   primary: ScoutingPlayer;
@@ -51,7 +51,7 @@ export function MatchupHeader({
 
   return (
     <Stack gap={10}>
-      <HeroEyebrow>Advance Scouting</HeroEyebrow>
+      <Eyebrow>Advance Scouting</Eyebrow>
       <Title
         order={1}
         style={{
