@@ -10,7 +10,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import type { SprayZone } from "../../data/matchup-fixtures";
-import { colors } from "../../design/tokens";
+import { colors } from "../../design/broadcast";
 import { theme } from "../../design/theme";
 
 import { SprayChart } from "./spray-chart";
@@ -66,7 +66,7 @@ describe("SprayChart", () => {
 
   it("draws foul lines in navy", () => {
     const html = render(<SprayChart zones={ZONES} />);
-    expect(html.toLowerCase()).toContain(colors.navy.toLowerCase());
+    expect(html.toLowerCase()).toContain(colors.chrome.toLowerCase());
   });
 
   it("renders the caption when provided", () => {

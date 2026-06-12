@@ -12,7 +12,7 @@
  */
 
 import type { SprayZone } from "../../data/matchup-fixtures";
-import { radii, colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/broadcast";
 
 export type SprayChartProps = {
   zones: SprayZone[];
@@ -56,7 +56,7 @@ function sectorPath(startDeg: number, endDeg: number): string {
 function rampColor(density: number): string {
   const ramp = colors.spray;
   const clamped = Math.max(0, Math.min(1, density));
-  if (clamped <= 0.001) return colors.bgSheet;
+  if (clamped <= 0.001) return colors.panel;
   if (clamped < 0.33) return ramp[0];
   if (clamped < 0.66) return ramp[1];
   if (clamped < 0.88) return ramp[2];
@@ -102,8 +102,8 @@ export function SprayChart({ zones, caption }: SprayChartProps) {
       ) : null}
       <div
         style={{
-          backgroundColor: colors.bgSheet,
-          border: `1px solid ${colors.bgEmphasis}`,
+          backgroundColor: colors.panel,
+          border: `1px solid ${colors.rule}`,
           borderRadius: radii.sm,
           padding: 8,
         }}
@@ -122,7 +122,7 @@ export function SprayChart({ zones, caption }: SprayChartProps) {
             y={0}
             width={SVG_WIDTH}
             height={SVG_HEIGHT}
-            fill={colors.bgSheet}
+            fill={colors.panel}
           />
           {/* Sectors */}
           {sectors.map(({ zone, startDeg, endDeg }) => (
@@ -130,7 +130,7 @@ export function SprayChart({ zones, caption }: SprayChartProps) {
               key={zone.id}
               d={sectorPath(startDeg, endDeg)}
               fill={rampColor(zone.density)}
-              stroke={colors.bgEmphasis}
+              stroke={colors.rule}
               strokeWidth={0.75}
               fillOpacity={0.9}
             >
@@ -140,8 +140,8 @@ export function SprayChart({ zones, caption }: SprayChartProps) {
           {/* Infield arc (small dirt arc near origin) */}
           <path
             d={`M ${ORIGIN_X - 28} ${ORIGIN_Y} A 28 28 0 0 1 ${ORIGIN_X + 28} ${ORIGIN_Y}`}
-            fill={colors.bgSubtle}
-            stroke={colors.bgEmphasis}
+            fill={colors.fieldSubtle}
+            stroke={colors.rule}
             strokeWidth={0.75}
           />
           {/* Foul lines */}
@@ -150,7 +150,7 @@ export function SprayChart({ zones, caption }: SprayChartProps) {
             y1={ORIGIN_Y}
             x2={arcPoint(-FAN_HALF, RADIUS).x}
             y2={arcPoint(-FAN_HALF, RADIUS).y}
-            stroke={colors.navy}
+            stroke={colors.chrome}
             strokeWidth={1.5}
           />
           <line
@@ -158,14 +158,14 @@ export function SprayChart({ zones, caption }: SprayChartProps) {
             y1={ORIGIN_Y}
             x2={arcPoint(FAN_HALF, RADIUS).x}
             y2={arcPoint(FAN_HALF, RADIUS).y}
-            stroke={colors.navy}
+            stroke={colors.chrome}
             strokeWidth={1.5}
           />
           {/* Outfield arc */}
           <path
             d={`M ${arcPoint(-FAN_HALF, RADIUS).x.toFixed(2)} ${arcPoint(-FAN_HALF, RADIUS).y.toFixed(2)} A ${RADIUS} ${RADIUS} 0 0 1 ${arcPoint(FAN_HALF, RADIUS).x.toFixed(2)} ${arcPoint(FAN_HALF, RADIUS).y.toFixed(2)}`}
             fill="none"
-            stroke={colors.navy}
+            stroke={colors.chrome}
             strokeWidth={1.5}
           />
           {/* Sector labels (count + zone name) */}
@@ -182,7 +182,7 @@ export function SprayChart({ zones, caption }: SprayChartProps) {
                   fontFamily={typography.fonts.mono}
                   fontSize={13}
                   fontWeight={700}
-                  fill={colors.textStrong}
+                  fill={colors.ink}
                 >
                   {zone.count}
                 </text>
@@ -225,7 +225,7 @@ export function SprayChart({ zones, caption }: SprayChartProps) {
                 width: 22,
                 height: 8,
                 backgroundColor: c,
-                border: `1px solid ${colors.bgEmphasis}`,
+                border: `1px solid ${colors.rule}`,
               }}
             />
           ))}

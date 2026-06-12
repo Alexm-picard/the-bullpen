@@ -12,7 +12,7 @@
  */
 
 import type { ScoutingPlayer } from "../../data/matchup-fixtures";
-import { radii, colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/broadcast";
 
 import { GradeBlock } from "./grade-block";
 
@@ -26,8 +26,8 @@ export function PlayerProfileCard({ player, variant }: PlayerProfileCardProps) {
   return (
     <section
       style={{
-        backgroundColor: colors.bgSheet,
-        border: `1px solid ${colors.bgEmphasis}`,
+        backgroundColor: colors.panel,
+        border: `1px solid ${colors.rule}`,
         borderRadius: radii.sm,
         display: "flex",
         flexDirection: "column",
@@ -38,8 +38,8 @@ export function PlayerProfileCard({ player, variant }: PlayerProfileCardProps) {
       <header
         id={`profile-${player.id}-header`}
         style={{
-          backgroundColor: colors.navy,
-          color: colors.textOnNavy,
+          backgroundColor: colors.chrome,
+          color: colors.textOnChrome,
           display: "flex",
           justifyContent: "space-between",
           alignItems: "baseline",
@@ -61,7 +61,7 @@ export function PlayerProfileCard({ player, variant }: PlayerProfileCardProps) {
           style={{
             fontFamily: typography.fonts.mono,
             fontSize: 12,
-            color: colors.silver,
+            color: colors.textOnChromeMuted,
             letterSpacing: "0.04em",
           }}
         >
@@ -73,7 +73,7 @@ export function PlayerProfileCard({ player, variant }: PlayerProfileCardProps) {
       <div
         style={{
           padding: "16px 16px 12px",
-          borderBottom: `1px solid ${colors.bgEmphasis}`,
+          borderBottom: `1px solid ${colors.rule}`,
         }}
       >
         <div
@@ -81,7 +81,7 @@ export function PlayerProfileCard({ player, variant }: PlayerProfileCardProps) {
             fontFamily: typography.fonts.display,
             fontSize: typography.scale[4], // 24
             fontWeight: typography.weights.heavy,
-            color: colors.textStrong,
+            color: colors.ink,
             textTransform: "uppercase",
             letterSpacing: "0.005em",
             lineHeight: 1.05,
@@ -118,10 +118,10 @@ export function PlayerProfileCard({ player, variant }: PlayerProfileCardProps) {
       <div
         style={{
           padding: "12px 16px",
-          borderBottom: `1px solid ${colors.bgEmphasis}`,
+          borderBottom: `1px solid ${colors.rule}`,
           fontFamily: typography.fonts.body,
           fontSize: 13,
-          color: colors.textDefault,
+          color: colors.text,
           lineHeight: 1.45,
         }}
       >

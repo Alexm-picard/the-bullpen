@@ -16,7 +16,7 @@
  * describes the peak location in words.
  */
 
-import { radii, colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/broadcast";
 import type { PitchMixRow } from "../../data/matchup-fixtures";
 
 export type PitchLocationHeatmapProps = {
@@ -90,8 +90,8 @@ function Panel({ pitch }: { pitch: PitchMixRow }) {
         display: "flex",
         flexDirection: "column",
         gap: 4,
-        backgroundColor: colors.bgSheet,
-        border: `1px solid ${colors.bgEmphasis}`,
+        backgroundColor: colors.panel,
+        border: `1px solid ${colors.rule}`,
         borderRadius: radii.sm,
       }}
     >
@@ -101,8 +101,8 @@ function Panel({ pitch }: { pitch: PitchMixRow }) {
           justifyContent: "space-between",
           alignItems: "baseline",
           padding: "6px 10px",
-          backgroundColor: colors.bgSubtle,
-          borderBottom: `1px solid ${colors.bgEmphasis}`,
+          backgroundColor: colors.fieldSubtle,
+          borderBottom: `1px solid ${colors.rule}`,
         }}
       >
         <span
@@ -112,7 +112,7 @@ function Panel({ pitch }: { pitch: PitchMixRow }) {
             fontWeight: typography.weights.bold,
             textTransform: "uppercase",
             letterSpacing: "0.04em",
-            color: colors.textStrong,
+            color: colors.ink,
           }}
         >
           {pitch.code} · {pitch.name}
@@ -143,7 +143,7 @@ function Panel({ pitch }: { pitch: PitchMixRow }) {
           y={0}
           width={PANEL_SIZE}
           height={PANEL_SIZE}
-          fill={colors.bgSheet}
+          fill={colors.panel}
         />
         {/* Heat cells */}
         {pitch.locationGrid.flatMap((row, r) =>
@@ -166,7 +166,7 @@ function Panel({ pitch }: { pitch: PitchMixRow }) {
           width={(SZ_COL_END - SZ_COL_START) * CELL}
           height={(SZ_ROW_END - SZ_ROW_START) * CELL}
           fill="none"
-          stroke={colors.navy}
+          stroke={colors.chrome}
           strokeWidth={1.5}
         />
         {/* Outer frame */}
@@ -176,7 +176,7 @@ function Panel({ pitch }: { pitch: PitchMixRow }) {
           width={gridSizePx}
           height={gridSizePx}
           fill="none"
-          stroke={colors.bgEmphasis}
+          stroke={colors.rule}
         />
       </svg>
       <figcaption
@@ -218,7 +218,7 @@ function Legend() {
               width: 18,
               height: 8,
               backgroundColor: c,
-              border: `1px solid ${colors.bgEmphasis}`,
+              border: `1px solid ${colors.rule}`,
             }}
           />
         ))}

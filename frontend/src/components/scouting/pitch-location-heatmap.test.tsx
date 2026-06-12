@@ -10,7 +10,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { makeGrid, type PitchMixRow } from "../../data/matchup-fixtures";
-import { colors } from "../../design/tokens";
+import { colors } from "../../design/broadcast";
 import { theme } from "../../design/theme";
 
 import { PitchLocationHeatmap } from "./pitch-location-heatmap";
@@ -74,7 +74,7 @@ describe("PitchLocationHeatmap", () => {
 
   it("draws the strike zone in navy", () => {
     const html = render(<PitchLocationHeatmap pitches={PITCHES} />);
-    expect(html.toLowerCase()).toContain(colors.navy.toLowerCase());
+    expect(html.toLowerCase()).toContain(colors.chrome.toLowerCase());
   });
 
   it("includes whiff% + xwOBA in the figcaption", () => {

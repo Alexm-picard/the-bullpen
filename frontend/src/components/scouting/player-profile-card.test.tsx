@@ -10,7 +10,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { PLAYERS } from "../../data/matchup-fixtures";
-import { colors } from "../../design/tokens";
+import { colors } from "../../design/broadcast";
 import { theme } from "../../design/theme";
 
 import { PlayerProfileCard } from "./player-profile-card";
@@ -71,7 +71,7 @@ describe("PlayerProfileCard", () => {
     const html = render(
       <PlayerProfileCard player={PLAYERS.judge_aaron!} variant="batter" />,
     );
-    expect(html.toLowerCase()).toContain(colors.navy.toLowerCase());
+    expect(html.toLowerCase()).toContain(colors.chrome.toLowerCase());
   });
 
   it("renders position + hand metadata", () => {

@@ -25,9 +25,51 @@
 
 import { useState } from "react";
 
-import type { MetricMeta } from "../../design/cellColor";
-import { cellColor } from "../../design/cellColor";
+import type { CondFormatRamp, MetricMeta } from "../../design/cellColor";
+import { cellColorWith, rampFrom } from "../../design/cellColor";
 import { radii, colors, typography } from "../../design/tokens";
+
+
+// ── Identity palette ([160] migration) ───────────────────────────────────────
+
+/**
+ * Every color/font knob StatTable draws - identity-parameterized so broadcast
+ * screens pass `broadcastStatTablePalette` while legacy screens keep the
+ * default. One table, two identities, no fork (same pattern as cellColorWith).
+ */
+export type StatTablePalette = {
+  border: string;
+  surface: string;
+  headerBg: string;
+  headerText: string;
+  headerSortInactive: string;
+  headerFontStyle: "normal" | "italic";
+  labelBg: string;
+  labelText: string;
+  valueText: string;
+  mutedText: string;
+  displayFont: string;
+  bodyFont: string;
+  monoFont: string;
+  ramp: CondFormatRamp;
+};
+
+const LEGACY_PALETTE: StatTablePalette = {
+  border: colors.bgEmphasis,
+  surface: colors.bgSheet,
+  headerBg: colors.navy,
+  headerText: colors.textOnNavy,
+  headerSortInactive: "rgba(247, 244, 236, 0.4)", // textOnNavy at 40%
+  headerFontStyle: "normal",
+  labelBg: colors.silver,
+  labelText: colors.textStrong,
+  valueText: colors.textStrong,
+  mutedText: colors.textMuted,
+  displayFont: typography.fonts.display,
+  bodyFont: typography.fonts.body,
+  monoFont: typography.fonts.mono,
+  ramp: rampFrom(colors.condFormat),
+};
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -64,6 +106,8 @@ export type StatTableRow = {
 export type StatTableProps = {
   columns: StatTableColumn[];
   rows: StatTableRow[];
+  /** Identity palette; defaults to the legacy scouting-report identity. */
+  palette?: StatTablePalette;
   /**
    * Optional caption displayed above the table.
    * Rendered as a visible <caption> element for accessibility.
@@ -76,9 +120,17 @@ type SortState = { key: string; dir: "asc" | "desc" } | null;
 
 // ── Sort icon ────────────────────────────────────────────────────────────────
 
-function SortIcon({ active, dir }: { active: boolean; dir: "asc" | "desc" }) {
-  const activeColor = colors.textOnNavy;
-  const inactiveColor = "rgba(247, 244, 236, 0.4)"; // textOnNavy at 40% opacity
+function SortIcon({
+  active,
+  dir,
+  activeColor,
+  inactiveColor,
+}: {
+  active: boolean;
+  dir: "asc" | "desc";
+  activeColor: string;
+  inactiveColor: string;
+}) {
   return (
     <svg
       role="presentation"
@@ -105,7 +157,12 @@ function SortIcon({ active, dir }: { active: boolean; dir: "asc" | "desc" }) {
 
 // ── Main component ───────────────────────────────────────────────────────────
 
-export function StatTable({ columns, rows, caption }: StatTableProps) {
+export function StatTable({
+  columns,
+  rows,
+  caption,
+  palette = LEGACY_PALETTE,
+}: StatTableProps) {
   const [sort, setSort] = useState<SortState>(null);
 
   function handleHeaderClick(key: string) {
@@ -142,12 +199,15 @@ export function StatTable({ columns, rows, caption }: StatTableProps) {
 
   // ── Styles (inline, token-sourced) ────────────────────────────────────────
 
-  const tableBorder = `1px solid ${colors.bgEmphasis}`;
+  const tableBorder = `1px solid ${palette.border}`;
 
   const headerCellStyle: React.CSSProperties = {
-    backgroundColor: colors.navy,
-    color: colors.textOnNavy,
-    fontFamily: typography.fonts.display,
+    backgroundColor: palette.headerBg,
+    color: palette.headerText,
+    fontFamily: palette.displayFont,
+    ...(palette.headerFontStyle === "italic"
+      ? { fontStyle: "italic" as const }
+      : {}),
     fontSize: 14,
     fontWeight: typography.weights.bold,
     textTransform: "uppercase",
@@ -163,9 +223,9 @@ export function StatTable({ columns, rows, caption }: StatTableProps) {
   };
 
   const labelCellStyle: React.CSSProperties = {
-    backgroundColor: colors.silver,
-    color: colors.textStrong,
-    fontFamily: typography.fonts.body,
+    backgroundColor: palette.labelBg,
+    color: palette.labelText,
+    fontFamily: palette.bodyFont,
     fontSize: 14,
     fontWeight: typography.weights.semibold,
     padding: "7px 12px",
@@ -176,9 +236,9 @@ export function StatTable({ columns, rows, caption }: StatTableProps) {
   };
 
   const dataCellBaseStyle: React.CSSProperties = {
-    fontFamily: typography.fonts.mono,
+    fontFamily: palette.monoFont,
     fontSize: 14,
-    color: colors.textStrong,
+    color: palette.valueText,
     padding: "7px 12px",
     borderBottom: tableBorder,
     borderRight: tableBorder,
@@ -195,14 +255,14 @@ export function StatTable({ columns, rows, caption }: StatTableProps) {
         overflowX: "auto",
         border: tableBorder,
         borderRadius: radii.sm,
-        backgroundColor: colors.bgSheet,
+        backgroundColor: palette.surface,
       }}
     >
       <table
         style={{
           borderCollapse: "collapse",
           width: "100%",
-          backgroundColor: colors.bgSheet,
+          backgroundColor: palette.surface,
           tableLayout: "auto",
         }}
       >
@@ -211,10 +271,10 @@ export function StatTable({ columns, rows, caption }: StatTableProps) {
             style={{
               captionSide: "top",
               textAlign: "left",
-              fontFamily: typography.fonts.body,
+              fontFamily: palette.bodyFont,
               fontSize: 12,
               fontWeight: typography.weights.semibold,
-              color: colors.textMuted,
+              color: palette.mutedText,
               padding: "8px 12px 4px",
               letterSpacing: "0.04em",
               textTransform: "uppercase",
@@ -258,7 +318,12 @@ export function StatTable({ columns, rows, caption }: StatTableProps) {
                     style={{ display: "inline-flex", alignItems: "center" }}
                   >
                     {col.label}
-                    <SortIcon active={isActive} dir={sort?.dir ?? "desc"} />
+                    <SortIcon
+                      active={isActive}
+                      dir={sort?.dir ?? "desc"}
+                      activeColor={palette.headerText}
+                      inactiveColor={palette.headerSortInactive}
+                    />
                   </span>
                 </th>
               );
@@ -281,7 +346,7 @@ export function StatTable({ columns, rows, caption }: StatTableProps) {
 
                 // Only apply heat-map fill when metricMeta is provided
                 // and the raw value is numeric.
-                let cellBg: string = colors.bgSheet;
+                let cellBg: string = palette.surface;
                 if (col.metricMeta !== undefined) {
                   const numericValue =
                     rawValue === null
@@ -293,7 +358,7 @@ export function StatTable({ columns, rows, caption }: StatTableProps) {
                     numericValue !== null && isNaN(numericValue)
                       ? null
                       : numericValue;
-                  cellBg = cellColor(coerced, col.metricMeta);
+                  cellBg = cellColorWith(palette.ramp, coerced, col.metricMeta);
                 }
 
                 return (
@@ -318,8 +383,8 @@ export function StatTable({ columns, rows, caption }: StatTableProps) {
                 style={{
                   ...dataCellBaseStyle,
                   textAlign: "center",
-                  color: colors.textMuted,
-                  fontFamily: typography.fonts.body,
+                  color: palette.mutedText,
+                  fontFamily: palette.bodyFont,
                   padding: "24px 12px",
                 }}
               >

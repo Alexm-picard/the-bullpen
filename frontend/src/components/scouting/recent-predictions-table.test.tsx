@@ -10,7 +10,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import type { MatchupPrediction } from "../../data/matchup-fixtures";
-import { colors } from "../../design/tokens";
+import { colors } from "../../design/broadcast";
 import { theme } from "../../design/theme";
 
 import { RecentPredictionsTable } from "./recent-predictions-table";
@@ -69,17 +69,17 @@ describe("RecentPredictionsTable", () => {
 
   it("uses scarlet color on the ✗ glyph", () => {
     const html = render(<RecentPredictionsTable rows={SAMPLE} />);
-    expect(html.toLowerCase()).toContain(colors.scarlet.toLowerCase());
+    expect(html.toLowerCase()).toContain(colors.goldInk.toLowerCase());
   });
 
   it("uses navy in the header row", () => {
     const html = render(<RecentPredictionsTable rows={SAMPLE} />);
-    expect(html.toLowerCase()).toContain(colors.navy.toLowerCase());
+    expect(html.toLowerCase()).toContain(colors.chrome.toLowerCase());
   });
 
   it("uses silver in the timestamp column", () => {
     const html = render(<RecentPredictionsTable rows={SAMPLE} />);
-    expect(html.toLowerCase()).toContain(colors.silver.toLowerCase());
+    expect(html.toLowerCase()).toContain(colors.fieldSubtle.toLowerCase());
   });
 
   it("formats the timestamp into a readable string", () => {

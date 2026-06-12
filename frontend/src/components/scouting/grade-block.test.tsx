@@ -9,7 +9,7 @@ import { MantineProvider } from "@mantine/core";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { colors } from "../../design/tokens";
+import { colors } from "../../design/broadcast";
 import { theme } from "../../design/theme";
 
 import { GradeBlock } from "./grade-block";
