@@ -10,7 +10,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { theme } from "../../design/theme";
-import { colors } from "../../design/tokens";
+import { colors } from "../../design/broadcast";
 
 import { AboutColophonFooter } from "./about-colophon-footer";
 
@@ -51,6 +51,6 @@ describe("AboutColophonFooter", () => {
 
   it("uses the navy chrome background", () => {
     const html = render(<AboutColophonFooter {...DEFAULT_PROPS} />);
-    expect(html.toLowerCase()).toContain(colors.navy.toLowerCase());
+    expect(html.toLowerCase()).toContain(colors.chrome.toLowerCase());
   });
 });

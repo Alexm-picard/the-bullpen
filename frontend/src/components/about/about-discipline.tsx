@@ -10,6 +10,7 @@
  * in about-fixtures.ts. This is a thin adapter so the page can stay flat.
  */
 
+import { broadcastKeyNotesPalette } from "../broadcast/palettes";
 import { KeyNotes } from "../scouting/key-notes";
 
 export type AboutDisciplineProps = {
@@ -17,5 +18,5 @@ export type AboutDisciplineProps = {
 };
 
 export function AboutDiscipline({ notes }: AboutDisciplineProps) {
-  return <KeyNotes notes={notes} />;
+  return <KeyNotes notes={notes} palette={broadcastKeyNotesPalette} />;
 }

@@ -12,18 +12,18 @@
  */
 
 import type { StackRow } from "../../data/about-fixtures";
-import { radii, colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/broadcast";
 
 export type AboutStackTableProps = {
   rows: StackRow[];
 };
 
 export function AboutStackTable({ rows }: AboutStackTableProps) {
-  const border = `1px solid ${colors.bgEmphasis}`;
+  const border = `1px solid ${colors.rule}`;
 
   const headerCellStyle: React.CSSProperties = {
-    backgroundColor: colors.navy,
-    color: colors.textOnNavy,
+    backgroundColor: colors.chrome,
+    color: colors.textOnChrome,
     fontFamily: typography.fonts.display,
     fontSize: 14,
     fontWeight: typography.weights.bold,
@@ -39,8 +39,8 @@ export function AboutStackTable({ rows }: AboutStackTableProps) {
   };
 
   const labelCellStyle: React.CSSProperties = {
-    backgroundColor: colors.silver,
-    color: colors.textStrong,
+    backgroundColor: colors.fieldSubtle,
+    color: colors.ink,
     fontFamily: typography.fonts.body,
     fontSize: 14,
     fontWeight: typography.weights.semibold,
@@ -57,24 +57,24 @@ export function AboutStackTable({ rows }: AboutStackTableProps) {
     fontFamily: typography.fonts.display,
     fontSize: 15,
     fontWeight: typography.weights.semibold,
-    color: colors.textStrong,
+    color: colors.ink,
     padding: "7px 12px",
     borderBottom: border,
     borderRight: border,
     verticalAlign: "middle",
-    backgroundColor: colors.bgSheet,
+    backgroundColor: colors.panel,
     whiteSpace: "nowrap",
   };
 
   const whyCellStyle: React.CSSProperties = {
     fontFamily: typography.fonts.body,
     fontSize: 14,
-    color: colors.textDefault,
+    color: colors.text,
     padding: "7px 12px",
     borderBottom: border,
     borderRight: border,
     verticalAlign: "middle",
-    backgroundColor: colors.bgSheet,
+    backgroundColor: colors.panel,
     lineHeight: 1.45,
   };
 
@@ -84,14 +84,14 @@ export function AboutStackTable({ rows }: AboutStackTableProps) {
         overflowX: "auto",
         border,
         borderRadius: radii.sm,
-        backgroundColor: colors.bgSheet,
+        backgroundColor: colors.panel,
       }}
     >
       <table
         style={{
           borderCollapse: "collapse",
           width: "100%",
-          backgroundColor: colors.bgSheet,
+          backgroundColor: colors.panel,
           tableLayout: "auto",
         }}
       >

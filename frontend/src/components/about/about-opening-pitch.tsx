@@ -10,7 +10,7 @@
  * Pure presentation; accepts an array of strings from OPENING_PITCH_PARAS.
  */
 
-import { colors, typography } from "../../design/tokens";
+import { colors, typography } from "../../design/broadcast";
 
 export type AboutOpeningPitchProps = {
   paragraphs: string[];
@@ -27,7 +27,7 @@ export function AboutOpeningPitch({ paragraphs }: AboutOpeningPitchProps) {
         fontFamily: typography.fonts.body,
         fontSize: typography.scale[2], // 16
         lineHeight: 1.55,
-        color: colors.textDefault,
+        color: colors.text,
       }}
     >
       {paragraphs.map((p, i) => (
