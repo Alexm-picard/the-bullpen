@@ -72,6 +72,18 @@ if [[ "$UNINSTALL" == "true" ]]; then
       log "removed ${TARGET_DIR}/${f}"
     fi
   done
+  # P2: tear down the offsite timer + template service.
+  if systemctl list-unit-files | grep -q "^bullpen-offsite.timer"; then
+    log "stop + disable bullpen-offsite.timer"
+    sudo systemctl stop bullpen-offsite.timer 2>/dev/null || true
+    sudo systemctl disable bullpen-offsite.timer 2>/dev/null || true
+  fi
+  for f in bullpen-offsite.timer "bullpen-offsite@.service"; do
+    if [[ -f "${TARGET_DIR}/${f}" ]]; then
+      sudo rm "${TARGET_DIR}/${f}"
+      log "removed ${TARGET_DIR}/${f}"
+    fi
+  done
   sudo systemctl daemon-reload
   log "uninstall complete (NOTE: ${INSTALL_DIR} and user ${SVC_USER} left in place)"
   exit 0
@@ -117,6 +129,22 @@ else
   log "  WARN: snapshot units not found under infra/backup; skipping the snapshot timer"
 fi
 
+# P2 (decision [153] / ADR-0007): the offsite (R2) push units - same template shape as the
+# snapshot pair, fired at 03:30 after the 03:00 local snapshot. The script no-ops unless
+# BULLPEN_OFFSITE_REMOTE is set in /etc/default/bullpen, so enabling the timer is safe
+# before the env is staged.
+OFFSITE_SVC_SRC="${REPO_ROOT}/infra/backup/bullpen-offsite.service"
+OFFSITE_TIMER_SRC="${REPO_ROOT}/infra/backup/bullpen-offsite.timer"
+INSTALL_OFFSITE=false
+if [[ -f "$OFFSITE_SVC_SRC" && -f "$OFFSITE_TIMER_SRC" ]]; then
+  sudo install -o root -g root -m 0644 "$OFFSITE_SVC_SRC" "${TARGET_DIR}/bullpen-offsite@.service"
+  sudo install -o root -g root -m 0644 "$OFFSITE_TIMER_SRC" "${TARGET_DIR}/bullpen-offsite.timer"
+  log "  installed ${TARGET_DIR}/bullpen-offsite@.service + bullpen-offsite.timer"
+  INSTALL_OFFSITE=true
+else
+  log "  WARN: offsite units not found under infra/backup; skipping the offsite timer"
+fi
+
 log "daemon-reload"
 sudo systemctl daemon-reload
 
@@ -128,6 +156,16 @@ if [[ "$INSTALL_SNAPSHOT" == "true" ]]; then
   else
     sudo systemctl enable --now bullpen-snapshot.timer
     log "enabled + started: bullpen-snapshot.timer (fires daily at 03:00 local)"
+  fi
+fi
+
+if [[ "$INSTALL_OFFSITE" == "true" ]]; then
+  if [[ "$NO_START" == "true" ]]; then
+    sudo systemctl enable bullpen-offsite.timer
+    log "enabled (not started): bullpen-offsite.timer"
+  else
+    sudo systemctl enable --now bullpen-offsite.timer
+    log "enabled + started: bullpen-offsite.timer (fires daily at 03:30 local; no-ops until BULLPEN_OFFSITE_REMOTE is set)"
   fi
 fi
 
