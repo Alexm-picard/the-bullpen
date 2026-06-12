@@ -17,7 +17,7 @@
  */
 
 import type { OpsLogEntry, OpsLogType } from "../../data/ops-fixtures";
-import { radii, colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/broadcast";
 
 export type OpsLogTableProps = {
   entries: OpsLogEntry[];
@@ -29,14 +29,14 @@ function isAlertType(type: OpsLogType): boolean {
 }
 
 function typeColor(type: OpsLogType): string {
-  return isAlertType(type) ? colors.scarlet : colors.textStrong;
+  return isAlertType(type) ? colors.goldInk : colors.ink;
 }
 
-const tableBorder = `1px solid ${colors.bgEmphasis}`;
+const tableBorder = `1px solid ${colors.rule}`;
 
 const headerCellStyle: React.CSSProperties = {
-  backgroundColor: colors.navy,
-  color: colors.textOnNavy,
+  backgroundColor: colors.chrome,
+  color: colors.textOnChrome,
   fontFamily: typography.fonts.display,
   fontSize: 14,
   fontWeight: typography.weights.bold,
@@ -52,8 +52,8 @@ const headerCellStyle: React.CSSProperties = {
 };
 
 const labelCellStyle: React.CSSProperties = {
-  backgroundColor: colors.silver,
-  color: colors.textStrong,
+  backgroundColor: colors.fieldSubtle,
+  color: colors.ink,
   fontFamily: typography.fonts.mono,
   fontSize: 12,
   fontWeight: typography.weights.semibold,
@@ -69,7 +69,7 @@ const labelCellStyle: React.CSSProperties = {
 const dataCellBaseStyle: React.CSSProperties = {
   fontFamily: typography.fonts.body,
   fontSize: 13,
-  color: colors.textStrong,
+  color: colors.ink,
   padding: "8px 12px",
   borderBottom: tableBorder,
   borderRight: tableBorder,
@@ -83,14 +83,14 @@ export function OpsLogTable({ entries, caption }: OpsLogTableProps) {
         overflowX: "auto",
         border: tableBorder,
         borderRadius: radii.sm,
-        backgroundColor: colors.bgSheet,
+        backgroundColor: colors.panel,
       }}
     >
       <table
         style={{
           borderCollapse: "collapse",
           width: "100%",
-          backgroundColor: colors.bgSheet,
+          backgroundColor: colors.panel,
           tableLayout: "auto",
         }}
       >

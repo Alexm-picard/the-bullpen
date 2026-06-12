@@ -17,7 +17,7 @@
  */
 
 import type { RetrainEntry, RetrainStatus } from "../../data/ops-fixtures";
-import { radii, colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/broadcast";
 
 export type RetrainQueueListProps = {
   entries: RetrainEntry[];
@@ -27,12 +27,12 @@ export type RetrainQueueListProps = {
 // operator's mental model. If per-trigger hues become needed, reintroduce a
 // trigger argument here and switch callers in one place.
 function triggerColor(): string {
-  return colors.scarlet;
+  return colors.goldInk;
 }
 
 function statusColor(status: RetrainStatus): string {
-  if (status === "AWAITING-PROMOTION") return colors.scarlet;
-  return colors.textStrong;
+  if (status === "AWAITING-PROMOTION") return colors.goldInk;
+  return colors.ink;
 }
 
 function statusAbbrTitle(status: RetrainStatus): string | undefined {
@@ -46,8 +46,8 @@ export function RetrainQueueList({ entries }: RetrainQueueListProps) {
   return (
     <section
       style={{
-        backgroundColor: colors.bgSheet,
-        border: `1px solid ${colors.bgEmphasis}`,
+        backgroundColor: colors.panel,
+        border: `1px solid ${colors.rule}`,
         borderRadius: radii.sm,
       }}
       aria-labelledby="retrain-queue-header"
@@ -55,8 +55,8 @@ export function RetrainQueueList({ entries }: RetrainQueueListProps) {
       <div
         id="retrain-queue-header"
         style={{
-          backgroundColor: colors.navy,
-          color: colors.textOnNavy,
+          backgroundColor: colors.chrome,
+          color: colors.textOnChrome,
           fontFamily: typography.fonts.display,
           fontSize: typography.scale[1], // 14
           fontWeight: typography.weights.bold,
@@ -101,9 +101,7 @@ export function RetrainQueueList({ entries }: RetrainQueueListProps) {
                   alignItems: "center",
                   gap: 16,
                   padding: "12px 16px",
-                  borderBottom: isLast
-                    ? "none"
-                    : `1px solid ${colors.bgEmphasis}`,
+                  borderBottom: isLast ? "none" : `1px solid ${colors.rule}`,
                 }}
               >
                 {/* Trigger badge */}
@@ -141,7 +139,7 @@ export function RetrainQueueList({ entries }: RetrainQueueListProps) {
                       fontWeight: typography.weights.semibold,
                       textTransform: "uppercase",
                       letterSpacing: "0.02em",
-                      color: colors.textStrong,
+                      color: colors.ink,
                     }}
                   >
                     {entry.modelLabel}

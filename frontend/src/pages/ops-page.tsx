@@ -27,7 +27,6 @@
  *   - No hex codes — every color via tokens or CSS-var utilities.
  */
 
-import { Stack, Text } from "@mantine/core";
 import { useMemo } from "react";
 
 import {
@@ -45,6 +44,7 @@ import {
   toLatencyRows,
   toRetrainEntries,
 } from "../api/ops-mappers";
+import { LowerThird } from "../components/broadcast/lower-third";
 import { DriftSnapshotGrid } from "../components/ops/drift-snapshot-grid";
 import { InfraRibbon } from "../components/ops/infra-ribbon";
 import { LatencyDetailTable } from "../components/ops/latency-detail-table";
@@ -52,9 +52,6 @@ import { ModelFleetTable } from "../components/ops/model-fleet-table";
 import { OpsHeader } from "../components/ops/ops-header";
 import { OpsLogTable } from "../components/ops/ops-log-table";
 import { RetrainQueueList } from "../components/ops/retrain-queue-list";
-import { CoverSheetFooter } from "../components/scouting/cover-sheet-footer";
-import { ReportSheet } from "../components/shared/report-sheet";
-import { SectionLabel } from "../components/shared/section-label";
 import {
   ECE_BY_OUTPUT,
   INFRA_SERVICES,
@@ -66,7 +63,7 @@ import {
   RETRAIN_QUEUE,
 } from "../data/ops-fixtures";
 import type { DriftFeatureRow, DriftOutputRow } from "../data/ops-fixtures";
-import { colors } from "../design/tokens";
+import { colors, layouts, typography } from "../design/broadcast";
 
 import "./ops/ops.css";
 
@@ -95,6 +92,27 @@ const ECE_SKELETON: DriftOutputRow[] = ECE_BY_OUTPUT.map((o) => ({
   output: o.output,
   byModel: {},
 }));
+
+const fieldStyle: React.CSSProperties = {
+  backgroundColor: colors.field,
+  minHeight: "100%",
+  padding: "24px 16px 0",
+};
+
+const columnStyle: React.CSSProperties = {
+  maxWidth: layouts.broadcastMaxWidth,
+  margin: "0 auto",
+  display: "flex",
+  flexDirection: "column",
+  gap: 28,
+};
+
+const noteStyle: React.CSSProperties = {
+  margin: "0 0 8px",
+  fontFamily: typography.fonts.body,
+  fontSize: 13,
+  color: colors.textMuted,
+};
 
 export default function OpsPage() {
   const registry = useAllRegistryRows();
@@ -170,8 +188,8 @@ export default function OpsPage() {
     live ? "" : " · showcase data (backend unreachable)";
 
   return (
-    <ReportSheet>
-      <Stack gap={28}>
+    <div style={fieldStyle}>
+      <div style={columnStyle}>
         <OpsHeader
           issueDate={issueDate}
           modelCount={fleet.length}
@@ -184,8 +202,13 @@ export default function OpsPage() {
         <InfraRibbon services={INFRA_SERVICES} />
 
         <section aria-labelledby="ops-fleet-section-label">
-          <div id="ops-fleet-section-label">
-            <SectionLabel>Model Fleet · {fleet.length} Registered</SectionLabel>
+          <div style={{ marginBottom: 12 }}>
+            <LowerThird
+              id="ops-fleet-section-label"
+              meta={`${fleet.length} REGISTERED`}
+            >
+              Model Fleet
+            </LowerThird>
           </div>
           <ModelFleetTable
             rows={fleet}
@@ -194,13 +217,15 @@ export default function OpsPage() {
         </section>
 
         <section aria-labelledby="ops-drift-section-label">
-          <div id="ops-drift-section-label">
-            <SectionLabel>Drift Snapshot · PSI | ECE Δ</SectionLabel>
+          <div style={{ marginBottom: 12 }}>
+            <LowerThird id="ops-drift-section-label" meta="PSI | ECE Δ">
+              Drift Snapshot
+            </LowerThird>
           </div>
-          <Text size="sm" style={{ color: colors.textMuted }} mb={8}>
+          <p style={noteStyle}>
             Monitored surface shown; cells fill from the nightly drift jobs
             (champions and shadows both watched) as predictions accumulate.
-          </Text>
+          </p>
           <DriftSnapshotGrid
             models={fleet}
             psiByFeature={psiByFeature}
@@ -209,8 +234,10 @@ export default function OpsPage() {
         </section>
 
         <section aria-labelledby="ops-latency-section-label">
-          <div id="ops-latency-section-label">
-            <SectionLabel>Latency Detail · By Percentile</SectionLabel>
+          <div style={{ marginBottom: 12 }}>
+            <LowerThird id="ops-latency-section-label" meta="BY PERCENTILE">
+              Latency Detail
+            </LowerThird>
           </div>
           <LatencyDetailTable
             rows={latencyRows}
@@ -221,20 +248,41 @@ export default function OpsPage() {
         <RetrainQueueList entries={retrainEntries} />
 
         <section aria-labelledby="ops-log-section-label">
-          <div id="ops-log-section-label">
-            <SectionLabel>
-              Ops Log · Recent Events
-              {opsLogIsLive ? "" : " · showcase data (backend unreachable)"}
-            </SectionLabel>
+          <div style={{ marginBottom: 12 }}>
+            <LowerThird
+              id="ops-log-section-label"
+              meta={
+                opsLogIsLive
+                  ? "RECENT EVENTS"
+                  : "SHOWCASE DATA (BACKEND UNREACHABLE)"
+              }
+            >
+              Ops Log
+            </LowerThird>
           </div>
           <OpsLogTable entries={opsLog} />
         </section>
 
-        <CoverSheetFooter
-          buildSha={OPS_META.buildSha}
-          buildDate={OPS_META.buildDate}
-        />
-      </Stack>
-    </ReportSheet>
+        <footer
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            margin: "0 -16px",
+            padding: "10px 16px",
+            backgroundColor: colors.chromeDeep,
+            fontFamily: typography.fonts.mono,
+            fontSize: 11,
+            letterSpacing: "0.04em",
+            color: colors.textOnChromeMuted,
+          }}
+        >
+          <span>THE BULLPEN · OPS</span>
+          <span>
+            build {OPS_META.buildSha} · {OPS_META.buildDate}
+          </span>
+        </footer>
+      </div>
+    </div>
   );
 }

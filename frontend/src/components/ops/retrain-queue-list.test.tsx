@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 
 import { RETRAIN_QUEUE } from "../../data/ops-fixtures";
 import { theme } from "../../design/theme";
-import { colors } from "../../design/tokens";
+import { colors } from "../../design/broadcast";
 
 import { RetrainQueueList } from "./retrain-queue-list";
 
@@ -51,13 +51,13 @@ describe("RetrainQueueList", () => {
 
   it("renders the navy header bar", () => {
     const html = render(<RetrainQueueList entries={RETRAIN_QUEUE} />);
-    expect(html.toLowerCase()).toContain(colors.navy.toLowerCase());
+    expect(html.toLowerCase()).toContain(colors.chrome.toLowerCase());
     expect(html).toContain("Retrain Queue");
   });
 
   it("uses scarlet for AWAITING-PROMOTION", () => {
     const html = render(<RetrainQueueList entries={RETRAIN_QUEUE} />);
-    expect(html.toLowerCase()).toContain(colors.scarlet.toLowerCase());
+    expect(html.toLowerCase()).toContain(colors.goldInk.toLowerCase());
   });
 
   it("renders queued and scheduled timestamps in mono", () => {

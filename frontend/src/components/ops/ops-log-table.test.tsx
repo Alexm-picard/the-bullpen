@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 
 import { OPS_LOG } from "../../data/ops-fixtures";
 import { theme } from "../../design/theme";
-import { colors } from "../../design/tokens";
+import { colors } from "../../design/broadcast";
 
 import { OpsLogTable } from "./ops-log-table";
 
@@ -41,7 +41,7 @@ describe("OpsLogTable", () => {
 
   it("uses scarlet for the ALERT row's type cell", () => {
     const html = render(<OpsLogTable entries={OPS_LOG} />);
-    expect(html.toLowerCase()).toContain(colors.scarlet.toLowerCase());
+    expect(html.toLowerCase()).toContain(colors.goldInk.toLowerCase());
   });
 
   it("renders all three column headers", () => {
@@ -53,12 +53,12 @@ describe("OpsLogTable", () => {
 
   it("renders the navy header chrome", () => {
     const html = render(<OpsLogTable entries={OPS_LOG} />);
-    expect(html.toLowerCase()).toContain(colors.navy.toLowerCase());
+    expect(html.toLowerCase()).toContain(colors.chrome.toLowerCase());
   });
 
   it("renders the silver row-label column", () => {
     const html = render(<OpsLogTable entries={OPS_LOG} />);
-    expect(html.toLowerCase()).toContain(colors.silver.toLowerCase());
+    expect(html.toLowerCase()).toContain(colors.fieldSubtle.toLowerCase());
   });
 
   it("renders the optional caption when provided", () => {
