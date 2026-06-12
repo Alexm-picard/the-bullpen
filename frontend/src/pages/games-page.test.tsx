@@ -1,12 +1,9 @@
 /**
- * Page-level smoke test for /games - the LIVE slate (FE-H1).
- *
- * The page wires `useTodaysGames()` against the live backend, so coverage
- * here is intentionally narrow (same posture as game-page.test.tsx): the
- * report-sheet shell + header render, the one-h1 constraint holds, and the
- * initial query state shows the loading copy. Data-driven states (rows /
- * empty) are covered by todays-slate-table.test.tsx as a pure component and
- * by the Playwright e2e at the network layer.
+ * Page-level smoke test for /games on the BROADCAST identity (redesign PR-3,
+ * decision [160]). Narrow by design: the page wires `useTodaysGames()` live,
+ * so we assert the chrome renders, the one-h1 rule holds, and the loading
+ * state shows. Data states live in todays-slate-table.test.tsx; the e2e suite
+ * covers the network-mocked empty + populated flows.
  */
 import { MantineProvider } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -15,6 +12,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 
+import { colors } from "../design/broadcast";
 import { theme } from "../design/theme";
 
 import GamesPage from "./games-page";
@@ -32,28 +30,28 @@ function render(node: ReactNode): string {
   );
 }
 
-describe("GamesPage (live slate)", () => {
-  it("renders the report-sheet shell with the live-slate masthead", () => {
+describe("GamesPage (broadcast slate)", () => {
+  it("renders the light field under broadcast chrome", () => {
     const html = render(<GamesPage />);
-    expect(html).toContain("report-sheet__shell");
-    expect(html).toContain("Live Slate");
-    expect(html).toContain("Games");
+    expect(html.toLowerCase()).toContain(colors.field.toLowerCase());
+    expect(html.toLowerCase()).toContain(colors.chrome.toLowerCase());
   });
 
-  it("renders exactly one <h1>", () => {
+  it("renders exactly one h1 (the slate masthead)", () => {
     const html = render(<GamesPage />);
     const matches = html.match(/<h1\b/g) ?? [];
     expect(matches.length).toBe(1);
+    expect(html).toContain("Games");
   });
 
-  it("renders the slate section label and the loading state initially", () => {
+  it("renders the slate lower-third and the loading state initially", () => {
     const html = render(<GamesPage />);
     expect(html).toContain("Slate");
     expect(html).toContain("Loading today");
   });
 
-  it("renders the colophon footer", () => {
+  it("renders the chrome footer", () => {
     const html = render(<GamesPage />);
-    expect(html.toLowerCase()).toContain("the bullpen");
+    expect(html).toContain("THE BULLPEN · LIVE SLATE");
   });
 });

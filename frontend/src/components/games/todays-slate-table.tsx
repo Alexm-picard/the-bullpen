@@ -1,84 +1,74 @@
 /**
- * <TodaysSlateTable> - the live slate on /games (FE-H1 closure).
+ * <TodaysSlateTable> - the live slate on the BROADCAST identity (redesign
+ * PR-3, decision [160]). Each game renders as a full-width clickable telecast
+ * strip: team-color bars beside mono scores, a wedge state block with the
+ * gold on-air dot for in-progress games, and the numeric /games/{gameId}
+ * href (the FE-H1 contract).
  *
- * Renders GET /v1/games/today rows as a 5-column report table:
- *   col 1 (row label) - MATCHUP, "AWY @ HOM"
- *   col 2             - STATUS, the humanized detailedState, mono
- *   col 3             - SCORE, "away - home", mono tabular
- *   col 4             - INNING, mono
- *   col 5             - OPEN, scarlet uppercase Link -> /games/{gameId}
- *
- * The OPEN href carries the NUMERIC gamePk (game-page.tsx does Number(id)),
- * never a slug - the fixture-era slug hrefs rendered "Invalid game id" on
- * every in-app link to the one live page.
- *
- * Custom <table> (not <StatTable>) for the same reason as
- * <TonightsMatchupsTable>: the OPEN cell must be a real <a>.
- *
- * Empty slate is a first-class state, not an error: /v1/games/today returns
- * [] until a game's first OBSERVED status transition writes (~first pitch,
- * not schedule time).
+ * Team color appears ONLY as bars/fills ([160] a11y rule). The empty slate
+ * stays a first-class state with its exact copy: /v1/games/today returns []
+ * until a game's first OBSERVED status transition (~first pitch).
  */
 
 import { Link } from "react-router-dom";
 
 import type { GameSummary } from "../../api/games";
-import { radii, colors, typography } from "../../design/tokens";
+import { colors, cuts, radii, typography } from "../../design/broadcast";
+import { teamColor } from "../../design/teamColors";
+
+import "../../design/broadcast.css";
 
 export type TodaysSlateTableProps = {
   games: GameSummary[];
+  /** Optional mono context line above the strips. */
   caption?: string;
 };
 
-const tableBorder = `1px solid ${colors.bgEmphasis}`;
+function isLive(g: GameSummary): boolean {
+  return g.status === "IN_PROGRESS" || g.status === "MID_INNING";
+}
 
-const headerCellStyle: React.CSSProperties = {
-  backgroundColor: colors.navy,
-  color: colors.textOnNavy,
+const teamReadStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 8,
+};
+
+const abbrevStyle: React.CSSProperties = {
   fontFamily: typography.fonts.display,
-  fontSize: 14,
+  fontStyle: "italic",
   fontWeight: typography.weights.bold,
-  textTransform: "uppercase",
+  fontSize: 19,
   letterSpacing: "0.04em",
-  lineHeight: typography.lineHeights.display,
-  padding: "8px 12px",
-  borderBottom: tableBorder,
-  borderRight: tableBorder,
-  whiteSpace: "nowrap",
-  verticalAlign: "middle",
-  textAlign: "left",
-};
-
-const labelCellStyle: React.CSSProperties = {
-  backgroundColor: colors.silver,
-  color: colors.textStrong,
-  fontFamily: typography.fonts.display,
-  fontSize: 15,
-  fontWeight: typography.weights.bold,
   textTransform: "uppercase",
-  letterSpacing: "0.02em",
-  padding: "10px 12px",
-  borderBottom: tableBorder,
-  borderRight: tableBorder,
-  whiteSpace: "nowrap",
-  verticalAlign: "middle",
+  color: colors.ink,
 };
 
-const dataCellBaseStyle: React.CSSProperties = {
-  fontFamily: typography.fonts.body,
-  fontSize: 14,
-  color: colors.textStrong,
-  padding: "10px 12px",
-  borderBottom: tableBorder,
-  borderRight: tableBorder,
-  verticalAlign: "middle",
-};
-
-const monoDataCellStyle: React.CSSProperties = {
-  ...dataCellBaseStyle,
+const scoreStyle: React.CSSProperties = {
   fontFamily: typography.fonts.mono,
+  fontWeight: typography.weights.heavy,
+  fontSize: 19,
   fontFeatureSettings: '"tnum" 1',
+  color: colors.ink,
 };
+
+function TeamRead({ team, score }: { team: string; score: number }) {
+  return (
+    <span style={teamReadStyle}>
+      <span
+        aria-hidden="true"
+        style={{
+          width: 5,
+          alignSelf: "stretch",
+          minHeight: 22,
+          backgroundColor: teamColor(team),
+        }}
+      />
+      <span style={abbrevStyle}>{team}</span>
+      <span style={scoreStyle}>{score}</span>
+    </span>
+  );
+}
 
 export function TodaysSlateTable({ games, caption }: TodaysSlateTableProps) {
   if (games.length === 0) {
@@ -86,9 +76,8 @@ export function TodaysSlateTable({ games, caption }: TodaysSlateTableProps) {
       <div
         role="status"
         style={{
-          backgroundColor: colors.bgSheet,
-          border: tableBorder,
-          borderRadius: radii.sm,
+          backgroundColor: colors.panel,
+          border: `1px solid ${colors.rule}`,
           padding: 24,
           fontFamily: typography.fonts.body,
           fontSize: 14,
@@ -103,118 +92,124 @@ export function TodaysSlateTable({ games, caption }: TodaysSlateTableProps) {
   }
 
   return (
-    <div
-      style={{
-        overflowX: "auto",
-        border: tableBorder,
-        borderRadius: radii.sm,
-        backgroundColor: colors.bgSheet,
-      }}
-    >
-      <table
-        style={{
-          borderCollapse: "collapse",
-          width: "100%",
-          backgroundColor: colors.bgSheet,
-          tableLayout: "auto",
-        }}
-      >
-        {caption && (
-          <caption
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {caption && (
+        <span
+          style={{
+            fontFamily: typography.fonts.mono,
+            fontSize: 11,
+            letterSpacing: "0.04em",
+            textTransform: "uppercase",
+            color: colors.textMuted,
+          }}
+        >
+          {caption}
+        </span>
+      )}
+      {games.map((g) => (
+        <Link
+          key={g.gameId}
+          to={`/games/${g.gameId}`}
+          className="broadcast-strip"
+          aria-label={`Open live view for ${g.awayTeam} at ${g.homeTeam}`}
+          style={{
+            display: "flex",
+            alignItems: "stretch",
+            gap: 18,
+            textDecoration: "none",
+            backgroundColor: colors.panel,
+            border: `1px solid ${colors.rule}`,
+            padding: "10px 0 10px 14px",
+            overflow: "hidden",
+          }}
+        >
+          <TeamRead team={g.awayTeam} score={g.awayScore} />
+          <span
+            aria-hidden="true"
             style={{
-              captionSide: "top",
-              textAlign: "left",
-              fontFamily: typography.fonts.body,
-              fontSize: 12,
-              fontWeight: typography.weights.semibold,
-              color: colors.textMuted,
-              padding: "8px 12px 4px",
-              letterSpacing: "0.04em",
-              textTransform: "uppercase",
+              alignSelf: "center",
+              color: colors.steel,
+              fontSize: 11,
             }}
           >
-            {caption}
-          </caption>
-        )}
-        <thead>
-          <tr>
-            <th scope="col" style={headerCellStyle}>
-              Matchup
-            </th>
-            <th scope="col" style={headerCellStyle}>
-              Status
-            </th>
-            <th scope="col" style={{ ...headerCellStyle, textAlign: "right" }}>
-              Score
-            </th>
-            <th scope="col" style={{ ...headerCellStyle, textAlign: "right" }}>
-              Inning
-            </th>
-            <th
-              scope="col"
-              style={{
-                ...headerCellStyle,
-                textAlign: "right",
-                borderRight: "none",
-              }}
-            >
-              Open
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {games.map((g) => (
-            <tr key={g.gameId}>
-              <th scope="row" style={labelCellStyle}>
-                {g.awayTeam}{" "}
-                <span
-                  style={{
-                    color: colors.textMuted,
-                    fontWeight: typography.weights.regular,
-                  }}
-                >
-                  @
-                </span>{" "}
-                {g.homeTeam}
-              </th>
-              <td style={monoDataCellStyle}>{g.detailedState}</td>
-              <td
-                style={{ ...monoDataCellStyle, textAlign: "right" }}
-                aria-label={`Score ${g.awayTeam} ${g.awayScore}, ${g.homeTeam} ${g.homeScore}`}
-              >
-                {g.awayScore}&ndash;{g.homeScore}
-              </td>
-              <td style={{ ...monoDataCellStyle, textAlign: "right" }}>
-                {g.inning > 0 ? g.inning : "—"}
-              </td>
-              <td
+            ◆
+          </span>
+          <TeamRead team={g.homeTeam} score={g.homeScore} />
+
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              marginLeft: "auto",
+              padding: "0 18px 0 22px",
+              backgroundColor: colors.chrome,
+              clipPath: cuts.wedge,
+              fontFamily: typography.fonts.display,
+              fontStyle: "italic",
+              fontWeight: typography.weights.bold,
+              fontSize: 14,
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+              color: colors.textOnChrome,
+            }}
+          >
+            {g.detailedState}
+            {isLive(g) && (
+              <span
                 style={{
-                  ...dataCellBaseStyle,
-                  textAlign: "right",
-                  borderRight: "none",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                  color: colors.gold,
                 }}
               >
-                <Link
-                  to={`/games/${g.gameId}`}
+                <span
+                  className="broadcast-live-dot"
+                  aria-hidden="true"
                   style={{
-                    fontFamily: typography.fonts.display,
-                    fontSize: 13,
-                    fontWeight: typography.weights.bold,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.06em",
-                    color: colors.scarlet,
-                    textDecoration: "none",
-                    whiteSpace: "nowrap",
+                    width: 7,
+                    height: 7,
+                    borderRadius: radii.pill,
+                    backgroundColor: colors.gold,
                   }}
-                  aria-label={`Open live view for ${g.awayTeam} at ${g.homeTeam}`}
-                >
-                  Open &rarr;
-                </Link>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+                />
+                LIVE
+              </span>
+            )}
+          </span>
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              minWidth: 64,
+              fontFamily: typography.fonts.mono,
+              fontSize: 12,
+              fontFeatureSettings: '"tnum" 1',
+              color: colors.textMuted,
+            }}
+          >
+            {g.inning > 0 ? `INN ${g.inning}` : "—"}
+          </span>
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              paddingRight: 16,
+              fontFamily: typography.fonts.display,
+              fontStyle: "italic",
+              fontWeight: typography.weights.bold,
+              fontSize: 13,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: colors.goldInk,
+              whiteSpace: "nowrap",
+            }}
+          >
+            Open &rarr;
+          </span>
+        </Link>
+      ))}
     </div>
   );
 }
