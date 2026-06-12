@@ -1,39 +1,30 @@
 /**
- * /home -- Tonight's Slate cover-sheet (Stage 3a, decision [133] identity).
+ * /home - Tonight's Slate on the BROADCAST identity (redesign PR-4, decision
+ * [160]).
  *
- * Composition order (top -> bottom, inside <ReportSheet> shell):
- *   1. <CoverSheetHeader />      -- masthead (eyebrow + 2-line nameplate + byline)
- *   2. <ModelFleetRibbon />      -- clickable navy strip, model chips
- *   3. <TonightsMatchupsTable /> -- 6-col slate with cellColor EDGE tint
- *   4. <FeaturedMatchupCard />   -- full-width card, 2 key-reads, scarlet CTA
- *   5. <CoverSheetFooter />      -- navy strip footer (bookends the ribbon)
+ * Composition (light field under dark chrome):
+ *   1. Masthead - condensed-italic h1 + mono byline (date, issue time,
+ *      matchup count, LHP/RHP split, first-pitch window)
+ *   2. <BroadcastFleetStrip> - chrome strip of model chips; LIVE from the
+ *      registry (useAllRegistryRows + useRouting) with the honest showcase
+ *      caption when the backend is unreachable
+ *   3. <TonightsMatchupsBoard> - the 6-col slate, EDGE tint from the
+ *      broadcast condFormat ramp, team-color bars in the matchup cell
+ *   4. <FeaturedMatchupPanel> - LowerThird + cut panel + gold CTA
+ *   5. Chrome footer strip
  *
- * Data sourcing (W7):
- *   - Model fleet ribbon: LIVE via useAllRegistryRows + useRouting (same
- *     pattern as ops-page). Falls back to MODEL_CHIPS fixture when the
- *     backend is unreachable or the registry is empty, captioned honestly.
- *   - Tonight's slate (matchups table + featured card): showcase fixture.
- *     No backend endpoint delivers per-game starters, edge scores, or
- *     top-reads today. The natural hook point is GET /v1/games/today once
- *     that endpoint carries the required fields. Captioned clearly.
- *
- * Constraints honored:
- *   - One <Title order={1}> only (the masthead h1).
- *   - No hex codes -- every color via tokens.
- *   - TanStack Query for live ribbon data; no useEffect for server state.
+ * Data posture unchanged (W7): the fleet strip is live; the slate + featured
+ * matchup remain showcase fixtures (no backend endpoint carries starters /
+ * edge / top-reads yet - the hook point stays GET /v1/games/today once it
+ * does), captioned honestly. This page imports ONLY the broadcast namespace.
  */
-
-import { Stack, Text } from "@mantine/core";
 
 import { useAllRegistryRows, useRouting } from "../api/ops";
 import { toFleetRows } from "../api/ops-mappers";
-import { FeaturedMatchupCard } from "../components/home/featured-matchup-card";
-import { TonightsMatchupsTable } from "../components/home/tonights-matchups-table";
-import { CoverSheetFooter } from "../components/scouting/cover-sheet-footer";
-import { CoverSheetHeader } from "../components/scouting/cover-sheet-header";
-import { ModelFleetRibbon } from "../components/scouting/model-fleet-ribbon";
-import { ReportSheet } from "../components/shared/report-sheet";
-import { SectionLabel } from "../components/shared/section-label";
+import { BroadcastFleetStrip } from "../components/home/broadcast-fleet-strip";
+import { FeaturedMatchupPanel } from "../components/home/featured-matchup-panel";
+import { TonightsMatchupsBoard } from "../components/home/tonights-matchups-board";
+import { LowerThird } from "../components/broadcast/lower-third";
 import {
   FEATURED_CONTEXT,
   FEATURED_KEY_READS,
@@ -43,9 +34,7 @@ import {
 } from "../data/home-fixtures";
 import type { ModelChip, ModelChipState } from "../data/home-fixtures";
 import { PLAYERS } from "../data/matchup-fixtures";
-import { colors } from "../design/tokens";
-
-import "./home/home.css";
+import { colors, layouts, typography } from "../design/broadcast";
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
@@ -63,7 +52,7 @@ const ET_DATE = new Intl.DateTimeFormat("en-US", {
   timeZone: "America/New_York",
 });
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Helpers (carried over unchanged) ──────────────────────────────────────────
 
 function computeHandCounts() {
   let l = 0;
@@ -78,14 +67,13 @@ function computeHandCounts() {
 }
 
 /**
- * Map live registry rows to the ModelChip shape the fleet ribbon needs.
+ * Map live registry rows to the ModelChip shape the fleet strip needs.
  * CHAMPION stage -> LIVE badge; everything else -> SHADOW. Chips link to /ops.
  */
 function registryToChips(
   versions: Parameters<typeof toFleetRows>[0],
   routing: Parameters<typeof toFleetRows>[1],
 ): ModelChip[] {
-  // Pass an empty latency array -- we only need state/name/version for chips.
   const rows = toFleetRows(versions, routing, []);
   return rows.map((r) => {
     const state: ModelChipState = r.state === "LIVE" ? "LIVE" : "SHADOW";
@@ -99,13 +87,35 @@ function registryToChips(
   });
 }
 
-const showcaseSuffix = (live: boolean) =>
-  live ? "" : " · showcase data (backend unreachable)";
+// ── Styles ────────────────────────────────────────────────────────────────────
+
+const fieldStyle: React.CSSProperties = {
+  backgroundColor: colors.field,
+  minHeight: "100%",
+  padding: "24px 16px 0",
+};
+
+const columnStyle: React.CSSProperties = {
+  maxWidth: layouts.broadcastMaxWidth,
+  margin: "0 auto",
+  display: "flex",
+  flexDirection: "column",
+  gap: 24,
+};
+
+const captionStyle: React.CSSProperties = {
+  margin: "4px 0 0",
+  fontFamily: typography.fonts.mono,
+  fontSize: 11,
+  fontStyle: "italic",
+  letterSpacing: "0.02em",
+  color: colors.textMuted,
+};
 
 // ── Page component ────────────────────────────────────────────────────────────
 
 export default function HomePage() {
-  // Fleet ribbon: LIVE when the registry returns at least one row.
+  // Fleet strip: LIVE when the registry returns at least one row.
   const registry = useAllRegistryRows();
   const routing = useRouting();
 
@@ -130,70 +140,103 @@ export default function HomePage() {
   const issueDate = ET_DATE.format(now).replace(",", " ·");
 
   return (
-    <ReportSheet>
-      <Stack gap={28}>
-        <CoverSheetHeader
-          issueDate={issueDate}
-          matchupCount={TONIGHT_MATCHUPS.length}
-          lhpCount={lhpCount}
-          rhpCount={rhpCount}
-          issuedAt={issuedAt}
-          firstPitchWindow={ISSUE_META.firstPitchWindow}
-        />
+    <div style={fieldStyle}>
+      <div style={columnStyle}>
+        <header>
+          <h1
+            style={{
+              margin: 0,
+              fontFamily: typography.fonts.display,
+              fontStyle: "italic",
+              fontWeight: typography.weights.heavy,
+              fontSize: typography.scale[6],
+              lineHeight: typography.lineHeights.display,
+              letterSpacing: "0.01em",
+              textTransform: "uppercase",
+              color: colors.ink,
+            }}
+          >
+            Tonight&rsquo;s Slate
+          </h1>
+          <p
+            style={{
+              margin: "2px 0 0",
+              fontFamily: typography.fonts.mono,
+              fontSize: 12,
+              fontFeatureSettings: '"tnum" 1',
+              letterSpacing: "0.02em",
+              color: colors.textMuted,
+            }}
+          >
+            {issueDate} · issued {issuedAt} · {TONIGHT_MATCHUPS.length} games ·{" "}
+            {lhpCount} LHP / {rhpCount} RHP · first pitch{" "}
+            {ISSUE_META.firstPitchWindow}
+          </p>
+        </header>
 
-        {/* Fleet ribbon: live from registry when backend reachable */}
+        {/* Fleet strip: live from the registry when the backend is reachable */}
         <div>
-          <ModelFleetRibbon chips={chips} />
+          <BroadcastFleetStrip chips={chips} />
           {!ribbonIsLive && (
-            <Text
-              size="xs"
-              style={{ color: colors.textMuted, fontStyle: "italic" }}
-              mt={4}
-            >
+            <p style={captionStyle}>
               Model fleet · showcase data (backend unreachable)
-            </Text>
+            </p>
           )}
         </div>
 
-        {/* Tonight's slate: showcase fixture -- no live endpoint for
+        {/* Tonight's slate: showcase fixture - no live endpoint for
             starters, edge scores, or top-reads yet */}
         <section aria-labelledby="slate-section-label">
-          <div id="slate-section-label">
-            <SectionLabel>
-              Tonight&rsquo;s Matchups &middot; {TONIGHT_MATCHUPS.length} Games
-            </SectionLabel>
+          <div style={{ marginBottom: 12 }}>
+            <LowerThird
+              id="slate-section-label"
+              meta={`${TONIGHT_MATCHUPS.length} GAMES`}
+            >
+              Tonight&rsquo;s Matchups
+            </LowerThird>
           </div>
-          <TonightsMatchupsTable
+          <TonightsMatchupsBoard
             matchups={TONIGHT_MATCHUPS}
-            caption={`Tonight's slate · edge model reads · starters${showcaseSuffix(false)}`}
+            caption="Tonight's slate · edge model reads · starters · showcase data (backend unreachable)"
           />
         </section>
 
         {/* Featured matchup: showcase fixture for the same reason */}
         <div>
-          <FeaturedMatchupCard
+          <FeaturedMatchupPanel
             batter={featuredBatter}
             pitcher={featuredPitcher}
             context={FEATURED_CONTEXT}
             keyReads={FEATURED_KEY_READS}
             ctaHref={`/players/${featuredBatter.id}`}
-            ctaLabel="Pull the full report &#x2192;"
+            ctaLabel="Pull the full report →"
           />
-          <Text
-            size="xs"
-            style={{ color: colors.textMuted, fontStyle: "italic" }}
-            mt={4}
-          >
-            Featured matchup · showcase data (no live endpoint for
-            starters / edge / top-reads)
-          </Text>
+          <p style={captionStyle}>
+            Featured matchup · showcase data (no live endpoint for starters /
+            edge / top-reads)
+          </p>
         </div>
 
-        <CoverSheetFooter
-          buildSha={ISSUE_META.buildSha}
-          buildDate={ISSUE_META.buildDate}
-        />
-      </Stack>
-    </ReportSheet>
+        <footer
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            margin: "0 -16px",
+            padding: "10px 16px",
+            backgroundColor: colors.chromeDeep,
+            fontFamily: typography.fonts.mono,
+            fontSize: 11,
+            letterSpacing: "0.04em",
+            color: colors.textOnChromeMuted,
+          }}
+        >
+          <span>THE BULLPEN · TONIGHT&rsquo;S SLATE</span>
+          <span>
+            build {ISSUE_META.buildSha} · {ISSUE_META.buildDate}
+          </span>
+        </footer>
+      </div>
+    </div>
   );
 }
