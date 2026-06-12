@@ -6,7 +6,7 @@
  * Good enough for thumbnail fills; the perceptual non-uniformity introduced by
  * sRGB lerp is below what the eye can pick out at 160-pixel tiles.
  */
-import { colors } from "../../design/tokens";
+import { colors } from "../../design/broadcast";
 
 const STOPS = colors.viz.viridis;
 

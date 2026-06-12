@@ -13,6 +13,7 @@
  * Format helpers stay local (not exported) — they're only used here.
  */
 
+import { broadcastStatTablePalette } from "../broadcast/palettes";
 import { StatTable } from "../shared/stat-table";
 import type { StatTableColumn, StatTableRow } from "../shared/stat-table";
 import type { ParkRow } from "../../data/parks-fixtures";
@@ -83,5 +84,11 @@ export function OverviewParksTable({ rows }: OverviewParksTableProps) {
     },
   }));
 
-  return <StatTable columns={COLUMNS} rows={tableRows} />;
+  return (
+    <StatTable
+      palette={broadcastStatTablePalette}
+      columns={COLUMNS}
+      rows={tableRows}
+    />
+  );
 }

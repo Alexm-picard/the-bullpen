@@ -12,7 +12,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { COORS_SPOTLIGHT } from "../../data/parks-fixtures";
-import { colors } from "../../design/tokens";
+import { colors } from "../../design/broadcast";
 import { theme } from "../../design/theme";
 
 import { ParkFactorStrip } from "./park-factor-strip";

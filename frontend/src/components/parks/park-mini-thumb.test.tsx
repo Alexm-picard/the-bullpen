@@ -11,7 +11,7 @@ import { MantineProvider } from "@mantine/core";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { colors } from "../../design/tokens";
+import { colors } from "../../design/broadcast";
 import { theme } from "../../design/theme";
 
 import { ParkMiniThumb } from "./park-mini-thumb";
@@ -97,7 +97,7 @@ describe("ParkMiniThumb", () => {
       />,
     );
     const scarletPattern = new RegExp(
-      `outline:\\s*2px\\s+solid\\s+${colors.scarlet}`,
+      `outline:\\s*2px\\s+solid\\s+${colors.gold}`,
       "i",
     );
     expect(scarletPattern.test(activeHtml)).toBe(true);

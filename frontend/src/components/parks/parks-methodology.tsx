@@ -10,7 +10,7 @@
  * has to compose methodology phrasing inline.
  */
 
-import { colors, typography } from "../../design/tokens";
+import { colors, typography } from "../../design/broadcast";
 
 export type ParksMethodologyProps = {
   /** Full methodology line, written upstream in the fixture file. */
@@ -26,8 +26,8 @@ export function ParksMethodology({ line }: ParksMethodologyProps) {
         color: colors.textMuted,
         letterSpacing: "0.04em",
         padding: "8px 0",
-        borderTop: `1px solid ${colors.navyDeep}`,
-        borderBottom: `1px solid ${colors.bgEmphasis}`,
+        borderTop: `1px solid ${colors.chromeDeep}`,
+        borderBottom: `1px solid ${colors.rule}`,
       }}
     >
       {line}

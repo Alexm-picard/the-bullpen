@@ -12,7 +12,7 @@
  * stroke arc. role="img" + aria-label per the project's SVG rule.
  */
 
-import { colors } from "../../design/tokens";
+import { colors } from "../../design/broadcast";
 
 export type ParkFieldSvgProps = {
   width?: number;
@@ -57,7 +57,7 @@ export function ParkFieldSvg({
         d={`M ${homeX - outfieldR} ${homeY}
             A ${outfieldR} ${outfieldR} 0 0 1 ${homeX + outfieldR} ${homeY}`}
         fill="none"
-        stroke={colors.navy}
+        stroke={colors.chrome}
         strokeWidth={1.5}
       />
       {/* Foul lines */}
@@ -66,7 +66,7 @@ export function ParkFieldSvg({
         y1={homeY}
         x2={lfTipX}
         y2={lfTipY}
-        stroke={colors.bgEmphasis}
+        stroke={colors.rule}
         strokeWidth={1}
       />
       <line
@@ -74,7 +74,7 @@ export function ParkFieldSvg({
         y1={homeY}
         x2={rfTipX}
         y2={rfTipY}
-        stroke={colors.bgEmphasis}
+        stroke={colors.rule}
         strokeWidth={1}
       />
       {/* Infield arc — light-dirt bgSubtle fill */}
@@ -82,14 +82,14 @@ export function ParkFieldSvg({
         d={`M ${homeX - infieldR} ${homeY}
             A ${infieldR} ${infieldR} 0 0 1 ${homeX + infieldR} ${homeY}
             Z`}
-        fill={colors.bgSubtle}
-        stroke={colors.bgEmphasis}
+        fill={colors.fieldSubtle}
+        stroke={colors.rule}
         strokeWidth={1}
       />
       {/* Home plate — small navy diamond */}
       <polygon
         points={`${homeX},${homeY - 5} ${homeX + 5},${homeY} ${homeX},${homeY + 5} ${homeX - 5},${homeY}`}
-        fill={colors.navy}
+        fill={colors.chrome}
       />
     </svg>
   );

@@ -15,7 +15,7 @@
  * left in tree as orphaned dead code per the Stage 3c decision).
  */
 
-import { radii, colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/broadcast";
 
 export type ParkMiniThumbProps = {
   /** Park id, e.g. "COL". Used by the parent to wire the click handler. */
@@ -71,9 +71,9 @@ export function ParkMiniThumb({
       style={{
         // Reset native <button> chrome
         appearance: "none",
-        background: colors.bgSheet,
-        border: `1px solid ${colors.bgEmphasis}`,
-        outline: isActive ? `2px solid ${colors.scarlet}` : "none",
+        background: colors.panel,
+        border: `1px solid ${colors.rule}`,
+        outline: isActive ? `2px solid ${colors.gold}` : "none",
         outlineOffset: isActive ? -1 : 0,
         cursor: "pointer",
         padding: 0,
@@ -104,7 +104,7 @@ export function ParkMiniThumb({
           y={0}
           width={SVG_SIZE}
           height={SVG_SIZE}
-          fill={colors.bgSheet}
+          fill={colors.panel}
         />
         {grid.flatMap((row, r) =>
           row.map((v, c) => (
@@ -127,7 +127,7 @@ export function ParkMiniThumb({
           fontWeight: typography.weights.bold,
           textTransform: "uppercase",
           letterSpacing: "0.06em",
-          color: isActive ? colors.scarlet : colors.textDefault,
+          color: isActive ? colors.goldInk : colors.text,
           lineHeight: 1,
         }}
       >

@@ -11,7 +11,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { PARK_ROWS, PARK_THUMBNAILS } from "../../data/parks-fixtures";
-import { colors } from "../../design/tokens";
+import { colors } from "../../design/broadcast";
 import { theme } from "../../design/theme";
 
 import { ParkSwitcherStrip } from "./park-switcher-strip";
@@ -46,7 +46,7 @@ describe("ParkSwitcherStrip", () => {
       />,
     );
     const ringPattern = new RegExp(
-      `outline:\\s*2px\\s+solid\\s+${colors.scarlet}`,
+      `outline:\\s*2px\\s+solid\\s+${colors.gold}`,
       "gi",
     );
     const ringMatches = html.match(ringPattern) ?? [];
