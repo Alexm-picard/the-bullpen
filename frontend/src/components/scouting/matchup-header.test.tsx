@@ -10,7 +10,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { PLAYERS } from "../../data/matchup-fixtures";
-import { colors } from "../../design/tokens";
+import { colors } from "../../design/broadcast";
 import { theme } from "../../design/theme";
 
 import { MatchupHeader } from "./matchup-header";
@@ -77,7 +77,7 @@ describe("MatchupHeader", () => {
         context="NYY @ DET"
       />,
     );
-    expect(html.toLowerCase()).toContain(colors.scarlet.toLowerCase());
+    expect(html.toLowerCase()).toContain(colors.goldInk.toLowerCase());
   });
 
   it("includes an LHP / RHP hand badge in the title", () => {

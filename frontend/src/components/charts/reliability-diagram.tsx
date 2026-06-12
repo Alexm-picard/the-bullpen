@@ -13,7 +13,7 @@
 import { Stack, Text } from "@mantine/core";
 
 import type { CalibrationBin } from "../../api/players";
-import { colors, typography } from "../../design/tokens";
+import { colors, typography } from "../../design/broadcast";
 
 export const MIN_SAMPLE_THRESHOLD = 50;
 
@@ -95,8 +95,8 @@ export function ReliabilityDiagram({
           y={PLOT.marginTop}
           width={PLOT.width}
           height={PLOT.height}
-          fill={colors.bgSheet}
-          stroke={colors.bgEmphasis}
+          fill={colors.panel}
+          stroke={colors.rule}
         />
 
         {/* Gridlines + tick labels */}
@@ -107,7 +107,7 @@ export function ReliabilityDiagram({
               x2={xToPx(t)}
               y1={PLOT.marginTop}
               y2={PLOT.marginTop + PLOT.height}
-              stroke={colors.bgEmphasis}
+              stroke={colors.rule}
               strokeDasharray="2,3"
             />
             <text
@@ -127,7 +127,7 @@ export function ReliabilityDiagram({
               x2={PLOT.marginLeft + PLOT.width}
               y1={yToPx(t)}
               y2={yToPx(t)}
-              stroke={colors.bgEmphasis}
+              stroke={colors.rule}
               strokeDasharray="2,3"
             />
             <text
@@ -147,7 +147,7 @@ export function ReliabilityDiagram({
           y1={yToPx(0)}
           x2={xToPx(1)}
           y2={yToPx(1)}
-          stroke={colors.scarlet}
+          stroke={colors.goldInk}
           strokeWidth={1.5}
         />
 
@@ -166,7 +166,7 @@ export function ReliabilityDiagram({
               r={r}
               fill={fill}
               fillOpacity={0.85}
-              stroke={colors.textStrong}
+              stroke={colors.ink}
               strokeWidth={0.5}
             >
               <title>{`n=${b.n} · predicted=${b.predicted.toFixed(3)} · actual=${b.actual.toFixed(3)}`}</title>
@@ -179,7 +179,7 @@ export function ReliabilityDiagram({
           x={PLOT.marginLeft + PLOT.width / 2}
           y={SVG_HEIGHT - 4}
           textAnchor="middle"
-          fill={colors.textDefault}
+          fill={colors.text}
           fontSize={typography.scale[0]}
         >
           predicted probability
@@ -189,7 +189,7 @@ export function ReliabilityDiagram({
           y={14}
           transform="rotate(-90)"
           textAnchor="middle"
-          fill={colors.textDefault}
+          fill={colors.text}
           fontSize={typography.scale[0]}
         >
           actual frequency

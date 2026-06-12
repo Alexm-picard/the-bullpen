@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 
 import type { CalibrationBin } from "../../api/players";
 import { theme } from "../../design/theme";
-import { colors } from "../../design/tokens";
+import { colors } from "../../design/broadcast";
 
 import {
   MIN_SAMPLE_THRESHOLD,
@@ -43,7 +43,7 @@ describe("ReliabilityDiagram", () => {
 
   it("uses the brand accent for the diagonal reference line", () => {
     const html = render(<ReliabilityDiagram bins={FIXTURE_BINS} />);
-    expect(html.toLowerCase()).toContain(colors.scarlet.toLowerCase());
+    expect(html.toLowerCase()).toContain(colors.goldInk.toLowerCase());
   });
 
   it("shows insufficient-data placeholder below the threshold", () => {

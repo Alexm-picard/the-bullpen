@@ -16,7 +16,7 @@
 import { Stack, Title } from "@mantine/core";
 
 import type { ScoutingPlayer } from "../../data/matchup-fixtures";
-import { colors, typography } from "../../design/tokens";
+import { colors, typography } from "../../design/broadcast";
 import { HeroEyebrow } from "../shared/hero-eyebrow";
 
 export type MatchupHeaderProps = {
@@ -58,7 +58,7 @@ export function MatchupHeader({
           fontFamily: typography.fonts.display,
           fontSize: typography.scale[6], // 48
           fontWeight: typography.weights.heavy,
-          color: colors.textStrong,
+          color: colors.ink,
           textTransform: "uppercase",
           letterSpacing: "0.005em",
           lineHeight: typography.lineHeights.display,
@@ -75,11 +75,11 @@ export function MatchupHeader({
           flexWrap: "wrap",
           fontFamily: typography.fonts.body,
           fontSize: typography.scale[2], // 16
-          color: colors.textDefault,
+          color: colors.text,
           paddingTop: 4,
           paddingBottom: 4,
-          borderTop: `1px solid ${colors.bgEmphasis}`,
-          borderBottom: `1px solid ${colors.bgEmphasis}`,
+          borderTop: `1px solid ${colors.rule}`,
+          borderBottom: `1px solid ${colors.rule}`,
         }}
       >
         <span style={{ fontWeight: typography.weights.semibold }}>
@@ -100,7 +100,7 @@ export function MatchupHeader({
         <span
           aria-hidden="true"
           style={{
-            color: colors.scarlet,
+            color: colors.goldInk,
             fontWeight: typography.weights.bold,
             fontSize: typography.scale[3],
             padding: "0 8px",

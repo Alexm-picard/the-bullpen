@@ -17,7 +17,7 @@
 import { Table } from "@mantine/core";
 
 import type { MatchupPrediction } from "../../data/matchup-fixtures";
-import { radii, colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/broadcast";
 
 export type RecentPredictionsTableProps = {
   rows: MatchupPrediction[];
@@ -60,15 +60,15 @@ function formatTs(iso: string): string {
 }
 
 const headerCellStyle: React.CSSProperties = {
-  backgroundColor: colors.navy,
-  color: colors.textOnNavy,
+  backgroundColor: colors.chrome,
+  color: colors.textOnChrome,
   fontFamily: typography.fonts.display,
   fontSize: 13,
   fontWeight: typography.weights.bold,
   textTransform: "uppercase",
   letterSpacing: "0.04em",
   padding: "8px 12px",
-  borderRight: `1px solid ${colors.bgEmphasis}`,
+  borderRight: `1px solid ${colors.rule}`,
   whiteSpace: "nowrap",
   textAlign: "left",
 };
@@ -76,10 +76,10 @@ const headerCellStyle: React.CSSProperties = {
 const dataCellStyle: React.CSSProperties = {
   fontFamily: typography.fonts.mono,
   fontSize: 13,
-  color: colors.textStrong,
+  color: colors.ink,
   padding: "6px 12px",
-  borderBottom: `1px solid ${colors.bgEmphasis}`,
-  borderRight: `1px solid ${colors.bgEmphasis}`,
+  borderBottom: `1px solid ${colors.rule}`,
+  borderRight: `1px solid ${colors.rule}`,
   fontFeatureSettings: '"tnum" 1',
   verticalAlign: "middle",
 };
@@ -91,8 +91,8 @@ export function RecentPredictionsTable({
   return (
     <div
       style={{
-        backgroundColor: colors.bgSheet,
-        border: `1px solid ${colors.bgEmphasis}`,
+        backgroundColor: colors.panel,
+        border: `1px solid ${colors.rule}`,
         borderRadius: radii.sm,
         overflowX: "auto",
       }}
@@ -103,7 +103,7 @@ export function RecentPredictionsTable({
         style={{
           borderCollapse: "collapse",
           width: "100%",
-          backgroundColor: colors.bgSheet,
+          backgroundColor: colors.panel,
         }}
       >
         {caption ? (
@@ -166,12 +166,12 @@ export function RecentPredictionsTable({
                   <Table.Td
                     style={{
                       ...dataCellStyle,
-                      backgroundColor: colors.silver,
-                      color: colors.textStrong,
+                      backgroundColor: colors.fieldSubtle,
+                      color: colors.ink,
                       fontFamily: typography.fonts.mono,
                       borderBottom: isLast
                         ? "none"
-                        : `1px solid ${colors.bgEmphasis}`,
+                        : `1px solid ${colors.rule}`,
                     }}
                   >
                     {formatTs(r.when)}
@@ -182,7 +182,7 @@ export function RecentPredictionsTable({
                       fontFamily: typography.fonts.body,
                       borderBottom: isLast
                         ? "none"
-                        : `1px solid ${colors.bgEmphasis}`,
+                        : `1px solid ${colors.rule}`,
                     }}
                   >
                     {r.predicted}
@@ -193,7 +193,7 @@ export function RecentPredictionsTable({
                       textAlign: "right",
                       borderBottom: isLast
                         ? "none"
-                        : `1px solid ${colors.bgEmphasis}`,
+                        : `1px solid ${colors.rule}`,
                     }}
                   >
                     {r.prob.toFixed(2)}
@@ -204,7 +204,7 @@ export function RecentPredictionsTable({
                       fontFamily: typography.fonts.body,
                       borderBottom: isLast
                         ? "none"
-                        : `1px solid ${colors.bgEmphasis}`,
+                        : `1px solid ${colors.rule}`,
                     }}
                   >
                     {r.actual}
@@ -216,7 +216,7 @@ export function RecentPredictionsTable({
                       borderRight: "none",
                       borderBottom: isLast
                         ? "none"
-                        : `1px solid ${colors.bgEmphasis}`,
+                        : `1px solid ${colors.rule}`,
                     }}
                   >
                     {r.agreed ? (
@@ -224,7 +224,7 @@ export function RecentPredictionsTable({
                         title="Model prediction matched the observed outcome"
                         style={{
                           textDecoration: "none",
-                          color: colors.textStrong,
+                          color: colors.ink,
                           fontWeight: typography.weights.bold,
                         }}
                       >
@@ -235,7 +235,7 @@ export function RecentPredictionsTable({
                         title="Model prediction did not match the observed outcome"
                         style={{
                           textDecoration: "none",
-                          color: colors.scarlet,
+                          color: colors.goldInk,
                           fontWeight: typography.weights.bold,
                         }}
                       >

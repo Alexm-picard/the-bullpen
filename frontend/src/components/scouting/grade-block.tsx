@@ -12,7 +12,7 @@
  */
 
 import { cellColor } from "../../design/cellColor";
-import { radii, colors, typography } from "../../design/tokens";
+import { radii, colors, typography } from "../../design/broadcast";
 import { METRIC_META } from "../../data/matchup-fixtures";
 
 export type GradeBlockProps = {
@@ -69,8 +69,8 @@ export function GradeBlock({ label, value }: GradeBlockProps) {
         style={{
           position: "relative",
           height: 8,
-          backgroundColor: colors.bgSubtle,
-          border: `1px solid ${colors.bgEmphasis}`,
+          backgroundColor: colors.fieldSubtle,
+          border: `1px solid ${colors.rule}`,
           borderRadius: radii.sm,
           overflow: "hidden",
         }}
@@ -92,7 +92,7 @@ export function GradeBlock({ label, value }: GradeBlockProps) {
           fontFamily: typography.fonts.mono,
           fontSize: typography.scale[1], // 14
           fontWeight: typography.weights.bold,
-          color: colors.textStrong,
+          color: colors.ink,
           textAlign: "right",
           fontFeatureSettings: '"tnum" 1',
         }}
