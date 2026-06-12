@@ -13,3 +13,13 @@
  * connection is open before this @import resolves on first paint. */
 
 @import url("https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@400;500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap");
+
+/* BROADCAST-PACKAGE stack (decision [160]) - loads BESIDE the [133] stack while
+ * screens migrate one PR at a time:
+ *   - Barlow Condensed (+italic): the telecast display voice. Italic is the
+ *     "speed" read for live states. Weights 500-800.
+ *   - Inter: body/UI. Tabular figures globally via tnum.
+ *   - JetBrains Mono: stat figures, scorebug numerals. Weights 400-800.
+ * When the last screen lands on broadcast, DELETE the [133] @import above. */
+
+@import url("https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;0,800;1,600;1,700;1,800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700;800&display=swap");
