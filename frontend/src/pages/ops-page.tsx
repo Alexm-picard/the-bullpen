@@ -218,7 +218,10 @@ export default function OpsPage() {
 
         <section aria-labelledby="ops-drift-section-label">
           <div style={{ marginBottom: 12 }}>
-            <LowerThird id="ops-drift-section-label" meta="PSI | ECE Δ">
+            <LowerThird
+              id="ops-drift-section-label"
+              meta="PSI | ECE Δ · LAST 24H WINDOW"
+            >
               Drift Snapshot
             </LowerThird>
           </div>
