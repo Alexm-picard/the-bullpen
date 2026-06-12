@@ -197,7 +197,7 @@ export default function HomePage() {
           </div>
           <TonightsMatchupsBoard
             matchups={TONIGHT_MATCHUPS}
-            caption="Tonight's slate · edge model reads · starters · showcase data (backend unreachable)"
+            caption="Tonight's slate · edge model reads · starters · showcase data (no live slate endpoint yet)"
           />
         </section>
 

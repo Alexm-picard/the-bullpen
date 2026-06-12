@@ -228,7 +228,7 @@ export const ISSUE_META = {
   issueDate: "Wed · May 30, 2026",
   /** ET timestamp shown in the mono context line. */
   issuedAt: "19:05 ET",
-  firstPitchWindow: "FIRST PITCH 18:40 ET — 22:15 ET",
+  firstPitchWindow: "18:40 ET - 22:15 ET",
   buildSha: "b1b62ec",
   buildDate: "2026.05.30",
 };

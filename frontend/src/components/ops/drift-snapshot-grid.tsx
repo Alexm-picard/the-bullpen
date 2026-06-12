@@ -1,9 +1,10 @@
 /**
  * <DriftSnapshotGrid> — two parallel StatTables (PSI by feature | ECE Δ by
- * output) under a single shared <SectionLabel>.
+ * output). The section heading is the PAGE's responsibility (ops-page renders
+ * the single "Drift Snapshot" LowerThird); the grid is headerless so the
+ * heading and its DOM id exist exactly once.
  *
  * Layout (CSS grid via `ops-drift__pair`):
- *   [ SECTION LABEL: DRIFT SNAPSHOT · LAST 24H WINDOW ]
  *   [ PSI BY FEATURE       ] [ ECE Δ BY OUTPUT       ]
  *
  * At <900px the subgrid stacks (PSI on top), matching the matchup-report__pair
@@ -21,7 +22,6 @@ import type {
   ModelRegistryRow,
 } from "../../data/ops-fixtures";
 import { ECE_DELTA_METRIC, PSI_METRIC } from "../../data/ops-fixtures";
-import { LowerThird } from "../broadcast/lower-third";
 import { broadcastStatTablePalette } from "../broadcast/palettes";
 import { StatTable } from "../shared/stat-table";
 import type { StatTableColumn, StatTableRow } from "../shared/stat-table";
@@ -99,30 +99,23 @@ export function DriftSnapshotGrid({
   const eceCols = modelColumns(models, ECE_DELTA_METRIC, formatEce);
 
   return (
-    <section aria-labelledby="ops-drift-section-label">
-      <div id="ops-drift-section-label">
-        <LowerThird as="h3" meta="LAST 24H WINDOW">
-          Drift Snapshot
-        </LowerThird>
+    <div className="ops-drift__pair">
+      <div>
+        <StatTable
+          palette={broadcastStatTablePalette}
+          columns={psiCols}
+          rows={psiRows(psiByFeature)}
+          caption="PSI by feature · 0 stable / 0.20 action"
+        />
       </div>
-      <div className="ops-drift__pair">
-        <div>
-          <StatTable
-            palette={broadcastStatTablePalette}
-            columns={psiCols}
-            rows={psiRows(psiByFeature)}
-            caption="PSI by feature · 0 stable / 0.20 action"
-          />
-        </div>
-        <div>
-          <StatTable
-            palette={broadcastStatTablePalette}
-            columns={eceCols}
-            rows={eceRows(eceByOutput)}
-            caption="ECE Δ by output · target 0 / |Δ| > 0.01 action"
-          />
-        </div>
+      <div>
+        <StatTable
+          palette={broadcastStatTablePalette}
+          columns={eceCols}
+          rows={eceRows(eceByOutput)}
+          caption="ECE Δ by output · target 0 / |Δ| > 0.01 action"
+        />
       </div>
-    </section>
+    </div>
   );
 }

@@ -1,9 +1,11 @@
 /**
  * Unit tests for <DriftSnapshotGrid>.
  *
- * Covers: section label renders once, both PSI feature rows and ECE output
- * rows render, em-dash for null ECE on non-`in_play` batted_ball cells, only
- * LIVE models get columns (SHADOW / AWAITING are filtered out).
+ * Covers: the grid is HEADERLESS (the page owns the single "Drift Snapshot"
+ * heading; the grid must not duplicate it or its DOM id), both PSI feature
+ * rows and ECE output rows render, em-dash for null ECE on non-`in_play`
+ * batted_ball cells, only LIVE models get columns (SHADOW / AWAITING are
+ * filtered out).
  */
 import { MantineProvider } from "@mantine/core";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -25,7 +27,7 @@ function render(ui: React.ReactElement): string {
 }
 
 describe("DriftSnapshotGrid", () => {
-  it("renders the shared section label", () => {
+  it("is headerless - the page owns the section heading and its DOM id", () => {
     const html = render(
       <DriftSnapshotGrid
         models={MODEL_FLEET}
@@ -33,8 +35,8 @@ describe("DriftSnapshotGrid", () => {
         eceByOutput={ECE_BY_OUTPUT}
       />,
     );
-    expect(html).toContain("Drift Snapshot");
-    expect(html).toContain("LAST 24H WINDOW");
+    expect(html).not.toContain("Drift Snapshot");
+    expect(html).not.toContain("ops-drift-section-label");
   });
 
   it("renders all PSI feature row labels", () => {
