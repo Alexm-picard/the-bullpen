@@ -1,6 +1,8 @@
 # Backup runbook
 
-Two layers of backup for The Bullpen. They serve different failure modes — both are needed.
+Three layers of backup for The Bullpen. They serve different failure modes — all are needed:
+local snapshot (Layer 1, fast restores), air-gapped USB (Layer 2, host-loss), offsite R2
+(Layer 3, site-loss).
 
 ## Layer 1 — Daily automated snapshot (`clickhouse-snapshot.sh`)
 
@@ -158,15 +160,77 @@ Then re-copy the system script whenever the in-repo version changes.
 # Should bring up a scratch ClickHouse + SQLite from the USB, make a prediction, tear down.
 ```
 
-## Both layers, together
+## Layer 3 — Offsite to Cloudflare R2 (`offsite-push.sh`, the P2 leg of [153])
 
-| Scenario                                            | Recovery path                                                                                                                                                                                                                                                                                                          |
-| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Accidental `DROP TABLE`                             | Restore from yesterday's local snapshot (Layer 1) — ~5 min                                                                                                                                                                                                                                                             |
-| SQLite registry corrupted                           | Restore `registry.sqlite` from local snapshot (Layer 1) — ~1 min                                                                                                                                                                                                                                                       |
-| WSL2 distro broken                                  | Reinstall WSL2, restore from USB (Layer 2) — ~30 min                                                                                                                                                                                                                                                                   |
-| Desktop SSD dead                                    | New desktop, install WSL2, restore from USB (Layer 2) — hours                                                                                                                                                                                                                                                          |
-| Desktop physically destroyed + USB at same location | **Layer 3 (offsite cloud) covers this** once the R2 push lands: clickhouse-backup + the registry snapshot push to Cloudflare R2 per ADR-0007 ([13]/[128]). The offsite leg was found unimplemented and is re-scheduled as P2 (see decision [153]). Until it ships, store the USB at a different location periodically. |
+A SEPARATE decoupled step from the local snapshot: `bullpen-offsite@<user>.service` +
+`bullpen-offsite.timer` fire at **03:30 local** (after the 03:00 local snapshot). An R2
+failure alerts Discord and fails the offsite unit; it can never fail or block the local
+snapshot - local-first is the prime directive. The script pushes, per `auto_*` snapshot:
+
+- the night's clickhouse-backup output (read directly from the docker volume's host
+  mountpoint, resolved via `docker inspect` - no staging copy)
+- `auto_*_sqlite/registry.sqlite` (asserted non-empty BEFORE push - the P1 lesson)
+- `auto_*_artifacts_meta/`
+
+via `rclone copy` (NEVER sync - the script has no delete authority), then verifies with
+`rclone check --one-way` and logs `OFFSITE SUCCESS: <name> objects=N bytes=B` (grep for it).
+
+### Env contract (`/etc/default/bullpen`, chmod 600, never committed)
+
+```bash
+# THE TIMER RUNS AS ROOT: rclone's config lives under the dev user's home and the root
+# context cannot discover it - the explicit path is REQUIRED (same failure class as the
+# /home-path registration gap).
+RCLONE_CONFIG=/home/alepic/.config/rclone/rclone.conf
+# Setting this ENABLES the leg; unset = clean no-op (dev/CI safe).
+BULLPEN_OFFSITE_REMOTE=bullpen-r2:bullpen-prod/backups
+# Optional: a SEPARATE Healthchecks.io check for the offsite leg (success ping; /fail on
+# failure). Deliberately distinct from BULLPEN_HC_PING_URL so the local dead-man stays
+# local-only and the two failure domains alert independently.
+#BULLPEN_OFFSITE_HC_PING_URL=https://hc-ping.com/<uuid>
+```
+
+### Auth + transport notes (box-proven 2026-06-11)
+
+- The R2 token is **BUCKET-SCOPED**: `rclone lsd bullpen-r2:` (account root) returns
+  **403 AccessDenied BY DESIGN** (no ListBuckets). Bucket-level paths work. A 403 at the
+  account root is not broken auth - do not "fix" it.
+- Transient R2 5xx happen (a 501 was observed mid-upload during the fold-export push);
+  rclone's default retries recover them. Keep default retries; a single 5xx in the log
+  is not fatal.
+
+### Retention: R2 lifecycle rules (CONSOLE TASK, not script logic)
+
+The [13] tiering (7-day local / 4-week weekly / 12-month monthly) is approximated with a
+lifecycle rule the operator creates once in the Cloudflare console:
+**R2 → bullpen-prod → Settings → Object lifecycle rules → Add rule**, prefix `backups/`,
+"Delete uploaded objects after **35 days**". (Local Layer 1 keeps 14 days; the USB Layer 2
+holds the long-tail monthlies. A finer weekly/monthly offsite tier would need date-aware
+prefixes - deliberately out of scope for the script.) Record the rule's creation date here
+when done.
+
+### Box bring-up + dry-run (after merge)
+
+```bash
+git pull && ./infra/systemd/install.sh            # installs + enables the 03:30 timer (no-op until env set)
+sudoedit /etc/default/bullpen                     # add RCLONE_CONFIG + BULLPEN_OFFSITE_REMOTE (above)
+# Manual dry-run against the most recent local snapshot:
+sudo -E env $(grep -v '^#' /etc/default/bullpen | xargs) ./infra/backup/offsite-push.sh
+rclone size bullpen-r2:bullpen-prod/backups --config /home/alepic/.config/rclone/rclone.conf
+# Then observe the next 03:00 -> 03:30 cycle end-to-end before trusting it.
+```
+
+Script-level tests (no network/docker needed): `./infra/backup/test-offsite-push.sh`.
+
+## All layers, together
+
+| Scenario                                            | Recovery path                                                                                                                                                                                                     |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Accidental `DROP TABLE`                             | Restore from yesterday's local snapshot (Layer 1) — ~5 min                                                                                                                                                        |
+| SQLite registry corrupted                           | Restore `registry.sqlite` from local snapshot (Layer 1) — ~1 min                                                                                                                                                  |
+| WSL2 distro broken                                  | Reinstall WSL2, restore from USB (Layer 2) — ~30 min                                                                                                                                                              |
+| Desktop SSD dead                                    | New desktop, install WSL2, restore from USB (Layer 2) — hours                                                                                                                                                     |
+| Desktop physically destroyed + USB at same location | **Layer 3 (offsite R2)**: pull `backups/<newest auto_*>` from `bullpen-r2:bullpen-prod`, restore ClickHouse via clickhouse-backup + drop in `registry.sqlite` (decision [153] P2, implemented 2026-06-11) — hours |
 
 ## Discord webhook setup
 

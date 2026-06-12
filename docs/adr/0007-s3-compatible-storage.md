@@ -236,3 +236,14 @@ training-on-old-data bug.
   unchanged; the P1 registry-capture fix (live `/opt/bullpen` registry,
   fail-loud, integrity-asserted) and the P2 R2-push re-schedule are
   recorded in decision [153]. Status stays Accepted.
+
+- **2026-06-11** - The P2 offsite leg is IMPLEMENTED:
+  `infra/backup/offsite-push.sh` + `bullpen-offsite@.service` /
+  `bullpen-offsite.timer` (03:30, decoupled from the 03:00 local
+  snapshot; rclone copy + one-way verify; retention via R2 lifecycle
+  rules, documented as a console task). The R2 substrate was proven the
+  same day by the fold-export push (731.6 MiB, hash-verified). Gated on
+  `BULLPEN_OFFSITE_REMOTE`; `RCLONE_CONFIG` must be explicit because the
+  timer runs as root (the rclone config lives under the dev user's
+  home). Box verification (manual dry-run + one observed 03:00->03:30
+  cycle) is the remaining runtime gate. Status stays Accepted.

@@ -1,0 +1,21 @@
+[Unit]
+Description=The Bullpen — offsite (R2) push of the nightly snapshot (P2, decision [153])
+# Ordered after the local snapshot service when both fire in the same window, but NOT
+# Requires= it: the offsite leg failing or being disabled must never affect the local leg,
+# and vice versa the local leg never waits on R2.
+After=network-online.target docker.service bullpen-snapshot@%i.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# /etc/default/bullpen carries BULLPEN_OFFSITE_REMOTE + RCLONE_CONFIG (the timer runs as
+# root, which cannot discover /home/<user>/.config/rclone/rclone.conf on its own) +
+# the Discord webhook + the optional BULLPEN_OFFSITE_HC_PING_URL.
+EnvironmentFile=-/etc/default/bullpen
+ExecStart=/home/%i/code/the-bullpen/infra/backup/offsite-push.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+
+[Install]
+WantedBy=multi-user.target
