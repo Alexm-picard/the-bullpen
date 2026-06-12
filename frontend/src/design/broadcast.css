@@ -1,0 +1,52 @@
+/* Broadcast-kit animation rules (decision [160]).
+ *
+ * The ONLY continuous animations in the identity live here, and every one of
+ * them dies under prefers-reduced-motion ([112] discipline: motion is
+ * functional, never decorative-mandatory). */
+
+/* Ticker: the track holds the item run TWICE; translating -50% loops seamlessly. */
+@keyframes broadcast-ticker-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.broadcast-ticker__track {
+  display: inline-flex;
+  white-space: nowrap;
+  animation: broadcast-ticker-scroll var(--ticker-duration, 30s) linear infinite;
+  will-change: transform;
+}
+
+.broadcast-ticker:hover .broadcast-ticker__track {
+  animation-play-state: paused;
+}
+
+/* LIVE dot: a slow on-air pulse. */
+@keyframes broadcast-live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.broadcast-live-dot {
+  animation: broadcast-live-pulse 2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .broadcast-ticker__track {
+    animation: none;
+    /* Static: show the first run of items, no movement. */
+    transform: none;
+  }
+  .broadcast-live-dot {
+    animation: none;
+  }
+}
