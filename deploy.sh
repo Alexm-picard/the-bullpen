@@ -38,10 +38,12 @@ APP_SYMLINK="${INSTALL_DIR}/app.jar"
 TAG="v$(date -u +%Y.%m.%d-%H%M)"
 ALLOW_DIRTY=false
 SKIP_SMOKE=false
+ALLOW_GAME_WINDOW=false
 for arg in "$@"; do
   case "$arg" in
     --allow-dirty) ALLOW_DIRTY=true ;;
     --skip-smoke)  SKIP_SMOKE=true ;;
+    --allow-game-window) ALLOW_GAME_WINDOW=true ;;
     *) echo "Unknown flag: $arg" >&2; exit 2 ;;
   esac
 done
@@ -95,6 +97,21 @@ fi
 
 if [[ ! -f /etc/systemd/system/bullpen-api.service ]]; then
   die "bullpen-api.service not installed — run infra/systemd/install.sh first"
+fi
+
+# Rule 3 (decision [21]): no deploys during live games - evenings (16:00-23:59 ET)
+# April-October. Enforced here in the script, not just in the deploy-safely skill
+# prose. Override with --allow-game-window or BULLPEN_ALLOW_GAME_WINDOW_DEPLOY=1
+# (the documented pre-launch / 0-user waiver path). ET is computed via TZ so it is
+# correct regardless of the box's local timezone.
+ET_MONTH=$((10#$(TZ='America/New_York' date +%m)))
+ET_HOUR=$((10#$(TZ='America/New_York' date +%H)))
+if (( ET_MONTH >= 4 && ET_MONTH <= 10 )) && (( ET_HOUR >= 16 && ET_HOUR <= 23 )); then
+  if [[ "$ALLOW_GAME_WINDOW" == "true" || "${BULLPEN_ALLOW_GAME_WINDOW_DEPLOY:-}" == "1" ]]; then
+    log "WARNING: inside the live-game window (rule 3) - proceeding via explicit override"
+  else
+    die "live-game window (rule 3): $(TZ='America/New_York' date '+%a %b %d %H:%M ET') is an evening in Apr-Oct - refusing to deploy. Override with --allow-game-window or BULLPEN_ALLOW_GAME_WINDOW_DEPLOY=1 if you accept the risk (e.g. pre-launch, 0 users)."
+  fi
 fi
 
 if [[ "$ALLOW_DIRTY" != "true" ]]; then

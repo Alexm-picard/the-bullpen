@@ -37,6 +37,9 @@ NAME="auto_${TS}"
 # host yields metadata-only backups with zero data parts. See the 2026-05-23
 # restore drill for the discovery + repro. (CLAUDE.md rule 8 forcing function.)
 CH_CONTAINER="${CH_CONTAINER:-bullpen-clickhouse}"
+# ClickHouse password - env-overridable, defaults to the shared dev/CI value. In prod set
+# CH_PASSWORD via the snapshot unit's EnvironmentFile (/etc/default/bullpen) so it is not the default.
+CH_PASSWORD="${CH_PASSWORD:-thebullpen}"
 CB_HOST_BINARY="${CB_HOST_BINARY:-/usr/bin/clickhouse-backup}"
 
 NODE_TEXTFILE_DIR="${NODE_TEXTFILE_DIR:-/var/lib/node_exporter}"
@@ -73,12 +76,12 @@ if ! docker exec "$CH_CONTAINER" test -x /usr/bin/clickhouse-backup 2>/dev/null;
 fi
 if ! docker exec "$CH_CONTAINER" test -f /etc/clickhouse-backup/config.yml 2>/dev/null; then
   docker exec "$CH_CONTAINER" mkdir -p /etc/clickhouse-backup || true
-  docker exec -i "$CH_CONTAINER" bash -c 'cat > /etc/clickhouse-backup/config.yml' <<'EOF'
+  docker exec -i "$CH_CONTAINER" bash -c 'cat > /etc/clickhouse-backup/config.yml' <<EOF
 general:
   remote_storage: none
 clickhouse:
   username: default
-  password: thebullpen
+  password: ${CH_PASSWORD}
   host: localhost
   port: 9000
   data_path: /var/lib/clickhouse
@@ -87,7 +90,7 @@ fi
 docker exec "$CH_CONTAINER" /usr/bin/clickhouse-backup create "$NAME" \
   || fail "clickhouse-backup create failed"
 # Sanity: confirm the new backup has at least one data part if any user table has rows
-HAS_ROWS=$(docker exec "$CH_CONTAINER" clickhouse-client --password thebullpen \
+HAS_ROWS=$(docker exec "$CH_CONTAINER" clickhouse-client --password "$CH_PASSWORD" \
   --query "SELECT count() FROM system.parts WHERE active AND database NOT IN ('system','INFORMATION_SCHEMA','information_schema')" 2>/dev/null || echo 0)
 if [[ "${HAS_ROWS:-0}" -gt 0 ]]; then
   # *.bin (not data.bin): compact parts use data.bin, wide parts use per-column <col>.bin -

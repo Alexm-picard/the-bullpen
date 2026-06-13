@@ -84,6 +84,21 @@ if [[ "$UNINSTALL" == "true" ]]; then
       log "removed ${TARGET_DIR}/${f}"
     fi
   done
+  # WS3: tear down the retrain + stale-claim-reaper job timers (plain units).
+  for t in bullpen-retrain.timer bullpen-stale-claim-reaper.timer; do
+    if systemctl list-unit-files | grep -q "^${t}"; then
+      log "stop + disable ${t}"
+      sudo systemctl stop "$t" 2>/dev/null || true
+      sudo systemctl disable "$t" 2>/dev/null || true
+    fi
+  done
+  for f in bullpen-retrain.timer bullpen-retrain.service \
+           bullpen-stale-claim-reaper.timer bullpen-stale-claim-reaper.service; do
+    if [[ -f "${TARGET_DIR}/${f}" ]]; then
+      sudo rm "${TARGET_DIR}/${f}"
+      log "removed ${TARGET_DIR}/${f}"
+    fi
+  done
   sudo systemctl daemon-reload
   log "uninstall complete (NOTE: ${INSTALL_DIR} and user ${SVC_USER} left in place)"
   exit 0
@@ -145,6 +160,25 @@ else
   log "  WARN: offsite units not found under infra/backup; skipping the offsite timer"
 fi
 
+# WS3 (decision [19]): the worker-profile JOB timers - the nightly retrain (02-06 ET, drives the
+# retraining queue) and the stale-claim reaper (every 30 min). Plain (non-template) units that live
+# in infra/systemd alongside the app units. The timers (not the .service units) get enabled.
+# Installing them was previously missed: the units existed in-repo but install.sh never copied them.
+JOB_TIMER_UNITS=(
+  bullpen-retrain.service bullpen-retrain.timer
+  bullpen-stale-claim-reaper.service bullpen-stale-claim-reaper.timer
+)
+INSTALL_JOB_TIMERS=false
+if [[ -f "${UNIT_DIR}/bullpen-retrain.timer" && -f "${UNIT_DIR}/bullpen-stale-claim-reaper.timer" ]]; then
+  for u in "${JOB_TIMER_UNITS[@]}"; do
+    sudo install -o root -g root -m 0644 "${UNIT_DIR}/${u}" "${TARGET_DIR}/${u}"
+    log "  installed ${TARGET_DIR}/${u}"
+  done
+  INSTALL_JOB_TIMERS=true
+else
+  log "  WARN: retrain/reaper units not found under infra/systemd; skipping the job timers"
+fi
+
 log "daemon-reload"
 sudo systemctl daemon-reload
 
@@ -167,6 +201,19 @@ if [[ "$INSTALL_OFFSITE" == "true" ]]; then
     sudo systemctl enable --now bullpen-offsite.timer
     log "enabled + started: bullpen-offsite.timer (fires daily at 03:30 local; no-ops until BULLPEN_OFFSITE_REMOTE is set)"
   fi
+fi
+
+# Job timers (retrain + stale-claim reaper). Enable the .timer units; they do not depend on app.jar.
+if [[ "$INSTALL_JOB_TIMERS" == "true" ]]; then
+  for t in bullpen-retrain.timer bullpen-stale-claim-reaper.timer; do
+    if [[ "$NO_START" == "true" ]]; then
+      sudo systemctl enable "$t"
+      log "enabled (not started): ${t}"
+    else
+      sudo systemctl enable --now "$t"
+      log "enabled + started: ${t}"
+    fi
+  done
 fi
 
 if [[ "$NO_START" == "true" ]]; then
