@@ -1,6 +1,7 @@
 # H6 - Backup R2 verification and pre-season drills
 
 > **Scope:** two things in one checklist:
+>
 > 1. Confirm that `clickhouse-snapshot.sh` (Layer 1) actually pushes to
 >    Cloudflare R2 - this R2 push path was flagged as a known gap in the
 >    2026-05-23 restore drill (the snapshot script writes local-only; the R2
@@ -17,6 +18,24 @@
 > `infra/backup/clickhouse-snapshot.sh`, `ops/scripts/restore-drill.sh`,
 > `docs/drills/2026-05-23_restore.md` (last drill - PASS, local-only),
 > ADR-0007 (S3-compatible storage abstraction), decisions [13] [14] [128].
+
+> **SUPERSEDED IN PART (2026-06-13).** Two premises below are now stale:
+>
+> 1. **Part A treats the R2 offsite push as an unimplemented gap.** It is now
+>    IMPLEMENTED - not by appending `rclone` to `clickhouse-snapshot.sh`, but as
+>    a decoupled leg: `infra/backup/offsite-push.sh` driven by
+>    `bullpen-offsite.timer` (03:30), pushing to `bullpen-r2:bullpen-prod/backups/<NAME>/`
+>    plus `<NAME>_sqlite/registry.sqlite` (ADR-0007 revision history, decision [153]).
+>    So A1/A2 are done; treat Part A as "verify the offsite leg ran," not "add it."
+> 2. **The restore drill is redesigned as restore-FROM-R2** (the canonical
+>    procedure is now the `drill-runner` agent's "Restore drill" section): fetch
+>    the latest `backups/<NAME>/` set from R2, `clickhouse-backup restore` INSIDE
+>    a scratch container, `.restore` the SQLite registry + `integrity_check` +
+>    row-count vs the live 6 model rows, and boot BOTH profiles. The 2026-05-23
+>    drill (Part B's baseline) is retired as INVALID - it skipped the registry leg
+>    and never booted the worker. A fuller reconciliation of this runbook (the
+>    `snapshots/clickhouse/` vs `backups/` prefix, the Better Stack -> Uptime Robot
+>    monitor rename per decision [129]) is a follow-up.
 
 ---
 
@@ -325,15 +344,15 @@ captured state above) and update `docs/phase-status.json` field
 
 ## Summary checklist (pre-season go/no-go)
 
-| # | Check | Done |
-| --- | --- | --- |
-| A3 | R2 upload confirmed in `rclone lsd` output | [ ] |
-| A4 | R2 round-trip restore proves `--from-r2` (after code lands) | [ ] |
-| B2 | Local restore drill: RESULT PASS | [ ] |
-| B4 | SQLite registry leg: row counts match live | [ ] |
-| B5 | Drill report committed to `docs/drills/` and `phase-status.json` updated | [ ] |
-| C3 | Reboot drill: all 9 items green within 5 min | [ ] |
-| C5 | Reboot report committed | [ ] |
+| #   | Check                                                                    | Done |
+| --- | ------------------------------------------------------------------------ | ---- |
+| A3  | R2 upload confirmed in `rclone lsd` output                               | [ ]  |
+| A4  | R2 round-trip restore proves `--from-r2` (after code lands)              | [ ]  |
+| B2  | Local restore drill: RESULT PASS                                         | [ ]  |
+| B4  | SQLite registry leg: row counts match live                               | [ ]  |
+| B5  | Drill report committed to `docs/drills/` and `phase-status.json` updated | [ ]  |
+| C3  | Reboot drill: all 9 items green within 5 min                             | [ ]  |
+| C5  | Reboot report committed                                                  | [ ]  |
 
 A "no" on any row is a drill failure. Do not proceed to season until all rows
 are checked. Cuts made here are surgical; cuts made mid-season are amputations.
