@@ -85,8 +85,10 @@ def expected_calibration_error(
     """Weighted average gap between confidence and accuracy across n_bins
     equal-width bins of `max(predicted_proba)`.
 
-    Phase 2 exit criterion is ECE < 0.02 per model. Returns 0 for a
-    perfectly-calibrated predictor; max 1.
+    THE single shared ECE (C1): the promotion gate (eval/promotion/criteria.ece)
+    delegates here, so an eval-side ECE and a gate verdict use identical math, and
+    both match the Java MetricsComputer. Phase 2 exit criterion is ECE < 0.02 per
+    model. Returns 0 for a perfectly-calibrated predictor; max 1.
     """
     proba = _validate_proba(y_pred_proba)
     onehot = _coerce_to_onehot(y_true, proba.shape[1])
@@ -96,15 +98,16 @@ def expected_calibration_error(
     true_class = onehot.argmax(axis=1)
     correct = (predicted_class == true_class).astype(np.float64)
 
-    bin_edges = np.linspace(0.0, 1.0, n_bins + 1)
+    # Bin policy: bin = min(n_bins-1, floor(conf * n_bins)), right-open with the last
+    # bin absorbing conf == 1.0 - identical to the Java MetricsComputer + the gate.
+    # The prior linspace-edge variant disagreed with the gate's floor variant by one
+    # bin on a confidence sitting exactly on a boundary (float-mult rounding put
+    # 0.3 * 10 at 2.9999...), which could split a verdict near the 0.02 ECE bar.
     n = confidence.shape[0]
+    bins = np.minimum(n_bins - 1, np.floor(confidence * n_bins).astype(np.int64))
     total: float = 0.0
-    for i in range(n_bins):
-        lo, hi = bin_edges[i], bin_edges[i + 1]
-        if i == n_bins - 1:
-            mask = (confidence >= lo) & (confidence <= hi)
-        else:
-            mask = (confidence >= lo) & (confidence < hi)
+    for b in range(n_bins):
+        mask = bins == b
         bin_n = int(mask.sum())
         if bin_n == 0:
             continue
