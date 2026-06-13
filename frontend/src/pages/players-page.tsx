@@ -17,8 +17,10 @@
  * converted in place. This page imports ONLY the broadcast namespace.
  */
 
+import { useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
+import { usePlayerCalibration, usePlayerPredictions } from "../api/players";
 import { ReliabilityDiagram } from "../components/charts/reliability-diagram";
 import { BroadcastPanel } from "../components/broadcast/broadcast-panel";
 import { LowerThird } from "../components/broadcast/lower-third";
@@ -29,6 +31,7 @@ import {
 import { PlayerSearch } from "../components/players/player-search";
 import { KeyNotes } from "../components/scouting/key-notes";
 import { MatchupHeader } from "../components/scouting/matchup-header";
+import { NoHistoryNote } from "../components/scouting/no-history-note";
 import { PitchLocationHeatmap } from "../components/scouting/pitch-location-heatmap";
 import { PlayerProfileCard } from "../components/scouting/player-profile-card";
 import { RecentPredictionsTable } from "../components/scouting/recent-predictions-table";
@@ -41,6 +44,7 @@ import type {
 import {
   getDefaultMatchup,
   METRIC_META,
+  type MatchupPrediction,
   type MatchupReport,
   type ScoutingPlayer,
 } from "../data/matchup-fixtures";
@@ -74,6 +78,19 @@ const h1Style: React.CSSProperties = {
   letterSpacing: "0.01em",
   textTransform: "uppercase",
   color: colors.ink,
+};
+
+// Live-state messages for the player profile's prediction_log-backed sections (B2).
+const liveLoadingStyle: React.CSSProperties = {
+  fontFamily: typography.fonts.body,
+  fontSize: 13,
+  color: colors.textMuted,
+};
+
+const liveErrorStyle: React.CSSProperties = {
+  fontFamily: typography.fonts.body,
+  fontWeight: typography.weights.semibold,
+  color: colors.goldInk,
 };
 
 // ── /players landing ─────────────────────────────────────────────────────────
@@ -299,7 +316,33 @@ function BatterColumn({ report }: { report: MatchupReport }) {
 
 export function PlayerProfilePage() {
   const { id } = useParams<{ id: string }>();
+  const playerId = id ? Number(id) : null;
   const report = getDefaultMatchup(id);
+
+  // B2: the Recent Predictions + Calibration sections are LIVE for this player
+  // (prediction_log via /v1/players/:id/...). The matchup scaffold (header,
+  // columns, key notes) stays showcase. prediction_log is sparse until the pitch
+  // model serves this player live, so the empty state is the common case and is
+  // rendered first-class (NoHistoryNote), never as an error or a blank table.
+  const predictions = usePlayerPredictions(playerId);
+  const calibration = usePlayerCalibration(playerId, "pitch_outcome_pre");
+
+  // Only settled predictions (a winner AND an observed outcome) feed the
+  // predicted-vs-actual table; an unsettled prediction has no truth to agree
+  // with yet and would mislabel the agreement column.
+  const predictionRows: MatchupPrediction[] = useMemo(
+    () =>
+      (predictions.data ?? [])
+        .filter((r) => r.winnerClass != null && r.observedOutcome != null)
+        .map((r) => ({
+          when: r.requestAt,
+          predicted: r.winnerClass ?? "-",
+          prob: r.winnerProb ?? 0,
+          actual: r.observedOutcome ?? "-",
+          agreed: r.agreed ?? false,
+        })),
+    [predictions.data],
+  );
 
   return (
     <div style={fieldStyle}>
@@ -321,10 +364,29 @@ export function PlayerProfilePage() {
               Recent Predictions
             </LowerThird>
           </div>
-          <RecentPredictionsTable
-            rows={report.predictions}
-            caption="Last 12 matchup predictions · model: pitch_outcome_pre v3"
-          />
+          {predictions.isError ? (
+            <p style={liveErrorStyle}>
+              Could not load this player&rsquo;s predictions
+              {predictions.error instanceof Error
+                ? `: ${predictions.error.message}`
+                : ""}
+              .
+            </p>
+          ) : predictions.isLoading ? (
+            <p style={liveLoadingStyle}>Loading recent predictions&hellip;</p>
+          ) : predictionRows.length > 0 ? (
+            <RecentPredictionsTable
+              rows={predictionRows}
+              caption="settled predictions for this player · pitch_outcome_pre (live)"
+            />
+          ) : (
+            <NoHistoryNote>
+              No settled predictions for this player yet. This table fills in as
+              the pitch model serves this player&rsquo;s live matchups and the
+              observed outcomes settle (24h truth-join). Until then it is empty
+              by design, not an error.
+            </NoHistoryNote>
+          )}
         </section>
 
         <div className="matchup-report__pair">
@@ -334,12 +396,26 @@ export function PlayerProfilePage() {
                 Calibration · pitch_outcome_pre
               </LowerThird>
             </div>
-            <BroadcastPanel padding={12}>
-              <ReliabilityDiagram
-                bins={report.calibration}
-                caption="this matchup · predicted vs. actual frequency"
-              />
-            </BroadcastPanel>
+            {calibration.isError ? (
+              <p style={liveErrorStyle}>
+                Could not load this player&rsquo;s calibration.
+              </p>
+            ) : calibration.isLoading ? (
+              <p style={liveLoadingStyle}>Loading calibration&hellip;</p>
+            ) : calibration.data && calibration.data.length > 0 ? (
+              <BroadcastPanel padding={12}>
+                <ReliabilityDiagram
+                  bins={calibration.data}
+                  caption="this player · predicted vs. actual frequency (live)"
+                />
+              </BroadcastPanel>
+            ) : (
+              <NoHistoryNote title="No calibration data yet">
+                Reliability bins appear once enough settled predictions
+                accumulate for this player to estimate predicted-vs-actual
+                frequency.
+              </NoHistoryNote>
+            )}
           </section>
           <KeyNotes
             notes={report.keyNotes}
