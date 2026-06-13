@@ -14,7 +14,10 @@ Standard intake for new models. Every model entering the registry must pass thes
   metadata lacks the head discriminator the serving loaders need and the registry returns
   a 422 (L2 lesson, 2026-06-10). Typically `/training/artifacts/<run_id>/model.onnx` for
   models without an assembly step.
-- Path to the metadata JSON (typically alongside the ONNX file)
+- Path to the metadata JSON (typically alongside the ONNX file). **Timestamp-key gotcha**: the
+  ASSEMBLED snapshot's `metadata.json` (`write_snapshot`) stamps `registered_at` (assembly time)
+  only; the upstream training-artifact metadata (persist) uses `trained_at`. A parser reading the
+  snapshot and expecting `trained_at` will miss it - read `registered_at` (2026-06-13 box parse bounce).
 - Model role: `pre_pitch_outcome`, `post_pitch_outcome`, `batted_ball`, or `lr_baseline_<role>`
 - Initial routing state: should always be `SHADOW` (never `LIVE` at registration time)
 - Park ID (for per-park batted-ball heads) or `null`

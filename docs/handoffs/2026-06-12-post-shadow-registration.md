@@ -86,6 +86,15 @@ ECE < 0.02, sample target 2000. Verdict: WOULD_PASS by a wide margin.
    not user-visible). This also un-404s the pitch endpoint chain (it was conditional-bean gated on
    `pitch_outcome_post`/pre artifacts).
 
+## Gotchas (learned the hard way)
+
+- **Snapshot metadata timestamp key is `registered_at`, NOT `trained_at`.** `write_snapshot`
+  (`register_snapshot._write_metadata`) stamps the assembled snapshot's `metadata.json` with
+  `registered_at` (assembly time) only. The upstream training-artifact `metadata.json` (persist)
+  uses `trained_at`. A box-side parser reading the SNAPSHOT for a timestamp and expecting
+  `trained_at` bounces - read `registered_at`. (If you specifically need train time, it lives on
+  the upstream artifact metadata as `trained_at`, not in the snapshot.)
+
 ## Discipline
 
 - **SHADOW only.** Do NOT promote here (rule 6). Promotion is the separate `promote-model` gate.
