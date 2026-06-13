@@ -9,12 +9,13 @@ season for a real drift postmortem.
 - **About + methodology**: https://thebullpen.net/about
 - **Repo**: https://github.com/Alexm-picard/the-bullpen
 
-> **What's live vs. showcase (v1):** the per-game detail view (`/games/:id`) and the
-> player lookup pull real data from the Spring backend. The home slate, park explorer,
-> Ops dashboard, and About page currently render from committed fixtures — they exercise
-> the full design system and component layer while the live MLB poller and the Ops
-> aggregation endpoints land (see _Known limitations_ and the roadmap). The wiring is a
-> localized page-level swap, not a rewrite.
+> **What's live vs. showcase (v1):** most of the app pulls real data from the Spring
+> backend - the per-game detail view (`/games/:id`), the player lookup + `/players/:id`
+> profile, the `/parks` HR-by-park heatmap, the home tonight slate, and the Ops dashboard's
+> Model Fleet / latency / retrain queue / ops log (live via `/v1/ops/*`, with a committed-fixture
+> fallback when those are empty or offline). Still pure showcase from `*-fixtures.ts`: the
+> `/parks` factor table, the About methodology page, and the Ops drift-snapshot skeleton.
+> See _Known limitations_ for the honest caveats.
 
 ## What's interesting about it
 
@@ -143,13 +144,14 @@ Underlying play-by-play data is not redistributed.**
 
 ## Known limitations
 
-- **Live vs. showcase is now mixed** (v1). Hitting the backend live:
-  `/games/:id`, the player lookup + `/players/:id` profile (recent predictions
-  - reliability diagram), the `/parks` HR-probability-by-park heatmap, and the
-    home page's tonight slate. Still design-system showcases wired to
-    `frontend/src/data/*-fixtures.ts`: the Ops dashboard, the `/parks` factor
-    table, and the About methodology page. Wiring Ops to the existing
-    `/v1/ops/*` endpoints is the main remaining page-level swap.
+- **Live vs. showcase is now mixed** (v1). Hitting the backend live: `/games/:id`,
+  the player lookup + `/players/:id` profile (recent predictions + reliability
+  diagram), the `/parks` HR-probability-by-park heatmap, the home page's tonight
+  slate, and the Ops dashboard's Model Fleet / latency / retrain queue / ops log
+  (live via `/v1/ops/*`, falling back to committed fixtures only when those return
+  empty or the backend is offline). Still pure showcase from
+  `frontend/src/data/*-fixtures.ts`: the `/parks` factor table, the About
+  methodology page, and the Ops drift-snapshot skeleton (no drift endpoint yet).
 - **Cross-park batted-ball fidelity is a known limitation.**
   `/v1/predict/batted-ball/all-parks` is served by the registered batted-ball
   champion across the 30 parks. The ball-flight physics validation passes (bias

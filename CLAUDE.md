@@ -31,11 +31,12 @@ session and most "obvious" alternatives have already been considered and rejecte
 ### Current reality vs. headline claims — keep this honest when editing docs
 
 - **Live data is now mixed, no longer narrow.** Live against the backend: `/games/:id`, the
-  player lookup + `/players/:id` profile, the `/parks` HR-probability-by-park heatmap, and the
-  home page's tonight slate. Still fixtures from `frontend/src/data/*-fixtures.ts`: the Ops
-  dashboard, the `/parks` factor table, and the `/about` methodology page. The Ops dashboard is
-  fixtures despite being a do-not-cut item (rule 4); wiring it to the existing `/v1/ops/*`
-  endpoints is the main open page-level swap.
+  player lookup + `/players/:id` profile, the `/parks` HR-probability-by-park heatmap, the home
+  page's tonight slate, and the Ops dashboard's Model Fleet / latency / retrain queue / ops log
+  (live via `/v1/ops/*`, with a fixture fallback when those return empty or the backend is
+  offline - so Ops is live-wired, not "fixtures"). Still pure fixtures from
+  `frontend/src/data/*-fixtures.ts`: the `/parks` factor table, the `/about` methodology page,
+  and the Ops drift-snapshot skeleton (no drift endpoint yet).
 - **Live game poller is built and enabled; real-feed verification is the open gate.** The full
   producer chain (MLB Stats API client + parser + per-game poll + `pitches_live` writer + the
   `prediction_log` truth-join) is merged and unit-tested, and is enabled in prod behind
