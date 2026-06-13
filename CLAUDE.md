@@ -37,11 +37,15 @@ session and most "obvious" alternatives have already been considered and rejecte
   offline - so Ops is live-wired, not "fixtures"). Still pure fixtures from
   `frontend/src/data/*-fixtures.ts`: the `/parks` factor table, the `/about` methodology page,
   and the Ops drift-snapshot skeleton (no drift endpoint yet).
-- **Live game poller is built and enabled; real-feed verification is the open gate.** The full
-  producer chain (MLB Stats API client + parser + per-game poll + `pitches_live` writer + the
-  `prediction_log` truth-join) is merged and unit-tested, and is enabled in prod behind
-  `BULLPEN_INGEST_LIVE_ENABLED`. First-feed operating evidence against the real MLB feed is the
-  remaining gate (`docs/runbooks/live-data-setup.md`, issue #1).
+- **Live game poller is enabled ingest-only; user-visible pitch predictions are held by design.**
+  The full producer chain (MLB Stats API client + parser + per-game poll + `pitches_live` writer +
+  the `prediction_log` truth-join) is merged, unit-tested, and enabled in prod behind
+  `BULLPEN_INGEST_LIVE_ENABLED` (flipped 2026-06-11, decision [157]). It serves NO user-visible
+  pitch prediction _by design_ ([154]/ADR-0011): no pitch head has cleared an honest promotion gate,
+  and promoting one on a failed primary would be a threshold bypass. Predictions light up when the
+  POST head (the strong candidate; sample-stage gate PASSED, Brier margin ~0.021) clears its
+  full-box re-run (hand-off H2). Open evidence artifact: a committed real-feed operating trace
+  (issue #1, `docs/runbooks/live-data-setup.md`).
 - **Coverage is measured now, but mostly non-gating.** Backend JaCoCo (in `backend/build.gradle.kts`
   and `backend.yml`) and frontend vitest v8 (`frontend.yml` `npm run test:coverage`) publish
   line/branch baselines on every CI run; neither gates the build today. Training coverage
@@ -52,9 +56,11 @@ session and most "obvious" alternatives have already been considered and rejecte
 ## What this project is
 
 The Bullpen (`thebullpen.net`) — a self-hosted baseball analytics platform with a custom
-ML systems wrapper (registry, A/B routing, drift detection, retraining triggers) serving
-three calibrated models. Solo developer, ~8–10 months calendar at 12–15h/week. Operated
-through at least one MLB season for a real drift postmortem.
+ML systems wrapper (registry, A/B routing, drift detection, retraining triggers) around three
+calibrated models: a batted-ball champion serving live, plus two pitch-outcome heads in shadow
+pending an honest promotion gate (no pitch champion promoted yet - [154]/ADR-0011). Solo
+developer, ~8–10 months calendar at 12–15h/week. Operated through at least one MLB season for a
+real drift postmortem.
 
 It is **not** a SaaS product, not a betting tool, not a research contribution. Framing
 matters — see `design.md` §1.
