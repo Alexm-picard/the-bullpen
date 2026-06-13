@@ -191,27 +191,15 @@ def log_loss(y_true_int: np.ndarray, y_pred_proba: np.ndarray) -> float:
 
 
 def ece(y_true_int: np.ndarray, y_pred_proba: np.ndarray) -> float:
-    """Expected Calibration Error, 10 equal-width bins over the predicted
-    confidence (argmax prob). Matches MetricsComputer.ece's binning."""
-    proba = _as_proba(y_pred_proba)
-    truth = np.asarray(y_true_int, dtype=np.int64)
-    pred_class = proba.argmax(axis=1)
-    conf = proba[np.arange(proba.shape[0]), pred_class]
-    correct = (pred_class == truth).astype(np.float64)
-    # Java: bin = min(BINS-1, floor(conf * BINS)) - right-open bins, last bin
-    # absorbs conf == 1.0.
-    bins = np.minimum(_ECE_BINS - 1, np.floor(conf * _ECE_BINS).astype(np.int64))
-    total = proba.shape[0]
-    weighted = 0.0
-    for b in range(_ECE_BINS):
-        mask = bins == b
-        n_b = int(mask.sum())
-        if n_b == 0:
-            continue
-        avg_conf = float(conf[mask].mean())
-        acc = float(correct[mask].mean())
-        weighted += (n_b / total) * abs(avg_conf - acc)
-    return float(weighted)
+    """Expected Calibration Error, 10 bins over the predicted confidence (argmax
+    prob). C1: delegates to the SINGLE shared implementation in ``eval.metrics`` so
+    a gate verdict computed here uses the exact same binning as eval-side ECE and
+    the Java MetricsComputer (``_ECE_BINS`` == the Java bin count). Local import
+    keeps this module import-cycle-free."""
+    from bullpen_training.eval.metrics import expected_calibration_error
+
+    _as_proba(y_pred_proba)  # preserve the 2-D shape validation + error message
+    return expected_calibration_error(y_true_int, y_pred_proba, n_bins=_ECE_BINS)
 
 
 def summarize(y_true_int: np.ndarray, y_pred_proba: np.ndarray) -> MetricSummary:
