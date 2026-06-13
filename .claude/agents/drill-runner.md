@@ -23,10 +23,15 @@ end-to-end.
 
 Steps you walk through:
 
+The executable is `ops/scripts/restore-drill.sh --from-r2` (run `--dry-run` first to preview the
+plan + resolved config without touching docker / rclone / the JAR). It performs steps 1-4 below;
+you still do the pre-flight, the compare/capture in step 5, and write the report. The steps:
+
 1. **Fetch the latest offsite set from R2.** `rclone lsf bullpen-r2:bullpen-prod/backups/` to find
-   the newest `auto_<timestamp>` NAME, then `rclone copy` BOTH `backups/<NAME>/` (the
-   clickhouse-backup output) and `backups/<NAME>_sqlite/registry.sqlite` (the registry capture, the
-   P1-irreplaceable piece) into a scratch dir. A clean fetch IS the offsite-leg verification - it
+   the newest `auto_<timestamp>` NAME, then `rclone copy` BOTH `backups/<NAME>/clickhouse/` (the
+   clickhouse-backup output) and `backups/<NAME>/sqlite/registry.sqlite` (the registry capture, the
+   P1-irreplaceable piece - this is the exact layout `infra/backup/offsite-push.sh` writes) into a
+   scratch dir. A clean fetch IS the offsite-leg verification - it
    has real data (the 2026-06-12 push was 64,454 objects / 2.35 GiB). Use the box rclone config
    (`--config /home/alepic/.config/rclone/rclone.conf`); the token is bucket-scoped, so
    `rclone lsd bullpen-r2:` at account root 403s by design - that is not a failure.
@@ -36,9 +41,10 @@ Steps you walk through:
    HOST instead of in-container is the `data: 0B` failure from 2026-05-23 - it MUST run in-container.
 3. **Restore the SQLite registry to a scratch file and verify.**
    `sqlite3 scratch-registry.sqlite ".restore <fetched registry.sqlite>"`, then `PRAGMA
-integrity_check;` (expect `ok`), then row-count the `models` table and compare to the LIVE
-   registry at `/opt/bullpen/data/registry.sqlite` - the counts MUST match (6 model rows as of
-   2026-06-13). A skipped or empty registry leg is why the old drill was invalid.
+integrity_check;` (expect `ok`), then row-count the `model_versions` table and compare to the LIVE
+   registry at `/opt/bullpen/data/registry.sqlite` - the counts MUST match (6 rows as of
+   2026-06-13; the script compares to live, falling back to `EXPECTED_MODELS` only when the live
+   registry is unreadable). A skipped or empty registry leg is why the old drill was invalid.
 4. **Boot BOTH profiles against scratch.** Boot the JAR with `--spring.profiles.active=api` pointed
    at the scratch ClickHouse + scratch registry; curl `/actuator/health` and make a known
    prediction. THEN boot with `--spring.profiles.active=worker` and confirm the context reaches
