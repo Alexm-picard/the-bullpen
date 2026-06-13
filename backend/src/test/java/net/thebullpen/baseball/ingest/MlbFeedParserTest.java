@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
@@ -49,7 +50,37 @@ class MlbFeedParserTest {
       assertEquals(GameStatus.COMPLETED, g.status(), "all four were Final");
       assertNotNull(g.homeName());
       assertNotNull(g.awayName());
+      // This captured fixture predates &hydrate=team and carries no game-level gameDate, so the
+      // new fields degrade to null (the read path then falls back to the full name / no time).
+      assertNull(g.homeAbbr());
+      assertNull(g.gameTimeUtc());
     }
+  }
+
+  @Test
+  void parseSchedule_extracts_start_time_and_team_abbreviations() throws IOException {
+    // Synthetic hydrated schedule (&hydrate=team + a real gameDate) - the captured fixture has
+    // neither, so this is the one place the new fields are exercised end-to-end.
+    String json =
+        "{\"dates\":[{\"games\":[{"
+            + "\"gamePk\":777001,"
+            + "\"gameDate\":\"2026-06-04T17:10:00Z\","
+            + "\"status\":{\"detailedState\":\"Scheduled\"},"
+            + "\"teams\":{"
+            + "  \"home\":{\"team\":{\"name\":\"Boston Red Sox\",\"abbreviation\":\"BOS\"}},"
+            + "  \"away\":{\"team\":{\"name\":\"Baltimore Orioles\",\"abbreviation\":\"BAL\"}}"
+            + "}}]}]}";
+    List<ScheduledGame> games = parser.parseSchedule(json);
+
+    assertEquals(1, games.size());
+    ScheduledGame g = games.get(0);
+    assertEquals(777001L, g.gamePk());
+    assertNotNull(g.status());
+    assertEquals("BOS", g.homeAbbr());
+    assertEquals("BAL", g.awayAbbr());
+    assertEquals("Boston Red Sox", g.homeName());
+    assertEquals("Baltimore Orioles", g.awayName());
+    assertEquals(Instant.parse("2026-06-04T17:10:00Z"), g.gameTimeUtc());
   }
 
   @Test

@@ -220,10 +220,19 @@ public class LivePollingService {
     }
     try {
       rateLimit();
-      schedule = client.fetchSchedule(LocalDate.now(ET));
+      LocalDate today = LocalDate.now(ET);
+      schedule = client.fetchSchedule(today);
       scheduleFetchedAt = Instant.now();
       for (ScheduledGame g : schedule) {
         statusByGame.putIfAbsent(g.gamePk(), g.status());
+      }
+      // Persist the full day's card so /v1/games/today surfaces every game (names + start time)
+      // BEFORE first pitch - the slate is schedule-driven now, not pitch-driven. Best-effort: a
+      // persist failure must not abort discovery/polling.
+      try {
+        repo.upsertScheduledGames(schedule, today);
+      } catch (Exception e) {
+        log.warn("scheduled_games upsert failed ({} games); slate may lag", schedule.size(), e);
       }
     } catch (Exception e) {
       log.warn("schedule refresh failed", e);

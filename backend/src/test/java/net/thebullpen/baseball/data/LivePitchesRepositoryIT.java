@@ -8,13 +8,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 import net.thebullpen.baseball.api.dto.GameSummary;
 import net.thebullpen.baseball.api.dto.LivePitchRow;
+import net.thebullpen.baseball.ingest.GameStatus;
 import net.thebullpen.baseball.ingest.LiveGameFeed;
 import net.thebullpen.baseball.ingest.MlbFeedParser;
+import net.thebullpen.baseball.ingest.ScheduledGame;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
@@ -87,6 +90,7 @@ class LivePitchesRepositoryIT {
       stmt.execute("TRUNCATE TABLE IF EXISTS pitches_live");
       stmt.execute("TRUNCATE TABLE IF EXISTS prediction_log");
       stmt.execute("TRUNCATE TABLE IF EXISTS live_game_status");
+      stmt.execute("TRUNCATE TABLE IF EXISTS scheduled_games");
     }
   }
 
@@ -146,6 +150,49 @@ class LivePitchesRepositoryIT {
     assertEquals(7, g.inning(), "max(inning) across the game's pitches");
     assertEquals(2, g.homeScore());
     assertEquals(3, g.awayScore());
+  }
+
+  @Test
+  void findGamesForDate_surfaces_a_pre_game_scheduled_game_with_no_pitches() {
+    LocalDate target = LocalDate.of(2026, 6, 5);
+    // The slate's whole point: a game with NO pitches yet still shows, from scheduled_games.
+    repo.upsertScheduledGames(
+        List.of(
+            new ScheduledGame(
+                303L,
+                GameStatus.SCHEDULED,
+                "LAD",
+                "SF",
+                "Los Angeles Dodgers",
+                "San Francisco Giants",
+                Instant.parse("2026-06-05T20:10:00Z"))),
+        target);
+
+    List<GameSummary> games = repo.findGamesForDate(target);
+
+    assertEquals(1, games.size());
+    GameSummary g = games.get(0);
+    assertEquals(303L, g.gameId());
+    assertEquals(target, g.gameDate());
+    assertEquals("LAD", g.homeTeam()); // schedule abbreviation (no pitches to override it)
+    assertEquals("SF", g.awayTeam());
+    assertEquals(0, g.homeScore()); // pre-game: no pitches -> 0
+    assertEquals(0, g.inning());
+    assertEquals("SCHEDULED", g.status());
+  }
+
+  @Test
+  void findGamesForDate_unions_pre_game_and_live_games_on_the_same_date() throws Exception {
+    LocalDate target = LocalDate.of(2026, 6, 5);
+    insertPitch(401L, target, 1, 1, "BOS", "NYY", 4); // live (pitches), no scheduled_games row
+    repo.upsertScheduledGames(
+        List.of(new ScheduledGame(402L, GameStatus.SCHEDULED, "LAD", "SF", "LA", "SF", null)),
+        target); // pre-game (scheduled), no pitches
+
+    List<GameSummary> games = repo.findGamesForDate(target);
+
+    assertEquals(
+        2, games.size(), "both the live (pitches-only) and pre-game (schedule-only) games");
   }
 
   @Test
