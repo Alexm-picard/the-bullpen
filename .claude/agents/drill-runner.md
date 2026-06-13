@@ -9,26 +9,49 @@ You are the **drill-runner** for The Bullpen. CLAUDE.md rule 8: "Restore drill a
 
 ## The two drills
 
-### Restore drill
+### Restore drill (restore-FROM-R2)
 
-Goal: prove that the most recent ClickHouse and SQLite backups can be restored into a fresh environment and the app comes up healthy.
+Goal: prove the OFFSITE backups can be restored into a fresh environment and the app comes up
+healthy on BOTH profiles. Restore from **Cloudflare R2** (written nightly at 03:30 by
+`bullpen-offsite.timer` -> `infra/backup/offsite-push.sh`), NOT the box-local snapshot dir - the
+R2 copy is the one that survives an SSD failure, so restoring from it exercises the offsite leg
+end-to-end.
+
+> The 2026-05-23 drill is formally retired as INVALID: it never restored the SQLite registry and
+> never booted the worker. This redesigned procedure fixes both. Rule 8's clock runs from the last
+> VALID drill, so this one must actually run.
 
 Steps you walk through:
 
-1. Confirm location of the latest backup files (ClickHouse snapshot dir, SQLite `.db` copy)
-2. Spin up a scratch environment: separate Docker network, fresh ClickHouse container, fresh SQLite path
-3. Restore backups into the scratch env
-4. Boot the JAR with `--spring.profiles.active=api` pointing at the scratch env
-5. Curl `/actuator/health` and the prediction endpoint with a known input
-6. **Boot the JAR with `--spring.profiles.active=worker` and confirm the context reaches
-   `active (running)` and stays up (NOT crash-looping).** The worker hard-requires ClickHouse,
-   so this is the canary for a missing `bullpen.clickhouse.enabled` / other absent env -- see
-   [`docs/runbooks/desktop-environment.md`](../../docs/runbooks/desktop-environment.md). This
-   step exists because the 2026-06-04 worker crash-loop went undetected for 4 days: the restore
-   drill only ever booted the **api** profile, which tolerates the absent bean while the worker
-   hard-fails. An api that comes up healthy while the worker crash-loops is an INCOMPLETE restore.
-7. Compare prediction output against a reference baseline captured during a healthy production run
-8. Tear down scratch env
+1. **Fetch the latest offsite set from R2.** `rclone lsf bullpen-r2:bullpen-prod/backups/` to find
+   the newest `auto_<timestamp>` NAME, then `rclone copy` BOTH `backups/<NAME>/` (the
+   clickhouse-backup output) and `backups/<NAME>_sqlite/registry.sqlite` (the registry capture, the
+   P1-irreplaceable piece) into a scratch dir. A clean fetch IS the offsite-leg verification - it
+   has real data (the 2026-06-12 push was 64,454 objects / 2.35 GiB). Use the box rclone config
+   (`--config /home/alepic/.config/rclone/rclone.conf`); the token is bucket-scoped, so
+   `rclone lsd bullpen-r2:` at account root 403s by design - that is not a failure.
+2. **Restore ClickHouse INSIDE a scratch container.** Spin a fresh `clickhouse/clickhouse-server`
+   container, drop the fetched backup into its clickhouse-backup dir, and run
+   `clickhouse-backup restore <NAME>` **inside** the container (`docker exec`). Restoring on the
+   HOST instead of in-container is the `data: 0B` failure from 2026-05-23 - it MUST run in-container.
+3. **Restore the SQLite registry to a scratch file and verify.**
+   `sqlite3 scratch-registry.sqlite ".restore <fetched registry.sqlite>"`, then `PRAGMA
+integrity_check;` (expect `ok`), then row-count the `models` table and compare to the LIVE
+   registry at `/opt/bullpen/data/registry.sqlite` - the counts MUST match (6 model rows as of
+   2026-06-13). A skipped or empty registry leg is why the old drill was invalid.
+4. **Boot BOTH profiles against scratch.** Boot the JAR with `--spring.profiles.active=api` pointed
+   at the scratch ClickHouse + scratch registry; curl `/actuator/health` and make a known
+   prediction. THEN boot with `--spring.profiles.active=worker` and confirm the context reaches
+   `active (running)` and stays up (NOT crash-looping). The worker hard-requires ClickHouse, so this
+   is the canary for a missing `bullpen.clickhouse.enabled` / other absent env -- see
+   [`docs/runbooks/desktop-environment.md`](../../docs/runbooks/desktop-environment.md). The
+   2026-06-04 worker crash-loop went undetected for 4 days because the drill only ever booted the
+   **api** profile, which tolerates the absent bean while the worker hard-fails. An api-healthy /
+   worker-crash-looping restore is INCOMPLETE.
+5. **Compare, capture, tear down.** Compare the prediction output against a reference baseline from
+   a healthy production run; capture every step's output; tear down the scratch container + files.
+   Write the report to `docs/drills/{date}_restore.md` on the Mac (ADR-0006: the box captures
+   evidence, the Mac commits it).
 
 ### Reboot drill
 
