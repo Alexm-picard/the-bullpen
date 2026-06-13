@@ -8,8 +8,9 @@
 #
 # What goes offsite per snapshot (rclone copy - NEVER sync; this script has no delete
 # authority on the remote):
-#   - the clickhouse-backup output for the night's auto_* name, streamed as a SINGLE
-#     tar object (clickhouse.tar) rather than ~64k tiny per-column files. The
+#   - the clickhouse-backup output for the night's auto_* name, uploaded as a SINGLE
+#     tar object (clickhouse.tar via a staged temp file + rclone copyto) rather than
+#     ~64k tiny per-column files. The
 #     2026-06-13 restore-from-R2 drill proved that fetching tens of thousands of tiny
 #     objects back from R2 does not reliably round-trip (one-table fetch flawless;
 #     full 64k-object fetch dropped data parts). One object => restore is one
@@ -63,6 +64,11 @@ if [[ -z "${BULLPEN_OFFSITE_REMOTE:-}" ]]; then
   exit 0
 fi
 REMOTE="${BULLPEN_OFFSITE_REMOTE%/}"
+
+# The clickhouse tar is staged to a temp file before upload; remove it on any exit
+# (success, fail(), or signal) so a 2+ GiB temp can never leak. Set when staged.
+CH_TAR_TMP=""
+trap 'rm -f "${CH_TAR_TMP:-}" 2>/dev/null || true' EXIT
 
 hc_ping() {
   [[ -n "${BULLPEN_OFFSITE_HC_PING_URL:-}" ]] || return 0
@@ -125,22 +131,29 @@ push_verified() {
 }
 
 # ClickHouse backup as a SINGLE tar object, not ~64k tiny per-column files (the
-# 2026-06-13 drill finding). tar is uncompressed: ClickHouse parts are already
-# LZ4-compressed, so gzip would burn CPU for ~no gain. Streamed via rcat - no
-# multi-GB staging copy. The decisive integrity gate is the restore drill (download
-# + untar + clickhouse-backup restore); this is the push-side smoke test.
+# 2026-06-13 drill finding). Staged to a temp file then uploaded with `rclone copyto`,
+# NOT `rclone rcat`: R2 returns NotImplemented for rcat's streaming upload of a large
+# object (observed on the box 2026-06-13), whereas copyto uses the multipart path proven by
+# the fold export + the registry leg AND verifies the uploaded object's checksum against the
+# source after transfer - the integrity guarantee rcat could not give (it has no source file
+# to checksum). tar is uncompressed (parts are already LZ4-compressed). The temp tar lands in
+# OFFSITE_TMP_DIR (default SNAPSHOT_DIR) and the EXIT trap removes it even on failure.
 CH_TAR_OBJ="${REMOTE}/${NAME}/clickhouse.tar"
-log "pushing clickhouse backup as single tar: ${CH_BACKUP} -> ${CH_TAR_OBJ}"
-tar -cf - -C "$(dirname "$CH_BACKUP")" "$(basename "$CH_BACKUP")" \
-  | $RCLONE_BIN rcat "$CH_TAR_OBJ" || fail "clickhouse backup: tar|rcat to R2 failed"
-# rcat streams with no local artifact to rclone-check, so smoke-test the landed object
-# size against the source tree (du -sk is portable; a truncated stream lands far smaller).
-SRC_KB=$(du -sk "$CH_BACKUP" 2>/dev/null | cut -f1 || echo 0)
-TAR_OBJ_BYTES=$($RCLONE_BIN size --json "$CH_TAR_OBJ" 2>/dev/null \
+CH_TAR_TMP="${OFFSITE_TMP_DIR:-${SNAPSHOT_DIR}}/${NAME}.clickhouse.tar"
+log "staging clickhouse backup tar: ${CH_BACKUP} -> ${CH_TAR_TMP}"
+tar -cf "$CH_TAR_TMP" -C "$(dirname "$CH_BACKUP")" "$(basename "$CH_BACKUP")" \
+  || fail "clickhouse backup: tar to ${CH_TAR_TMP} failed"
+log "pushing clickhouse tar: ${CH_TAR_TMP} -> ${CH_TAR_OBJ}"
+$RCLONE_BIN copyto "$CH_TAR_TMP" "$CH_TAR_OBJ" --transfers 4 \
+  || fail "clickhouse backup: rclone copyto to R2 failed"
+# copyto's post-transfer checksum check is the real integrity gate; backstop that the object
+# exists + is non-empty in R2 (a NotImplemented-style partial would be absent or zero).
+CH_TAR_OBJ_BYTES=$($RCLONE_BIN size --json "$CH_TAR_OBJ" 2>/dev/null \
   | sed -n 's/.*"bytes":[[:space:]]*\([0-9][0-9]*\).*/\1/p')
-[[ "${TAR_OBJ_BYTES:-0}" -ge $(( ${SRC_KB:-0} * 1024 / 2 )) ]] \
-  || fail "clickhouse.tar suspiciously small (${TAR_OBJ_BYTES:-0}B < half of source ${SRC_KB:-0}KB) - truncated stream?"
-log "clickhouse backup: pushed single tar (${TAR_OBJ_BYTES:-?} bytes) + size-verified"
+[[ "${CH_TAR_OBJ_BYTES:-0}" -gt 0 ]] \
+  || fail "clickhouse.tar absent or empty in R2 after copyto"
+rm -f "$CH_TAR_TMP"
+log "clickhouse backup: pushed single tar (${CH_TAR_OBJ_BYTES} bytes), copyto-verified"
 if [[ -d "$REG_DIR" ]]; then
   push_verified "$REG_DIR" "${REMOTE}/${NAME}/sqlite" "sqlite registry"
 fi
