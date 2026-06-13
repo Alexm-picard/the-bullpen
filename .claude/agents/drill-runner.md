@@ -28,11 +28,13 @@ plan + resolved config without touching docker / rclone / the JAR). It performs 
 you still do the pre-flight, the compare/capture in step 5, and write the report. The steps:
 
 1. **Fetch the latest offsite set from R2.** `rclone lsf bullpen-r2:bullpen-prod/backups/` to find
-   the newest `auto_<timestamp>` NAME, then `rclone copy` BOTH `backups/<NAME>/clickhouse/` (the
-   clickhouse-backup output) and `backups/<NAME>/sqlite/registry.sqlite` (the registry capture, the
-   P1-irreplaceable piece - this is the exact layout `infra/backup/offsite-push.sh` writes) into a
-   scratch dir. A clean fetch IS the offsite-leg verification - it
-   has real data (the 2026-06-12 push was 64,454 objects / 2.35 GiB). Use the box rclone config
+   the newest `auto_<timestamp>` NAME, then `rclone copy` BOTH `backups/<NAME>/clickhouse.tar` (the
+   clickhouse-backup output as a SINGLE tar object) and `backups/<NAME>/sqlite/registry.sqlite` (the
+   registry capture, the P1-irreplaceable piece - this is the exact layout
+   `infra/backup/offsite-push.sh` writes) into a scratch dir, verify the tar's size matches the
+   remote EXACTLY (fail-loud completeness gate), then untar. The single-object layout is the
+   2026-06-13 drill fix: fetching the old ~64k-tiny-object layout did not reliably round-trip (a
+   one-table fetch was flawless, the full fetch dropped data parts). Use the box rclone config
    (`--config /home/alepic/.config/rclone/rclone.conf`); the token is bucket-scoped, so
    `rclone lsd bullpen-r2:` at account root 403s by design - that is not a failure.
 2. **Restore ClickHouse INSIDE a scratch container.** Spin a fresh `clickhouse/clickhouse-server`

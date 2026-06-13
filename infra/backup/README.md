@@ -167,13 +167,17 @@ A SEPARATE decoupled step from the local snapshot: `bullpen-offsite@<user>.servi
 failure alerts Discord and fails the offsite unit; it can never fail or block the local
 snapshot - local-first is the prime directive. The script pushes, per `auto_*` snapshot:
 
-- the night's clickhouse-backup output (read directly from the docker volume's host
-  mountpoint, resolved via `docker inspect` - no staging copy)
+- the night's clickhouse-backup output as a **single `clickhouse.tar` object** (streamed via
+  `rclone rcat` straight from the docker volume's host mountpoint, resolved via `docker inspect`
+  - no staging copy). It is ONE object, not ~64k tiny per-column files: the 2026-06-13
+    restore-from-R2 drill proved the many-tiny-objects layout did not reliably round-trip on fetch
+    (see `docs/drills/2026-06-13_restore-from-r2-drill-FAIL.md`). Restore = one download + untar.
 - `auto_*_sqlite/registry.sqlite` (asserted non-empty BEFORE push - the P1 lesson)
 - `auto_*_artifacts_meta/`
 
-via `rclone copy` (NEVER sync - the script has no delete authority), then verifies with
-`rclone check --one-way` and logs `OFFSITE SUCCESS: <name> objects=N bytes=B` (grep for it).
+The registry + artifacts-meta go via `rclone copy` + `rclone check --one-way` (NEVER sync - the
+script has no delete authority); the clickhouse tar is size-verified against the source tree after
+the stream. Logs `OFFSITE SUCCESS: <name> objects=N bytes=B` (grep for it).
 
 ### Env contract (`/etc/default/bullpen`, chmod 600, never committed)
 

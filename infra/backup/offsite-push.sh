@@ -8,8 +8,13 @@
 #
 # What goes offsite per snapshot (rclone copy - NEVER sync; this script has no delete
 # authority on the remote):
-#   - the clickhouse-backup output for the night's auto_* name (read directly from the
-#     docker volume's host mountpoint - resolved via docker inspect, no staging copy)
+#   - the clickhouse-backup output for the night's auto_* name, streamed as a SINGLE
+#     tar object (clickhouse.tar) rather than ~64k tiny per-column files. The
+#     2026-06-13 restore-from-R2 drill proved that fetching tens of thousands of tiny
+#     objects back from R2 does not reliably round-trip (one-table fetch flawless;
+#     full 64k-object fetch dropped data parts). One object => restore is one
+#     download. See docs/drills/2026-06-13_restore-from-r2-drill-FAIL.md. Read
+#     directly from the docker volume's host mountpoint (resolved via docker inspect).
 #   - the ${NAME}_sqlite/registry.sqlite capture (the P1 lesson: the irreplaceable one;
 #     asserted non-empty BEFORE push)
 #   - the ${NAME}_artifacts_meta dir (if present)
@@ -119,7 +124,23 @@ push_verified() {
   log "${label}: pushed + verified"
 }
 
-push_verified "$CH_BACKUP" "${REMOTE}/${NAME}/clickhouse" "clickhouse backup"
+# ClickHouse backup as a SINGLE tar object, not ~64k tiny per-column files (the
+# 2026-06-13 drill finding). tar is uncompressed: ClickHouse parts are already
+# LZ4-compressed, so gzip would burn CPU for ~no gain. Streamed via rcat - no
+# multi-GB staging copy. The decisive integrity gate is the restore drill (download
+# + untar + clickhouse-backup restore); this is the push-side smoke test.
+CH_TAR_OBJ="${REMOTE}/${NAME}/clickhouse.tar"
+log "pushing clickhouse backup as single tar: ${CH_BACKUP} -> ${CH_TAR_OBJ}"
+tar -cf - -C "$(dirname "$CH_BACKUP")" "$(basename "$CH_BACKUP")" \
+  | $RCLONE_BIN rcat "$CH_TAR_OBJ" || fail "clickhouse backup: tar|rcat to R2 failed"
+# rcat streams with no local artifact to rclone-check, so smoke-test the landed object
+# size against the source tree (du -sk is portable; a truncated stream lands far smaller).
+SRC_KB=$(du -sk "$CH_BACKUP" 2>/dev/null | cut -f1 || echo 0)
+TAR_OBJ_BYTES=$($RCLONE_BIN size --json "$CH_TAR_OBJ" 2>/dev/null \
+  | sed -n 's/.*"bytes":[[:space:]]*\([0-9][0-9]*\).*/\1/p')
+[[ "${TAR_OBJ_BYTES:-0}" -ge $(( ${SRC_KB:-0} * 1024 / 2 )) ]] \
+  || fail "clickhouse.tar suspiciously small (${TAR_OBJ_BYTES:-0}B < half of source ${SRC_KB:-0}KB) - truncated stream?"
+log "clickhouse backup: pushed single tar (${TAR_OBJ_BYTES:-?} bytes) + size-verified"
 if [[ -d "$REG_DIR" ]]; then
   push_verified "$REG_DIR" "${REMOTE}/${NAME}/sqlite" "sqlite registry"
 fi
