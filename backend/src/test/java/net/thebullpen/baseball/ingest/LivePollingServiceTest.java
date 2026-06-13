@@ -89,7 +89,7 @@ class LivePollingServiceTest {
 
   private static LivePollingService service(
       MlbStatsApiClient client, LivePitchesRepository repo, LivePitchPredictor predictor) {
-    return new LivePollingService(client, repo, Optional.of(predictor), 0L, 15L);
+    return new LivePollingService(client, repo, Optional.of(predictor), Optional.empty(), 0L, 15L);
   }
 
   @Test
@@ -171,8 +171,9 @@ class LivePollingServiceTest {
     LivePitchesRepository repo = mock(LivePitchesRepository.class);
     when(client.fetchLiveFeed(822810L)).thenReturn(feed(List.of(pitch(1, 1)), nextPitch(1, 2)));
 
-    // No predictor bean (no model artifact) -> Optional.empty().
-    new LivePollingService(client, repo, Optional.empty(), 0L, 15L).pollGame(822810L);
+    // No predictor bean (no model artifact) -> Optional.empty(). No form repo either.
+    new LivePollingService(client, repo, Optional.empty(), Optional.empty(), 0L, 15L)
+        .pollGame(822810L);
 
     verify(repo, times(1)).insertPitches(any());
   }

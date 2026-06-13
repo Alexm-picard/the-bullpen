@@ -1,10 +1,13 @@
 package net.thebullpen.baseball.data;
 
+import java.util.List;
+import java.util.Optional;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
 /**
@@ -87,5 +90,67 @@ public class PitcherFormRepository {
     jdbc.update(REFRESH);
     Long n = jdbc.queryForObject(COUNT_TODAY, Long.class);
     return n == null ? 0L : n;
+  }
+
+  // --- live read path (WS3 A3.1) --------------------------------------------
+
+  private static final String SELECT_CURRENT_FORM =
+      "SELECT pitches_in_game, pitches_last_28d, strike_rate_28d, swstrike_rate_28d,"
+          + "       inplay_rate_28d, days_since_last_appearance"
+          + " FROM pitcher_form_current FINAL"
+          + " WHERE pitcher_id = ?";
+
+  private static final RowMapper<PitcherForm> FORM_MAPPER =
+      (rs, n) -> {
+        long dsla = rs.getLong("days_since_last_appearance");
+        return new PitcherForm(
+            rs.getDouble("pitches_in_game"),
+            rs.getDouble("pitches_last_28d"),
+            rs.getDouble("strike_rate_28d"),
+            rs.getDouble("swstrike_rate_28d"),
+            rs.getDouble("inplay_rate_28d"),
+            rs.wasNull() ? null : (double) dsla);
+      };
+
+  /**
+   * Current Tier-3 form for one pitcher, or empty if no row exists (a pitcher the nightly refresh
+   * never saw - a debut or someone with no pitch in the last 28 days). {@code FINAL} because
+   * pitcher_form_current is a ReplacingMergeTree: the latest {@code ingested_at} row (nightly, or
+   * an intra-day upsert) is the one to read (the dsla-gate ghost lesson).
+   */
+  public Optional<PitcherForm> findCurrent(long pitcherId) {
+    List<PitcherForm> rows = jdbc.query(SELECT_CURRENT_FORM, FORM_MAPPER, pitcherId);
+    return rows.isEmpty() ? Optional.empty() : Optional.of(rows.get(0));
+  }
+
+  // --- intra-day upsert (WS3 A3.2) ------------------------------------------
+
+  // Carry the nightly 28-day window values forward unchanged and update ONLY the two intra-day
+  // signals: pitches_in_game (live count of this pitcher's pitches in tonight's game) and
+  // days_since_last_appearance = 0 (they are appearing today). ReplacingMergeTree(ingested_at)
+  // keyed on pitcher_id: this new row supersedes the prior one on read. A pitcher with no existing
+  // row produces no insert (the SELECT is empty) - missing stays missing, never fabricated.
+  //
+  // Leakage-clean: pitches_in_game counts only pitches already in pitches_live (ts <= now); a live
+  // upsert satisfies the streaming temporal cutoff trivially (no future data).
+  private static final String UPSERT_INTRA_DAY =
+      "INSERT INTO pitcher_form_current"
+          + " (pitcher_id, as_of_date, pitches_in_game, pitches_last_28d,"
+          + "  strike_rate_28d, swstrike_rate_28d, inplay_rate_28d, days_since_last_appearance)"
+          + " SELECT pitcher_id, today(),"
+          + "        (SELECT toUInt32(count()) FROM pitches_live"
+          + "         WHERE game_id = ? AND pitcher_id = ?) AS pitches_in_game,"
+          + "        pitches_last_28d, strike_rate_28d, swstrike_rate_28d, inplay_rate_28d,"
+          + "        toUInt16(0)"
+          + " FROM pitcher_form_current FINAL"
+          + " WHERE pitcher_id = ?";
+
+  /**
+   * Refresh one active pitcher's intra-day signals during a live game: set {@code pitches_in_game}
+   * to their live count in {@code gameId} and {@code days_since_last_appearance} to 0, carrying the
+   * nightly 28-day window forward. No-op for a pitcher with no current row.
+   */
+  public void upsertIntraDayForm(long pitcherId, long gameId) {
+    jdbc.update(UPSERT_INTRA_DAY, gameId, pitcherId, pitcherId);
   }
 }

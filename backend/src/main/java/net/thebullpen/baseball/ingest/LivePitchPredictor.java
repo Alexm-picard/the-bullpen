@@ -3,10 +3,15 @@ package net.thebullpen.baseball.ingest;
 import ai.onnxruntime.OrtException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.LoadingCache;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import net.thebullpen.baseball.data.PitcherForm;
+import net.thebullpen.baseball.data.PitcherFormRepository;
 import net.thebullpen.baseball.inference.AsyncPredictionLogger;
 import net.thebullpen.baseball.inference.FeaturePipelinePitchPre;
 import net.thebullpen.baseball.inference.InferenceRouter;
@@ -66,15 +71,41 @@ public class LivePitchPredictor {
   private final RegistryService registry;
   private final AsyncPredictionLogger logger;
 
+  /**
+   * Short-TTL cache over {@code pitcher_form_current} so the poll loop never issues one CH read per
+   * pitch per tick: a pitcher is looked up at most once per 60s across all games. {@code null} when
+   * no {@link PitcherFormRepository} bean exists (ClickHouse disabled) - then form stays absent and
+   * the request forwards NaN, the pre-A3 behavior. 60s staleness on {@code pitches_in_game} is
+   * immaterial (a few pitches of in-game fatigue signal).
+   */
+  private final LoadingCache<Long, Optional<PitcherForm>> formCache;
+
   public LivePitchPredictor(
       InferenceRouter router,
       ModelLoader modelLoader,
       RegistryService registry,
-      AsyncPredictionLogger logger) {
+      AsyncPredictionLogger logger,
+      Optional<PitcherFormRepository> formRepo) {
     this.router = router;
     this.modelLoader = modelLoader;
     this.registry = registry;
     this.logger = logger;
+    this.formCache =
+        formRepo
+            .map(
+                repo ->
+                    Caffeine.newBuilder()
+                        .expireAfterWrite(Duration.ofSeconds(60))
+                        .maximumSize(2_000)
+                        .build((Long pitcherId) -> repo.findCurrent(pitcherId)))
+            .orElse(null);
+  }
+
+  /**
+   * Cached current form for the pitcher, or empty when ClickHouse is absent / the pitcher is new.
+   */
+  private Optional<PitcherForm> lookupForm(long pitcherId) {
+    return formCache == null ? Optional.empty() : formCache.get(pitcherId);
   }
 
   /**
@@ -86,7 +117,8 @@ public class LivePitchPredictor {
   public Map<String, Double> predictAndLog(LiveNextPitch ctx) throws OrtException {
     Instant requestAt = Instant.now();
     long startNanos = System.nanoTime();
-    FeaturePipelinePitchPre.Request featureReq = toRequest(ctx);
+    Optional<PitcherForm> form = lookupForm(ctx.pitcherId());
+    FeaturePipelinePitchPre.Request featureReq = toRequest(ctx, form);
 
     Optional<ModelVersion> champion = registry.findChampion(MODEL_NAME);
 
@@ -130,6 +162,7 @@ public class LivePitchPredictor {
     logger.enqueue(
         buildEvent(
             ctx,
+            featureReq,
             routed.servingResponse(),
             requestAt,
             servingModel.version(),
@@ -144,6 +177,7 @@ public class LivePitchPredictor {
       logger.enqueue(
           buildEvent(
               ctx,
+              featureReq,
               routed.shadowResponse().orElseThrow(),
               requestAt,
               shadowModel.version(),
@@ -179,8 +213,20 @@ public class LivePitchPredictor {
     };
   }
 
-  /** Assemble the pre-head request from the live context (conventions per the class doc). */
-  static FeaturePipelinePitchPre.Request toRequest(LiveNextPitch ctx) {
+  /**
+   * Assemble the pre-head request from the live context (conventions per the class doc). When
+   * {@code form} is present (A3), it fills the six pitcher-side Tier-3 slots from {@code
+   * pitcher_form_current}; {@code pitcherStrikeRateStd} and the four batter-side rates are not
+   * materialised there and stay null -&gt; NaN. When {@code form} is empty (no ClickHouse, or a
+   * pitcher with no current row) ALL eleven stay null, the pre-A3 behavior.
+   */
+  static FeaturePipelinePitchPre.Request toRequest(LiveNextPitch ctx, Optional<PitcherForm> form) {
+    Double pitchesLast28d = form.map(PitcherForm::pitchesLast28d).orElse(null);
+    Double pitchesInGame = form.map(PitcherForm::pitchesInGame).orElse(null);
+    Double daysSinceLastAppearance = form.map(PitcherForm::daysSinceLastAppearance).orElse(null);
+    Double strikeRate28d = form.map(PitcherForm::strikeRate28d).orElse(null);
+    Double swstrikeRate28d = form.map(PitcherForm::swstrikeRate28d).orElse(null);
+    Double inplayRate28d = form.map(PitcherForm::inplayRate28d).orElse(null);
     return new FeaturePipelinePitchPre.Request(
         ctx.balls(),
         ctx.strikes(),
@@ -194,18 +240,18 @@ public class LivePitchPredictor {
         ctx.parkId(),
         ctx.pitcherId(),
         ctx.batterId(),
-        // Tier 3 form: null for v1 (decision [143]); forwarded as NaN.
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null);
+        // Tier 3: six pitcher-side slots from pitcher_form_current (A3); the rest null -> NaN.
+        pitchesLast28d, // pitcherPitchesLast28d
+        pitchesInGame, // pitcherPitchesInGame
+        daysSinceLastAppearance,
+        strikeRate28d, // pitcherStrikeRate28d
+        swstrikeRate28d, // pitcherSwstrikeRate28d
+        inplayRate28d, // pitcherInplayRate28d
+        null, // pitcherStrikeRateStd - not in pitcher_form_current
+        null, // batterStrikeRate28d
+        null, // batterInplayRate28d
+        null, // batterBallRate28d
+        null); // batterInplayRateStd
   }
 
   /**
@@ -235,6 +281,7 @@ public class LivePitchPredictor {
    */
   static PredictionLogEvent buildEvent(
       LiveNextPitch ctx,
+      FeaturePipelinePitchPre.Request featureReq,
       Map<String, Double> probs,
       Instant requestAt,
       String modelVersion,
@@ -251,7 +298,10 @@ public class LivePitchPredictor {
         modelVersionId,
         role,
         schemaHash,
-        serialize(toRequest(ctx)),
+        // Serialize the SAME request that produced probs (carries the A3 form values), not a
+        // rebuilt
+        // one - so the logged feature vector matches what was scored.
+        serialize(featureReq),
         serializePrediction(probs, winner),
         latencyMs,
         MDC.get("correlation_id"),
