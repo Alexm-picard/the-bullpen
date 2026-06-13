@@ -19,10 +19,12 @@
  * does), captioned honestly. This page imports ONLY the broadcast namespace.
  */
 
+import { useTodaysGames } from "../api/games";
 import { useAllRegistryRows, useRouting } from "../api/ops";
 import { toFleetRows } from "../api/ops-mappers";
 import { BroadcastFleetStrip } from "../components/home/broadcast-fleet-strip";
 import { FeaturedMatchupPanel } from "../components/home/featured-matchup-panel";
+import { LiveTonightStrip } from "../components/home/live-tonight-strip";
 import { TonightsMatchupsBoard } from "../components/home/tonights-matchups-board";
 import { LowerThird } from "../components/broadcast/lower-third";
 import {
@@ -118,6 +120,8 @@ export default function HomePage() {
   // Fleet strip: LIVE when the registry returns at least one row.
   const registry = useAllRegistryRows();
   const routing = useRouting();
+  // Tonight's Games strip: LIVE from the same /v1/games/today slate /games uses.
+  const todaysGames = useTodaysGames();
 
   const liveChips =
     registry.data && registry.data.length > 0
@@ -183,6 +187,37 @@ export default function HomePage() {
             </p>
           )}
         </div>
+
+        {/* Tonight's Games: LIVE slate from /v1/games/today (FE-H1, the deferred
+            half). The showcase matchups board below carries edge model reads,
+            which have no live endpoint yet. */}
+        <section aria-labelledby="tonight-games-label">
+          <div style={{ marginBottom: 12 }}>
+            <LowerThird
+              id="tonight-games-label"
+              meta={
+                todaysGames.data && todaysGames.data.length > 0
+                  ? `LIVE · ${todaysGames.data.length} GAMES`
+                  : "LIVE"
+              }
+            >
+              Tonight&rsquo;s Games
+            </LowerThird>
+          </div>
+          {todaysGames.isError ? (
+            <p style={captionStyle}>
+              Could not load tonight&rsquo;s games
+              {todaysGames.error instanceof Error
+                ? `: ${todaysGames.error.message}`
+                : ""}
+              .
+            </p>
+          ) : todaysGames.isLoading ? (
+            <p style={captionStyle}>Loading tonight&rsquo;s games&hellip;</p>
+          ) : (
+            <LiveTonightStrip games={todaysGames.data ?? []} />
+          )}
+        </section>
 
         {/* Tonight's slate: showcase fixture - no live endpoint for
             starters, edge scores, or top-reads yet */}
