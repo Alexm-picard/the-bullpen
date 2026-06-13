@@ -19,6 +19,7 @@ import { useAllParksPrediction } from "../api/parks";
 import type { AllParksRequest } from "../api/parks";
 import { LowerThird } from "../components/broadcast/lower-third";
 import { OverviewParksTable } from "../components/parks/overview-parks-table";
+import { estimateLandingDistanceFt } from "../components/parks/estimate-landing";
 import { ParkHrHeatmap } from "../components/parks/park-hr-heatmap";
 import { ParkSpotlight } from "../components/parks/park-spotlight";
 import { ParkSwitcherStrip } from "../components/parks/park-switcher-strip";
@@ -95,16 +96,22 @@ export default function ParksPage() {
   // not spam the endpoint; the query keys on the debounced request.
   const [launchSpeedMph, setLaunchSpeedMph] = useState(110);
   const [launchAngleDeg, setLaunchAngleDeg] = useState(28);
+  const [sprayAngleDeg, setSprayAngleDeg] = useState(0);
   const [stand, setStand] = useState<"L" | "R">("R");
   const req: AllParksRequest = useMemo(
     () => ({
       launchSpeedMph,
       launchAngleDeg,
-      releaseSpeedMph: 94,
-      parkId: "NYY", // ignored by the all-parks endpoint; required by the shared schema
+      sprayAngleDeg,
+      // Derived so distance stays physically consistent with velo + angle as they
+      // change (the post-contact model takes hitDistance as a feature). baseState
+      // empty + 0 outs are neutral game-context defaults for the park HR surface.
+      hitDistanceFt: estimateLandingDistanceFt(launchSpeedMph, launchAngleDeg),
       stand,
+      baseState: 0,
+      outs: 0,
     }),
-    [launchSpeedMph, launchAngleDeg, stand],
+    [launchSpeedMph, launchAngleDeg, sprayAngleDeg, stand],
   );
   const [debouncedReq] = useDebouncedValue(req, 300);
   const allParks = useAllParksPrediction(debouncedReq);
@@ -160,6 +167,18 @@ export default function ParksPage() {
               step={1}
               w={150}
             />
+            <NumberInput
+              label="Spray angle (deg)"
+              description="- pull / + oppo"
+              value={sprayAngleDeg}
+              onChange={(v) =>
+                setSprayAngleDeg(typeof v === "number" ? v : Number(v) || 0)
+              }
+              min={-45}
+              max={45}
+              step={1}
+              w={150}
+            />
             <div>
               <span style={controlLabelStyle}>Bat side</span>
               <SegmentedControl
@@ -186,9 +205,9 @@ export default function ParksPage() {
             <>
               <p style={noteStyle}>
                 Live: {allParks.data.modelName} {allParks.data.modelVersion} -
-                P(HR) for a {launchSpeedMph} mph / {launchAngleDeg}&deg; batted
-                ball off a 94 mph pitch, {stand === "R" ? "RHB" : "LHB"}, at
-                each park.
+                P(HR) for a {launchSpeedMph} mph / {launchAngleDeg}&deg; /{" "}
+                {sprayAngleDeg}&deg; spray batted ball,{" "}
+                {stand === "R" ? "RHB" : "LHB"}, at each park.
               </p>
               <ParkHrHeatmap
                 probHrByPark={allParks.data.probHrByPark}

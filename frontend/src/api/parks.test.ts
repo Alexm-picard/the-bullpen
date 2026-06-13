@@ -53,13 +53,15 @@ describe("predictAllParks", () => {
     expect(err.status).toBe(500);
   });
 
-  it("exports canonical input matching the leaf body", () => {
+  it("exports canonical input matching the backend AllParksOutcomeRequest", () => {
     expect(CANONICAL_BBE_INPUT).toEqual({
       launchSpeedMph: 110,
       launchAngleDeg: 28,
-      releaseSpeedMph: 94,
-      parkId: "NYY",
+      sprayAngleDeg: 0,
+      hitDistanceFt: 400,
       stand: "R",
+      baseState: 0,
+      outs: 0,
     });
   });
 });
