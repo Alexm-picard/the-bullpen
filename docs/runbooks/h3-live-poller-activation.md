@@ -131,8 +131,16 @@ The fixture-replay server replays a committed real game feed from
 `127.0.0.1` only, is deterministic, and writes synthetic rows under sentinel
 gamePk `900000824` (floor `900000000`).
 
+It now opens with a **pre-game phase** (C2): the schedule reports the game
+`Scheduled` (no plays) for the first `--pregame-polls` schedule polls (default 3),
+then transitions to `In Progress`, so the dry-run exercises the poller's pre-game
+discovery + the `SCHEDULED -> Live -> Final` arc, not just live polling. Expect
+the sentinel game to sit `SCHEDULED` in `live_game_status` for the first minute or
+so before pitches start landing. Pass `--pregame-polls 0` for the old
+live-immediately behaviour. The self-test asserts the full arc.
+
 ```bash
-# Run the replay server's self-test first
+# Run the replay server's self-test first (asserts SCHEDULED -> Live -> Final)
 python3 infra/live-replay/replay_server.py --self-test
 
 # Start it backgrounded

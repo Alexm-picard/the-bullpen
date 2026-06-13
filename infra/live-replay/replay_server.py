@@ -75,6 +75,7 @@ class Replay:
         start_at: int,
         advance_per_request: int,
         game_pk: int,
+        pregame_polls: int = 0,
     ):
         full = json.loads(feed_path.read_text())
         # A SENTINEL gamePk (not the fixture's real 824753) so synthetic replay rows in pitches_live
@@ -87,6 +88,13 @@ class Replay:
         self.advance_per_request = max(1, advance_per_request)
         self._reveal = max(1, start_at)
         self._requests = 0
+        # Pre-game phase: the first `pregame_polls` SCHEDULE polls report the game
+        # Scheduled (feed shows no plays), so a dry-run exercises the poller's
+        # pre-game discovery + the SCHEDULED -> Live transition, not just live
+        # polling. The game goes live once the schedule has been polled MORE than
+        # `pregame_polls` times; the feed follows that flag.
+        self._pregame_polls = max(0, pregame_polls)
+        self._schedule_calls = 0
         self._lock = threading.Lock()
 
     @property
@@ -114,28 +122,43 @@ class Replay:
             "playEvents": [],
         }
 
+    def _is_live(self) -> bool:
+        """True once the schedule has been polled MORE than pregame_polls times.
+        Caller holds the lock (or accepts a benign racy read for a status report)."""
+        return self._schedule_calls > self._pregame_polls
+
     def snapshot(self) -> dict:
-        """Return the current snapshot and advance the reveal index (every Nth request)."""
+        """Return the current snapshot. While pre-game (schedule polled <= pregame_polls
+        times) the game is Scheduled with no plays; once live, the reveal advances every
+        Nth request to Final."""
         with self._lock:
-            idx = self._reveal
-            self._requests += 1
-            if self._requests % self.advance_per_request == 0:
-                self._reveal = min(self._reveal + 1, self.n_at_bats)
-        current = self._current_play(idx)
+            live = self._is_live()
+            if live:
+                idx = self._reveal
+                self._requests += 1
+                if self._requests % self.advance_per_request == 0:
+                    self._reveal = min(self._reveal + 1, self.n_at_bats)
+            else:
+                idx = 0
+        current = self._current_play(idx) if live else None
         in_progress = current is not None
         game_data = json.loads(json.dumps(self.game_data))  # deep copy
-        game_data.setdefault("status", {})["detailedState"] = (
-            "In Progress" if in_progress else "Final"
-        )
-        game_data.setdefault("status", {})["abstractGameState"] = (
-            "Live" if in_progress else "Final"
-        )
+        if not live:
+            detailed, abstract = "Scheduled", "Preview"
+        elif in_progress:
+            detailed, abstract = "In Progress", "Live"
+        else:
+            detailed, abstract = "Final", "Final"
+        game_data.setdefault("status", {})["detailedState"] = detailed
+        game_data.setdefault("status", {})["abstractGameState"] = abstract
         game_data.setdefault("datetime", {})["officialDate"] = self.game_date
         game_data.setdefault("game", {})[
             "pk"
         ] = self.game_pk  # sentinel, overriding the fixture pk
-        plays: dict = {"allPlays": self.all_plays[:idx]}
-        if current is not None:
+        # Pre-game: no plays revealed (the game has not started). Live: allPlays up to
+        # the reveal, plus the about-to-be-thrown currentPlay.
+        plays: dict = {"allPlays": self.all_plays[:idx] if live else []}
+        if live and current is not None:
             plays["currentPlay"] = current
         return {
             "gamePk": self.game_pk,
@@ -144,7 +167,14 @@ class Replay:
         }
 
     def schedule(self, date: str) -> dict:
-        """The replayed game, always reported as In Progress so the poller starts polling it."""
+        """The replayed game. Reported Scheduled for the first pregame_polls polls
+        (pre-game discovery), then In Progress so the poller starts polling its feed."""
+        with self._lock:
+            self._schedule_calls += 1
+            live = self._is_live()
+        detailed, abstract = (
+            ("In Progress", "Live") if live else ("Scheduled", "Preview")
+        )
         gd = self.game_data
         return {
             "dates": [
@@ -154,8 +184,8 @@ class Replay:
                         {
                             "gamePk": self.game_pk,
                             "status": {
-                                "detailedState": "In Progress",
-                                "abstractGameState": "Live",
+                                "detailedState": detailed,
+                                "abstractGameState": abstract,
                             },
                             "teams": {
                                 "home": {"team": gd["teams"]["home"]},
@@ -209,7 +239,36 @@ def _query_param(query: str, key: str) -> str | None:
 
 
 def _self_test(replay: Replay) -> int:
-    """Prove determinism + the replay invariants without a running poller. Returns 0 on PASS."""
+    """Prove determinism + the replay invariants without a running poller, across the
+    full SCHEDULED -> Live -> Final arc. Returns 0 on PASS."""
+    # Phase 1 - pre-game discovery: the first pregame_polls SCHEDULE polls report the
+    # game Scheduled, and the feed shows no plays (it has not started). This is the
+    # path the poller's pre-game discovery + the priming edge actually use.
+    for i in range(replay._pregame_polls):
+        sched = replay.schedule(replay.game_date)
+        sstatus = sched["dates"][0]["games"][0]["status"]["detailedState"]
+        assert (
+            sstatus == "Scheduled"
+        ), f"pre-game schedule poll {i} must be Scheduled, got {sstatus}"
+        snap = replay.snapshot()
+        assert (
+            snap["gameData"]["status"]["detailedState"] == "Scheduled"
+        ), "pre-game feed must report Scheduled"
+        assert (
+            snap["liveData"]["plays"]["allPlays"] == []
+        ), "no plays before first pitch"
+        assert (
+            "currentPlay" not in snap["liveData"]["plays"]
+        ), "no currentPlay before the game starts"
+
+    # Phase 2 - transition: the next schedule poll flips the game to Live; this is the
+    # transition the poller acts on to begin feed polling.
+    sched = replay.schedule(replay.game_date)
+    assert (
+        sched["dates"][0]["games"][0]["status"]["detailedState"] == "In Progress"
+    ), "schedule must transition to Live after the pre-game polls"
+
+    # Phase 3 - live reveal to Final (the original invariants).
     seen_next: list[tuple[int, int]] = []
     last_n = -1
     for _ in range(replay.n_at_bats + 2):
@@ -242,7 +301,8 @@ def _self_test(replay: Replay) -> int:
         final["gameData"]["status"]["detailedState"] == "Final"
     ), "reveal exhausts to Final"
     print(
-        f"SELF-TEST PASS: {replay.n_at_bats} at-bats, {len(set(seen_next))} unique upcoming pitches,"
+        f"SELF-TEST PASS: {replay._pregame_polls} pre-game poll(s) (Scheduled) -> Live ->"
+        f" {replay.n_at_bats} at-bats, {len(set(seen_next))} unique upcoming pitches,"
         f" monotonic allPlays, exhausts to Final, officialDate {replay.game_date}."
     )
     return 0
@@ -274,6 +334,14 @@ def main() -> int:
         help="reveal one more at-bat every Nth feed request (1 = progress each poll)",
     )
     p.add_argument(
+        "--pregame-polls",
+        type=int,
+        default=3,
+        help="report the game Scheduled (no plays) for the first N schedule polls, then"
+        " transition to Live - exercises the poller's pre-game discovery (0 = live"
+        " immediately, the pre-C2 behavior)",
+    )
+    p.add_argument(
         "--game-pk",
         type=int,
         default=_DEFAULT_GAME_PK,
@@ -298,6 +366,7 @@ def main() -> int:
             args.start_at,
             args.advance_per_request,
             args.game_pk,
+            pregame_polls=args.pregame_polls,
         )
     except ValueError as e:
         p.error(f"--game-date {args.game_date!r} is not YYYY-MM-DD ({e})")
