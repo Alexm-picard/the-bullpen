@@ -33,7 +33,7 @@ export function LiveTonightStrip({ games }: LiveTonightStripProps) {
   if (games.length === 0) {
     return (
       <p style={{ fontFamily: typography.fonts.body, color: colors.textMuted }}>
-        No games on the schedule today.
+        No games tracked yet - the slate fills as today&rsquo;s games go live.
       </p>
     );
   }
