@@ -7,6 +7,8 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
+import net.thebullpen.baseball.data.PitcherForm;
 import net.thebullpen.baseball.inference.FeaturePipelinePitchPre;
 import net.thebullpen.baseball.inference.PredictionLogEvent;
 import org.junit.jupiter.api.Test;
@@ -45,7 +47,7 @@ class LivePitchPredictorTest {
   @Test
   void toRequest_pins_the_training_conventions() {
     FeaturePipelinePitchPre.Request r =
-        LivePitchPredictor.toRequest(ctx("R", "R", true, false, true));
+        LivePitchPredictor.toRequest(ctx("R", "R", true, false, true), Optional.empty());
 
     assertEquals(2, r.countBalls());
     assertEquals(1, r.countStrikes());
@@ -60,7 +62,28 @@ class LivePitchPredictorTest {
     assertEquals("TOR", r.parkId());
     assertEquals(689296L, r.pitcherId());
     assertEquals(676391L, r.batterId());
-    assertNull(r.pitcherPitchesLast28d(), "Tier 3 left null for v1 (decision [143])");
+    assertNull(r.pitcherPitchesLast28d(), "no form -> Tier 3 stays null (the pre-A3 behavior)");
+    assertNull(r.batterInplayRateStd());
+  }
+
+  @Test
+  void toRequest_fills_the_six_pitcher_form_slots_when_present() {
+    // pitcher_form_current: pitches_in_game=12, pitches_last_28d=340, strike_rate=0.64,
+    // swstrike=0.12, inplay=0.18, dsla=4.
+    PitcherForm form = new PitcherForm(12.0, 340.0, 0.64, 0.12, 0.18, 4.0);
+    FeaturePipelinePitchPre.Request r =
+        LivePitchPredictor.toRequest(ctx("R", "R", true, false, true), Optional.of(form));
+
+    // The six pitcher-side slots are filled, in their exact request positions.
+    assertEquals(340.0, r.pitcherPitchesLast28d());
+    assertEquals(12.0, r.pitcherPitchesInGame());
+    assertEquals(4.0, r.daysSinceLastAppearance());
+    assertEquals(0.64, r.pitcherStrikeRate28d());
+    assertEquals(0.12, r.pitcherSwstrikeRate28d());
+    assertEquals(0.18, r.pitcherInplayRate28d());
+    // pitcher_form_current does not carry these -> they stay null -> NaN.
+    assertNull(r.pitcherStrikeRateStd(), "strike_rate_std is not in pitcher_form_current");
+    assertNull(r.batterStrikeRate28d(), "batter-side form is not in pitcher_form_current");
     assertNull(r.batterInplayRateStd());
   }
 
@@ -79,9 +102,13 @@ class LivePitchPredictorTest {
     probs.put("called_strike", 0.3);
     probs.put("in_play", 0.2);
 
+    LiveNextPitch ctx = ctx("R", "R", true, false, false);
+    FeaturePipelinePitchPre.Request featureReq =
+        LivePitchPredictor.toRequest(ctx, Optional.empty());
     PredictionLogEvent ev =
         LivePitchPredictor.buildEvent(
-            ctx("R", "R", true, false, false),
+            ctx,
+            featureReq,
             probs,
             Instant.now(),
             "v1",

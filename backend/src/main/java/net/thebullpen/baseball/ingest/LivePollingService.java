@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import net.thebullpen.baseball.data.LivePitchesRepository;
+import net.thebullpen.baseball.data.PitcherFormRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -43,6 +44,9 @@ public class LivePollingService {
   private final MlbStatsApiClient client;
   private final LivePitchesRepository repo;
   private final Optional<LivePitchPredictor> predictor;
+  // Intra-day form upsert (A3.2). Empty when ClickHouse is disabled (no bean) - then form stays at
+  // the nightly snapshot and the predictor degrades to NaN, same as before A3.
+  private final Optional<PitcherFormRepository> formRepo;
   private final GameStateMachine stateMachine = new GameStateMachine();
   private final long minApiGapMs;
   private final long scheduleRefreshMin;
@@ -66,11 +70,13 @@ public class LivePollingService {
       MlbStatsApiClient client,
       LivePitchesRepository repo,
       Optional<LivePitchPredictor> predictor,
+      Optional<PitcherFormRepository> formRepo,
       @Value("${bullpen.ingest.live.api-min-gap-ms:500}") long minApiGapMs,
       @Value("${bullpen.ingest.live.schedule-refresh-min:15}") long scheduleRefreshMin) {
     this.client = client;
     this.repo = repo;
     this.predictor = predictor;
+    this.formRepo = formRepo;
     this.minApiGapMs = minApiGapMs;
     this.scheduleRefreshMin = scheduleRefreshMin;
   }
@@ -143,6 +149,36 @@ public class LivePollingService {
     repo.insertPitches(withPitches(feed, fresh));
     lastCursorByGame.put(
         gamePk, fresh.stream().mapToLong(LivePollingService::cursor).max().orElse(since));
+    refreshIntraDayForm(gamePk, fresh);
+  }
+
+  /**
+   * A3.2: after new pitches land, refresh each active pitcher's intra-day signals ({@code
+   * pitches_in_game} + {@code days_since_last_appearance}=0) in {@code pitcher_form_current}, so
+   * the next predict-the-next-pitch on this game reads current in-game fatigue instead of the
+   * nightly {@code pitches_in_game}=0. Tiny write: only the distinct pitchers in THIS tick's fresh
+   * pitches (usually one - the current pitcher). Best-effort - a form-refresh failure is contained
+   * so it never aborts the poll (the prediction would just use slightly staler form).
+   */
+  private void refreshIntraDayForm(long gamePk, List<LivePitch> fresh) {
+    if (formRepo.isEmpty()) {
+      return;
+    }
+    fresh.stream()
+        .mapToLong(LivePitch::pitcherId)
+        .distinct()
+        .forEach(
+            pitcherId -> {
+              try {
+                formRepo.get().upsertIntraDayForm(pitcherId, gamePk);
+              } catch (RuntimeException e) {
+                log.warn(
+                    "intra-day form upsert failed for pitcher {} game {}; continuing",
+                    pitcherId,
+                    gamePk,
+                    e);
+              }
+            });
   }
 
   private void predictNextPitch(long gamePk, LiveGameFeed feed) {

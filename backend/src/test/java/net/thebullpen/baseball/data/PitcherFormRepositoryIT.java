@@ -79,6 +79,7 @@ class PitcherFormRepositoryIT {
     ch = new JdbcTemplate(clickhouseDs);
     ch.execute("TRUNCATE TABLE IF EXISTS pitches");
     ch.execute("TRUNCATE TABLE IF EXISTS pitcher_form_current");
+    ch.execute("TRUNCATE TABLE IF EXISTS pitches_live");
   }
 
   @Test
@@ -121,6 +122,67 @@ class PitcherFormRepositoryIT {
     assertThat(n200).isZero();
   }
 
+  @Test
+  void findCurrent_reads_the_refreshed_form_and_is_empty_for_an_unknown_pitcher() {
+    insertPitches(100, daysAgo(3), "called_strike", "swinging_strike", "ball", "in_play");
+    repo.refreshCurrentForm();
+
+    PitcherForm form = repo.findCurrent(100).orElseThrow();
+    assertThat(form.pitchesLast28d()).isEqualTo(4.0);
+    assertThat(form.daysSinceLastAppearance()).isEqualTo(3.0);
+    assertThat(form.pitchesInGame()).isZero(); // nightly snapshot: in-game count is intra-day only
+
+    assertThat(repo.findCurrent(999)).isEmpty(); // a pitcher with no current-form row
+  }
+
+  @Test
+  void intra_day_upsert_sets_in_game_count_and_zeroes_dsla_carrying_28d_forward() {
+    // Nightly snapshot: 3 days ago, 10 pitches -> pitches_in_game=0, dsla=3, 28d rates set.
+    insertPitches(
+        100,
+        daysAgo(3),
+        "called_strike",
+        "swinging_strike",
+        "swinging_strike",
+        "foul",
+        "ball",
+        "ball",
+        "ball",
+        "in_play",
+        "in_play",
+        "in_play");
+    repo.refreshCurrentForm();
+    assertThat(repo.findCurrent(100).orElseThrow().pitchesInGame()).isZero();
+
+    // Tonight: 5 live pitches for pitcher 100 in game 555.
+    long gameId = 555L;
+    for (int i = 1; i <= 5; i++) {
+      insertLivePitch(gameId, 100, i);
+    }
+
+    repo.upsertIntraDayForm(100, gameId);
+
+    PitcherForm after = repo.findCurrent(100).orElseThrow();
+    assertThat(after.pitchesInGame()).isEqualTo(5.0); // live in-game count
+    assertThat(after.daysSinceLastAppearance()).isZero(); // appearing today
+    assertThat(after.pitchesLast28d()).isEqualTo(10.0); // 28-day window carried forward unchanged
+    assertThat(after.strikeRate28d()).isCloseTo(0.4, within(1e-6)); // 4/10, unchanged
+
+    // Idempotent: a second upsert with the same live count leaves the FINAL read stable.
+    repo.upsertIntraDayForm(100, gameId);
+    PitcherForm again = repo.findCurrent(100).orElseThrow();
+    assertThat(again.pitchesInGame()).isEqualTo(5.0);
+    assertThat(again.daysSinceLastAppearance()).isZero();
+    assertThat(again.pitchesLast28d()).isEqualTo(10.0);
+  }
+
+  @Test
+  void intra_day_upsert_is_a_noop_for_a_pitcher_with_no_current_row() {
+    insertLivePitch(555L, 777, 1); // pitcher 777 has live pitches but no nightly form row
+    repo.upsertIntraDayForm(777, 555L);
+    assertThat(repo.findCurrent(777)).isEmpty(); // no row fabricated
+  }
+
   // --- helpers ----------------------------------------------------------
 
   private void insertPitches(int pitcherId, String gameDate, String... descriptions) {
@@ -138,6 +200,24 @@ class PitcherFormRepositoryIT {
           pitcherId,
           descriptions[i]);
     }
+  }
+
+  /**
+   * One live pitch for the pitcher in a game. All bound values lead the VALUES list and the
+   * constants trail it: clickhouse-jdbc mishandles a literal interleaved among ? placeholders.
+   * game_date is irrelevant to the intra-day count (it keys on game_id + pitcher_id).
+   */
+  private void insertLivePitch(long gameId, int pitcherId, int pitchNumber) {
+    ch.update(
+        "INSERT INTO pitches_live"
+            + " (game_id, pitch_number, pitcher_id, game_date,"
+            + "  at_bat_index, batter_id, description, balls, strikes, outs, inning,"
+            + "  home_score, away_score, home_team, away_team)"
+            + " VALUES (?, ?, ?, ?, 1, 200, 'ball', 0, 0, 0, 1, 0, 0, 'HOM', 'AWY')",
+        gameId,
+        pitchNumber,
+        pitcherId,
+        java.sql.Date.valueOf("2026-06-13"));
   }
 
   private static String daysAgo(int days) {
