@@ -36,35 +36,29 @@
 ## Step 1 - Run the promotion gate on FULL BOX data
 
 The sample-stage rows under `training/data/eval/promotion/pitch_outcome_post_experiment_results.json`
-already read `status: passed`, but they carry `data_source: "sample"` **by construction** - the
-driver hardcodes that label and reads a parquet mirror. The LIVE promotion must run on full box
-data (the full 2015-2025 ClickHouse / the registered snapshot's `training_data.parquet`), not the
-dev sample.
+already read `status: passed`, but they carry `data_source: "sample"`. The LIVE promotion must run
+on full box data (the full 2015-2025 ClickHouse / the registered snapshot's `training_data.parquet`),
+not the dev sample - and must be **labelled** `full` so the evidence row is self-describing. Use the
+`--data-source full` flag (added for exactly this; it is a LABEL ONLY - changes no metric, threshold,
+or verdict, and writes a distinct `*_experiment_results_full.json` so it never clobbers the committed
+sample row):
 
 ```bash
 cd training
-# Point --sample-root at the FULL-box data mirror for the model (NOT data/samples/dev).
+# Point --sample-root at the FULL-box data mirror for the model (NOT data/samples/dev),
+# and label the artifact 'full' so it reads as the LIVE-gate evidence, not the sample row.
 uv run python -m bullpen_training.eval.promotion.driver \
   --model pitch_outcome_post \
   --sample-root <FULL_BOX_DATA_ROOT> \
+  --data-source full \
   --out-dir data/eval/promotion
-# Expect: [pitch_outcome_post] status=PASSED ... champion=0.13xx challenger=0.11xx (margin>=0.002)
+# Expect: [pitch_outcome_post] data_source=full status=PASSED ... champion=0.13xx challenger=0.11xx
+# Writes: data/eval/promotion/pitch_outcome_post_experiment_results_full.json
 ```
 
-**Known wrinkle (read this):** the driver writes `"data_source": "sample"` into the artifact
-**even when `--sample-root` points at full box data** - the label is hardcoded. Two honest ways to
-handle it, pick one before promoting:
-
-- **(preferred, ~15 min Mac change)** add a `--data-source full` option to
-  `eval/promotion/driver.py` so the artifact label is honest, then re-run. This is a label-only
-  change - it must NOT touch `criteria.py` thresholds (those are pre-declared; rule 5). Ask the Mac
-  to make it; do not hand-edit the artifact JSON on the box.
-- **(stopgap)** record in the promotion log that the committed artifact was produced against full
-  box data despite the `"sample"` label, with the box command + row counts as evidence. Less clean;
-  prefer the driver fix so the evidence is self-describing.
-
-Either way, the gate must show **status PASSED on full data**: Brier margin >= 0.002 (expect ~0.02),
-ECE < 0.02 absolute (expect well under, ~0.004 from full-CV), log-loss guardrail green,
+Do NOT hand-edit the artifact JSON on the box, and do NOT touch `criteria.py` thresholds (rule 5 -
+pre-declared). The gate must show **status PASSED on full data**: Brier margin >= 0.002 (expect
+~0.02), ECE < 0.02 absolute (expect well under, ~0.004 from full-CV), log-loss guardrail green,
 `sample_size_observed` >= 2000 (full box clears this trivially).
 
 If it does NOT pass on full data, STOP - do not promote. Capture the failing row and hand it back;
