@@ -6,6 +6,7 @@
  * The deeper component tests cover the individual primitives.
  */
 import { MantineProvider } from "@mantine/core";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
@@ -16,10 +17,18 @@ import { theme } from "../design/theme";
 import ParksPage from "./parks-page";
 
 function render(ui: React.ReactElement): string {
+  // The live HR-by-park section (B1) uses TanStack Query; static render leaves it
+  // in the loading state, which does not affect the fixture-backed sections these
+  // assertions cover.
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   return renderToStaticMarkup(
-    <MemoryRouter>
-      <MantineProvider theme={theme}>{ui}</MantineProvider>
-    </MemoryRouter>,
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        <MantineProvider theme={theme}>{ui}</MantineProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 
