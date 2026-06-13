@@ -11,10 +11,15 @@
  * not a factor table). This page imports ONLY the broadcast namespace.
  */
 
-import { useState } from "react";
+import { NumberInput, SegmentedControl } from "@mantine/core";
+import { useDebouncedValue } from "@mantine/hooks";
+import { useMemo, useState } from "react";
 
+import { useAllParksPrediction } from "../api/parks";
+import type { AllParksRequest } from "../api/parks";
 import { LowerThird } from "../components/broadcast/lower-third";
 import { OverviewParksTable } from "../components/parks/overview-parks-table";
+import { ParkHrHeatmap } from "../components/parks/park-hr-heatmap";
 import { ParkSpotlight } from "../components/parks/park-spotlight";
 import { ParkSwitcherStrip } from "../components/parks/park-switcher-strip";
 import { ParksHeader } from "../components/parks/parks-header";
@@ -54,12 +59,55 @@ const noteStyle: React.CSSProperties = {
   color: colors.textMuted,
 };
 
+const controlsRowStyle: React.CSSProperties = {
+  display: "flex",
+  gap: 16,
+  alignItems: "flex-end",
+  flexWrap: "wrap",
+  marginBottom: 12,
+};
+
+const controlLabelStyle: React.CSSProperties = {
+  display: "block",
+  marginBottom: 4,
+  fontFamily: typography.fonts.mono,
+  fontSize: 11,
+  letterSpacing: "0.04em",
+  textTransform: "uppercase",
+  color: colors.textMuted,
+};
+
+const errorStyle: React.CSSProperties = {
+  fontFamily: typography.fonts.body,
+  fontWeight: typography.weights.semibold,
+  color: colors.goldInk,
+};
+
 export default function ParksPage() {
   // The switcher tracks the active park id so the spotlight ring stays
   // in sync visually. The actual spotlight payload is locked to Coors in
   // v1 -- switching parks scrolls the table; it doesn't yet swap spotlight
   // content. That's the natural next step when /v1/parks/factors lands.
   const [activeParkId, setActiveParkId] = useState<string>(COORS_SPOTLIGHT.id);
+
+  // B1: live HR-probability-by-park from the batted-ball champion's all-parks
+  // endpoint. The launch-condition inputs are debounced (300ms) so typing does
+  // not spam the endpoint; the query keys on the debounced request.
+  const [launchSpeedMph, setLaunchSpeedMph] = useState(110);
+  const [launchAngleDeg, setLaunchAngleDeg] = useState(28);
+  const [stand, setStand] = useState<"L" | "R">("R");
+  const req: AllParksRequest = useMemo(
+    () => ({
+      launchSpeedMph,
+      launchAngleDeg,
+      releaseSpeedMph: 94,
+      parkId: "NYY", // ignored by the all-parks endpoint; required by the shared schema
+      stand,
+    }),
+    [launchSpeedMph, launchAngleDeg, stand],
+  );
+  const [debouncedReq] = useDebouncedValue(req, 300);
+  const allParks = useAllParksPrediction(debouncedReq);
 
   const handleSelect = (parkId: string) => {
     setActiveParkId(parkId);
@@ -82,6 +130,73 @@ export default function ParksPage() {
         />
 
         <ParksMethodology line={PARKS_META.methodologyLine} />
+
+        <section aria-labelledby="parks-hr-label">
+          <div style={{ marginBottom: 12 }}>
+            <LowerThird id="parks-hr-label" meta="LIVE · 30 PARKS">
+              Home-Run Probability by Park
+            </LowerThird>
+          </div>
+          <div style={controlsRowStyle}>
+            <NumberInput
+              label="Exit velo (mph)"
+              value={launchSpeedMph}
+              onChange={(v) =>
+                setLaunchSpeedMph(typeof v === "number" ? v : Number(v) || 110)
+              }
+              min={40}
+              max={125}
+              step={1}
+              w={130}
+            />
+            <NumberInput
+              label="Launch angle (deg)"
+              value={launchAngleDeg}
+              onChange={(v) =>
+                setLaunchAngleDeg(typeof v === "number" ? v : Number(v) || 28)
+              }
+              min={-20}
+              max={60}
+              step={1}
+              w={150}
+            />
+            <div>
+              <span style={controlLabelStyle}>Bat side</span>
+              <SegmentedControl
+                value={stand}
+                onChange={(v) => setStand(v === "L" ? "L" : "R")}
+                data={[
+                  { label: "LHB", value: "L" },
+                  { label: "RHB", value: "R" },
+                ]}
+              />
+            </div>
+          </div>
+          {allParks.isError ? (
+            <p style={errorStyle}>
+              Could not load the all-parks prediction
+              {allParks.error instanceof Error
+                ? `: ${allParks.error.message}`
+                : ""}
+              .
+            </p>
+          ) : allParks.isLoading ? (
+            <p style={noteStyle}>Computing P(HR) across the 30 parks&hellip;</p>
+          ) : allParks.data ? (
+            <>
+              <p style={noteStyle}>
+                Live: {allParks.data.modelName} {allParks.data.modelVersion} -
+                P(HR) for a {launchSpeedMph} mph / {launchAngleDeg}&deg; batted
+                ball off a 94 mph pitch, {stand === "R" ? "RHB" : "LHB"}, at
+                each park.
+              </p>
+              <ParkHrHeatmap
+                probHrByPark={allParks.data.probHrByPark}
+                parkRows={PARK_ROWS}
+              />
+            </>
+          ) : null}
+        </section>
 
         <section aria-labelledby="parks-overview-label">
           <div style={{ marginBottom: 12 }}>
