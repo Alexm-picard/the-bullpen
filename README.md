@@ -1,8 +1,10 @@
 # The Bullpen
 
-A self-hosted baseball-analytics platform built primarily as a serving
-wrapper around three calibrated models. Operates through at least one MLB
-season for a real drift postmortem.
+A self-hosted baseball-analytics platform built primarily as an ML-systems +
+serving wrapper (registry, A/B routing, drift, retraining) around three calibrated
+models: a batted-ball champion serving live, with two pitch-outcome heads in shadow
+behind an honest promotion gate. Operates through at least one MLB season for a real
+drift postmortem.
 
 - **Live site**: https://thebullpen.net/
 - **Ops dashboard**: https://thebullpen.net/ops
@@ -62,9 +64,9 @@ cd ../training && uv sync && uv run pytest
 
 ## Training the models
 
-Five registry artifacts — three serving models (pre-pitch head, post-pitch
-head, batted-ball MLP) plus their two baselines (pitch LR, batted-ball
-LGBM). Training runs on the self-hosted desktop only (ADR-0006: it needs
+Five registry artifacts - three outcome models (pre-pitch head, post-pitch
+head, batted-ball MLP; the batted-ball head serves live, the two pitch heads
+are shadow) plus their two baselines (pitch LR, batted-ball LGBM). Training runs on the self-hosted desktop only (ADR-0006: it needs
 the full 2015–2025 ClickHouse dataset and the GPU); the Mac runs a sampled
 iteration loop. **2026 is holdout-only** (rule 13).
 
