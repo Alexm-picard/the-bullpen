@@ -41,6 +41,7 @@ from bullpen_training.eval.metrics import (
 )
 from bullpen_training.logging_config import configure_logging, get_logger
 from bullpen_training.pitch import PITCH_FEATURE_COLUMNS
+from bullpen_training.pitch.fold_store import ParquetFoldLoader
 from bullpen_training.pitch.persist import (
     PersistInputs,
     persist_lightgbm_v1,
@@ -187,6 +188,16 @@ def _train_production_post(
 )
 @click.option("--skip-cv", is_flag=True, help="Skip the 4-fold CV; produce empty cv_result")
 @click.option(
+    "--folds-dir",
+    type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path),
+    default=None,
+    help=(
+        "Train off a fetched fold-parquet export (ADR-0007 / WS-B) via "
+        "ParquetFoldLoader instead of the ClickHouse loader. Required for "
+        "off-box (Mac) training, which has no ClickHouse."
+    ),
+)
+@click.option(
     "--log-format",
     type=click.Choice(["console", "json"], case_sensitive=False),
     default="console",
@@ -196,6 +207,7 @@ def main(
     version: str,
     artifacts_dir: Path | None,
     skip_cv: bool,
+    folds_dir: Path | None,
     log_format: str,
 ) -> None:
     import os
@@ -219,15 +231,26 @@ def main(
     # The post head needs the Tier-4-aware loader (extra columns + pitch_type
     # categorical mapping). Pre + LR share the Tier 1+2+3 loader.
     loader: Any
+    factory: Any
     if model == "post":
-        loader = make_feature_loader_post()
-        factory: Any = post_factory
+        factory = post_factory
     elif model == "lightgbm":
-        loader = make_feature_loader()
         factory = lgb_factory
     else:  # lr
-        loader = make_feature_loader()
         factory = lr_factory
+
+    if folds_dir is not None:
+        # Off-box training (ADR-0007 / WS-B): ParquetFoldLoader is a drop-in for
+        # the ClickHouse loader closure (same (start, end, fold) -> frame call
+        # signature, same park_id + pitch_type mappings persist reads), so the
+        # Mac trains the head on the fetched fold export with no ClickHouse
+        # dependency. The export is POST-shaped (Tier 1+2+3+4); the pre/lr
+        # factories subselect their own columns from the wider frame.
+        loader = ParquetFoldLoader(folds_dir)
+    elif model == "post":
+        loader = make_feature_loader_post()
+    else:
+        loader = make_feature_loader()
 
     prod_fold = FOLDS[-1]  # fold 4: train 2015-2023, val 2024, test 2025
     log.info("starting production training", model=model, version=version)
