@@ -146,15 +146,18 @@ class ClickHouseTruthJoinedPredictionFetcherIT {
   }
 
   private void insert(long versionId, long gameId, int atBat, int pitch, String predictionJson) {
+    // role bound as a parameter, not an inline literal: clickhouse-jdbc mishandles a literal
+    // interleaved among ? placeholders in a VALUES list (it broke with 'shadow' mid-list).
     ch.update(
         "INSERT INTO prediction_log"
             + " (request_at, model_name, model_version, model_version_id, role, prediction,"
             + "  game_id, at_bat_index, pitch_number)"
-            + " VALUES (?, ?, ?, ?, 'shadow', ?, ?, ?, ?)",
+            + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         Timestamp.from(Instant.now().minus(1, ChronoUnit.HOURS)),
         MODEL,
         "v1",
         versionId,
+        "shadow",
         predictionJson,
         gameId,
         atBat,
@@ -165,11 +168,12 @@ class ClickHouseTruthJoinedPredictionFetcherIT {
     ch.update(
         "INSERT INTO prediction_log"
             + " (request_at, model_name, model_version, model_version_id, role, prediction)"
-            + " VALUES (?, ?, ?, ?, 'shadow', ?)",
+            + " VALUES (?, ?, ?, ?, ?, ?)",
         Timestamp.from(Instant.now().minus(1, ChronoUnit.HOURS)),
         MODEL,
         "v1",
         V,
+        "shadow",
         predictionJson);
   }
 

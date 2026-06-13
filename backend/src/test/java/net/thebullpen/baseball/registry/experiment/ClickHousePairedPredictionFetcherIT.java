@@ -168,23 +168,22 @@ class ClickHousePairedPredictionFetcherIT {
     champion(3, 1, 1, pitchJson(0.2, 0.2, 0.2, 0.2, 0.2));
     shadow(3, 1, 1, pitchJson(0.2, 0.2, 0.2, 0.2, 0.2));
 
-    String truthDescription =
-        ch
-            .query(
-                "SELECT t.description AS d"
-                    + " FROM (SELECT game_id, at_bat_index, pitch_number FROM prediction_log"
-                    + "       WHERE role = 'champion' AND game_id IS NOT NULL) AS c"
-                    + " LEFT JOIN (SELECT game_id, at_bat_index, pitch_number, description"
-                    + "            FROM pitches_live FINAL) AS t"
-                    + "   ON c.game_id = t.game_id AND c.at_bat_index = t.at_bat_index"
-                    + "      AND c.pitch_number = t.pitch_number"
-                    + " SETTINGS join_use_nulls = 1",
-                (rs, n) -> rs.getString("d"))
-            .stream()
-            .findFirst()
-            .orElseThrow();
+    // Not stream().findFirst(): the single returned value IS null (the whole point), and
+    // Stream.findFirst() throws NPE trying to box a null element into an Optional. Read row 0.
+    List<String> truth =
+        ch.query(
+            "SELECT t.description AS d"
+                + " FROM (SELECT game_id, at_bat_index, pitch_number FROM prediction_log"
+                + "       WHERE role = 'champion' AND game_id IS NOT NULL) AS c"
+                + " LEFT JOIN (SELECT game_id, at_bat_index, pitch_number, description"
+                + "            FROM pitches_live FINAL) AS t"
+                + "   ON c.game_id = t.game_id AND c.at_bat_index = t.at_bat_index"
+                + "      AND c.pitch_number = t.pitch_number"
+                + " SETTINGS join_use_nulls = 1",
+            (rs, n) -> rs.getString("d"));
 
-    assertThat(truthDescription).as("unmatched LEFT JOIN truth must be NULL, not ''").isNull();
+    assertThat(truth).hasSize(1);
+    assertThat(truth.get(0)).as("unmatched LEFT JOIN truth must be NULL, not ''").isNull();
   }
 
   // --- seed helpers ----------------------------------------------------------
