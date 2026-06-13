@@ -32,8 +32,8 @@ Print this and confirm each:
    - Capture stdout to a deploy log file: `./deploy.sh 2>&1 | tee docs/deploys/$(date +%Y-%m-%d-%H%M).log`
 3. **Smoke check** (in order, must all pass):
    - `curl -fsS https://thebullpen.net/actuator/health` (via Cloudflare Tunnel)
-   - `curl -fsS https://thebullpen.net/api/v1/predict -X POST -H 'Content-Type: application/json' -d '<known fixture>'`
-   - Confirm last prediction logged in ClickHouse: `SELECT count() FROM prediction_logs WHERE ts > now() - INTERVAL 1 MINUTE`
+   - `curl -fsS https://thebullpen.net/v1/predict/pitch -X POST -H 'Content-Type: application/json' -d '{"countBalls":1,"countStrikes":2,"outs":1,"inning":5,"baseState":0,"scoreDiff":0,"dow":3,"pitcherThrows":"R","batterStand":"L","parkId":"BOS","pitcherId":1,"batterId":2}'`
+   - Confirm last prediction logged in ClickHouse: `SELECT count() FROM prediction_log WHERE request_at > now() - INTERVAL 1 MINUTE`
 4. **Post-deploy ping**:
    - Discord webhook: "Deployed <tag>. Smoke OK. Watching Grafana for 10 min."
 5. **Watch**:

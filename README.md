@@ -33,10 +33,11 @@ season for a real drift postmortem.
   a logistic-regression baseline to bound the neural model's lift.
 - Mid-season **drift postmortems** when a model degrades — automated
   trigger, human promotion gate (decision [44] / rule 6).
-- **Measured test coverage**, not a vibe: 379 backend tests (JaCoCo report in
-  CI), 399 frontend tests (vitest v8 — ~79 % lines / ~67 % branches at this
-  writing), plus the training suite with its four required temporal-leakage
-  tests. Coverage is published as a non-gating baseline today and ratchets up.
+- **Measured test coverage**, not a vibe: 551 backend test methods, 492 Python
+  tests (including the four required temporal-leakage tests, mutation-checked),
+  and 368 frontend tests. Line/branch coverage is published every CI run
+  (backend JaCoCo, frontend vitest v8) as a non-gating baseline - read it from
+  the latest run's artifacts rather than a number pasted here, which drifts.
   Every commit also gates on lint, hex-codes, bundle-budget, static a11y, and a
   Schemathesis API-contract check.
 
@@ -142,34 +143,42 @@ Underlying play-by-play data is not redistributed.**
 
 ## Known limitations
 
-- **Most pages render from committed fixtures, not live data** (v1). Only
-  `/games/:id` and the player lookup hit the backend today; the home slate,
-  park explorer, Ops dashboard, and About page are design-system showcases
-  wired to `frontend/src/data/*-fixtures.ts`. Going live is gated on the MLB
-  poller (below) plus the Ops aggregation endpoints, and is a page-level swap.
-- The 30-park batted-ball MLP that natively emits 30 outputs in one ONNX
-  call is Phase 2c.5 work — until it lands, `/v1/predict/batted-ball
-/all-parks` loops the toy inference 30 times (~300 μs total, still well
-  under the page render budget).
-- Live game polling worker (MLB Stats API client + per-game scheduled
-  poll on the worker profile) is wired contractually but not running —
-  the controller surface + state machine are in place and tested; the
-  producer side (client + poller + the `prediction_log` truth-join) is
-  planned in
-  [`docs/runbooks/live-data-setup.md`](docs/runbooks/live-data-setup.md)
-  and tracked in [#1](https://github.com/Alexm-picard/the-bullpen/issues/1).
-- `prediction_log` truth-join to `pitches` by `(game_id, at_bat_index,
-pitch_number)` needs the indexed `pitch_id` column to land before the
-  per-player history / calibration views populate fully.
-- E2E / Playwright + Lighthouse / axe-core CI all defer to Phase 5.x.
-  Static linters (hex codes, bundle budget, a11y heuristics) fill the
-  gap until then.
+- **Live vs. showcase is now mixed** (v1). Hitting the backend live:
+  `/games/:id`, the player lookup + `/players/:id` profile (recent predictions
+  - reliability diagram), the `/parks` HR-probability-by-park heatmap, and the
+    home page's tonight slate. Still design-system showcases wired to
+    `frontend/src/data/*-fixtures.ts`: the Ops dashboard, the `/parks` factor
+    table, and the About methodology page. Wiring Ops to the existing
+    `/v1/ops/*` endpoints is the main remaining page-level swap.
+- **Cross-park batted-ball fidelity is a known limitation.**
+  `/v1/predict/batted-ball/all-parks` is served by the registered batted-ball
+  champion across the 30 parks. The ball-flight physics validation passes (bias
+  -0.14 ft, 93 % of fixtures within tolerance), but the cross-park HR-ordering
+  sanity gate does **not** pass yet: predicted per-park HR rates correlate only
+  Spearman rho ~0.29 with the known park-factor ordering (gate target 0.80).
+  Treat per-park batted-ball numbers as directional, not calibrated, until that
+  gate is green - see
+  [`docs/cross-park-fidelity-plan.md`](docs/cross-park-fidelity-plan.md).
+- Live game polling worker (MLB Stats API client + parser + per-game scheduled
+  poll on the worker profile, feeding `pitches_live` and the `prediction_log`
+  truth-join) is **built, merged, and unit-tested**, and is enabled in prod
+  behind the `BULLPEN_INGEST_LIVE_ENABLED` runtime flag. First-feed operating
+  evidence against the real MLB feed is the remaining gate, tracked in
+  [#1](https://github.com/Alexm-picard/the-bullpen/issues/1)
+  ([runbook](docs/runbooks/live-data-setup.md)).
+- The `prediction_log` truth-join to `pitches_live` by `(game_id,
+at_bat_index, pitch_number)` is implemented and feeds the nightly calibration
+  - per-segment drift jobs; per-player history / calibration views populate as
+    live shadow predictions accrue.
+- Playwright e2e is currently a small smoke spec; broader live-page specs and
+  Lighthouse / axe-core CI defer to Phase 5.x. Static linters (hex codes,
+  bundle budget, a11y heuristics) fill the gap until then.
 
 ## What's next (v1.5)
 
-- 30-park MLP natively serving all-parks predictions
-- Truth-join landing for full calibration + agreement views
-- MLB Stats API poller wired to `GameStateMachine`
+- Cross-park batted-ball fidelity: get the per-park HR-ordering sanity gate
+  green (Spearman rho >= 0.80) - see `docs/cross-park-fidelity-plan.md`
+- First-feed operating evidence for the live poller against the real MLB feed
   ([#1](https://github.com/Alexm-picard/the-bullpen/issues/1) ·
   [runbook](docs/runbooks/live-data-setup.md))
 - Hyperparameter search in the retraining job (fixed-HP today per
