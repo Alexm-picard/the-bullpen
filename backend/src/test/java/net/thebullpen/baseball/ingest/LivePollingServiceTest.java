@@ -191,7 +191,10 @@ class LivePollingServiceTest {
     // prime sets prev == current and the old transition-only persistence never wrote the row -
     // the game stayed invisible to /v1/games/today until its NEXT transition.
     when(client.fetchSchedule(any()))
-        .thenReturn(List.of(new ScheduledGame(822810L, GameStatus.IN_PROGRESS, "BOS", "BAL")));
+        .thenReturn(
+            List.of(
+                new ScheduledGame(
+                    822810L, GameStatus.IN_PROGRESS, "BOS", "BAL", "BOS", "BAL", null)));
     when(client.fetchLiveFeed(822810L)).thenReturn(feed(List.of(pitch(1, 1)), nextPitch(1, 2)));
 
     LivePollingService svc = service(client, repo, predictor);
@@ -214,8 +217,9 @@ class LivePollingServiceTest {
     when(client.fetchSchedule(any()))
         .thenReturn(
             List.of(
-                new ScheduledGame(gameA, GameStatus.IN_PROGRESS, "TOR", "BAL"),
-                new ScheduledGame(gameB, GameStatus.IN_PROGRESS, "NYY", "BOS")));
+                new ScheduledGame(gameA, GameStatus.IN_PROGRESS, "TOR", "BAL", "TOR", "BAL", null),
+                new ScheduledGame(
+                    gameB, GameStatus.IN_PROGRESS, "NYY", "BOS", "NYY", "BOS", null)));
     when(client.fetchLiveFeed(gameA))
         .thenReturn(feedFor(gameA, List.of(pitchFor(gameA, 1, 1)), nextPitchFor(gameA, 1, 2)));
     when(client.fetchLiveFeed(gameB))

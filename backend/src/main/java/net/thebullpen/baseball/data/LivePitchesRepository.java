@@ -8,7 +8,10 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.sql.Types;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -19,6 +22,7 @@ import net.thebullpen.baseball.api.dto.GameSummary;
 import net.thebullpen.baseball.api.dto.LivePitchRow;
 import net.thebullpen.baseball.ingest.LiveGameFeed;
 import net.thebullpen.baseball.ingest.LivePitch;
+import net.thebullpen.baseball.ingest.ScheduledGame;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.context.annotation.Profile;
@@ -79,24 +83,64 @@ public class LivePitchesRepository {
       " LEFT JOIN ( SELECT game_id, argMax(status, updated_at) AS status"
           + " FROM live_game_status GROUP BY game_id ) AS s ON s.game_id = g.game_id";
 
+  // The slate UNIONs both sources so a game appears whether it is pre-game (in scheduled_games,
+  // persisted by the poller's schedule refresh before first pitch) OR already throwing pitches (in
+  // pitches_live). The old query was pitches_live-driven, so a game was invisible until ~first
+  // pitch (~11:30+), never at its scheduled time. Now: union the game_ids, then LEFT JOIN both for
+  // detail - team abbreviation/score/inning come from pitches_live when live, else the schedule's
+  // abbreviation then full name; status from live_game_status, else the schedule's SCHEDULED, else
+  // UNKNOWN; game_date is whichever side matched (greatest skips the 1970 default of the unmatched
+  // side). The invariant that matters: a live game with pitches NEVER vanishes from the slate.
+  // toDate(?) takes a String 'yyyy-MM-dd' (a bare java.sql.Date inlines as arithmetic) - bound four
+  // times here, once per dated subquery (the ids union x2, sg, p).
+  private static final String SLATE_DETAIL_SELECT =
+      "SELECT ids.game_id AS game_id, greatest(sg.game_date, p.game_date) AS game_date,"
+          + " if(p.home_team != '', p.home_team,"
+          + "    if(sg.home_team != '', sg.home_team, sg.home_name)) AS home_team,"
+          + " if(p.away_team != '', p.away_team,"
+          + "    if(sg.away_team != '', sg.away_team, sg.away_name)) AS away_team,"
+          + " p.home_score AS home_score, p.away_score AS away_score, p.inning AS inning,"
+          + " if(s.status != '', s.status, if(sg.status != '', sg.status, 'UNKNOWN')) AS status";
+
+  private static final String SLATE_SCHEDULED_JOIN =
+      " LEFT JOIN ( SELECT game_id, game_date, home_team, away_team, home_name, away_name, status"
+          + "   FROM scheduled_games FINAL WHERE game_date = toDate(?) ) AS sg"
+          + " ON sg.game_id = ids.game_id";
+
+  private static final String SLATE_PITCHES_JOIN =
+      " LEFT JOIN ( SELECT game_id, game_date, max(home_score) AS home_score,"
+          + "   max(away_score) AS away_score, max(inning) AS inning,"
+          + "   any(home_team) AS home_team, any(away_team) AS away_team"
+          + "   FROM pitches_live FINAL WHERE game_date = toDate(?)"
+          + "   GROUP BY game_id, game_date ) AS p ON p.game_id = ids.game_id";
+
+  private static final String SLATE_STATUS_JOIN =
+      " LEFT JOIN ( SELECT game_id, argMax(status, updated_at) AS status"
+          + "   FROM live_game_status GROUP BY game_id ) AS s ON s.game_id = ids.game_id";
+
   private static final String FIND_GAMES_FOR_DATE =
-      "SELECT g.game_id AS game_id, g.game_date AS game_date, g.home_team AS home_team,"
-          + " g.away_team AS away_team, g.home_score AS home_score, g.away_score AS away_score,"
-          + " g.inning AS inning, if(s.status = '', 'UNKNOWN', s.status) AS status"
-          + " FROM ("
-          + "   SELECT game_id, game_date, home_team, away_team,"
-          + "          max(home_score) AS home_score, max(away_score) AS away_score,"
-          + "          max(inning) AS inning"
-          + "   FROM pitches_live FINAL"
-          // toDate(?) + a String 'yyyy-MM-dd' param (see findGamesForDate): clickhouse-jdbc 0.7.2
-          // inlines a bare java.sql.Date as the unquoted token 2026-06-05, which ClickHouse parses
-          // as arithmetic (2026-6-5 = 2015, Int64) -> "Date = Int64" type error. A String param is
-          // rendered quoted, so toDate('2026-06-05') yields the right Date.
-          + "   WHERE game_date = toDate(?)"
-          + "   GROUP BY game_id, game_date, home_team, away_team"
-          + " ) AS g"
-          + LATEST_STATUS_SUBQUERY
-          + " ORDER BY g.game_id ASC";
+      SLATE_DETAIL_SELECT
+          + " FROM ( SELECT game_id FROM scheduled_games FINAL WHERE game_date = toDate(?)"
+          + "        UNION DISTINCT"
+          + "        SELECT game_id FROM pitches_live FINAL WHERE game_date = toDate(?) ) AS ids"
+          + SLATE_SCHEDULED_JOIN
+          + SLATE_PITCHES_JOIN
+          + SLATE_STATUS_JOIN
+          + " ORDER BY ids.game_id ASC";
+
+  // Single pre-game game (the /v1/games/:id fallback when pitches_live has nothing yet). Scheduled
+  // -only and self-contained: a pre-game game has no pitches, so score/inning are 0 and status is
+  // the schedule's SCHEDULED (else the live status if one already landed). One game_id bind.
+  private static final String FIND_SCHEDULED_GAME =
+      "SELECT sg.game_id AS game_id, sg.game_date AS game_date,"
+          + " if(sg.home_team != '', sg.home_team, sg.home_name) AS home_team,"
+          + " if(sg.away_team != '', sg.away_team, sg.away_name) AS away_team,"
+          + " 0 AS home_score, 0 AS away_score, 0 AS inning,"
+          + " if(s.status != '', s.status, if(sg.status != '', sg.status, 'SCHEDULED')) AS status"
+          + " FROM ( SELECT game_id, game_date, home_team, away_team, home_name, away_name, status"
+          + "        FROM scheduled_games FINAL WHERE game_id = ? ) AS sg"
+          + " LEFT JOIN ( SELECT game_id, argMax(status, updated_at) AS status"
+          + "   FROM live_game_status GROUP BY game_id ) AS s ON s.game_id = sg.game_id";
 
   private static final String FIND_GAME =
       "SELECT g.game_id AS game_id, g.game_date AS game_date, g.home_team AS home_team,"
@@ -113,6 +157,16 @@ public class LivePitchesRepository {
 
   private static final String INSERT_GAME_STATUS =
       "INSERT INTO live_game_status (game_id, game_date, status) VALUES (?, ?, ?)";
+
+  private static final String INSERT_SCHEDULED_GAME =
+      "INSERT INTO scheduled_games"
+          + " (game_id, game_date, game_time_utc, home_team, away_team, home_name, away_name,"
+          + " status)"
+          + " VALUES (?,?,?,?,?,?,?,?)";
+
+  /** UTC 'yyyy-MM-dd HH:mm:ss' for the Nullable(DateTime) game_time_utc column. */
+  private static final DateTimeFormatter CH_DATETIME =
+      DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneOffset.UTC);
 
   private static final String INSERT_PITCH =
       "INSERT INTO pitches_live"
@@ -209,15 +263,70 @@ public class LivePitchesRepository {
     jdbc.update(INSERT_GAME_STATUS, gameId, gameDate.toString(), status);
   }
 
-  /** Today's games in pitches_live, decorated with the poller's latest status (step 7b). */
+  /**
+   * Persist the day's slate (the poller calls this on each schedule refresh, ~15 min, so the full
+   * card is present in ClickHouse well before first pitch - the "populate the day at ~11:00 ET"
+   * behaviour). ReplacingMergeTree(ingested_at) dedups re-writes; abbreviations and start time
+   * coalesce to safe defaults. {@code game_date} is an ISO-8601 String (the bare-date arithmetic
+   * lesson); {@code game_time_utc} is a UTC 'yyyy-MM-dd HH:mm:ss' String or NULL.
+   */
+  public void upsertScheduledGames(List<ScheduledGame> games, LocalDate gameDate) {
+    if (games.isEmpty()) {
+      return;
+    }
+    String date = gameDate.toString();
+    jdbc.batchUpdate(
+        INSERT_SCHEDULED_GAME,
+        new BatchPreparedStatementSetter() {
+          @Override
+          public void setValues(PreparedStatement ps, int i) throws SQLException {
+            ScheduledGame g = games.get(i);
+            ps.setLong(1, g.gamePk());
+            ps.setString(2, date);
+            Instant t = g.gameTimeUtc();
+            if (t == null) {
+              ps.setNull(3, Types.VARCHAR);
+            } else {
+              ps.setString(3, CH_DATETIME.format(t));
+            }
+            ps.setString(4, nz(g.homeAbbr()));
+            ps.setString(5, nz(g.awayAbbr()));
+            ps.setString(6, nz(g.homeName()));
+            ps.setString(7, nz(g.awayName()));
+            ps.setString(8, g.status() == null ? "SCHEDULED" : g.status().name());
+          }
+
+          @Override
+          public int getBatchSize() {
+            return games.size();
+          }
+        });
+  }
+
+  private static String nz(String s) {
+    return s == null ? "" : s;
+  }
+
+  /** Today's full slate (schedule-driven), decorated with live score/inning/status. */
   public List<GameSummary> findGamesForDate(LocalDate date) {
-    // ISO-8601 'yyyy-MM-dd' String, not java.sql.Date; see FIND_GAMES_FOR_DATE.
-    return jdbc.query(FIND_GAMES_FOR_DATE, GAME_SUMMARY_MAPPER, date.toString());
+    // Two toDate(?) binds (scheduled_games + pitches_live subqueries); ISO-8601 String, see
+    // FIND_GAMES_FOR_DATE on the bare-date arithmetic lesson.
+    String d = date.toString();
+    // Four binds: the ids union (scheduled_games, pitches_live) + the sg + p detail subqueries.
+    return jdbc.query(FIND_GAMES_FOR_DATE, GAME_SUMMARY_MAPPER, d, d, d, d);
   }
 
   public java.util.Optional<GameSummary> findGame(long gameId) {
+    // Started/historical games come from pitches_live (FIND_GAME, unchanged). A pre-game game has
+    // no pitches yet, so fall back to the schedule (FIND_SCHEDULED_GAME) - both game_id binds.
     List<GameSummary> hits = jdbc.query(FIND_GAME, GAME_SUMMARY_MAPPER, gameId);
-    return hits.isEmpty() ? java.util.Optional.empty() : java.util.Optional.of(hits.get(0));
+    if (!hits.isEmpty()) {
+      return java.util.Optional.of(hits.get(0));
+    }
+    List<GameSummary> scheduled = jdbc.query(FIND_SCHEDULED_GAME, GAME_SUMMARY_MAPPER, gameId);
+    return scheduled.isEmpty()
+        ? java.util.Optional.empty()
+        : java.util.Optional.of(scheduled.get(0));
   }
 
   private static final RowMapper<GameSummary> GAME_SUMMARY_MAPPER =

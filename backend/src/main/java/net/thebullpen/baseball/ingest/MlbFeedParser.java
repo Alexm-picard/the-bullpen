@@ -3,8 +3,10 @@ package net.thebullpen.baseball.ingest;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -35,15 +37,36 @@ public class MlbFeedParser {
     List<ScheduledGame> games = new ArrayList<>();
     for (JsonNode date : root.path("dates")) {
       for (JsonNode g : date.path("games")) {
+        JsonNode teams = g.path("teams");
         games.add(
             new ScheduledGame(
                 g.path("gamePk").asLong(),
                 GameStatus.fromMlbDetailedState(textOrNull(g.path("status").path("detailedState"))),
-                textOrNull(g.path("teams").path("home").path("team").path("name")),
-                textOrNull(g.path("teams").path("away").path("team").path("name"))));
+                // abbreviation is present only with &hydrate=team; null otherwise (read path
+                // coalesces to the live abbreviation or the full name).
+                textOrNull(teams.path("home").path("team").path("abbreviation")),
+                textOrNull(teams.path("away").path("team").path("abbreviation")),
+                textOrNull(teams.path("home").path("team").path("name")),
+                textOrNull(teams.path("away").path("team").path("name")),
+                parseScheduledStart(textOrNull(g.path("gameDate")))));
       }
     }
     return games;
+  }
+
+  /**
+   * Parse the schedule's ISO-8601 {@code gameDate} (e.g. {@code 2026-06-04T17:10:00Z}) to an {@link
+   * Instant}, or {@code null} if absent / unparseable.
+   */
+  private static Instant parseScheduledStart(String iso) {
+    if (iso == null || iso.isBlank()) {
+      return null;
+    }
+    try {
+      return OffsetDateTime.parse(iso).toInstant();
+    } catch (DateTimeParseException e) {
+      return null;
+    }
   }
 
   /**
