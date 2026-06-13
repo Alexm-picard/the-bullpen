@@ -9,13 +9,20 @@ import { useQuery } from "@tanstack/react-query";
 
 import { API_BASE } from "./base";
 
+/**
+ * Mirrors the backend `AllParksOutcomeRequest` (decision [146], the post-contact
+ * per-park outcome model). No `releaseSpeed` (the model is post-contact) and no
+ * `parkId` (park is the response's OUTPUT axis). Switch hitters resolve to L|R
+ * upstream. `baseState` is the 0-7 base-occupancy code; `outs` 0-2.
+ */
 export type AllParksRequest = {
   launchSpeedMph: number;
   launchAngleDeg: number;
-  releaseSpeedMph: number;
-  /** Ignored by the all-parks endpoint but required by the shared schema. */
-  parkId: string;
+  sprayAngleDeg: number;
+  hitDistanceFt: number;
   stand: "L" | "R";
+  baseState: number;
+  outs: number;
 };
 
 export type AllParksResponse = {
@@ -52,16 +59,17 @@ export async function predictAllParks(
 }
 
 /**
- * 4c.2 canonical input: 110 mph / 28° / 94 mph release / R-handed batter.
- * Park is irrelevant (endpoint ignores it) but the field is required by the
- * request schema.
+ * Canonical batted ball: 110 mph / 28° straightaway (~400 ft carry) off a RHB,
+ * bases empty, 0 outs - the reference scorcher for the all-parks HR surface.
  */
 export const CANONICAL_BBE_INPUT: AllParksRequest = {
   launchSpeedMph: 110,
   launchAngleDeg: 28,
-  releaseSpeedMph: 94,
-  parkId: "NYY",
+  sprayAngleDeg: 0,
+  hitDistanceFt: 400,
   stand: "R",
+  baseState: 0,
+  outs: 0,
 };
 
 export function useAllParksPrediction(req: AllParksRequest) {
