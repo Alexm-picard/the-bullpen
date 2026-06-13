@@ -42,8 +42,13 @@ class PitchPreParityTest {
   private static final Path INPUT_PATH = FIXTURE_DIR.resolve("parity_pitch_pre_001.json");
   private static final Path EXPECTED_PATH =
       FIXTURE_DIR.resolve("parity_pitch_pre_001_expected.json");
+  // PRE artifact version this fixture set was generated against. v1 and v2 share one feature
+  // schema_hash (the clean-feature retrain changed model weights, not the feature contract), so a
+  // version bump is a single edit here in lockstep with a regenerated fixture - the expected ONNX
+  // raw + calibrated probabilities in the fixture are what actually pin the version.
+  private static final String PRE_VERSION = "v2";
   private static final Path ARTIFACT_DIR =
-      REPO_ROOT.resolve("training/artifacts/pitch_outcome_pre/v1");
+      REPO_ROOT.resolve("training/artifacts/pitch_outcome_pre/" + PRE_VERSION);
   private static final Path ONNX_PATH = ARTIFACT_DIR.resolve("model.onnx");
   private static final Path CALIBRATOR_PATH = ARTIFACT_DIR.resolve("calibrator.json");
   private static final Path CONTRACT_PATH = REPO_ROOT.resolve("contracts/feature_pipeline.json");
