@@ -181,18 +181,31 @@ r2_fetch() {
   local name="$1" base="${BULLPEN_OFFSITE_REMOTE%/}"
   log "fetch: ${base}/${name} -> ${FETCH_DIR}"
   run "mkdir -p '${FETCH_DIR}/clickhouse' '${FETCH_DIR}/sqlite'"
-  # A clean fetch IS the offsite-leg verification (the 2026-06-12 push was 64,454
-  # objects / 2.35 GiB). rclone retries transient R2 5xx on its own - do not treat a
-  # single 5xx in the log as fatal.
-  run "rclone_ copy '${base}/${name}/clickhouse' '${FETCH_DIR}/clickhouse' --transfers 8" \
-    || fail "rclone copy of clickhouse backup failed"
+  # ClickHouse backup is ONE tar object (offsite-push.sh, post-2026-06-13): the 64k-tiny-object
+  # layout did not reliably round-trip on fetch (the 2026-06-13 drill finding). One object download
+  # + an EXACT size check is the fail-loud completeness gate the old `find data.bin` heuristic
+  # lacked - it could not tell an incomplete fetch from a hollow backup. rclone retries transient R2
+  # 5xx on its own - do not treat a single 5xx in the log as fatal.
+  run "rclone_ copy '${base}/${name}/clickhouse.tar' '${FETCH_DIR}'" \
+    || fail "rclone copy of clickhouse.tar failed"
   run "rclone_ copy '${base}/${name}/sqlite/registry.sqlite' '${FETCH_DIR}/sqlite'" \
     || fail "rclone copy of registry.sqlite failed"
-  if [[ "$DRY_RUN" != "1" ]]; then
-    [[ -f "${FETCH_DIR}/sqlite/registry.sqlite" ]] || fail "registry.sqlite not present after fetch"
-    find "${FETCH_DIR}/clickhouse" -name 'data.bin' | grep -q . \
-      || fail "fetched clickhouse backup has 0 data parts (metadata-only / wrong prefix?)"
-  fi
+  [[ "$DRY_RUN" == "1" ]] && return 0
+
+  [[ -f "${FETCH_DIR}/clickhouse.tar" ]] || fail "clickhouse.tar not present after fetch"
+  local remote_bytes local_bytes
+  remote_bytes=$(rclone_ size --json "${base}/${name}/clickhouse.tar" 2>/dev/null \
+    | sed -n 's/.*"bytes":[[:space:]]*\([0-9][0-9]*\).*/\1/p')
+  local_bytes=$(stat -c%s "${FETCH_DIR}/clickhouse.tar" 2>/dev/null || echo 0)
+  [[ -n "$remote_bytes" && "$remote_bytes" == "$local_bytes" ]] \
+    || fail "incomplete fetch: clickhouse.tar local=${local_bytes}B != remote=${remote_bytes:-?}B"
+  log "fetch verified: clickhouse.tar ${local_bytes}B == remote"
+  tar -xf "${FETCH_DIR}/clickhouse.tar" -C "${FETCH_DIR}/clickhouse" --strip-components=1 \
+    || fail "untar of clickhouse.tar failed"
+  [[ -f "${FETCH_DIR}/sqlite/registry.sqlite" ]] || fail "registry.sqlite not present after fetch"
+  # Format-agnostic non-hollow check: compact parts use data.bin, wide parts use per-column *.bin.
+  find "${FETCH_DIR}/clickhouse" -name '*.bin' | grep -q . \
+    || fail "restored backup has 0 data part files (*.bin) - hollow restore"
 }
 
 load_and_restore_ch() {
@@ -395,8 +408,9 @@ run_local_drill() {
   docker exec "$LIVE_CONTAINER" /usr/bin/clickhouse-backup create "$BACKUP_NAME" \
     >/tmp/restore-drill-create.log 2>&1 || { cat /tmp/restore-drill-create.log; fail "snapshot create failed"; }
   local DATA_PARTS
+  # *.bin (not data.bin): compact parts use data.bin, wide parts use per-column <col>.bin.
   DATA_PARTS=$(docker exec "$LIVE_CONTAINER" \
-    find "/var/lib/clickhouse/backup/${BACKUP_NAME}/shadow" -name 'data.bin' 2>/dev/null | wc -l)
+    find "/var/lib/clickhouse/backup/${BACKUP_NAME}/shadow" -name '*.bin' 2>/dev/null | wc -l)
   [[ "$DATA_PARTS" -ge 1 ]] || fail "backup has 0 data parts - FREEZE did not capture rows"
   log "data parts captured: ${DATA_PARTS}"
 

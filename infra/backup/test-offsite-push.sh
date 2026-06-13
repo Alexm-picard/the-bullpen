@@ -28,12 +28,14 @@ run_case() {
   : > "$CALLS"
 
   # rclone stub: records argv; `size --json` emits a fixed payload; copy/check obey
-  # STUB_RCLONE_COPY_EXIT.
+  # STUB_RCLONE_COPY_EXIT; rcat drains stdin (the clickhouse tar stream) so the pipe
+  # closes cleanly under pipefail.
   cat > "${BIN}/rclone" <<STUB
 #!/usr/bin/env bash
 echo "rclone \$*" >> "${CALLS}"
 case "\$1" in
   size) echo '{"count":3,"bytes":12345}' ;;
+  rcat) cat >/dev/null 2>&1; exit 0 ;;
   copy) exit "\${STUB_RCLONE_COPY_EXIT:-0}" ;;
   check) exit 0 ;;
 esac
@@ -87,8 +89,8 @@ RC=$?
 [[ $RC -eq 0 ]] && ok "exit 0" || bad "exit $RC (wanted 0): $(cat "${SANDBOX}/out.log")"
 grep -q "OFFSITE SUCCESS: auto_TEST objects=3 bytes=12345" "${SANDBOX}/out.log" \
   && ok "SUCCESS line with count+bytes" || bad "SUCCESS line wrong: $(grep SUCCESS "${SANDBOX}/out.log" || true)"
-grep -q "rclone copy ${VOL}/backup/auto_TEST r2:bucket/backups/auto_TEST/clickhouse" "$CALLS" \
-  && ok "clickhouse copied to the right prefix" || bad "clickhouse copy missing/wrong"
+grep -q "rclone rcat r2:bucket/backups/auto_TEST/clickhouse.tar" "$CALLS" \
+  && ok "clickhouse pushed as single tar object" || bad "clickhouse tar push missing/wrong"
 grep -q "rclone copy ${SNAP}/auto_TEST_sqlite r2:bucket/backups/auto_TEST/sqlite" "$CALLS" \
   && ok "registry copied" || bad "registry copy missing"
 grep -q "rclone check --one-way" "$CALLS" && ok "one-way verify ran" || bad "no verify"
@@ -103,7 +105,7 @@ RC=$?
 [[ $RC -eq 1 ]] && ok "exit 1" || bad "exit $RC (wanted 1)"
 grep -q "too small" "${SANDBOX}/out.log" && ok "names the reason" || bad "reason missing"
 grep -q "curl .*discord" "$CALLS" && ok "Discord alerted" || bad "no Discord alert"
-if grep -q "rclone copy" "$CALLS"; then bad "pushed despite bad registry"; else ok "nothing pushed"; fi
+if grep -qE "rclone (copy|rcat)" "$CALLS"; then bad "pushed despite bad registry"; else ok "nothing pushed"; fi
 
 say "test: rclone copy failure -> exit 1 + Discord, local snapshot untouched by construction"
 run_case

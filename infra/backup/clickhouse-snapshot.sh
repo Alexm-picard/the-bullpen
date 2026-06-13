@@ -90,10 +90,12 @@ docker exec "$CH_CONTAINER" /usr/bin/clickhouse-backup create "$NAME" \
 HAS_ROWS=$(docker exec "$CH_CONTAINER" clickhouse-client --password thebullpen \
   --query "SELECT count() FROM system.parts WHERE active AND database NOT IN ('system','INFORMATION_SCHEMA','information_schema')" 2>/dev/null || echo 0)
 if [[ "${HAS_ROWS:-0}" -gt 0 ]]; then
+  # *.bin (not data.bin): compact parts use data.bin, wide parts use per-column <col>.bin -
+  # a wide-only backup has zero data.bin yet is fully valid (the 2026-06-13 drill finding).
   DATA_PARTS=$(docker exec "$CH_CONTAINER" \
-    find "/var/lib/clickhouse/backup/${NAME}/shadow" -name 'data.bin' 2>/dev/null \
+    find "/var/lib/clickhouse/backup/${NAME}/shadow" -name '*.bin' 2>/dev/null \
     | wc -l)
-  [[ "$DATA_PARTS" -ge 1 ]] || fail "backup ${NAME} captured 0 data parts despite ${HAS_ROWS} active parts in source — FREEZE path broken"
+  [[ "$DATA_PARTS" -ge 1 ]] || fail "backup ${NAME} captured 0 data parts despite ${HAS_ROWS} active parts in source - FREEZE path broken"
   log "data parts captured: ${DATA_PARTS}"
 fi
 
