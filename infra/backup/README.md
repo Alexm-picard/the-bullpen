@@ -152,12 +152,21 @@ Then re-copy the system script whenever the in-repo version changes.
 ./infra/backup/install-sudoers.sh --uninstall
 ```
 
-### Restore drill (do this once before the season — discipline rule 8)
+### Restore drill (do this before the season - discipline rule 8)
+
+The restore drill is `ops/scripts/restore-drill.sh` (the old `restore-test.sh` placeholder was
+never written; this is the real one):
 
 ```bash
-# Plug in the USB
-./infra/backup/restore-test.sh    # TODO: write this in Phase 0
-# Should bring up a scratch ClickHouse + SQLite from the USB, make a prediction, tear down.
+# Local-mechanics drill: create a backup on the live container, restore into a
+# scratch ClickHouse, verify row counts + schema. Fast, no network.
+ops/scripts/restore-drill.sh
+
+# Disaster-recovery drill: restore the latest OFFSITE set from R2 (ClickHouse +
+# the SQLite registry), then boot BOTH app profiles against the restored data.
+# Preview the plan with --dry-run first.
+ops/scripts/restore-drill.sh --from-r2 --dry-run
+ops/scripts/restore-drill.sh --from-r2
 ```
 
 ## Layer 3 — Offsite to Cloudflare R2 (`offsite-push.sh`, the P2 leg of [153])

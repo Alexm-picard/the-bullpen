@@ -30,14 +30,17 @@ session and most "obvious" alternatives have already been considered and rejecte
 
 ### Current reality vs. headline claims — keep this honest when editing docs
 
-- **Live data is narrow.** Only `/games/:id` is wired to live backend data (the player
-  search / history / reliability components also hit the API). `/`, `/parks`, `/ops`, and
-  `/about` render from `frontend/src/data/*-fixtures.ts` — they are design-system
-  showcases in v1, not live views. The Ops dashboard is fixtures despite being a
-  do-not-cut item (rule 4); wiring it to the existing `/v1/ops/*` endpoints is open work.
-- **Live game poller is wired but not running.** The controller surface + `GameStateMachine`
-  exist and are tested; the producer side (MLB Stats API client + per-game poll) is planned
-  in `docs/runbooks/live-data-setup.md` and tracked in issue #1.
+- **Live data is now mixed, no longer narrow.** Live against the backend: `/games/:id`, the
+  player lookup + `/players/:id` profile, the `/parks` HR-probability-by-park heatmap, and the
+  home page's tonight slate. Still fixtures from `frontend/src/data/*-fixtures.ts`: the Ops
+  dashboard, the `/parks` factor table, and the `/about` methodology page. The Ops dashboard is
+  fixtures despite being a do-not-cut item (rule 4); wiring it to the existing `/v1/ops/*`
+  endpoints is the main open page-level swap.
+- **Live game poller is built and enabled; real-feed verification is the open gate.** The full
+  producer chain (MLB Stats API client + parser + per-game poll + `pitches_live` writer + the
+  `prediction_log` truth-join) is merged and unit-tested, and is enabled in prod behind
+  `BULLPEN_INGEST_LIVE_ENABLED`. First-feed operating evidence against the real MLB feed is the
+  remaining gate (`docs/runbooks/live-data-setup.md`, issue #1).
 - **Coverage is measured now, but mostly non-gating.** Backend JaCoCo (in `backend/build.gradle.kts`
   and `backend.yml`) and frontend vitest v8 (`frontend.yml` `npm run test:coverage`) publish
   line/branch baselines on every CI run; neither gates the build today. Training coverage
@@ -274,7 +277,7 @@ HTTP client).
 - **Pre-pitch head** — the model that predicts pitch outcome from features available _before_ the pitch is thrown (count, runners, batter/pitcher history, etc.). A separate registry entry from the post-pitch head (rule 9).
 - **Post-pitch head** — the model that uses early-flight features (release-side data, initial trajectory) to refine the outcome prediction. Separate registry entry.
 - **Promotion criteria** — the _pre-declared_ set of (primary metric, sample size, threshold, guardrails) that must be satisfied before a model moves from SHADOW to LIVE. Stored on the model's registry row (rule 5).
-- **Shadow routing** — predictions are made by the model and logged to ClickHouse `prediction_logs` but are _not_ user-visible. Default state for any newly registered model.
+- **Shadow routing** — predictions are made by the model and logged to ClickHouse `prediction_log` but are _not_ user-visible. Default state for any newly registered model.
 - **Rolling-origin CV** — the temporal cross-validation pattern: each fold trains on all earlier dates and validates on a later contiguous window. No date overlap, no random splits. 4 folds 2015–2025.
 - **Streaming temporal cutoff** — feature computation that, for each row, only considers data with `ts <= row.game_event_ts`. Prevents future contamination.
 - **Feature schema hash** — deterministic hash of `/contracts/feature_pipeline.json` (column order, dtypes, transformations). Mismatch at model registration = HARD FAIL (rule 7).
