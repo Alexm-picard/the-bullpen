@@ -27,15 +27,14 @@ run_case() {
   mkdir -p "$BIN" "$SNAP" "${VOL}/backup"
   : > "$CALLS"
 
-  # rclone stub: records argv; `size --json` emits a fixed payload; copy/check obey
-  # STUB_RCLONE_COPY_EXIT; rcat drains stdin (the clickhouse tar stream) so the pipe
-  # closes cleanly under pipefail.
+  # rclone stub: records argv; `size --json` emits a fixed payload; copy/copyto/check obey
+  # STUB_RCLONE_COPY_EXIT (copyto is the clickhouse-tar upload, copy is the registry/meta dirs).
   cat > "${BIN}/rclone" <<STUB
 #!/usr/bin/env bash
 echo "rclone \$*" >> "${CALLS}"
 case "\$1" in
   size) echo '{"count":3,"bytes":12345}' ;;
-  rcat) cat >/dev/null 2>&1; exit 0 ;;
+  copyto) exit "\${STUB_RCLONE_COPY_EXIT:-0}" ;;
   copy) exit "\${STUB_RCLONE_COPY_EXIT:-0}" ;;
   check) exit 0 ;;
 esac
@@ -89,8 +88,8 @@ RC=$?
 [[ $RC -eq 0 ]] && ok "exit 0" || bad "exit $RC (wanted 0): $(cat "${SANDBOX}/out.log")"
 grep -q "OFFSITE SUCCESS: auto_TEST objects=3 bytes=12345" "${SANDBOX}/out.log" \
   && ok "SUCCESS line with count+bytes" || bad "SUCCESS line wrong: $(grep SUCCESS "${SANDBOX}/out.log" || true)"
-grep -q "rclone rcat r2:bucket/backups/auto_TEST/clickhouse.tar" "$CALLS" \
-  && ok "clickhouse pushed as single tar object" || bad "clickhouse tar push missing/wrong"
+grep -qE "rclone copyto .* r2:bucket/backups/auto_TEST/clickhouse.tar" "$CALLS" \
+  && ok "clickhouse pushed as single tar object via copyto" || bad "clickhouse tar copyto missing/wrong"
 grep -q "rclone copy ${SNAP}/auto_TEST_sqlite r2:bucket/backups/auto_TEST/sqlite" "$CALLS" \
   && ok "registry copied" || bad "registry copy missing"
 grep -q "rclone check --one-way" "$CALLS" && ok "one-way verify ran" || bad "no verify"
@@ -105,7 +104,7 @@ RC=$?
 [[ $RC -eq 1 ]] && ok "exit 1" || bad "exit $RC (wanted 1)"
 grep -q "too small" "${SANDBOX}/out.log" && ok "names the reason" || bad "reason missing"
 grep -q "curl .*discord" "$CALLS" && ok "Discord alerted" || bad "no Discord alert"
-if grep -qE "rclone (copy|rcat)" "$CALLS"; then bad "pushed despite bad registry"; else ok "nothing pushed"; fi
+if grep -qE "rclone (copy|copyto)" "$CALLS"; then bad "pushed despite bad registry"; else ok "nothing pushed"; fi
 
 say "test: rclone copy failure -> exit 1 + Discord, local snapshot untouched by construction"
 run_case
@@ -113,7 +112,7 @@ seed_snapshot
 invoke env BULLPEN_OFFSITE_REMOTE="r2:bucket/backups" STUB_RCLONE_COPY_EXIT=3
 RC=$?
 [[ $RC -eq 1 ]] && ok "exit 1" || bad "exit $RC (wanted 1)"
-grep -q "rclone copy failed" "${SANDBOX}/out.log" && ok "copy failure surfaced" || bad "failure not surfaced"
+grep -qE "rclone copyto to R2 failed|rclone copy failed" "${SANDBOX}/out.log" && ok "copy failure surfaced" || bad "failure not surfaced"
 grep -q "curl .*discord" "$CALLS" && ok "Discord alerted" || bad "no Discord alert"
 
 say ""
