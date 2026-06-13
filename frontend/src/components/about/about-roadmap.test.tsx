@@ -1,7 +1,7 @@
 /**
  * Unit tests for <AboutRoadmap>.
  *
- * Covers: the paragraph renders, contains 'Phase 2a' and '2026' substrings,
+ * Covers: the paragraph renders, contains 'Phase 6' and '2026' substrings,
  * and uses the .about-prose className for the 62ch editorial measure.
  */
 import { MantineProvider } from "@mantine/core";
@@ -25,9 +25,9 @@ describe("AboutRoadmap", () => {
     expect(html).toContain("<p");
   });
 
-  it("contains the 'Phase 2a' substring", () => {
+  it("contains the 'Phase 6' substring (the work still ahead)", () => {
     const html = render(<AboutRoadmap paragraph={ROADMAP_PARA} />);
-    expect(html).toContain("Phase 2a");
+    expect(html).toContain("Phase 6");
   });
 
   it("contains the '2026' substring", () => {
