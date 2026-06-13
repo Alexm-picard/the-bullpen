@@ -123,3 +123,43 @@ def test_write_artifact_round_trips(tmp_path: Path, sample_root: Path) -> None:
 
     loaded = json.loads(path.read_text())
     assert loaded["model_name"] == "pitch_outcome_pre"
+
+
+def test_data_source_full_labels_artifact_without_changing_the_verdict(sample_root: Path) -> None:
+    """--data-source is a LABEL ONLY: 'full' relabels data_source + note but leaves every
+    metric, threshold, verdict, and status identical to the 'sample' artifact (the H2-gate
+    honesty fix)."""
+    run = run_evidence("pitch_outcome_post", sample_root=sample_root, rows_per_year=800)
+    sample_art = experiment_results_artifact(run)  # default
+    full_art = experiment_results_artifact(run, data_source="full")
+
+    assert sample_art["data_source"] == "sample"
+    assert full_art["data_source"] == "full"
+    assert "SAMPLE-data" in sample_art["data_source_note"]
+    assert "FULL-box" in full_art["data_source_note"]
+    # Everything that feeds the gate is byte-identical between the two labels.
+    for key in ("status", "verdict", "champion_metric", "challenger_metric", "guardrails_observed"):
+        assert sample_art[key] == full_art[key], f"{key} must not change with the label"
+
+
+def test_data_source_rejects_unknown_label(sample_root: Path) -> None:
+    run = run_evidence("pitch_outcome_post", sample_root=sample_root, rows_per_year=800)
+    with pytest.raises(ValueError, match="data_source must be 'sample' or 'full'"):
+        experiment_results_artifact(run, data_source="prod")
+
+
+def test_full_artifact_writes_distinct_filename(tmp_path: Path, sample_root: Path) -> None:
+    """The 'full' row writes <model>_experiment_results_full.json so it never clobbers the
+    committed sample-stage <model>_experiment_results.json."""
+    run = run_evidence("pitch_outcome_post", sample_root=sample_root, rows_per_year=800)
+    sample_path = write_artifact(run, tmp_path)  # default 'sample'
+    full_path = write_artifact(run, tmp_path, data_source="full")
+
+    assert sample_path.name == "pitch_outcome_post_experiment_results.json"
+    assert full_path.name == "pitch_outcome_post_experiment_results_full.json"
+    assert sample_path != full_path
+    assert sample_path.is_file() and full_path.is_file()
+
+    import json
+
+    assert json.loads(full_path.read_text())["data_source"] == "full"

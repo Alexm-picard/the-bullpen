@@ -33,10 +33,13 @@ Model wiring:
                              rule-9 baseline clears the worth-registering bar.
 
 The real LIVE/CHAMPION promotion re-runs this on full BOX data (operator
-hand-off H2). A SAMPLE-data passing row clears the SHADOW-stage evidence per
-the locked decision - it is NOT a LIVE promotion. The artifact's
-``data_source`` field records "sample" loudly so no one mistakes it for the
-production verdict.
+hand-off H2): pass ``--data-source full`` (pointing ``--sample-root`` at the
+full-box parquet) so the artifact is labelled ``full`` and written as
+``<model>_experiment_results_full.json``. A SAMPLE-data passing row clears only
+the SHADOW-stage evidence per the locked decision - it is NOT a LIVE promotion.
+The artifact's ``data_source`` field records the label loudly (default
+"sample") so no one mistakes sample evidence for the production verdict. The
+flag is a LABEL ONLY - it changes no metric, threshold, verdict, or status.
 """
 
 from __future__ import annotations
@@ -394,7 +397,7 @@ def _cv_summary_dict(cv: CVResult) -> dict[str, dict[str, float]]:
     return {name: {"mean": mean, "std": std} for name, (mean, std) in cv.summary.items()}
 
 
-def experiment_results_artifact(run: EvidenceRun) -> dict[str, Any]:
+def experiment_results_artifact(run: EvidenceRun, data_source: str = "sample") -> dict[str, Any]:
     """The ``experiment_results``-shaped evidence dict (metrics + pre-declared
     criteria + verdict). Field names mirror the V012 ``experiment_results``
     columns so the box-side registration can map this 1:1 into a row.
@@ -403,7 +406,15 @@ def experiment_results_artifact(run: EvidenceRun) -> dict[str, Any]:
     ``ExperimentService.complete`` would set it: passed iff the verdict is
     WOULD_PASS AND the sample-size target is met; failed otherwise. NO
     promotion is performed (rule 6) - this is evidence only.
+
+    ``data_source`` is a LABEL ONLY (default 'sample' = the Mac/CI sample mirror;
+    'full' = the box full-data H2 re-run for the LIVE/CHAMPION gate). It changes
+    no metric, threshold, verdict, or status - only the artifact's data_source
+    field + note, so a full-box evidence row is self-describing rather than
+    silently carrying the 'sample' label.
     """
+    if data_source not in ("sample", "full"):
+        raise ValueError(f"data_source must be 'sample' or 'full', got {data_source!r}")
     v = run.verdict
     c = run.criteria
     sample_met = v.sample_size_observed >= c.sample_size_target
@@ -437,11 +448,19 @@ def experiment_results_artifact(run: EvidenceRun) -> dict[str, Any]:
     return {
         "schema_version": 1,
         "artifact_name": "promotion_evidence",
-        "data_source": "sample",  # LOUD: sample-data evidence, NOT the LIVE verdict
+        "data_source": data_source,  # LOUD: 'sample' (SHADOW-stage) or 'full' (H2 LIVE gate)
         "data_source_note": (
-            "SAMPLE-data evidence clears the SHADOW-stage rule-5 bar per the locked "
-            "decision; the LIVE/CHAMPION promotion re-runs on full BOX data (operator "
-            "hand-off H2). No promotion is performed here (rule 6)."
+            (
+                "SAMPLE-data evidence clears the SHADOW-stage rule-5 bar per the locked "
+                "decision; the LIVE/CHAMPION promotion re-runs on full BOX data (operator "
+                "hand-off H2). No promotion is performed here (rule 6)."
+            )
+            if data_source == "sample"
+            else (
+                "FULL-box data evidence for the LIVE/CHAMPION promotion gate (operator "
+                "hand-off H2) - this is the row the promote-model skill reads. No promotion "
+                "is performed here (rule 6); promotion stays human-gated."
+            )
         ),
         "model_name": run.model_name,
         # experiment_results column analogues -------------------------------
@@ -529,10 +548,13 @@ def experiment_results_artifact(run: EvidenceRun) -> dict[str, Any]:
     }
 
 
-def write_artifact(run: EvidenceRun, out_dir: Path) -> Path:
+def write_artifact(run: EvidenceRun, out_dir: Path, data_source: str = "sample") -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / f"{run.model_name}_experiment_results.json"
-    path.write_text(json.dumps(experiment_results_artifact(run), indent=2) + "\n")
+    # A non-sample run writes a distinct filename (e.g. <model>_experiment_results_full.json)
+    # so the box full-data H2 row never clobbers the committed sample-stage row.
+    suffix = "" if data_source == "sample" else f"_{data_source}"
+    path = out_dir / f"{run.model_name}_experiment_results{suffix}.json"
+    path.write_text(json.dumps(experiment_results_artifact(run, data_source), indent=2) + "\n")
     return path
 
 
@@ -571,12 +593,23 @@ _MODEL_CHOICES = ("pitch_outcome_pre", "pitch_outcome_post", "batted_ball_lr_bas
     help="Generate the deterministic Mac proof-of-path sample if the mirror is absent.",
 )
 @click.option("--rows-per-year", type=int, default=1_500, show_default=True)
+@click.option(
+    "--data-source",
+    type=click.Choice(["sample", "full"]),
+    default="sample",
+    show_default=True,
+    help="Evidence LABEL only (no metric/threshold/verdict change). 'sample' = Mac/CI sample "
+    "mirror (SHADOW-stage rule-5 bar); 'full' = box full-data H2 re-run for the LIVE/CHAMPION "
+    "gate, written as <model>_experiment_results_full.json so it never clobbers the sample row. "
+    "For 'full', point --sample-root at the full-box parquet.",
+)
 def main(
     model: str,
     sample_root: Path,
     out_dir: Path,
     generate_sample: bool,
     rows_per_year: int,
+    data_source: str,
 ) -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     models = (
@@ -590,14 +623,15 @@ def main(
             log.info("evidence: generating sample mirror for %s under %s", m, dataset_dir)
             generate_sample_dataset(sample_root, m, rows_per_year=rows_per_year)
         run = run_evidence(m, sample_root=Path(sample_root), rows_per_year=rows_per_year)
-        art = experiment_results_artifact(run)
-        path = write_artifact(run, Path(out_dir))
+        art = experiment_results_artifact(run, data_source)
+        path = write_artifact(run, Path(out_dir), data_source=data_source)
         v = run.verdict
         # status is the FINAL gate result (relative verdict + sample-size +
         # supplementary absolute checks); verdict.outcome is the relative-gate
         # piece. Report the final status so it matches the artifact.
         click.echo(
-            f"[{m}] status={art['status'].upper()} relative_verdict={v.outcome.value} "
+            f"[{m}] data_source={data_source} status={art['status'].upper()} "
+            f"relative_verdict={v.outcome.value} "
             f"primary({v.primary_metric.db_value}): "
             f"champion={v.baseline_metrics.value_for(v.primary_metric):.4f} "
             f"challenger={v.challenger_metrics.value_for(v.primary_metric):.4f} "
