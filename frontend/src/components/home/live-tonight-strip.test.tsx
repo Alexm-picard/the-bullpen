@@ -43,6 +43,6 @@ describe("LiveTonightStrip", () => {
         <LiveTonightStrip games={[]} />
       </MemoryRouter>,
     );
-    expect(html).toContain("No games on the schedule today");
+    expect(html).toContain("No games tracked yet");
   });
 });
