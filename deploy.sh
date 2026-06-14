@@ -128,8 +128,14 @@ log "git rev: $REV"
 log "building backend bootJar"
 ( cd backend && ./gradlew --no-daemon bootJar -x test )
 
-JAR_SRC="$(ls -1 backend/build/libs/*.jar 2>/dev/null | head -1)"
-[[ -f "$JAR_SRC" ]] || die "no jar produced under backend/build/libs/"
+# Select the executable Spring Boot fat jar, newest first. Two traps this guards:
+#   - the `jar` task's non-executable `-plain.jar` (no Main-Class) can linger from
+#     a prior `build`; it sorts BEFORE `.jar` so a bare `head -1` grabbed it and
+#     the api died with "no main manifest attribute" (deploy auto-rolled-back).
+#   - a stale fat jar from an older version: `-1t` (mtime) picks the one we just
+#     built, not whatever sorts first alphabetically.
+JAR_SRC="$(ls -1t backend/build/libs/*.jar 2>/dev/null | grep -v -- '-plain' | head -1)"
+[[ -f "$JAR_SRC" ]] || die "no executable bootJar produced under backend/build/libs/"
 log "built $(basename "$JAR_SRC") ($(du -h "$JAR_SRC" | cut -f1))"
 
 # --- 3. Stage ----------------------------------------------------------------
