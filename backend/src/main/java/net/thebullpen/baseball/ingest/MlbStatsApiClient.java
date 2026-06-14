@@ -2,9 +2,12 @@ package net.thebullpen.baseball.ingest;
 
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
+import java.util.stream.Collectors;
 import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
@@ -70,6 +73,26 @@ public class MlbStatsApiClient {
     return parser.parseSchedule(
         getWithRetry(
             baseUrl + "/api/v1/schedule?sportId=1&hydrate=team,probablePitcher&date=" + date));
+  }
+
+  /**
+   * Season {@link PlayerSeasonStat}s for a set of players (the matchup classification's quality
+   * source). Uses the bulk people endpoint with a stats hydrate so one request covers many players
+   * and both groups (hitting + pitching). The hydrate value is URL-encoded because it carries
+   * {@code []}, {@code ()}, and {@code =} that the URI parser would otherwise reject.
+   */
+  public List<PlayerSeasonStat> fetchSeasonStats(Collection<Long> playerIds, int season)
+      throws IOException {
+    if (playerIds.isEmpty()) {
+      return List.of();
+    }
+    String ids = playerIds.stream().map(String::valueOf).collect(Collectors.joining(","));
+    String hydrate =
+        URLEncoder.encode(
+            "stats(group=[hitting,pitching],type=[season],season=" + season + ")",
+            StandardCharsets.UTF_8);
+    return parser.parseSeasonStats(
+        getWithRetry(baseUrl + "/api/v1/people?personIds=" + ids + "&hydrate=" + hydrate));
   }
 
   /** The GUMBO live feed for one game, parsed into status + every pitch so far. */

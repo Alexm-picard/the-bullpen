@@ -76,6 +76,102 @@ public class MlbFeedParser {
   }
 
   /**
+   * Parse the bulk people/stats hydrate response ({@code /api/v1/people?personIds=..&hydrate=stats(
+   * group=[hitting,pitching],type=[season],season=YYYY)}) into one {@link PlayerSeasonStat} per
+   * (player, group, season-split). Pitching splits carry ERA; hitting splits carry a COMPUTED wOBA
+   * (the API returns the components, not wOBA). Groups other than hitting/pitching are skipped.
+   */
+  public List<PlayerSeasonStat> parseSeasonStats(String json) throws IOException {
+    JsonNode root = mapper.readTree(json);
+    List<PlayerSeasonStat> out = new ArrayList<>();
+    for (JsonNode person : root.path("people")) {
+      long pid = person.path("id").asLong();
+      for (JsonNode block : person.path("stats")) {
+        String group = textOrNull(block.path("group").path("displayName"));
+        for (JsonNode split : block.path("splits")) {
+          int season = parseSeasonYear(textOrNull(split.path("season")));
+          JsonNode stat = split.path("stat");
+          if ("pitching".equals(group)) {
+            out.add(
+                new PlayerSeasonStat(
+                    pid,
+                    season,
+                    "pitching",
+                    parseDoubleOrNull(textOrNull(stat.path("era"))),
+                    null,
+                    intOrNull(stat.path("battersFaced"))));
+          } else if ("hitting".equals(group)) {
+            out.add(
+                new PlayerSeasonStat(
+                    pid,
+                    season,
+                    "hitting",
+                    null,
+                    wobaFromHittingLine(stat),
+                    intOrNull(stat.path("plateAppearances"))));
+          }
+        }
+      }
+    }
+    return out;
+  }
+
+  /**
+   * wOBA from an MLB hitting season line. The MLB Stats API does not expose wOBA, so it is computed
+   * from the counting components with FIXED modern linear weights - a documented approximation
+   * (exact year-specific FanGraphs constants are unnecessary for the relative duel ranking, only a
+   * consistent scale). Returns {@code null} when the line has no usable denominator (no PA).
+   *
+   * <p>wOBA = (0.69 uBB + 0.72 HBP + 0.89 1B + 1.27 2B + 1.62 3B + 2.10 HR) / (AB + BB - IBB + SF +
+   * HBP), where uBB = BB - IBB and 1B = H - 2B - 3B - HR.
+   */
+  static Double wobaFromHittingLine(JsonNode stat) {
+    int ab = stat.path("atBats").asInt(0);
+    int bb = stat.path("baseOnBalls").asInt(0);
+    int ibb = stat.path("intentionalWalks").asInt(0);
+    int hbp = stat.path("hitByPitch").asInt(0);
+    int hits = stat.path("hits").asInt(0);
+    int dbl = stat.path("doubles").asInt(0);
+    int tpl = stat.path("triples").asInt(0);
+    int hr = stat.path("homeRuns").asInt(0);
+    int sf = stat.path("sacFlies").asInt(0);
+    double denom = (double) ab + bb - ibb + sf + hbp;
+    if (denom <= 0) {
+      return null;
+    }
+    int ubb = bb - ibb;
+    int singles = hits - dbl - tpl - hr;
+    double num = 0.69 * ubb + 0.72 * hbp + 0.89 * singles + 1.27 * dbl + 1.62 * tpl + 2.10 * hr;
+    return num / denom;
+  }
+
+  private static int parseSeasonYear(String s) {
+    if (s == null || s.isBlank()) {
+      return 0;
+    }
+    try {
+      return Integer.parseInt(s.trim());
+    } catch (NumberFormatException e) {
+      return 0;
+    }
+  }
+
+  private static Double parseDoubleOrNull(String s) {
+    if (s == null || s.isBlank() || "-.--".equals(s) || "*.**".equals(s)) {
+      return null;
+    }
+    try {
+      return Double.parseDouble(s.trim());
+    } catch (NumberFormatException e) {
+      return null;
+    }
+  }
+
+  private static Integer intOrNull(JsonNode n) {
+    return (n == null || n.isMissingNode() || n.isNull()) ? null : n.asInt(0);
+  }
+
+  /**
    * Parse a GUMBO live feed into the game's status and every pitch seen so far. Pre-pitch count,
    * base occupancy, outs, and score are reconstructed by walking the plays in order (see {@link
    * LivePitch}); base occupancy and outs reset at each half-inning boundary.

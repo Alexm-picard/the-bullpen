@@ -106,6 +106,43 @@ class MlbFeedParserTest {
   }
 
   @Test
+  void parseSeasonStats_reads_era_and_computes_woba_from_hitting_components() throws IOException {
+    String json =
+        "{\"people\":[{\"id\":605141,\"stats\":["
+            + "{\"group\":{\"displayName\":\"hitting\"},\"splits\":[{\"season\":\"2026\","
+            + "  \"stat\":{\"atBats\":500,\"baseOnBalls\":60,\"intentionalWalks\":5,"
+            + "  \"hitByPitch\":8,\"hits\":150,\"doubles\":30,\"triples\":3,\"homeRuns\":25,"
+            + "  \"sacFlies\":5,\"plateAppearances\":573}}]},"
+            + "{\"group\":{\"displayName\":\"pitching\"},\"splits\":[{\"season\":\"2026\","
+            + "  \"stat\":{\"era\":\"3.45\",\"battersFaced\":700}}]}"
+            + "]}]}";
+    List<PlayerSeasonStat> stats = parser.parseSeasonStats(json);
+
+    assertEquals(2, stats.size());
+    PlayerSeasonStat hitting =
+        stats.stream().filter(s -> s.statGroup().equals("hitting")).findFirst().orElseThrow();
+    PlayerSeasonStat pitching =
+        stats.stream().filter(s -> s.statGroup().equals("pitching")).findFirst().orElseThrow();
+
+    // uBB=55, 1B=92, denom=500+60-5+5+8=568; num=0.69*55+0.72*8+0.89*92+1.27*30+1.62*3+2.10*25.
+    assertEquals(221.05 / 568.0, hitting.woba(), 1e-9);
+    assertNull(hitting.era());
+    assertEquals(573, hitting.sample().intValue());
+    assertEquals(3.45, pitching.era(), 1e-9);
+    assertNull(pitching.woba());
+    assertEquals(700, pitching.sample().intValue());
+  }
+
+  @Test
+  void parseSeasonStats_woba_is_null_without_plate_appearances() throws IOException {
+    String json =
+        "{\"people\":[{\"id\":1,\"stats\":[{\"group\":{\"displayName\":\"hitting\"},"
+            + "\"splits\":[{\"season\":\"2026\",\"stat\":{}}]}]}]}";
+    PlayerSeasonStat s = parser.parseSeasonStats(json).get(0);
+    assertNull(s.woba()); // denom 0 -> null
+  }
+
+  @Test
   void parseLiveFeed_reads_game_metadata() throws IOException {
     LiveGameFeed feed = parser.parseLiveFeed(resource("/mlb/feed_live_824753.json"));
 
