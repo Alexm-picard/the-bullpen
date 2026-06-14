@@ -63,12 +63,13 @@ public class MlbStatsApiClient {
   /**
    * Today's (or any date's) MLB games, for poll discovery + the persisted slate. {@code
    * hydrate=team} enriches the team node with its abbreviation (BOS, NYY) so the pre-game slate can
-   * show abbreviations consistent with the live (pitches_live) path; without it the schedule team
-   * node carries only id + full name.
+   * show abbreviations consistent with the live (pitches_live) path; {@code probablePitcher} adds
+   * the announced starters (id + fullName) that feed the matchup classification's pitcher side.
    */
   public List<ScheduledGame> fetchSchedule(LocalDate date) throws IOException {
     return parser.parseSchedule(
-        getWithRetry(baseUrl + "/api/v1/schedule?sportId=1&hydrate=team&date=" + date));
+        getWithRetry(
+            baseUrl + "/api/v1/schedule?sportId=1&hydrate=team,probablePitcher&date=" + date));
   }
 
   /** The GUMBO live feed for one game, parsed into status + every pitch so far. */
