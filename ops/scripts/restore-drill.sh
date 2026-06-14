@@ -57,7 +57,11 @@ SCRATCH_NATIVE_PORT=19000
 CH_IMAGE=clickhouse/clickhouse-server:24.12
 CB_BINARY=${CB_BINARY:-/usr/bin/clickhouse-backup}
 CH_PASSWORD=${CH_PASSWORD:-thebullpen}
-CH_DB=${CH_DB:-bullpen}
+# The app connects to the `default` ClickHouse DB (bullpen.clickhouse.url ends in
+# /default and the user is `default`); the `bullpen` DB is empty on the box. Verify
+# + boot against `default` - the old `bullpen` default made verify query empty
+# tables and report a hollow restore even on a perfect one (2026-06-14 drill finding).
+CH_DB=${CH_DB:-default}
 
 # --- config (r2 mode) ------------------------------------------------------
 
@@ -80,8 +84,17 @@ DRILL_WORKER_PORT="${DRILL_WORKER_PORT:-18081}"
 BOOT_TIMEOUT="${BOOT_TIMEOUT:-120}"       # seconds to reach actuator UP
 WORKER_SETTLE="${WORKER_SETTLE:-10}"      # seconds to confirm worker doesn't crash-loop post-UP
 
-FETCH_DIR="${FETCH_DIR:-/tmp/restore-drill-r2-fetch}"
-SCRATCH_REGISTRY="${SCRATCH_REGISTRY:-/tmp/restore-drill-scratch-registry.sqlite}"
+# One per-run temp dir on a DISK-backed fs (NOT tmpfs). Two drill findings drive this:
+#   - /tmp is tmpfs on the box (~5.8G); r2 mode stages a multi-GB clickhouse.tar AND
+#     its extraction, which truncates as the dataset grows (the hollow-extract FAIL).
+#   - fs.protected_regular=2: a fixed /tmp/restore-drill-*.{err,log} left by a prior
+#     run under a different uid becomes unwritable even by root, and a failed redirect
+#     silently aborts its command (the false "no snapshot"). A fresh mktemp -d dodges both.
+# Override the base with DRILL_TMPDIR if /var/tmp is unsuitable.
+DRILL_TMP="$(mktemp -d "${DRILL_TMPDIR:-/var/tmp}/restore-drill.XXXXXX")" \
+  || { echo "fatal: mktemp -d under ${DRILL_TMPDIR:-/var/tmp} failed" >&2; exit 1; }
+FETCH_DIR="${FETCH_DIR:-${DRILL_TMP}/r2-fetch}"
+SCRATCH_REGISTRY="${SCRATCH_REGISTRY:-${DRILL_TMP}/scratch-registry.sqlite}"
 
 DRILL_ID=$(date -u +%s)
 DRILL_NOTE="restore-drill-${DRILL_ID}"
@@ -98,7 +111,7 @@ cleanup() {
   for pid in "${APP_PIDS[@]:-}"; do [[ -n "$pid" ]] && kill "$pid" >/dev/null 2>&1 || true; done
   docker rm -f "$SCRATCH_CONTAINER" >/dev/null 2>&1 || true
   docker network rm "$SCRATCH_NETWORK" >/dev/null 2>&1 || true
-  rm -rf "$FETCH_DIR" "$SCRATCH_REGISTRY" "${SCRATCH_REGISTRY}-wal" "${SCRATCH_REGISTRY}-shm" 2>/dev/null || true
+  rm -rf "$DRILL_TMP" "$FETCH_DIR" "$SCRATCH_REGISTRY" "${SCRATCH_REGISTRY}-wal" "${SCRATCH_REGISTRY}-shm" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -169,11 +182,20 @@ r2_find_newest() {
   # NAME = auto_<TS> where TS is date -u +%Y%m%dT%H%M%SZ - lexically sortable.
   # The token is bucket-scoped: `rclone lsd <remote>:` at the account root 403s by
   # design (no ListBuckets). Bucket-prefixed paths work - that is not a failure.
-  local newest
-  newest=$(rclone_ lsf "${BULLPEN_OFFSITE_REMOTE%/}/" --dirs-only 2>/tmp/restore-drill-lsf.err \
-            | sed 's:/$::' | grep -E '^auto_' | sort | tail -1 || true)
-  [[ -n "$newest" ]] || { cat /tmp/restore-drill-lsf.err >&2 2>/dev/null || true; \
-    fail "no auto_* snapshot under ${BULLPEN_OFFSITE_REMOTE} (rclone config/remote/creds?)"; }
+  # Key off rclone's EXIT CODE (streams captured to fresh mktemp-d files), not a
+  # redirect or an empty result: a failed `2>` onto a stale fixed /tmp path under
+  # fs.protected_regular=2 used to abort the lsf silently and masquerade as "no
+  # snapshot" (2026-06-14 drill finding).
+  local rc newest
+  rclone_ lsf "${BULLPEN_OFFSITE_REMOTE%/}/" --dirs-only \
+    >"${DRILL_TMP}/lsf.out" 2>"${DRILL_TMP}/lsf.err"
+  rc=$?
+  if [[ "$rc" -ne 0 ]]; then
+    sed 's/^/  rclone: /' "${DRILL_TMP}/lsf.err" >&2 2>/dev/null || true
+    fail "rclone lsf failed (rc=${rc}) under ${BULLPEN_OFFSITE_REMOTE} (config/remote/creds?)"
+  fi
+  newest=$(sed 's:/$::' "${DRILL_TMP}/lsf.out" | grep -E '^auto_' | sort | tail -1 || true)
+  [[ -n "$newest" ]] || fail "no auto_* snapshot under ${BULLPEN_OFFSITE_REMOTE} (lsf ok but no auto_* dirs)"
   printf '%s' "$newest"
 }
 
@@ -202,6 +224,9 @@ r2_fetch() {
   log "fetch verified: clickhouse.tar ${local_bytes}B == remote"
   tar -xf "${FETCH_DIR}/clickhouse.tar" -C "${FETCH_DIR}/clickhouse" --strip-components=1 \
     || fail "untar of clickhouse.tar failed"
+  # Drop the tar now the extract succeeded - halves peak staging (load_and_restore_ch
+  # re-tars the EXTRACTED tree, not this object, so the tar is no longer needed).
+  rm -f "${FETCH_DIR}/clickhouse.tar"
   [[ -f "${FETCH_DIR}/sqlite/registry.sqlite" ]] || fail "registry.sqlite not present after fetch"
   # Format-agnostic non-hollow check: compact parts use data.bin, wide parts use per-column *.bin.
   find "${FETCH_DIR}/clickhouse" -name '*.bin' | grep -q . \
@@ -217,8 +242,8 @@ load_and_restore_ch() {
   run "docker exec -u 0 '$SCRATCH_CONTAINER' chown -R clickhouse:clickhouse '/var/lib/clickhouse/backup/${name}'" \
     || fail "chown failed"
   log "restore: clickhouse-backup restore ${name} (inside scratch)"
-  run "docker exec '$SCRATCH_CONTAINER' /usr/bin/clickhouse-backup restore '${name}' >/tmp/restore-drill-restore.log 2>&1" \
-    || { [[ "$DRY_RUN" == "1" ]] || cat /tmp/restore-drill-restore.log; fail "restore command failed"; }
+  run "docker exec '$SCRATCH_CONTAINER' /usr/bin/clickhouse-backup restore '${name}' >${DRILL_TMP}/restore.log 2>&1" \
+    || { [[ "$DRY_RUN" == "1" ]] || cat "${DRILL_TMP}/restore.log"; fail "restore command failed"; }
 }
 
 verify_ch_scratch() {
@@ -261,12 +286,19 @@ restore_registry() {
     local live_models
     live_models=$(sqlite3 "$LIVE_REGISTRY" "SELECT count(*) FROM model_versions;" 2>/dev/null || echo "-1")
     log "model_versions: scratch=${scratch_models} live=${live_models}"
-    [[ "$scratch_models" == "$live_models" && "$scratch_models" -ge 1 ]] \
-      || fail "model_versions count mismatch (scratch=${scratch_models} vs live=${live_models})"
+    # The offsite set lags live (captured before later registrations), so the DR
+    # assertion is a RANGE not an exact match: rows restored (>=1) and not MORE than
+    # live (a backup newer than live would be the real anomaly). The old exact ==
+    # failed by design whenever a model was registered after the backup (2026-06-14:
+    # live grew to 7, the backup held 6).
+    [[ "$scratch_models" -ge 1 && "$scratch_models" -le "$live_models" ]] \
+      || fail "model_versions out of range (scratch=${scratch_models}, expected 1..live=${live_models})"
   else
-    log "model_versions: scratch=${scratch_models} (live registry ${LIVE_REGISTRY} unreadable; comparing to EXPECTED_MODELS=${EXPECTED_MODELS})"
+    log "model_versions: scratch=${scratch_models} (live registry ${LIVE_REGISTRY} unreadable; EXPECTED_MODELS=${EXPECTED_MODELS} for reference)"
+    [[ "$scratch_models" -ge 1 ]] \
+      || fail "model_versions count ${scratch_models} < 1 - registry restored empty"
     [[ "$scratch_models" == "$EXPECTED_MODELS" ]] \
-      || fail "model_versions count ${scratch_models} != expected ${EXPECTED_MODELS}"
+      || log "NOTE: model_versions ${scratch_models} != EXPECTED_MODELS ${EXPECTED_MODELS} (informational; live registry unreadable)"
   fi
   log "registry restore verified (${scratch_models} model_versions rows)"
 }
@@ -291,15 +323,15 @@ boot_profile() {
     --spring.flyway.url="jdbc:sqlite:${SCRATCH_REGISTRY}" \
     --bullpen.ingest.live.enabled=false \
     --bullpen.ingest.players.enabled=false \
-    >"/tmp/restore-drill-boot-${profile}.log" 2>&1 &
+    >"${DRILL_TMP}/boot-${profile}.log" 2>&1 &
   local pid=$!
   APP_PIDS+=("$pid")
 
   local healthy=0
   for i in $(seq 1 "$BOOT_TIMEOUT"); do
     if ! kill -0 "$pid" 2>/dev/null; then
-      cat "/tmp/restore-drill-boot-${profile}.log" | tail -30
-      fail "${profile} process exited during startup (crash) - see /tmp/restore-drill-boot-${profile}.log"
+      tail -30 "${DRILL_TMP}/boot-${profile}.log"
+      fail "${profile} process exited during startup (crash) - see ${DRILL_TMP}/boot-${profile}.log"
     fi
     if curl -fsS "http://localhost:${port}/actuator/health" 2>/dev/null | grep -q '"status":"UP"'; then
       healthy=1; log "  ${profile} actuator UP after ${i}s"; break
@@ -322,7 +354,7 @@ boot_profile() {
     # The 2026-06-04 lesson: the worker hard-fails on a missing bean. A startup
     # hard-fail is caught by never-reaching-UP above; this catches a DELAYED crash.
     sleep "$WORKER_SETTLE"
-    kill -0 "$pid" 2>/dev/null || fail "worker crashed within ${WORKER_SETTLE}s of UP (crash-loop) - see /tmp/restore-drill-boot-worker.log"
+    kill -0 "$pid" 2>/dev/null || fail "worker crashed within ${WORKER_SETTLE}s of UP (crash-loop) - see ${DRILL_TMP}/boot-worker.log"
     curl -fsS "http://localhost:${port}/actuator/health" 2>/dev/null | grep -q '"status":"UP"' \
       || fail "worker health regressed within ${WORKER_SETTLE}s of UP"
     log "  worker stable for ${WORKER_SETTLE}s after UP"
@@ -368,7 +400,7 @@ run_r2_drill() {
   echo "================================================================"
   echo "  source:           ${BULLPEN_OFFSITE_REMOTE%/}/${NAME}"
   echo "  clickhouse:        restored into scratch (core tables non-empty)"
-  echo "  registry:          integrity ok, model_versions matches live"
+  echo "  registry:          integrity ok, model_versions in range (1..live)"
   echo "  api profile:       actuator UP against restored data"
   echo "  worker profile:    actuator UP + stable ${WORKER_SETTLE}s (no crash-loop)"
   echo "================================================================"
@@ -406,7 +438,7 @@ run_local_drill() {
 
   log "snapshot: clickhouse-backup create ${BACKUP_NAME} (inside ${LIVE_CONTAINER})"
   docker exec "$LIVE_CONTAINER" /usr/bin/clickhouse-backup create "$BACKUP_NAME" \
-    >/tmp/restore-drill-create.log 2>&1 || { cat /tmp/restore-drill-create.log; fail "snapshot create failed"; }
+    >"${DRILL_TMP}/create.log" 2>&1 || { cat "${DRILL_TMP}/create.log"; fail "snapshot create failed"; }
   local DATA_PARTS
   # *.bin (not data.bin): compact parts use data.bin, wide parts use per-column <col>.bin.
   DATA_PARTS=$(docker exec "$LIVE_CONTAINER" \
@@ -425,7 +457,7 @@ run_local_drill() {
 
   log "restore: clickhouse-backup restore ${BACKUP_NAME} (inside scratch)"
   docker exec "$SCRATCH_CONTAINER" /usr/bin/clickhouse-backup restore "$BACKUP_NAME" \
-    >/tmp/restore-drill-restore.log 2>&1 || { cat /tmp/restore-drill-restore.log; fail "restore command failed"; }
+    >"${DRILL_TMP}/restore.log" 2>&1 || { cat "${DRILL_TMP}/restore.log"; fail "restore command failed"; }
 
   local SCRATCH_COUNT SCRATCH_HAS_DRILL LIVE_SCHEMA SCRATCH_SCHEMA
   SCRATCH_COUNT=$(scratch_q "SELECT count() FROM bullpen._drill_marker")
