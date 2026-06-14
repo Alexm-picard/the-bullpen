@@ -36,11 +36,17 @@ public class ClickHouseConfig {
   @Value("${bullpen.clickhouse.user:default}")
   private String user;
 
-  @Value("${bullpen.clickhouse.password:thebullpen}")
+  @Value("${bullpen.clickhouse.password:}")
   private String password;
 
   @Bean(name = "clickhouseDataSource")
   public DataSource clickhouseDataSource() throws SQLException {
+    if (password == null || password.isBlank()) {
+      throw new IllegalStateException(
+          "bullpen.clickhouse.password is unset - set BULLPEN_CLICKHOUSE_PASSWORD in the runtime"
+              + " environment (or override @DynamicPropertySource in tests). Refusing to fall back"
+              + " to a known default credential.");
+    }
     Properties props = new Properties();
     props.setProperty("user", user);
     props.setProperty("password", password);

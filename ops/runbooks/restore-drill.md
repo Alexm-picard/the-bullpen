@@ -73,7 +73,7 @@ Diagnose in this order:
 4. **`live row count != scratch count`** or **drill row not found in
    scratch** — the data parts didn't attach cleanly. Look inside scratch
    manually: `docker exec -it bullpen-clickhouse-scratch clickhouse-client
---password thebullpen`. Check `system.parts` for `_drill_marker` —
+--password "$BULLPEN_CLICKHOUSE_PASSWORD"`. Check `system.parts` for `_drill_marker` —
    active parts should match what was in the backup metadata. If the parts
    are there but the table count is 0, the ATTACH didn't run. If the parts
    are missing entirely, the tar transfer dropped them (rare; look at

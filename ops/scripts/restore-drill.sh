@@ -56,7 +56,9 @@ SCRATCH_HTTP_PORT=18123
 SCRATCH_NATIVE_PORT=19000
 CH_IMAGE=clickhouse/clickhouse-server:24.12
 CB_BINARY=${CB_BINARY:-/usr/bin/clickhouse-backup}
-CH_PASSWORD=${CH_PASSWORD:-thebullpen}
+# Required, no default credential. Resolves from CH_PASSWORD or the rotated BULLPEN_CLICKHOUSE_PASSWORD
+# (the app's secret, e.g. from /etc/default/bullpen). Real runs preflight-check it; --dry-run is exempt.
+CH_PASSWORD="${CH_PASSWORD:-${BULLPEN_CLICKHOUSE_PASSWORD:-}}"
 # The app connects to the `default` ClickHouse DB (bullpen.clickhouse.url ends in
 # /default and the user is `default`); the `bullpen` DB is empty on the box. Verify
 # + boot against `default` - the old `bullpen` default made verify query empty
@@ -374,6 +376,7 @@ run_r2_drill() {
   [[ -f "$RCLONE_CONFIG" || "$DRY_RUN" == "1" ]] || fail "rclone config not found at ${RCLONE_CONFIG} (set RCLONE_CONFIG)"
   command -v sqlite3 >/dev/null || fail "sqlite3 not installed"
   [[ -x "$CB_BINARY" || "$DRY_RUN" == "1" ]] || fail "$CB_BINARY not executable"
+  [[ -n "$CH_PASSWORD" || "$DRY_RUN" == "1" ]] || fail "CH_PASSWORD unset - set BULLPEN_CLICKHOUSE_PASSWORD (the rotated ClickHouse secret, e.g. from /etc/default/bullpen)"
 
   cleanup  # stale prior runs
   mkdir -p "$DRILL_TMP"  # cleanup rm'd the fresh mktemp dir; r2_find_newest writes lsf.out here
@@ -419,6 +422,7 @@ run_local_drill() {
   log "preflight: tools + live state"
   command -v docker >/dev/null || fail "docker not installed"
   [[ -x "$CB_BINARY" ]] || fail "$CB_BINARY not executable"
+  [[ -n "$CH_PASSWORD" ]] || fail "CH_PASSWORD unset - set BULLPEN_CLICKHOUSE_PASSWORD (the rotated ClickHouse secret, e.g. from /etc/default/bullpen)"
   docker ps --format '{{.Names}}' | grep -qx "$LIVE_CONTAINER" || fail "$LIVE_CONTAINER not running"
 
   cleanup
