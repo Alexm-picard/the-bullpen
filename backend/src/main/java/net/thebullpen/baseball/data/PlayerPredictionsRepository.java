@@ -4,6 +4,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.sql.ResultSet;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import javax.sql.DataSource;
@@ -65,7 +67,9 @@ public class PlayerPredictionsRepository {
       String predJson = rs.getString("prediction");
       WinnerSummary winner = parseWinner(predJson);
       return new PlayerPredictionRow(
-          rs.getTimestamp("request_at").toInstant(),
+          // request_at is DateTime64(3, 'UTC') (V004). Read tz-explicitly so getTimestamp()
+          // doesn't reinterpret the UTC wall-clock in the JVM default zone (the +4h read skew).
+          rs.getObject("request_at", LocalDateTime.class).toInstant(ZoneOffset.UTC),
           rs.getString("model_name"),
           rs.getString("model_version"),
           rs.getString("role"),
