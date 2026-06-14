@@ -10,6 +10,7 @@ import java.sql.Timestamp;
 import java.sql.Types;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
@@ -346,7 +347,11 @@ public class LivePitchesRepository {
 
   private static final RowMapper<ScheduledGame> SCHEDULED_GAME_MAPPER =
       (ResultSet rs, int n) -> {
-        java.sql.Timestamp t = rs.getTimestamp("game_time_utc");
+        // game_time_utc is DateTime('UTC') (V023). Read it tz-explicitly: getTimestamp() would
+        // reinterpret the UTC wall-clock in the JVM default zone (ET on the box) and re-introduce
+        // the +4h skew V023 fixed in storage. getObject(LocalDateTime) returns the raw UTC
+        // wall-clock; pin it to UTC.
+        LocalDateTime t = rs.getObject("game_time_utc", LocalDateTime.class);
         return new ScheduledGame(
             rs.getLong("game_id"),
             parseStatus(rs.getString("status")),
@@ -354,7 +359,7 @@ public class LivePitchesRepository {
             rs.getString("away_team"),
             rs.getString("home_name"),
             rs.getString("away_name"),
-            t == null ? null : t.toInstant(),
+            t == null ? null : t.toInstant(ZoneOffset.UTC),
             rs.getLong("home_pitcher_id"),
             rs.getString("home_pitcher_name"),
             rs.getLong("away_pitcher_id"),

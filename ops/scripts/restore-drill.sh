@@ -376,6 +376,7 @@ run_r2_drill() {
   [[ -x "$CB_BINARY" || "$DRY_RUN" == "1" ]] || fail "$CB_BINARY not executable"
 
   cleanup  # stale prior runs
+  mkdir -p "$DRILL_TMP"  # cleanup rm'd the fresh mktemp dir; r2_find_newest writes lsf.out here
 
   local NAME
   if [[ "$DRY_RUN" == "1" ]]; then
@@ -421,6 +422,7 @@ run_local_drill() {
   docker ps --format '{{.Names}}' | grep -qx "$LIVE_CONTAINER" || fail "$LIVE_CONTAINER not running"
 
   cleanup
+  mkdir -p "$DRILL_TMP"  # cleanup rm'd the fresh mktemp dir; local mode writes create/restore logs here
   install_cb "$LIVE_CONTAINER"
 
   log "seed: insert drill marker (id=${DRILL_ID}, note='${DRILL_NOTE}')"
