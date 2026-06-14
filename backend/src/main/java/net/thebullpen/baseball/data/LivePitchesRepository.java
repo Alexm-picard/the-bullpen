@@ -20,6 +20,7 @@ import java.util.Objects;
 import javax.sql.DataSource;
 import net.thebullpen.baseball.api.dto.GameSummary;
 import net.thebullpen.baseball.api.dto.LivePitchRow;
+import net.thebullpen.baseball.ingest.GameStatus;
 import net.thebullpen.baseball.ingest.LiveGameFeed;
 import net.thebullpen.baseball.ingest.LivePitch;
 import net.thebullpen.baseball.ingest.ScheduledGame;
@@ -331,6 +332,44 @@ public class LivePitchesRepository {
     return scheduled.isEmpty()
         ? java.util.Optional.empty()
         : java.util.Optional.of(scheduled.get(0));
+  }
+
+  private static final String FIND_SCHEDULED_GAMES_FOR_DATE =
+      "SELECT game_id, status, home_team, away_team, home_name, away_name, game_time_utc,"
+          + " home_pitcher_id, home_pitcher_name, away_pitcher_id, away_pitcher_name"
+          + " FROM scheduled_games FINAL WHERE game_date = toDate(?) ORDER BY game_id ASC";
+
+  /** The day's scheduled games (with probables) - the matchup job's input. */
+  public List<ScheduledGame> findScheduledGames(LocalDate date) {
+    return jdbc.query(FIND_SCHEDULED_GAMES_FOR_DATE, SCHEDULED_GAME_MAPPER, date.toString());
+  }
+
+  private static final RowMapper<ScheduledGame> SCHEDULED_GAME_MAPPER =
+      (ResultSet rs, int n) -> {
+        java.sql.Timestamp t = rs.getTimestamp("game_time_utc");
+        return new ScheduledGame(
+            rs.getLong("game_id"),
+            parseStatus(rs.getString("status")),
+            rs.getString("home_team"),
+            rs.getString("away_team"),
+            rs.getString("home_name"),
+            rs.getString("away_name"),
+            t == null ? null : t.toInstant(),
+            rs.getLong("home_pitcher_id"),
+            rs.getString("home_pitcher_name"),
+            rs.getLong("away_pitcher_id"),
+            rs.getString("away_pitcher_name"));
+      };
+
+  private static GameStatus parseStatus(String s) {
+    if (s == null || s.isEmpty()) {
+      return GameStatus.SCHEDULED;
+    }
+    try {
+      return GameStatus.valueOf(s);
+    } catch (IllegalArgumentException e) {
+      return GameStatus.SCHEDULED;
+    }
   }
 
   private static final RowMapper<GameSummary> GAME_SUMMARY_MAPPER =
