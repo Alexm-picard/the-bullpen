@@ -1,39 +1,43 @@
 /**
- * <FeaturedMatchupPanel> - the featured matchup on the broadcast identity
- * (redesign PR-4, decision [160]). Replaces <FeaturedMatchupCard>: a
- * LowerThird header over a cut-corner BroadcastPanel - batter vs pitcher
- * nameplates with team-color bars, the two key reads as body columns, and the
- * gold CTA link. Same props shape as the card it replaces.
+ * <FeaturedMatchupPanel> - the best battle of the slate on the broadcast
+ * identity (Phase 4b). Reads one {@link FeaturedMatchupView}: the lean badge in
+ * the lower-third meta, the two lean-driven people as team-color nameplates
+ * (two pitchers for a pitching duel, two hitters for a hitters duel, the
+ * stronger side of each for a split lean - the backend classifier already
+ * chose them), the battle score, and real CTAs (nameplates -> player report,
+ * gold link -> the live game).
  */
 
 import { Link } from "react-router-dom";
 
-import type { ScoutingPlayer } from "../../data/matchup-fixtures";
+import type { MatchupSide } from "../../api/matchups-view";
+import type { FeaturedMatchupView } from "../../api/matchups-view";
 import { BroadcastPanel } from "../broadcast/broadcast-panel";
 import { LowerThird } from "../broadcast/lower-third";
 import { colors, typography } from "../../design/broadcast";
 import { teamColor } from "../../design/teamColors";
 
 export type FeaturedMatchupPanelProps = {
-  batter: ScoutingPlayer;
-  pitcher: ScoutingPlayer;
-  /** Free-form context line shown in the lower-third meta slot. */
-  context: string;
-  /** Exactly two key-read paragraphs. */
-  keyReads: [string, string];
-  ctaHref: string;
-  ctaLabel: string;
+  matchup: FeaturedMatchupView;
 };
 
-function Nameplate({ player }: { player: ScoutingPlayer }) {
+function Nameplate({ side }: { side: MatchupSide }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+    <Link
+      to={`/players/${side.playerId}`}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        textDecoration: "none",
+      }}
+    >
       <span
         aria-hidden="true"
         style={{
           width: 5,
           height: 34,
-          backgroundColor: teamColor(player.team),
+          backgroundColor: teamColor(side.team),
           flex: "0 0 auto",
         }}
       />
@@ -49,7 +53,7 @@ function Nameplate({ player }: { player: ScoutingPlayer }) {
             color: colors.ink,
           }}
         >
-          {player.name}
+          {side.name}
         </span>
         <span
           style={{
@@ -60,25 +64,35 @@ function Nameplate({ player }: { player: ScoutingPlayer }) {
             color: colors.textMuted,
           }}
         >
-          {player.team} · {player.position} · {player.hand} · #{player.jersey}
+          {side.team} · {side.role.toUpperCase()}
         </span>
       </div>
-    </div>
+    </Link>
   );
 }
 
-export function FeaturedMatchupPanel({
-  batter,
-  pitcher,
-  context,
-  keyReads,
-  ctaHref,
-  ctaLabel,
-}: FeaturedMatchupPanelProps) {
+const badgeStyle: React.CSSProperties = {
+  display: "inline-block",
+  backgroundColor: colors.chromeDeep,
+  color: colors.textOnChrome,
+  fontFamily: typography.fonts.display,
+  fontStyle: "italic",
+  fontWeight: typography.weights.bold,
+  fontSize: 11,
+  letterSpacing: "0.08em",
+  textTransform: "uppercase",
+  padding: "3px 8px",
+};
+
+export function FeaturedMatchupPanel({ matchup }: FeaturedMatchupPanelProps) {
+  const stageNote =
+    matchup.stage === "lineup" ? "lineup confirmed" : "probables";
   return (
     <div>
       <div style={{ marginBottom: 12 }}>
-        <LowerThird meta={context}>Featured Matchup</LowerThird>
+        <LowerThird meta={`${matchup.leanLabel} · ${matchup.firstPitchEt}`}>
+          Featured Matchup
+        </LowerThird>
       </div>
       <BroadcastPanel cut padding={20}>
         <div
@@ -90,7 +104,7 @@ export function FeaturedMatchupPanel({
             marginBottom: 16,
           }}
         >
-          <Nameplate player={batter} />
+          <Nameplate side={matchup.away} />
           <span
             aria-hidden="true"
             style={{
@@ -105,37 +119,45 @@ export function FeaturedMatchupPanel({
           >
             vs
           </span>
-          <Nameplate player={pitcher} />
+          <Nameplate side={matchup.home} />
         </div>
 
         <div
           style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-            gap: 16,
+            display: "flex",
+            alignItems: "baseline",
+            gap: 12,
+            borderTop: `2px solid ${colors.rule}`,
+            paddingTop: 12,
           }}
         >
-          {keyReads.map((read, i) => (
-            <p
-              key={i}
-              style={{
-                margin: 0,
-                fontFamily: typography.fonts.body,
-                fontSize: 14,
-                lineHeight: typography.lineHeights.body,
-                color: colors.text,
-                borderTop: `2px solid ${colors.rule}`,
-                paddingTop: 10,
-              }}
-            >
-              {read}
-            </p>
-          ))}
+          <span style={badgeStyle}>{matchup.leanLabel}</span>
+          <span
+            style={{
+              fontFamily: typography.fonts.mono,
+              fontSize: 13,
+              fontFeatureSettings: '"tnum" 1',
+              color: colors.text,
+            }}
+          >
+            Battle score {matchup.battleScore.toFixed(1)}
+          </span>
+          <span
+            style={{
+              fontFamily: typography.fonts.mono,
+              fontSize: 11,
+              letterSpacing: "0.04em",
+              textTransform: "uppercase",
+              color: colors.textMuted,
+            }}
+          >
+            {stageNote}
+          </span>
         </div>
 
         <div style={{ marginTop: 18 }}>
           <Link
-            to={ctaHref}
+            to={`/games/${matchup.gameId}`}
             style={{
               fontFamily: typography.fonts.display,
               fontStyle: "italic",
@@ -147,7 +169,7 @@ export function FeaturedMatchupPanel({
               textDecoration: "none",
             }}
           >
-            {ctaLabel}
+            Open the game &rarr;
           </Link>
         </div>
       </BroadcastPanel>
