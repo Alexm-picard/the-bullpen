@@ -8,9 +8,9 @@
  *   2. <BroadcastFleetStrip> - chrome strip of model chips; LIVE from the
  *      registry (useAllRegistryRows + useRouting), honest caption when offline
  *   3. <LiveTonightStrip> - the live /v1/games/today slate
- *   4. <TonightsMatchupsBoard> - per-game lean-aware matchups (the rest of the
+ *   4. <FeaturedMatchupPanel> - the single best battle of the slate (leads the page)
+ *   5. <TonightsMatchupsBoard> - per-game lean-aware matchups (the rest of the
  *      slate after the Featured pick)
- *   5. <FeaturedMatchupPanel> - the single best battle of the slate
  *   6. Chrome footer strip
  *
  * Matchup data posture: LIVE from GET /v1/matchups/today (the morning
@@ -218,6 +218,20 @@ export default function HomePage() {
           )}
         </section>
 
+        {/* Featured matchup: the single best battle of the slate - shown ABOVE the
+            board so the headline matchup leads the page */}
+        {featured && (
+          <div>
+            <FeaturedMatchupPanel matchup={featured} />
+            {!matchupsAreLive && (
+              <p style={captionStyle}>
+                Featured matchup · showcase data (the morning slate has not
+                posted yet)
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Tonight's Matchups: per-game lean-aware board (the rest of the slate) */}
         <section aria-labelledby="slate-section-label">
           <div style={{ marginBottom: 12 }}>
@@ -243,19 +257,6 @@ export default function HomePage() {
             <p style={captionStyle}>No further matchups on the slate yet.</p>
           )}
         </section>
-
-        {/* Featured matchup: the single best battle of the slate */}
-        {featured && (
-          <div>
-            <FeaturedMatchupPanel matchup={featured} />
-            {!matchupsAreLive && (
-              <p style={captionStyle}>
-                Featured matchup · showcase data (the morning slate has not
-                posted yet)
-              </p>
-            )}
-          </div>
-        )}
 
         <footer
           style={{
