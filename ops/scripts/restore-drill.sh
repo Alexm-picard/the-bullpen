@@ -59,6 +59,10 @@ CB_BINARY=${CB_BINARY:-/usr/bin/clickhouse-backup}
 # Required, no default credential. Resolves from CH_PASSWORD or the rotated BULLPEN_CLICKHOUSE_PASSWORD
 # (the app's secret, e.g. from /etc/default/bullpen). Real runs preflight-check it; --dry-run is exempt.
 CH_PASSWORD="${CH_PASSWORD:-${BULLPEN_CLICKHOUSE_PASSWORD:-}}"
+# LIVE ClickHouse user (Path B: post-rotation the app + backup tooling auth as a dedicated `bullpen`
+# SQL user; defaults to `default`). Only the LIVE-connecting paths use it - the throwaway r2 scratch
+# is created + read as `default` and is self-consistent.
+CH_USER="${BULLPEN_CLICKHOUSE_USER:-default}"
 # The app connects to the `default` ClickHouse DB (bullpen.clickhouse.url ends in
 # /default and the user is `default`); the `bullpen` DB is empty on the box. Verify
 # + boot against `default` - the old `bullpen` default made verify query empty
@@ -119,12 +123,13 @@ trap cleanup EXIT
 
 # --- shared scratch lifecycle ----------------------------------------------
 
-cb_config() {  # emit the local-only clickhouse-backup config for a container
+cb_config() {  # emit the local-only clickhouse-backup config for a container; $1 = CH username
+  local user="${1:-default}"
   cat <<EOF
 general:
   remote_storage: none
 clickhouse:
-  username: default
+  username: ${user}
   password: ${CH_PASSWORD}
   host: localhost
   port: 9000
@@ -132,15 +137,15 @@ clickhouse:
 EOF
 }
 
-install_cb() {  # install clickhouse-backup binary + config into a container
-  local container="$1"
+install_cb() {  # install clickhouse-backup binary + config into a container; $2 = CH username
+  local container="$1" user="${2:-default}"
   if ! docker exec "$container" test -x /usr/bin/clickhouse-backup 2>/dev/null; then
     docker cp "$CB_BINARY" "$container:/usr/bin/clickhouse-backup" >/dev/null
   fi
   docker exec "$container" /usr/bin/clickhouse-backup --version >/dev/null \
     || fail "$container: clickhouse-backup not executable"
   docker exec "$container" mkdir -p /etc/clickhouse-backup
-  cb_config | docker exec -i "$container" bash -c 'cat > /etc/clickhouse-backup/config.yml'
+  cb_config "$user" | docker exec -i "$container" bash -c 'cat > /etc/clickhouse-backup/config.yml'
 }
 
 spin_scratch() {
@@ -167,7 +172,7 @@ spin_scratch() {
     sleep 1
     [[ "$i" -eq 60 ]] && fail "scratch did not become ready in 60s"
   done
-  install_cb "$SCRATCH_CONTAINER"
+  install_cb "$SCRATCH_CONTAINER" default
 }
 
 scratch_q() {  # query scratch
@@ -210,7 +215,11 @@ r2_fetch() {
   # + an EXACT size check is the fail-loud completeness gate the old `find data.bin` heuristic
   # lacked - it could not tell an incomplete fetch from a hollow backup. rclone retries transient R2
   # 5xx on its own - do not treat a single 5xx in the log as fatal.
-  run "rclone_ copy '${base}/${name}/clickhouse.tar' '${FETCH_DIR}'" \
+  # --multi-thread-streams 1: rclone's default multi-threaded download of a large object produced a
+  # right-SIZE but CORRUPT file (0 .bin on untar) the size check could not catch. 2026-06-14
+  # confirmation: a single-stream re-download of the same object listed 29,497 .bin and was a valid
+  # tar; the multi-thread copy listed 0. Force one stream for the big object.
+  run "rclone_ copy '${base}/${name}/clickhouse.tar' '${FETCH_DIR}' --multi-thread-streams 1" \
     || fail "rclone copy of clickhouse.tar failed"
   run "rclone_ copy '${base}/${name}/sqlite/registry.sqlite' '${FETCH_DIR}/sqlite'" \
     || fail "rclone copy of registry.sqlite failed"
@@ -223,7 +232,16 @@ r2_fetch() {
   local_bytes=$(stat -c%s "${FETCH_DIR}/clickhouse.tar" 2>/dev/null || echo 0)
   [[ -n "$remote_bytes" && "$remote_bytes" == "$local_bytes" ]] \
     || fail "incomplete fetch: clickhouse.tar local=${local_bytes}B != remote=${remote_bytes:-?}B"
-  log "fetch verified: clickhouse.tar ${local_bytes}B == remote"
+  # CONTENT gate (size alone cannot catch a corrupt-but-right-size download - the multi-thread bug):
+  # the tar must LIST as a valid archive WITH data parts. Fails at "download integrity" with a clear
+  # message instead of later as a confusing "hollow restore".
+  tar -tf "${FETCH_DIR}/clickhouse.tar" >"${DRILL_TMP}/tar-listing.txt" 2>/dev/null \
+    || fail "clickhouse.tar is not a readable tar (corrupt download?) - re-fetch"
+  local bin_count
+  bin_count=$(grep -c '\.bin$' "${DRILL_TMP}/tar-listing.txt" || true)
+  [[ "${bin_count:-0}" -gt 0 ]] \
+    || fail "clickhouse.tar lists 0 data part files (*.bin) - corrupt download or hollow backup; re-fetch"
+  log "fetch verified: clickhouse.tar ${local_bytes}B == remote, ${bin_count} data parts in archive"
   tar -xf "${FETCH_DIR}/clickhouse.tar" -C "${FETCH_DIR}/clickhouse" --strip-components=1 \
     || fail "untar of clickhouse.tar failed"
   # Drop the tar now the extract succeeded - halves peak staging (load_and_restore_ch
@@ -427,17 +445,17 @@ run_local_drill() {
 
   cleanup
   mkdir -p "$DRILL_TMP"  # cleanup rm'd the fresh mktemp dir; local mode writes create/restore logs here
-  install_cb "$LIVE_CONTAINER"
+  install_cb "$LIVE_CONTAINER" "$CH_USER"
 
   log "seed: insert drill marker (id=${DRILL_ID}, note='${DRILL_NOTE}')"
-  docker exec "$LIVE_CONTAINER" clickhouse-client --password "$CH_PASSWORD" --query "
+  docker exec "$LIVE_CONTAINER" clickhouse-client --user "$CH_USER" --password "$CH_PASSWORD" --query "
     INSERT INTO bullpen._drill_marker (id, note) VALUES (${DRILL_ID}, '${DRILL_NOTE}')" \
     || fail "marker insert failed"
-  docker exec "$LIVE_CONTAINER" clickhouse-client --password "$CH_PASSWORD" --query "
+  docker exec "$LIVE_CONTAINER" clickhouse-client --user "$CH_USER" --password "$CH_PASSWORD" --query "
     OPTIMIZE TABLE bullpen._drill_marker FINAL" || fail "optimize failed"
 
   local LIVE_COUNT
-  LIVE_COUNT=$(docker exec "$LIVE_CONTAINER" clickhouse-client --password "$CH_PASSWORD" \
+  LIVE_COUNT=$(docker exec "$LIVE_CONTAINER" clickhouse-client --user "$CH_USER" --password "$CH_PASSWORD" \
     --query "SELECT count() FROM bullpen._drill_marker")
   log "live row count: ${LIVE_COUNT}"
   [[ "$LIVE_COUNT" -ge 1 ]] || fail "live row count is zero - drill cannot prove restore"
@@ -468,12 +486,12 @@ run_local_drill() {
   local SCRATCH_COUNT SCRATCH_HAS_DRILL LIVE_SCHEMA SCRATCH_SCHEMA
   SCRATCH_COUNT=$(scratch_q "SELECT count() FROM bullpen._drill_marker")
   SCRATCH_HAS_DRILL=$(scratch_q "SELECT count() FROM bullpen._drill_marker WHERE note='${DRILL_NOTE}'")
-  LIVE_SCHEMA=$(docker exec "$LIVE_CONTAINER" clickhouse-client --password "$CH_PASSWORD" \
+  LIVE_SCHEMA=$(docker exec "$LIVE_CONTAINER" clickhouse-client --user "$CH_USER" --password "$CH_PASSWORD" \
     --query "SELECT engine_full FROM system.tables WHERE database='bullpen' AND name='_drill_marker'")
   SCRATCH_SCHEMA=$(scratch_q "SELECT engine_full FROM system.tables WHERE database='bullpen' AND name='_drill_marker'")
 
   log "cleanup live: TRUNCATE bullpen._drill_marker + delete drill backup"
-  docker exec "$LIVE_CONTAINER" clickhouse-client --password "$CH_PASSWORD" \
+  docker exec "$LIVE_CONTAINER" clickhouse-client --user "$CH_USER" --password "$CH_PASSWORD" \
     --query "TRUNCATE TABLE bullpen._drill_marker" || true
   docker exec "$LIVE_CONTAINER" /usr/bin/clickhouse-backup delete local "$BACKUP_NAME" >/dev/null 2>&1 || true
 

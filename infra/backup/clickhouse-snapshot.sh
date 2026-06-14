@@ -45,6 +45,9 @@ CH_PASSWORD="${CH_PASSWORD:-${BULLPEN_CLICKHOUSE_PASSWORD:-}}"
   echo "fatal: CH_PASSWORD/BULLPEN_CLICKHOUSE_PASSWORD unset - refusing a default credential" >&2
   exit 1
 }
+# ClickHouse user - Path B points this at the dedicated `bullpen` SQL user post-rotation; defaults
+# to `default`. Must match whichever user owns CH_PASSWORD.
+CH_USER="${CH_USER:-${BULLPEN_CLICKHOUSE_USER:-default}}"
 CB_HOST_BINARY="${CB_HOST_BINARY:-/usr/bin/clickhouse-backup}"
 
 NODE_TEXTFILE_DIR="${NODE_TEXTFILE_DIR:-/var/lib/node_exporter}"
@@ -85,7 +88,7 @@ if ! docker exec "$CH_CONTAINER" test -f /etc/clickhouse-backup/config.yml 2>/de
 general:
   remote_storage: none
 clickhouse:
-  username: default
+  username: ${CH_USER}
   password: ${CH_PASSWORD}
   host: localhost
   port: 9000
@@ -95,7 +98,7 @@ fi
 docker exec "$CH_CONTAINER" /usr/bin/clickhouse-backup create "$NAME" \
   || fail "clickhouse-backup create failed"
 # Sanity: confirm the new backup has at least one data part if any user table has rows
-HAS_ROWS=$(docker exec "$CH_CONTAINER" clickhouse-client --password "$CH_PASSWORD" \
+HAS_ROWS=$(docker exec "$CH_CONTAINER" clickhouse-client --user "$CH_USER" --password "$CH_PASSWORD" \
   --query "SELECT count() FROM system.parts WHERE active AND database NOT IN ('system','INFORMATION_SCHEMA','information_schema')" 2>/dev/null || echo 0)
 if [[ "${HAS_ROWS:-0}" -gt 0 ]]; then
   # *.bin (not data.bin): compact parts use data.bin, wide parts use per-column <col>.bin -
