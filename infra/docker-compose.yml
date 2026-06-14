@@ -10,7 +10,9 @@ services:
       - "9000:9000"   # native
     environment:
       CLICKHOUSE_USER: "${CLICKHOUSE_USER:-default}"
-      CLICKHOUSE_PASSWORD: "${CLICKHOUSE_PASSWORD:-thebullpen}"
+      # Fail-closed: the container refuses to start without the rotated secret (no known default).
+      # Value comes from the single BULLPEN_CLICKHOUSE_PASSWORD the app + scripts also read.
+      CLICKHOUSE_PASSWORD: "${BULLPEN_CLICKHOUSE_PASSWORD:?set BULLPEN_CLICKHOUSE_PASSWORD to the rotated ClickHouse secret (no default)}"
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
     volumes:
       - clickhouse-data:/var/lib/clickhouse

@@ -37,9 +37,14 @@ NAME="auto_${TS}"
 # host yields metadata-only backups with zero data parts. See the 2026-05-23
 # restore drill for the discovery + repro. (CLAUDE.md rule 8 forcing function.)
 CH_CONTAINER="${CH_CONTAINER:-bullpen-clickhouse}"
-# ClickHouse password - env-overridable, defaults to the shared dev/CI value. In prod set
-# CH_PASSWORD via the snapshot unit's EnvironmentFile (/etc/default/bullpen) so it is not the default.
-CH_PASSWORD="${CH_PASSWORD:-thebullpen}"
+# ClickHouse password - required, no default credential. The snapshot unit's EnvironmentFile
+# (/etc/default/bullpen) provides BULLPEN_CLICKHOUSE_PASSWORD (the rotated secret the app reads too);
+# CH_PASSWORD overrides it for ad-hoc runs. Fail-closed if neither is set.
+CH_PASSWORD="${CH_PASSWORD:-${BULLPEN_CLICKHOUSE_PASSWORD:-}}"
+[[ -n "$CH_PASSWORD" ]] || {
+  echo "fatal: CH_PASSWORD/BULLPEN_CLICKHOUSE_PASSWORD unset - refusing a default credential" >&2
+  exit 1
+}
 CB_HOST_BINARY="${CB_HOST_BINARY:-/usr/bin/clickhouse-backup}"
 
 NODE_TEXTFILE_DIR="${NODE_TEXTFILE_DIR:-/var/lib/node_exporter}"
