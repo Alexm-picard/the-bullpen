@@ -161,8 +161,8 @@ public class LivePitchesRepository {
   private static final String INSERT_SCHEDULED_GAME =
       "INSERT INTO scheduled_games"
           + " (game_id, game_date, game_time_utc, home_team, away_team, home_name, away_name,"
-          + " status)"
-          + " VALUES (?,?,?,?,?,?,?,?)";
+          + " status, home_pitcher_id, home_pitcher_name, away_pitcher_id, away_pitcher_name)"
+          + " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)";
 
   /** UTC 'yyyy-MM-dd HH:mm:ss' for the Nullable(DateTime) game_time_utc column. */
   private static final DateTimeFormatter CH_DATETIME =
@@ -294,6 +294,10 @@ public class LivePitchesRepository {
             ps.setString(6, nz(g.homeName()));
             ps.setString(7, nz(g.awayName()));
             ps.setString(8, g.status() == null ? "SCHEDULED" : g.status().name());
+            ps.setLong(9, g.homeProbableId());
+            ps.setString(10, nz(g.homeProbableName()));
+            ps.setLong(11, g.awayProbableId());
+            ps.setString(12, nz(g.awayProbableName()));
           }
 
           @Override

@@ -58,17 +58,19 @@ class MlbFeedParserTest {
   }
 
   @Test
-  void parseSchedule_extracts_start_time_and_team_abbreviations() throws IOException {
-    // Synthetic hydrated schedule (&hydrate=team + a real gameDate) - the captured fixture has
-    // neither, so this is the one place the new fields are exercised end-to-end.
+  void parseSchedule_extracts_start_time_abbreviations_and_probable_pitchers() throws IOException {
+    // Synthetic hydrated schedule (&hydrate=team,probablePitcher + a real gameDate) - the captured
+    // fixture has none of these, so this is the one place the new fields are exercised end-to-end.
     String json =
         "{\"dates\":[{\"games\":[{"
             + "\"gamePk\":777001,"
             + "\"gameDate\":\"2026-06-04T17:10:00Z\","
             + "\"status\":{\"detailedState\":\"Scheduled\"},"
             + "\"teams\":{"
-            + "  \"home\":{\"team\":{\"name\":\"Boston Red Sox\",\"abbreviation\":\"BOS\"}},"
-            + "  \"away\":{\"team\":{\"name\":\"Baltimore Orioles\",\"abbreviation\":\"BAL\"}}"
+            + "  \"home\":{\"team\":{\"name\":\"Boston Red Sox\",\"abbreviation\":\"BOS\"},"
+            + "           \"probablePitcher\":{\"id\":605483,\"fullName\":\"Brayan Bello\"}},"
+            + "  \"away\":{\"team\":{\"name\":\"Baltimore Orioles\",\"abbreviation\":\"BAL\"},"
+            + "           \"probablePitcher\":{\"id\":669203,\"fullName\":\"Grayson Rodriguez\"}}"
             + "}}]}]}";
     List<ScheduledGame> games = parser.parseSchedule(json);
 
@@ -81,6 +83,26 @@ class MlbFeedParserTest {
     assertEquals("Boston Red Sox", g.homeName());
     assertEquals("Baltimore Orioles", g.awayName());
     assertEquals(Instant.parse("2026-06-04T17:10:00Z"), g.gameTimeUtc());
+    assertEquals(605483L, g.homeProbableId());
+    assertEquals("Brayan Bello", g.homeProbableName());
+    assertEquals(669203L, g.awayProbableId());
+    assertEquals("Grayson Rodriguez", g.awayProbableName());
+  }
+
+  @Test
+  void parseSchedule_defaults_probable_pitchers_when_not_announced() throws IOException {
+    // No probablePitcher node (TBD) -> id 0 / name "" sentinels (matching the column defaults).
+    String json =
+        "{\"dates\":[{\"games\":[{"
+            + "\"gamePk\":777002,"
+            + "\"status\":{\"detailedState\":\"Scheduled\"},"
+            + "\"teams\":{\"home\":{\"team\":{\"name\":\"Chicago Cubs\"}},"
+            + "           \"away\":{\"team\":{\"name\":\"St. Louis Cardinals\"}}"
+            + "}}]}]}";
+    ScheduledGame g = parser.parseSchedule(json).get(0);
+    assertEquals(0L, g.homeProbableId());
+    assertEquals("", g.homeProbableName());
+    assertEquals(0L, g.awayProbableId());
   }
 
   @Test

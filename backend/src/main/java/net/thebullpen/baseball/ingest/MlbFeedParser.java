@@ -48,7 +48,13 @@ public class MlbFeedParser {
                 textOrNull(teams.path("away").path("team").path("abbreviation")),
                 textOrNull(teams.path("home").path("team").path("name")),
                 textOrNull(teams.path("away").path("team").path("name")),
-                parseScheduledStart(textOrNull(g.path("gameDate")))));
+                parseScheduledStart(textOrNull(g.path("gameDate"))),
+                // probablePitcher present only with &hydrate=probablePitcher; 0 / "" = not yet
+                // announced (TBD, or a late scratch the ~1-2h-before refresh re-confirms).
+                teams.path("home").path("probablePitcher").path("id").asLong(0),
+                teams.path("home").path("probablePitcher").path("fullName").asText(""),
+                teams.path("away").path("probablePitcher").path("id").asLong(0),
+                teams.path("away").path("probablePitcher").path("fullName").asText("")));
       }
     }
     return games;

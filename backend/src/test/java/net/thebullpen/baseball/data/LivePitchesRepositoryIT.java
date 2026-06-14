@@ -153,7 +153,7 @@ class LivePitchesRepositoryIT {
   }
 
   @Test
-  void findGamesForDate_surfaces_a_pre_game_scheduled_game_with_no_pitches() {
+  void findGamesForDate_surfaces_a_pre_game_scheduled_game_with_no_pitches() throws Exception {
     LocalDate target = LocalDate.of(2026, 6, 5);
     // The slate's whole point: a game with NO pitches yet still shows, from scheduled_games.
     repo.upsertScheduledGames(
@@ -165,7 +165,11 @@ class LivePitchesRepositoryIT {
                 "SF",
                 "Los Angeles Dodgers",
                 "San Francisco Giants",
-                Instant.parse("2026-06-05T20:10:00Z"))),
+                Instant.parse("2026-06-05T20:10:00Z"),
+                600001L,
+                "Gerrit Cole",
+                600002L,
+                "Corbin Burnes")),
         target);
 
     List<GameSummary> games = repo.findGamesForDate(target);
@@ -179,6 +183,18 @@ class LivePitchesRepositoryIT {
     assertEquals(0, g.homeScore()); // pre-game: no pitches -> 0
     assertEquals(0, g.inning());
     assertEquals("SCHEDULED", g.status());
+
+    // Phase 2a: the probable pitchers round-trip (no GameSummary field yet - read them directly).
+    try (var conn = clickhouseDs.getConnection();
+        var stmt = conn.createStatement();
+        var rs =
+            stmt.executeQuery(
+                "SELECT home_pitcher_name, away_pitcher_id FROM scheduled_games FINAL"
+                    + " WHERE game_id = 303")) {
+      assertTrue(rs.next());
+      assertEquals("Gerrit Cole", rs.getString("home_pitcher_name"));
+      assertEquals(600002L, rs.getLong("away_pitcher_id"));
+    }
   }
 
   @Test
@@ -186,7 +202,9 @@ class LivePitchesRepositoryIT {
     LocalDate target = LocalDate.of(2026, 6, 5);
     insertPitch(401L, target, 1, 1, "BOS", "NYY", 4); // live (pitches), no scheduled_games row
     repo.upsertScheduledGames(
-        List.of(new ScheduledGame(402L, GameStatus.SCHEDULED, "LAD", "SF", "LA", "SF", null)),
+        List.of(
+            new ScheduledGame(
+                402L, GameStatus.SCHEDULED, "LAD", "SF", "LA", "SF", null, 0L, "", 0L, "")),
         target); // pre-game (scheduled), no pitches
 
     List<GameSummary> games = repo.findGamesForDate(target);
