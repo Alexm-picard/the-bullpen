@@ -1,66 +1,63 @@
 /**
- * <TonightsMatchupsBoard> (redesign PR-4): the six-column contract, team-color
- * bars (fills only), the broadcast EDGE tint, and the OPEN link target.
+ * <TonightsMatchupsBoard> (Phase 4b): the six-column contract, team-color marks,
+ * the lean-driven people, the lean badge + battle score, and the OPEN target
+ * (the live game).
  */
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 
-import type { TonightMatchup } from "../../data/home-fixtures";
-import { EDGE_METRIC } from "../../data/home-fixtures";
-import { colors } from "../../design/broadcast";
-import { cellColorWith, rampFrom } from "../../design/cellColor";
+import type { BoardRowView } from "../../api/matchups-view";
 import { teamColor } from "../../design/teamColors";
 
 import { TonightsMatchupsBoard } from "./tonights-matchups-board";
 
-const MATCHUP: TonightMatchup = {
-  id: "nyy-det",
-  away: "NYY",
-  home: "DET",
-  timeEt: "7:10 PM ET",
-  awayStarter: { name: "Gerrit Cole", hand: "R" },
-  homeStarter: { name: "Tarik Skubal", hand: "L" },
-  edge: 1.4,
-  topRead: "Skubal's whiff rate vs the Yankees' chase profile.",
-  batterId: "judge_aaron",
+const ROW: BoardRowView = {
+  gameId: 823412,
+  awayTeam: "NYY",
+  homeTeam: "DET",
+  firstPitchEt: "7:10 PM ET",
+  away: { playerId: 543037, name: "Gerrit Cole", team: "NYY", role: "pitcher" },
+  home: {
+    playerId: 669373,
+    name: "Tarik Skubal",
+    team: "DET",
+    role: "pitcher",
+  },
+  leanLabel: "Pitching Duel",
+  battleScore: 7.4,
+  stage: "default",
 };
 
-function render(): string {
+function render(rows: BoardRowView[] = [ROW]): string {
   return renderToStaticMarkup(
     <MemoryRouter>
-      <TonightsMatchupsBoard matchups={[MATCHUP]} caption="showcase" />
+      <TonightsMatchupsBoard rows={rows} caption="showcase" />
     </MemoryRouter>,
   );
 }
 
 describe("TonightsMatchupsBoard", () => {
-  it("renders matchup, time, starters, edge, and top read", () => {
+  it("renders matchup, first pitch, the people, lean, and battle score", () => {
     const html = render();
     expect(html).toContain("NYY");
     expect(html).toContain("DET");
     expect(html).toContain("7:10 PM ET");
     expect(html).toContain("Gerrit Cole");
     expect(html).toContain("Tarik Skubal");
-    expect(html).toContain("+1.4");
-    expect(html).toContain("whiff rate");
+    expect(html).toContain("Pitching Duel");
+    expect(html).toContain("7.4");
   });
 
-  it("draws team-color bars and the broadcast-ramp EDGE tint", () => {
+  it("draws team-color marks for both sides", () => {
     const html = render();
     expect(html).toContain(teamColor("NYY"));
     expect(html).toContain(teamColor("DET"));
-    const expectedTint = cellColorWith(
-      rampFrom(colors.condFormat),
-      MATCHUP.edge,
-      EDGE_METRIC,
-    );
-    expect(html.toLowerCase()).toContain(expectedTint.toLowerCase());
   });
 
-  it("links the OPEN cell to the batter's report", () => {
+  it("links the OPEN cell to the live game", () => {
     const html = render();
-    expect(html).toContain('href="/players/judge_aaron"');
-    expect(html).toContain("Open report for NYY at DET");
+    expect(html).toContain('href="/games/823412"');
+    expect(html).toContain("Open game for NYY at DET");
   });
 });

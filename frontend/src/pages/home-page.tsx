@@ -1,24 +1,29 @@
 /**
  * /home - Tonight's Slate on the BROADCAST identity (redesign PR-4, decision
- * [160]).
+ * [160]; matchup wiring Phase 4b).
  *
  * Composition (light field under dark chrome):
- *   1. Masthead - condensed-italic h1 + mono byline (date, issue time,
- *      matchup count, LHP/RHP split, first-pitch window)
+ *   1. Masthead - condensed-italic h1 + mono byline (date, issue time, matchup
+ *      count, live/showcase, first-pitch window derived from the slate)
  *   2. <BroadcastFleetStrip> - chrome strip of model chips; LIVE from the
- *      registry (useAllRegistryRows + useRouting) with the honest showcase
- *      caption when the backend is unreachable
- *   3. <TonightsMatchupsBoard> - the 6-col slate, EDGE tint from the
- *      broadcast condFormat ramp, team-color bars in the matchup cell
- *   4. <FeaturedMatchupPanel> - LowerThird + cut panel + gold CTA
- *   5. Chrome footer strip
+ *      registry (useAllRegistryRows + useRouting), honest caption when offline
+ *   3. <LiveTonightStrip> - the live /v1/games/today slate
+ *   4. <TonightsMatchupsBoard> - per-game lean-aware matchups (the rest of the
+ *      slate after the Featured pick)
+ *   5. <FeaturedMatchupPanel> - the single best battle of the slate
+ *   6. Chrome footer strip
  *
- * Data posture unchanged (W7): the fleet strip is live; the slate + featured
- * matchup remain showcase fixtures (no backend endpoint carries starters /
- * edge / top-reads yet - the hook point stays GET /v1/games/today once it
- * does), captioned honestly. This page imports ONLY the broadcast namespace.
+ * Matchup data posture: LIVE from GET /v1/matchups/today (the morning
+ * pitcher-vs-pitcher pass + the ~20-min lineup re-classification). When the
+ * endpoint is empty (the slate has not posted yet) or the backend is
+ * unreachable, the board + Featured panel fall back to SHOWCASE_MATCHUPS with an
+ * honest "showcase data" caption - the same posture as the fleet strip. This
+ * page imports ONLY the broadcast namespace.
  */
 
+import type { MatchupSummary } from "../api/matchups";
+import { useTodaysMatchups } from "../api/matchups";
+import { firstPitchEt, splitSlate } from "../api/matchups-view";
 import { useTodaysGames } from "../api/games";
 import { useAllRegistryRows, useRouting } from "../api/ops";
 import { toFleetRows } from "../api/ops-mappers";
@@ -27,15 +32,9 @@ import { FeaturedMatchupPanel } from "../components/home/featured-matchup-panel"
 import { LiveTonightStrip } from "../components/home/live-tonight-strip";
 import { TonightsMatchupsBoard } from "../components/home/tonights-matchups-board";
 import { LowerThird } from "../components/broadcast/lower-third";
-import {
-  FEATURED_CONTEXT,
-  FEATURED_KEY_READS,
-  ISSUE_META,
-  MODEL_CHIPS,
-  TONIGHT_MATCHUPS,
-} from "../data/home-fixtures";
+import { ISSUE_META, MODEL_CHIPS } from "../data/home-fixtures";
 import type { ModelChip, ModelChipState } from "../data/home-fixtures";
-import { PLAYERS } from "../data/matchup-fixtures";
+import { SHOWCASE_MATCHUPS } from "../data/matchups-showcase";
 import { colors, layouts, typography } from "../design/broadcast";
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -54,18 +53,23 @@ const ET_DATE = new Intl.DateTimeFormat("en-US", {
   timeZone: "America/New_York",
 });
 
-// ── Helpers (carried over unchanged) ──────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-function computeHandCounts() {
-  let l = 0;
-  let r = 0;
-  for (const m of TONIGHT_MATCHUPS) {
-    if (m.awayStarter.hand === "L") l++;
-    else r++;
-    if (m.homeStarter.hand === "L") l++;
-    else r++;
+/** The earliest..latest first-pitch window for the slate, ET, or "TBD". */
+function firstPitchWindow(slate: MatchupSummary[]): string {
+  const times = slate
+    .map((m) => m.gameTimeUtc)
+    .filter((t): t is string => !!t)
+    .map((t) => Date.parse(t))
+    .filter((n) => !Number.isNaN(n));
+  if (times.length === 0) {
+    return "TBD";
   }
-  return { l, r };
+  const lo = new Date(Math.min(...times)).toISOString();
+  const hi = new Date(Math.max(...times)).toISOString();
+  return lo === hi
+    ? firstPitchEt(lo)
+    : `${firstPitchEt(lo)} - ${firstPitchEt(hi)}`;
 }
 
 /**
@@ -122,6 +126,8 @@ export default function HomePage() {
   const routing = useRouting();
   // Tonight's Games strip: LIVE from the same /v1/games/today slate /games uses.
   const todaysGames = useTodaysGames();
+  // Matchups: LIVE from /v1/matchups/today, showcase fallback when empty/offline.
+  const matchups = useTodaysMatchups();
 
   const liveChips =
     registry.data && registry.data.length > 0
@@ -130,14 +136,10 @@ export default function HomePage() {
   const chips = liveChips ?? MODEL_CHIPS;
   const ribbonIsLive = liveChips !== null;
 
-  const { l: lhpCount, r: rhpCount } = computeHandCounts();
-  const featuredBatter = PLAYERS.judge_aaron;
-  const featuredPitcher = PLAYERS.skubal_tarik;
-  if (!featuredBatter || !featuredPitcher) {
-    throw new Error(
-      "home fixture inconsistency: missing featured Judge/Skubal",
-    );
-  }
+  const matchupsAreLive = !!matchups.data && matchups.data.length > 0;
+  const slate = matchupsAreLive ? matchups.data : SHOWCASE_MATCHUPS;
+  const { featured, board } = splitSlate(slate);
+  const matchupSource = matchupsAreLive ? "live slate" : "showcase";
 
   const now = new Date();
   const issuedAt = `${ET_TIME.format(now)} ET`;
@@ -172,9 +174,8 @@ export default function HomePage() {
               color: colors.textMuted,
             }}
           >
-            {issueDate} · issued {issuedAt} · {TONIGHT_MATCHUPS.length} games ·{" "}
-            {lhpCount} LHP / {rhpCount} RHP · first pitch{" "}
-            {ISSUE_META.firstPitchWindow}
+            {issueDate} · issued {issuedAt} · {slate.length} matchups ·{" "}
+            {matchupSource} · first pitch {firstPitchWindow(slate)}
           </p>
         </header>
 
@@ -188,9 +189,7 @@ export default function HomePage() {
           )}
         </div>
 
-        {/* Tonight's Games: LIVE slate from /v1/games/today (FE-H1, the deferred
-            half). The showcase matchups board below carries edge model reads,
-            which have no live endpoint yet. */}
+        {/* Tonight's Games: LIVE slate from /v1/games/today */}
         <section aria-labelledby="tonight-games-label">
           <div style={{ marginBottom: 12 }}>
             <LowerThird
@@ -219,38 +218,44 @@ export default function HomePage() {
           )}
         </section>
 
-        {/* Tonight's slate: showcase fixture - no live endpoint for
-            starters, edge scores, or top-reads yet */}
+        {/* Tonight's Matchups: per-game lean-aware board (the rest of the slate) */}
         <section aria-labelledby="slate-section-label">
           <div style={{ marginBottom: 12 }}>
             <LowerThird
               id="slate-section-label"
-              meta={`${TONIGHT_MATCHUPS.length} GAMES`}
+              meta={
+                matchupsAreLive ? `LIVE · ${board.length} GAMES` : "SHOWCASE"
+              }
             >
               Tonight&rsquo;s Matchups
             </LowerThird>
           </div>
-          <TonightsMatchupsBoard
-            matchups={TONIGHT_MATCHUPS}
-            caption="Tonight's slate · edge model reads · starters · showcase data (no live slate endpoint yet)"
-          />
+          {board.length > 0 ? (
+            <TonightsMatchupsBoard
+              rows={board}
+              caption={
+                matchupsAreLive
+                  ? "Tonight's slate · lean-aware matchups from the morning + lineup passes"
+                  : "Tonight's slate · showcase data (the morning slate has not posted yet)"
+              }
+            />
+          ) : (
+            <p style={captionStyle}>No further matchups on the slate yet.</p>
+          )}
         </section>
 
-        {/* Featured matchup: showcase fixture for the same reason */}
-        <div>
-          <FeaturedMatchupPanel
-            batter={featuredBatter}
-            pitcher={featuredPitcher}
-            context={FEATURED_CONTEXT}
-            keyReads={FEATURED_KEY_READS}
-            ctaHref={`/players/${featuredBatter.id}`}
-            ctaLabel="Pull the full report →"
-          />
-          <p style={captionStyle}>
-            Featured matchup · showcase data (no live endpoint for starters /
-            edge / top-reads)
-          </p>
-        </div>
+        {/* Featured matchup: the single best battle of the slate */}
+        {featured && (
+          <div>
+            <FeaturedMatchupPanel matchup={featured} />
+            {!matchupsAreLive && (
+              <p style={captionStyle}>
+                Featured matchup · showcase data (the morning slate has not
+                posted yet)
+              </p>
+            )}
+          </div>
+        )}
 
         <footer
           style={{

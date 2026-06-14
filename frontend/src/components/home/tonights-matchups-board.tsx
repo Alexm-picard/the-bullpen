@@ -1,28 +1,23 @@
 /**
  * <TonightsMatchupsBoard> - the /home slate on the broadcast identity
- * (redesign PR-4, decision [160]). Replaces <TonightsMatchupsTable>: same six
- * columns (matchup / time / starters / EDGE / top read / open), now with
- * team-color bars in the matchup cell (fills only) and the EDGE heat tint
- * drawn from the BROADCAST condFormat ramp via cellColorWith.
+ * (Phase 4b). Reads the live {@link BoardRowView}s from GET /v1/matchups/today:
+ * six columns - matchup (team-color marks) / first pitch / the two lean-driven
+ * people / the lean badge / battle score / open. The people and the lean are
+ * already chosen by the backend classifier; the board only renders them.
  *
  * Same custom-<table> rationale as before: the OPEN cell must be a real <a>.
- * The a11y rule holds - the EDGE value text always renders on the tint.
  */
 
 import { Link } from "react-router-dom";
 
-import type { TonightMatchup } from "../../data/home-fixtures";
-import { EDGE_METRIC } from "../../data/home-fixtures";
+import type { BoardRowView } from "../../api/matchups-view";
 import { colors, typography } from "../../design/broadcast";
-import { cellColorWith, rampFrom } from "../../design/cellColor";
 import { teamColor } from "../../design/teamColors";
 
 export type TonightsMatchupsBoardProps = {
-  matchups: TonightMatchup[];
+  rows: BoardRowView[];
   caption?: string;
 };
-
-const BROADCAST_RAMP = rampFrom(colors.condFormat);
 
 const border = `1px solid ${colors.rule}`;
 
@@ -57,10 +52,19 @@ const monoCell: React.CSSProperties = {
   fontFeatureSettings: '"tnum" 1',
 };
 
-function formatEdge(edge: number): string {
-  const sign = edge > 0 ? "+" : edge < 0 ? "" : " ";
-  return `${sign}${edge.toFixed(1)}`;
-}
+const leanBadge: React.CSSProperties = {
+  display: "inline-block",
+  backgroundColor: colors.chromeDeep,
+  color: colors.textOnChrome,
+  fontFamily: typography.fonts.display,
+  fontStyle: "italic",
+  fontWeight: typography.weights.bold,
+  fontSize: 11,
+  letterSpacing: "0.06em",
+  textTransform: "uppercase",
+  padding: "2px 7px",
+  whiteSpace: "nowrap",
+};
 
 function TeamMark({ team }: { team: string }) {
   return (
@@ -90,8 +94,25 @@ function TeamMark({ team }: { team: string }) {
   );
 }
 
+function Person({ name, role }: { name: string; role: string }) {
+  return (
+    <>
+      <span style={{ fontWeight: typography.weights.semibold }}>{name}</span>{" "}
+      <span
+        style={{
+          fontFamily: typography.fonts.mono,
+          fontSize: 12,
+          color: colors.textMuted,
+        }}
+      >
+        · {role}
+      </span>
+    </>
+  );
+}
+
 export function TonightsMatchupsBoard({
-  matchups,
+  rows,
   caption,
 }: TonightsMatchupsBoardProps) {
   return (
@@ -125,16 +146,16 @@ export function TonightsMatchupsBoard({
               Matchup
             </th>
             <th scope="col" style={headCell}>
-              Time
+              First Pitch
             </th>
             <th scope="col" style={headCell}>
-              Starters
+              Featured
+            </th>
+            <th scope="col" style={headCell}>
+              Lean
             </th>
             <th scope="col" style={{ ...headCell, textAlign: "right" }}>
-              Edge
-            </th>
-            <th scope="col" style={headCell}>
-              Top Read
+              Battle
             </th>
             <th
               scope="col"
@@ -145,93 +166,67 @@ export function TonightsMatchupsBoard({
           </tr>
         </thead>
         <tbody>
-          {matchups.map((m) => {
-            const edgeBg = cellColorWith(BROADCAST_RAMP, m.edge, EDGE_METRIC);
-            return (
-              <tr key={m.id}>
-                <th
-                  scope="row"
-                  style={{ ...cell, whiteSpace: "nowrap", textAlign: "left" }}
-                >
-                  <TeamMark team={m.away} />
-                  <span
-                    aria-hidden="true"
-                    style={{
-                      color: colors.steel,
-                      margin: "0 8px",
-                      fontSize: 10,
-                    }}
-                  >
-                    ◆
-                  </span>
-                  <TeamMark team={m.home} />
-                </th>
-                <td style={monoCell}>{m.timeEt}</td>
-                <td style={cell}>
-                  <span style={{ fontWeight: typography.weights.semibold }}>
-                    {m.awayStarter.name}
-                  </span>{" "}
-                  <span
-                    style={{
-                      fontFamily: typography.fonts.mono,
-                      fontSize: 12,
-                      color: colors.textMuted,
-                    }}
-                  >
-                    · {m.awayStarter.hand}
-                  </span>
-                  <span style={{ color: colors.textMuted, margin: "0 6px" }}>
-                    /
-                  </span>
-                  <span style={{ fontWeight: typography.weights.semibold }}>
-                    {m.homeStarter.name}
-                  </span>{" "}
-                  <span
-                    style={{
-                      fontFamily: typography.fonts.mono,
-                      fontSize: 12,
-                      color: colors.textMuted,
-                    }}
-                  >
-                    · {m.homeStarter.hand}
-                  </span>
-                </td>
-                <td
+          {rows.map((m) => (
+            <tr key={m.gameId}>
+              <th
+                scope="row"
+                style={{ ...cell, whiteSpace: "nowrap", textAlign: "left" }}
+              >
+                <TeamMark team={m.awayTeam} />
+                <span
+                  aria-hidden="true"
                   style={{
-                    ...monoCell,
-                    backgroundColor: edgeBg,
-                    textAlign: "right",
-                    fontWeight: typography.weights.bold,
+                    color: colors.steel,
+                    margin: "0 8px",
+                    fontSize: 10,
                   }}
-                  aria-label={`Edge ${formatEdge(m.edge)} runs`}
                 >
-                  {formatEdge(m.edge)}
-                </td>
-                <td style={cell}>{m.topRead}</td>
-                <td
-                  style={{ ...cell, textAlign: "right", borderRight: "none" }}
+                  ◆
+                </span>
+                <TeamMark team={m.homeTeam} />
+              </th>
+              <td style={monoCell}>{m.firstPitchEt}</td>
+              <td style={cell}>
+                <Person name={m.away.name} role={m.away.role} />
+                <span style={{ color: colors.textMuted, margin: "0 6px" }}>
+                  vs
+                </span>
+                <Person name={m.home.name} role={m.home.role} />
+              </td>
+              <td style={cell}>
+                <span style={leanBadge}>{m.leanLabel}</span>
+              </td>
+              <td
+                style={{
+                  ...monoCell,
+                  textAlign: "right",
+                  fontWeight: typography.weights.bold,
+                }}
+                aria-label={`Battle score ${m.battleScore.toFixed(1)}`}
+              >
+                {m.battleScore.toFixed(1)}
+              </td>
+              <td style={{ ...cell, textAlign: "right", borderRight: "none" }}>
+                <Link
+                  to={`/games/${m.gameId}`}
+                  style={{
+                    fontFamily: typography.fonts.display,
+                    fontStyle: "italic",
+                    fontWeight: typography.weights.bold,
+                    fontSize: 13,
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    color: colors.goldInk,
+                    textDecoration: "none",
+                    whiteSpace: "nowrap",
+                  }}
+                  aria-label={`Open game for ${m.awayTeam} at ${m.homeTeam}`}
                 >
-                  <Link
-                    to={`/players/${m.batterId}`}
-                    style={{
-                      fontFamily: typography.fonts.display,
-                      fontStyle: "italic",
-                      fontWeight: typography.weights.bold,
-                      fontSize: 13,
-                      letterSpacing: "0.08em",
-                      textTransform: "uppercase",
-                      color: colors.goldInk,
-                      textDecoration: "none",
-                      whiteSpace: "nowrap",
-                    }}
-                    aria-label={`Open report for ${m.away} at ${m.home}`}
-                  >
-                    Open &rarr;
-                  </Link>
-                </td>
-              </tr>
-            );
-          })}
+                  Open &rarr;
+                </Link>
+              </td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>
