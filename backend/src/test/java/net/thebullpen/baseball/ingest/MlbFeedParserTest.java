@@ -143,6 +143,33 @@ class MlbFeedParserTest {
   }
 
   @Test
+  void parseLineup_reads_batting_orders_and_names() throws IOException {
+    String json =
+        "{\"teams\":{"
+            + "\"home\":{\"battingOrder\":[660271,592450],\"players\":{"
+            + "  \"ID660271\":{\"person\":{\"id\":660271,\"fullName\":\"Shohei Ohtani\"}},"
+            + "  \"ID592450\":{\"person\":{\"id\":592450,\"fullName\":\"Aaron Judge\"}}}},"
+            + "\"away\":{\"battingOrder\":[605141],\"players\":{"
+            + "  \"ID605141\":{\"person\":{\"id\":605141,\"fullName\":\"Mookie Betts\"}}}}"
+            + "}}";
+    Lineup lu = parser.parseLineup(json, 745804L);
+    assertEquals(745804L, lu.gamePk());
+    assertEquals(2, lu.home().size());
+    assertEquals(660271L, lu.home().get(0).id());
+    assertEquals("Shohei Ohtani", lu.home().get(0).name());
+    assertEquals("Aaron Judge", lu.home().get(1).name());
+    assertEquals(1, lu.away().size());
+    assertEquals("Mookie Betts", lu.away().get(0).name());
+  }
+
+  @Test
+  void parseLineup_is_empty_before_the_lineup_posts() throws IOException {
+    Lineup lu = parser.parseLineup("{\"teams\":{\"home\":{},\"away\":{}}}", 1L);
+    assertTrue(lu.home().isEmpty());
+    assertTrue(lu.away().isEmpty());
+  }
+
+  @Test
   void parseLiveFeed_reads_game_metadata() throws IOException {
     LiveGameFeed feed = parser.parseLiveFeed(resource("/mlb/feed_live_824753.json"));
 

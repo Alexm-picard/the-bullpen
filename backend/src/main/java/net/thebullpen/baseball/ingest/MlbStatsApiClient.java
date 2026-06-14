@@ -95,6 +95,15 @@ public class MlbStatsApiClient {
         getWithRetry(baseUrl + "/api/v1/people?personIds=" + ids + "&hydrate=" + hydrate));
   }
 
+  /**
+   * A game's posted lineups (boxscore batting order). Empty lists until the lineup is posted (~1-2h
+   * before first pitch); the lineup job retries on its next tick.
+   */
+  public Lineup fetchLineup(long gamePk) throws IOException {
+    return parser.parseLineup(
+        getWithRetry(baseUrl + "/api/v1/game/" + gamePk + "/boxscore"), gamePk);
+  }
+
   /** The GUMBO live feed for one game, parsed into status + every pitch so far. */
   public LiveGameFeed fetchLiveFeed(long gamePk) throws IOException {
     return parser.parseLiveFeed(getWithRetry(baseUrl + "/api/v1.1/game/" + gamePk + "/feed/live"));

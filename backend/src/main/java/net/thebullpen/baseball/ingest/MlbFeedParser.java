@@ -172,6 +172,27 @@ public class MlbFeedParser {
   }
 
   /**
+   * Parse a game's boxscore ({@code /api/v1/game/{pk}/boxscore}) into the home/away batting orders
+   * (id + display name). Both lists are empty until the lineup is posted (~1-2h before first
+   * pitch). Names come from the team's {@code players} map keyed {@code "ID<id>"}.
+   */
+  public Lineup parseLineup(String json, long gamePk) throws IOException {
+    JsonNode teams = mapper.readTree(json).path("teams");
+    return new Lineup(gamePk, battingOrder(teams.path("home")), battingOrder(teams.path("away")));
+  }
+
+  private static List<Lineup.LineupBatter> battingOrder(JsonNode team) {
+    List<Lineup.LineupBatter> out = new ArrayList<>();
+    JsonNode players = team.path("players");
+    for (JsonNode idNode : team.path("battingOrder")) {
+      long id = idNode.asLong();
+      String name = players.path("ID" + id).path("person").path("fullName").asText("");
+      out.add(new Lineup.LineupBatter(id, name));
+    }
+    return out;
+  }
+
+  /**
    * Parse a GUMBO live feed into the game's status and every pitch seen so far. Pre-pitch count,
    * base occupancy, outs, and score are reconstructed by walking the plays in order (see {@link
    * LivePitch}); base occupancy and outs reset at each half-inning boundary.
