@@ -90,6 +90,20 @@ DRILL_WORKER_PORT="${DRILL_WORKER_PORT:-18081}"
 BOOT_TIMEOUT="${BOOT_TIMEOUT:-120}"       # seconds to reach actuator UP
 WORKER_SETTLE="${WORKER_SETTLE:-10}"      # seconds to confirm worker doesn't crash-loop post-UP
 
+# The api profile eager-loads the toy batted-ball ONNX (ToyBattedBallInference, @Profile("api"),
+# @PostConstruct) as a serving fallback. Its artifacts-dir + contract-path DEFAULT to paths relative
+# to the JVM CWD (../training/artifacts/_toy/v0, ../contracts/feature_pipeline_toy.json), assuming
+# CWD=backend/. The drill launches the scratch JVM from an arbitrary CWD, so those relatives resolve
+# one level too high and the api context crashes at boot on a missing toy model - even when the DATA
+# restored perfectly (the 2026-06-15 drill finding: the restore PASSED, only this boot step crashed).
+# Pass ABSOLUTE paths the way the systemd unit does (BULLPEN_INFERENCE_TOY_ARTIFACTS_DIR). Defaults
+# derive from this script's own location, so they hold regardless of CWD; override either to point at
+# a deployed artifact location.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+TOY_ARTIFACTS_DIR="${BULLPEN_INFERENCE_TOY_ARTIFACTS_DIR:-${REPO_ROOT}/training/artifacts/_toy/v0}"
+TOY_CONTRACT_PATH="${BULLPEN_INFERENCE_CONTRACT_PATH:-${REPO_ROOT}/contracts/feature_pipeline_toy.json}"
+
 # One per-run temp dir on a DISK-backed fs (NOT tmpfs). Two drill findings drive this:
 #   - /tmp is tmpfs on the box (~5.8G); r2 mode stages a multi-GB clickhouse.tar AND
 #     its extraction, which truncates as the dataset grows (the hollow-extract FAIL).
@@ -332,10 +346,15 @@ boot_profile() {
   local profile="$1" port="$2"
   log "boot: ${profile} profile on :${port} (scratch CH + scratch registry, ingest off)"
   if [[ "$DRY_RUN" == "1" ]]; then
-    log "  [dry-run] ${JAVA_BIN} -jar ${BULLPEN_JAR} --spring.profiles.active=${profile} --server.port=${port} ..."
+    log "  [dry-run] ${JAVA_BIN} -jar ${BULLPEN_JAR} --spring.profiles.active=${profile} --server.port=${port} --bullpen.inference.toy.artifacts-dir=${TOY_ARTIFACTS_DIR} ..."
     return 0
   fi
   [[ -f "$BULLPEN_JAR" ]] || fail "JAR not found at ${BULLPEN_JAR} (set BULLPEN_JAR)"
+  # api eager-loads the toy ONNX at boot; a missing artifact crashes the context (not a DATA failure).
+  # Fail here with an actionable message instead of a cryptic "process exited during startup".
+  if [[ "$profile" == "api" && ! -f "${TOY_ARTIFACTS_DIR}/model.onnx" ]]; then
+    fail "toy ONNX missing at ${TOY_ARTIFACTS_DIR}/model.onnx (api eager-loads it via ToyBattedBallInference); run 'uv run python -m bullpen_training.battedball.export_toy_onnx' in ${REPO_ROOT}, or set BULLPEN_INFERENCE_TOY_ARTIFACTS_DIR"
+  fi
   "$JAVA_BIN" -jar "$BULLPEN_JAR" \
     --spring.profiles.active="$profile" \
     --server.port="$port" \
@@ -347,6 +366,8 @@ boot_profile() {
     --spring.flyway.url="jdbc:sqlite:${SCRATCH_REGISTRY}" \
     --bullpen.ingest.live.enabled=false \
     --bullpen.ingest.players.enabled=false \
+    --bullpen.inference.toy.artifacts-dir="$TOY_ARTIFACTS_DIR" \
+    --bullpen.inference.contract-path="$TOY_CONTRACT_PATH" \
     >"${DRILL_TMP}/boot-${profile}.log" 2>&1 &
   local pid=$!
   APP_PIDS+=("$pid")
