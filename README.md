@@ -44,6 +44,16 @@ drift postmortem.
   Every commit also gates on lint, hex-codes, bundle-budget, static a11y, and a
   Schemathesis API-contract check.
 
+## Screenshots
+
+The live site ([thebullpen.net](https://thebullpen.net)):
+
+|                              Tonight's slate                               |                                 Ops dashboard                                 |
+| :------------------------------------------------------------------------: | :---------------------------------------------------------------------------: |
+| [![Tonight's slate](docs/screenshots/home.png)](docs/screenshots/home.png) |    [![Ops dashboard](docs/screenshots/ops.png)](docs/screenshots/ops.png)     |
+|                               **Live game**                                |                             **Park HR explorer**                              |
+|    [![Live game](docs/screenshots/game.png)](docs/screenshots/game.png)    | [![Park HR explorer](docs/screenshots/parks.png)](docs/screenshots/parks.png) |
+
 ## How to try it
 
 The simplest path is the live site above. Local dev:
@@ -108,31 +118,30 @@ check before re-litigating:
 - [`CLAUDE.md`](CLAUDE.md) — non-negotiable discipline rules.
 - ADRs (long-form, top ~15 % of decisions): [`docs/adr/`](docs/adr/)
 
-### Architecture (sketch)
+### Architecture
 
-```
-  Statcast / MLB Stats API / Weather
-                 │
-                 ▼
-        ┌────────────────┐         ┌─────────────────────┐
-        │   ClickHouse   │◀────────│   Training (Python) │
-        │ pitches+drift  │         │  rolling-CV → ONNX  │
-        └────────┬───────┘         └────────┬────────────┘
-                 │                          │
-                 ▼                          ▼
-        ┌────────────────┐         ┌─────────────────────┐
-        │ Spring 3 + JVM │◀────────│   Registry (SQLite) │
-        │ ONNX inference │         │  versions · A/B     │
-        └────────┬───────┘         └─────────────────────┘
-                 │
-                 ▼
-        React + Mantine + TanStack (this site)
-```
+```mermaid
+flowchart TD
+    SRC["Statcast · MLB Stats API · Weather"]
+    TR["Training (Python, off the serving path)<br/>rolling-origin CV -> ONNX + metadata + Parquet"]
+    CH[("ClickHouse<br/>pitches · drift · prediction_log")]
+    REG[("SQLite registry<br/>versions · A/B routing")]
+    API["Spring Boot 3 · api + worker<br/>ONNX Runtime in-process"]
+    FE["React + Mantine + TanStack<br/>Vercel SPA"]
 
-A rendered SVG version of the diagram lives on the
-[About page](https://thebullpen.net/about).
+    SRC --> CH
+    TR -->|"contracts/ · ONNX + feature_pipeline.json"| REG
+    TR --> CH
+    CH --> API
+    REG --> API
+    API --> FE
+```
 
 ## Data sources + licensing
+
+The code in this repository is released under the [MIT License](LICENSE). That
+covers the code only - it grants no rights to the underlying MLB data, whose
+terms are separate (see below).
 
 Pitch-level data is downloaded from
 [Baseball Savant](https://baseballsavant.mlb.com/) via the
