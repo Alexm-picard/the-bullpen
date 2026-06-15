@@ -166,11 +166,15 @@ Underlying play-by-play data is not redistributed.**
 - **Cross-park batted-ball fidelity is a known limitation.**
   `/v1/predict/batted-ball/all-parks` is served by the registered batted-ball
   champion across the 30 parks. The ball-flight physics validation passes (bias
-  -0.14 ft, 93 % of fixtures within tolerance), but the cross-park HR-ordering
+  -0.14 ft, 93 % of fixtures within tolerance) - but that is **still-air carry
+  reconstruction**, not real-weather cross-park fidelity. The cross-park HR-ordering
   sanity gate does **not** pass yet: predicted per-park HR rates correlate only
-  Spearman rho ~0.29 with the known park-factor ordering (gate target 0.80).
-  Treat per-park batted-ball numbers as directional, not calibrated, until that
-  gate is green - see
+  Spearman rho ~0.29 with the known park-factor ordering (gate target 0.80). The
+  away-park counterfactual currently uses ADR-0010's **still-air interim**
+  (destination seasonal temp/density + altitude, **no wind**); the real per-date
+  weather + wind backfill (`park_daily_weather`) that should lift the ordering is
+  staged but not yet shipped. Treat per-park batted-ball numbers as directional, not
+  calibrated, until that gate is green - see
   [`docs/cross-park-fidelity-plan.md`](docs/cross-park-fidelity-plan.md).
 - **Automated retraining and per-feature PSI are scaffolded, not fully wired.** The
   retraining queue + the three triggers (scheduled / drift / manual) + the systemd
