@@ -13,6 +13,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.thebullpen.baseball.inference.routing.Bucketer;
 import net.thebullpen.baseball.inference.routing.Role;
@@ -30,7 +31,8 @@ class InferenceRouterTest {
 
   private final RoutingService routing = mock(RoutingService.class);
   private final Bucketer bucketer = mock(Bucketer.class);
-  private final InferenceRouter router = new InferenceRouter(routing, bucketer);
+  private final InferenceRouter router =
+      new InferenceRouter(routing, bucketer, Executors.newVirtualThreadPerTaskExecutor());
 
   // --- legacy fallback (no routing config) ------------------------------
 

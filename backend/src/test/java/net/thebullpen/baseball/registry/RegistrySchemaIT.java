@@ -8,6 +8,7 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -66,6 +67,19 @@ class RegistrySchemaIT {
     registry.add("spring.flyway.url", () -> url);
   }
 
+  /**
+   * Isolate each method: the per-JVM SQLite is shared across tests, so without a reset they
+   * accumulate (e.g. several 'champion' rows for the same model_name across methods, which V016's
+   * partial unique index correctly forbids). Children (FK -> model_versions.id) first.
+   */
+  @BeforeEach
+  void resetRegistryTables() {
+    jdbc.execute("DELETE FROM model_routing");
+    jdbc.execute("DELETE FROM experiment_results");
+    jdbc.execute("DELETE FROM retraining_queue");
+    jdbc.execute("DELETE FROM model_versions");
+  }
+
   // --- existence -----------------------------------------------------------
 
   @Test
@@ -85,7 +99,11 @@ class RegistrySchemaIT {
                 + " ORDER BY name",
             String.class);
     assertThat(indexes)
-        .contains("idx_mv_model_stage", "idx_er_model_status", "idx_rq_model_status");
+        .contains(
+            "idx_mv_model_stage",
+            "idx_er_model_status",
+            "idx_rq_model_status",
+            "idx_mv_one_champion_per_model");
   }
 
   // --- model_versions stage CHECK ------------------------------------------
@@ -112,6 +130,18 @@ class RegistrySchemaIT {
   void model_versions_unique_constraint_rejects_duplicate_name_version_pair() {
     insertModelVersion("pitch_outcome", "v-unique-1", "candidate");
     assertThatThrownBy(() -> insertModelVersion("pitch_outcome", "v-unique-1", "candidate"))
+        .isInstanceOf(DataAccessException.class);
+  }
+
+  @Test
+  void model_versions_partial_unique_index_rejects_a_second_champion_for_one_model() {
+    // V016 invariant (rule 9): at most one champion per model_name. A candidate/shadow + a champion
+    // is fine; a SECOND champion for the same model_name is rejected by
+    // idx_mv_one_champion_per_model.
+    insertModelVersion("batted_ball", "v-champ-1", "champion");
+    insertModelVersion(
+        "batted_ball", "v-shadow-1", "shadow"); // non-champion stage is unconstrained
+    assertThatThrownBy(() -> insertModelVersion("batted_ball", "v-champ-2", "champion"))
         .isInstanceOf(DataAccessException.class);
   }
 
