@@ -1,9 +1,11 @@
 package net.thebullpen.baseball.api.admin;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -99,6 +101,21 @@ class RoutingAdminControllerIT {
     mvc.perform(get("/v1/admin/routing").header("Authorization", BASIC))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.length()", equalTo(0)));
+  }
+
+  @Test
+  void security_headers_present_on_responses() throws Exception {
+    // Referrer-Policy is written on every response; HSTS only when the request is secure (here
+    // forced via .secure(true), standing in for the Cloudflare-Tunnel forwarded https scheme that
+    // server.forward-headers-strategy surfaces in prod). nosniff is a Spring Security default. The
+    // header writers run before authz, so even this unauthenticated 401 carries them.
+    mvc.perform(get("/v1/admin/routing").secure(true))
+        .andExpect(status().isUnauthorized())
+        .andExpect(header().string("Referrer-Policy", "strict-origin-when-cross-origin"))
+        .andExpect(header().string("Strict-Transport-Security", containsString("max-age=31536000")))
+        .andExpect(
+            header().string("Strict-Transport-Security", containsString("includeSubDomains")))
+        .andExpect(header().string("X-Content-Type-Options", "nosniff"));
   }
 
   // --- get + 404 --------------------------------------------------------

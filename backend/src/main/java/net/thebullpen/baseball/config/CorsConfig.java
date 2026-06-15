@@ -29,10 +29,12 @@ public class CorsConfig {
             .addMapping("/**")
             .allowedOrigins(allowedOrigins)
             // DELETE added for the admin routing UI's clear-challenger
-            // (DELETE /v1/admin/routing/{name}/challenger). Authorization (HTTP Basic)
-            // rides the allowedHeaders("*") preflight allowance.
+            // (DELETE /v1/admin/routing/{name}/challenger).
             .allowedMethods("GET", "POST", "DELETE", "OPTIONS")
-            .allowedHeaders("*")
+            // Explicit allow-list (was "*"): the browser client only ever sends Content-Type (JSON
+            // bodies) and Authorization (HTTP Basic on the admin routing UI). Origins are already
+            // scoped above; an explicit header list keeps the preflight surface tight.
+            .allowedHeaders("Content-Type", "Authorization")
             .exposedHeaders("X-Correlation-Id")
             .maxAge(3600);
       }

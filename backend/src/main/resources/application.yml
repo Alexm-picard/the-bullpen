@@ -26,6 +26,11 @@ management:
 server:
   port: ${BULLPEN_PORT:8080}
   shutdown: graceful
+  # Honor X-Forwarded-* from the Cloudflare Tunnel (a trusted reverse proxy on the same box): gives
+  # Spring the real client scheme/host so HSTS is emitted on the forwarded https request
+  # (SecurityConfig) and redirects/links are correct. Harmless for the worker profile, which is not
+  # internet-facing and receives no forwarded headers.
+  forward-headers-strategy: framework
 
 logging:
   level:
