@@ -46,12 +46,15 @@ session and most "obvious" alternatives have already been considered and rejecte
   POST head (the strong candidate; sample-stage gate PASSED, Brier margin ~0.021) clears its
   full-box re-run (hand-off H2). Open evidence artifact: a committed real-feed operating trace
   (issue #1, `docs/runbooks/live-data-setup.md`).
-- **Coverage is measured now, but mostly non-gating.** Backend JaCoCo (in `backend/build.gradle.kts`
-  and `backend.yml`) and frontend vitest v8 (`frontend.yml` `npm run test:coverage`) publish
-  line/branch baselines on every CI run; neither gates the build today. Training coverage
-  (~46%) is gated only as a 40% regression floor, with 75% an aspirational warning-only target
-  (`training.yml`). The README's earlier unbacked "~95%" has been corrected to the measured
-  figures. Rule still holds: do **not** cite a coverage percentage you cannot reproduce from CI.
+- **Coverage is measured everywhere; backend and training now gate, frontend does not.** Backend
+  JaCoCo (in `backend/build.gradle.kts` and `backend.yml`) gates on a regression floor (LINE >= 72%,
+  BRANCH >= 58%, a few points under the 2026-06-15 CI baseline of 77.85% / 65.67%), enforced only
+  when the Docker ITs run (`-Dbullpen.it.docker=true`, i.e. CI) so local `./gradlew build` is
+  unaffected. Training coverage (~46%) is gated as a 40% regression floor, with 75% an aspirational
+  warning-only target (`training.yml`). Frontend vitest v8 (`frontend.yml` `npm run test:coverage`)
+  still publishes a line/branch baseline without gating. The README's earlier unbacked "~95%" has
+  been corrected to the measured figures. Rule still holds: do **not** cite a coverage percentage you
+  cannot reproduce from CI.
 
 ## What this project is
 

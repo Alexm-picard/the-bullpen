@@ -150,10 +150,16 @@ tasks.named<Test>("test") {
     finalizedBy(tasks.named("jacocoTestReport"))
 }
 
-// A2 — coverage measurement (audit remediation). The number is left UNGATED for now
-// (matching training.yml's "report-the-gap, don't fail-the-build" posture) so we publish
-// an honest baseline before ratcheting a floor in. No class exclusions: the denominator
-// is the whole main source set, so the percentage isn't quietly massaged.
+// A2 / Wave-4 - coverage measurement plus a binding regression floor. jacocoTestReport always
+// publishes the honest baseline (no class exclusions: the denominator is the whole main source
+// set, so the percentage isn't quietly massaged). jacocoTestCoverageVerification adds a HARD floor
+// a few points under the CI-measured baseline (LINE 77.85% / BRANCH 65.67% on 2026-06-15, full
+// suite incl. Docker ITs) so a real coverage regression reds the build without flapping on noise.
+//
+// The floor is enforced ONLY when the Docker-gated ITs actually ran (-Dbullpen.it.docker=true, i.e.
+// CI). A local `./gradlew build` on macOS skips those ITs, which drags coverage below the floor;
+// gating that locally would punish every dev run. So the verification task disables itself unless
+// the docker gate is set - the floor lives where the full suite runs.
 jacoco {
     toolVersion = "0.8.12"
 }
@@ -164,4 +170,29 @@ tasks.jacocoTestReport {
         xml.required.set(true)
         html.required.set(true)
     }
+}
+
+tasks.jacocoTestCoverageVerification {
+    dependsOn(tasks.test)
+    enabled = System.getProperty("bullpen.it.docker") == "true"
+    violationRules {
+        rule {
+            limit {
+                counter = "LINE"
+                value = "COVEREDRATIO"
+                minimum = "0.72".toBigDecimal()
+            }
+            limit {
+                counter = "BRANCH"
+                value = "COVEREDRATIO"
+                minimum = "0.58".toBigDecimal()
+            }
+        }
+    }
+}
+
+// `check` (hence `build`) now fails on a coverage regression in CI. Locally, without the docker
+// gate, the verification disables itself, so this is a no-op for the normal `./gradlew build`.
+tasks.named("check") {
+    dependsOn(tasks.jacocoTestCoverageVerification)
 }
