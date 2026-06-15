@@ -1,0 +1,55 @@
+name: ci-gate
+
+# Single required status check for branch protection. The per-area workflows (backend / frontend /
+# training / contract) are PATH-FILTERED, so they don't run on every PR - which means they can't be
+# required directly (a frontend-only or docs-only PR would stall forever on a backend/training check
+# that never reports). This gate runs on EVERY PR (no path filter) and aggregates: it waits for all
+# OTHER check-runs on the PR head to finish, then passes iff each that ran concluded success (or
+# skipped/neutral). A workflow the path filter skipped simply never appears, so unrelated PRs pass
+# with no stall. Require ONLY "ci-gate" in branch protection.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  checks: read
+  contents: read
+
+jobs:
+  ci-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all path-relevant CI checks to pass
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          echo "ci-gate: aggregating the check-runs for $HEAD_SHA"
+          # Let the path-matched workflows register their check-runs before the first poll (they are
+          # queued within seconds of the PR event; 30s is a safe settle margin).
+          sleep 30
+          deadline=$(( $(date +%s) + 1800 ))   # 30-minute ceiling
+          while true; do
+            json=$(gh api --paginate "repos/$REPO/commits/$HEAD_SHA/check-runs" \
+              --jq '.check_runs[] | select(.name != "ci-gate") | {name, status, conclusion}')
+            pending=$(printf '%s' "$json" | jq -rs '[.[] | select(.status != "completed")] | length')
+            total=$(printf '%s' "$json" | jq -rs 'length')
+            if [ "${pending:-0}" -eq 0 ]; then break; fi
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "::error::ci-gate timed out (30m) with ${pending}/${total} check(s) still running"
+              printf '%s' "$json" | jq -rs '.[] | select(.status != "completed") | "  pending: \(.name) [\(.status)]"'
+              exit 1
+            fi
+            echo "ci-gate: waiting on ${pending}/${total} check(s)..."
+            sleep 20
+          done
+          bad=$(printf '%s' "$json" | jq -rs '[.[] | select(.conclusion as $c | ["success","skipped","neutral"] | index($c) | not)]')
+          n_bad=$(printf '%s' "$bad" | jq 'length')
+          if [ "${n_bad:-0}" -gt 0 ]; then
+            echo "::error::ci-gate: ${n_bad} CI check(s) did not pass:"
+            printf '%s' "$bad" | jq -r '.[] | "  FAILED: \(.name) -> \(.conclusion)"'
+            exit 1
+          fi
+          echo "ci-gate: all ${total} path-relevant check(s) passed (or none applicable)."
