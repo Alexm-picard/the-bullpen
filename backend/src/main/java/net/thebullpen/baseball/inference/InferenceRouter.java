@@ -3,6 +3,7 @@ package net.thebullpen.baseball.inference;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutorService;
 import java.util.function.Function;
 import net.thebullpen.baseball.inference.routing.Bucketer;
 import net.thebullpen.baseball.inference.routing.Role;
@@ -11,6 +12,7 @@ import net.thebullpen.baseball.inference.routing.RoutingMode;
 import net.thebullpen.baseball.inference.routing.RoutingService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 /**
@@ -37,10 +39,15 @@ import org.springframework.stereotype.Component;
  *       <td>no (the served prediction IS the challenger)</td></tr>
  * </table>
  *
- * <p>{@link CompletableFuture#supplyAsync} uses the {@code commonPool} which on Java 21 picks up
- * the platform-level virtual-thread executor that {@code spring.threads.virtual.enabled=true}
- * installs (Spring Boot's startup wiring). That keeps shadow-mode user-facing latency within the
- * leaf's "p95 within 10% of single-model" target — both models run truly concurrently, not stacked.
+ * <p>The champion and the shadow/challenger run on a dedicated virtual-thread-per-task executor
+ * ({@code inferenceShadowExecutor}, see {@link
+ * net.thebullpen.baseball.config.InferenceExecutorConfig}), passed explicitly to {@link
+ * CompletableFuture#supplyAsync}. This is deliberate: the no-executor {@code supplyAsync} runs on
+ * the bounded {@code ForkJoinPool.commonPool()} (parallelism = #cores - 1), which {@code
+ * spring.threads.virtual.enabled} does NOT replace (that flag wires the Tomcat request executor +
+ * {@code @Async}). Blocking ONNX inference on the shared commonPool could stack on a low-core box;
+ * the explicit VT executor keeps the leaf's "p95 within 10% of single-model" target true - both
+ * models run truly concurrently, never stacked.
  *
  * <p>Challenger failures degrade silently (logged at WARN) — leaf "Known edge cases": user request
  * never fails because the shadow run threw. The champion result is always returned.
@@ -52,10 +59,15 @@ public class InferenceRouter {
 
   private final RoutingService routingService;
   private final Bucketer bucketer;
+  private final ExecutorService executor;
 
-  public InferenceRouter(RoutingService routingService, Bucketer bucketer) {
+  public InferenceRouter(
+      RoutingService routingService,
+      Bucketer bucketer,
+      @Qualifier("inferenceShadowExecutor") ExecutorService executor) {
     this.routingService = routingService;
     this.bucketer = bucketer;
+    this.executor = executor;
   }
 
   /**
@@ -93,7 +105,8 @@ public class InferenceRouter {
 
     // Always run champion in parallel (returned in shadow + AB-champion cases).
     CompletableFuture<Resp> championFut =
-        CompletableFuture.supplyAsync(() -> predictByVersionId.apply(cfg.championVersionId()));
+        CompletableFuture.supplyAsync(
+            () -> predictByVersionId.apply(cfg.championVersionId()), executor);
 
     // Run challenger when: SHADOW with a challenger registered, OR AB-mode bucketed to challenger.
     boolean runChallenger =
@@ -103,7 +116,7 @@ public class InferenceRouter {
     CompletableFuture<Resp> challengerFut =
         runChallenger
             ? CompletableFuture.supplyAsync(
-                () -> predictByVersionId.apply(cfg.challengerVersionId()))
+                () -> predictByVersionId.apply(cfg.challengerVersionId()), executor)
             : null;
 
     Resp championResp = championFut.join();
