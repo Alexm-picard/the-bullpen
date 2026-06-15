@@ -249,7 +249,11 @@ r2_fetch() {
   rm -f "${FETCH_DIR}/clickhouse.tar"
   [[ -f "${FETCH_DIR}/sqlite/registry.sqlite" ]] || fail "registry.sqlite not present after fetch"
   # Format-agnostic non-hollow check: compact parts use data.bin, wide parts use per-column *.bin.
-  find "${FETCH_DIR}/clickhouse" -name '*.bin' | grep -q . \
+  # `-print -quit` (find stops itself after the first match) + a command substitution instead of
+  # `find | grep -q`: under `set -o pipefail`, grep -q closing the pipe on its first match killed a
+  # still-streaming find (29k+ lines) with SIGPIPE (141), which pipefail propagated as a FALSE
+  # "hollow restore" - the actual recurring rule-8 failure (only large result sets tripped it).
+  [[ -n "$(find "${FETCH_DIR}/clickhouse" -name '*.bin' -print -quit)" ]] \
     || fail "restored backup has 0 data part files (*.bin) - hollow restore"
 }
 

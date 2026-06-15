@@ -75,7 +75,10 @@ fi
 
 # 1. Most recent ClickHouse snapshot only (don't bloat the USB with history)
 if [[ -d "$SNAPSHOT_DIR" ]]; then
-  LATEST=$(find "$SNAPSHOT_DIR" -maxdepth 1 -name 'auto_*' -type d 2>/dev/null | sort -r | head -1)
+  # `sort | tail -1` (newest = lexically last), not `sort -r | head -1`: under `set -o pipefail`,
+  # head closing the pipe on its first line can SIGPIPE sort and abort the backup (the same
+  # find|grep-q pipefail trap that masqueraded as rule-8's "hollow restore"). tail reads to EOF.
+  LATEST=$(find "$SNAPSHOT_DIR" -maxdepth 1 -name 'auto_*' -type d 2>/dev/null | sort | tail -1)
   if [[ -n "$LATEST" ]]; then
     log "Copying ClickHouse snapshot: $(basename "$LATEST")"
     rsync "${RSYNC_OPTS[@]}" "$LATEST/" "$DEST/clickhouse_snapshot/"
