@@ -201,7 +201,7 @@ Most commands assume the working directory is the project root unless noted.
 - Type check: `uv run pyright training`
 - Tests: `uv run pytest training`
 - Leakage tests only: `uv run pytest training/tests/leakage -x`
-- Run rolling-origin CV: `uv run python -m training.eval.rolling_cv --model <name> --run-id <id>`
+- Run rolling-origin CV: `uv run python -m bullpen_training.eval.promotion.driver --model <name>` (run from `training/`; the promotion-evidence driver wraps the `bullpen_training.eval.cv_harness.run` 4-fold harness and co-runs the baseline. There is no standalone `rolling_cv` CLI.)
 
 ### Frontend (React)
 
