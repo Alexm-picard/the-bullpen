@@ -101,11 +101,14 @@ production system through real time-series data.
    2015–2025. One-time backfill plus nightly increments.
 3. **Open-Meteo** — weather data. Forecast endpoint (~30 min before
    first pitch) for live predictions; archive endpoint (~1 hour after game)
-   for training data. The archive endpoint also backfills
-   `park_daily_weather` (per-(park, date) temp + wind for all 30 parks
-   across 2015–2025), used by the cross-park counterfactual labeling so each
-   ball is flown through the destination park's real weather (decision
-   [138] / ADR-0010).
+   for training data. ADR-0010's plan also backfills a `park_daily_weather`
+   table (per-(park, date) temp + wind for all 30 parks across 2015–2025) so the
+   cross-park counterfactual flies each ball through the destination park's real
+   per-date weather (decision [138] / ADR-0010, Alternative A). STATUS
+   (2026-06-15): this is the STAGED TARGET. The current labeling uses ADR-0010's
+   still-air interim (Stage 1) — away parks get the destination park's seasonal
+   temp/density + altitude, NO wind; `park_daily_weather` does not exist yet, and
+   the real-per-date-weather backfill + the wind A/B (Stages 2–3) are pending.
 4. **Static park dimensions** — wall heights, distances, foul territory
    from MLB published data.
 
@@ -535,11 +538,15 @@ cells where a park actually hosted a game. Seasonal still-air (per-park
 `default_atmosphere`, no wind) is the documented fallback for gaps. The
 re-introduced wind (a fixed seasonal wind vector was previously tried and
 reverted) is A/B-gated: real daily wind is kept only if it raises
-cross-park rho over still-air. See decision [138] / ADR-0010. With the
-humidor (ADR-0009), the counterfactual now flies each ball through each
-park's **full real conditions** — altitude + humidity + temperature + wind
+cross-park rho over still-air. See decision [138] / ADR-0010. The TARGET
+(ADR-0010 Alternative A), with the humidor (ADR-0009), is to fly each ball
+through each park's **full real conditions** — altitude + humidity + temperature
 
-- the humidor COR effect — rather than the origin park's.
+- wind + the humidor COR effect — rather than the origin park's. STATUS
+  (2026-06-15): the SHIPPED state is the still-air interim — destination altitude +
+  seasonal temperature/density + humidity + the humidor, but **no real per-date
+  wind** (the `park_daily_weather` backfill + the wind A/B are still pending), so
+  real-weather cross-park fidelity is not yet achieved.
 
 **LightGBM Option-A baseline**: park-as-categorical, single model.
 Registered for direct comparison. If LightGBM wins, the architecture
