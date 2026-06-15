@@ -14,12 +14,12 @@ The only acceptable evaluation harness for this project. Random splits are forbi
 - Splits are by **calendar date**, never by game id, never by pitch id.
 - LR baseline runs on every fold alongside the candidate model.
 
-| Fold | Train range | Val range |
-|---|---|---|
-| 1 | 2015-01-01 → 2017-12-31 | 2018-01-01 → 2019-12-31 |
-| 2 | 2015-01-01 → 2019-12-31 | 2020-01-01 → 2021-12-31 |
-| 3 | 2015-01-01 → 2021-12-31 | 2022-01-01 → 2023-12-31 |
-| 4 | 2015-01-01 → 2023-12-31 | 2024-01-01 → 2025-12-31 |
+| Fold | Train range             | Val range               |
+| ---- | ----------------------- | ----------------------- |
+| 1    | 2015-01-01 → 2017-12-31 | 2018-01-01 → 2019-12-31 |
+| 2    | 2015-01-01 → 2019-12-31 | 2020-01-01 → 2021-12-31 |
+| 3    | 2015-01-01 → 2021-12-31 | 2022-01-01 → 2023-12-31 |
+| 4    | 2015-01-01 → 2023-12-31 | 2024-01-01 → 2025-12-31 |
 
 (2020 partial-season caveat: keep it; document that fold 2 val is noisier. Don't drop the season.)
 
@@ -35,7 +35,7 @@ Per rule 10, all four must pass:
 ## Procedure
 
 1. **Pre-flight** — invoke `ml-leakage-auditor` on the training code. If it returns FAIL, do not run CV.
-2. **Run the 4 folds** using the harness in `/training/eval/rolling_cv.py` (or create it if missing). Always co-run the LR baseline.
+2. **Run the 4 folds** via the promotion-evidence driver (`uv run python -m bullpen_training.eval.promotion.driver --model <name>`, run from `training/`), which calls the 4-fold `bullpen_training.eval.cv_harness.run` harness. (There is no `rolling_cv.py` - do not create one; `cv_harness.run` + the driver are the harness.) Always co-run the co-registered baseline.
 3. **Collect metrics per fold**:
    - Primary: log-loss (multinomial for pitch outcome), Brier for batted ball
    - Secondary: calibration (ECE, reliability diagram), AUC

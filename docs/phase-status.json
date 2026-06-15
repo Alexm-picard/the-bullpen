@@ -199,8 +199,8 @@
         },
         {
           "label": "Property tests for the leakage detector itself (Hypothesis-style)",
-          "done": false,
-          "details": "Generate random temporally-shuffled datasets, assert the 4 leakage tests fire correctly on known-leaky AND known-clean inputs. Proves the leakage tests aren't fooling themselves. Without this, the leakage tests are theater."
+          "done": true,
+          "details": "Done: training/tests/leakage/test_leakage_detector_properties.py - Hypothesis @given property tests that generate random folds and assert the meta-property (the CLEAN train-window target-encoding satisfies each leakage invariant AND a deliberately-leaky full-data target-encoding VIOLATES it), proving the 4 leakage checks are non-vacuous. Wired into the leakage-tests CI job."
         },
         {
           "label": "Coverage floor 75% enforced in CI for training/",
@@ -319,11 +319,13 @@
         },
         {
           "label": "Async batched prediction logging to ClickHouse",
-          "done": false
+          "done": true,
+          "details": "Done: AsyncPredictionLogger (bounded queue, drop-on-overload) + PredictionLogWriter batch-insert into prediction_log; exercised by the predict controllers + ITs."
         },
         {
           "label": "Drift: PSI per feature, PSI on predictions, calibration on observed outcomes",
-          "done": false
+          "done": false,
+          "details": "Partial: PSI-on-predictions + calibration-vs-observed-outcome are REAL (RealPredictionDistributionFetcher + ClickHouse truth-join, worker profile). Per-FEATURE PSI is SCAFFOLDED - PsiFeatureJob + the PSI/chi-sq math are wired but the only FeatureDistributionFetcher is a stub returning empty (no real feature-distribution source yet)."
         },
         {
           "label": "Synthetic drift tests (inject known shifts, verify detection)",
@@ -331,11 +333,13 @@
         },
         {
           "label": "retraining_queue + three triggers (scheduled / drift / manual)",
-          "done": false
+          "done": true,
+          "details": "Done: retraining_queue table + RetrainingQueueService + scheduled/drift/manual triggers + systemd timer. CAVEAT: the per-model retrain DISPATCH callable is a sentinel stub (training/.../retraining/_dispatch.py) pending wiring to each Phase-2 trainer - the queue/orchestration is real; the actual automated retrain is not."
         },
         {
           "label": "End-to-end retrain test passing",
-          "done": false
+          "done": false,
+          "details": "Scaffolded: run.py orchestration is tested end-to-end with a MOCKED dispatch callable; a true automated retrain does not run because the per-model dispatch is a sentinel stub (see above). Promotion stays human-gated regardless (rule 6)."
         },
         {
           "label": "JMH benchmark suite for the inference path + perf-regression CI gate (25% threshold)",
@@ -362,7 +366,7 @@
           "cost": "Drift detector still demonstrates depth"
         }
       ],
-      "notes": "(2026-05-25) All 4 sub-phases done end-to-end: 3a registry (5 leaves, G3/G7/G10 closed) \u00b7 3b A/B routing (5 leaves) \u00b7 3c drift (7 leaves, decision [129] Discord alerting) \u00b7 3d retraining (4 leaves, I8 closed, systemd timer wired). 376 backend tests, 0 failures."
+      "notes": "(2026-05-25) All 4 sub-phases done end-to-end: 3a registry (5 leaves, G3/G7/G10 closed) \u00b7 3b A/B routing (5 leaves) \u00b7 3c drift (7 leaves, decision [129] Discord alerting) \u00b7 3d retraining (4 leaves, I8 closed, systemd timer wired). 376 backend tests, 0 failures. (2026-06-15 honesty reconcile) the exit_criteria_checklist done-flags below were not maintained after 3a-3d shipped and read all-false despite the phase being complete; flags + per-item details now reflect reality. TWO items are SCAFFOLDED, not fully wired: (1) per-FEATURE PSI runs against a stub feature-distribution fetcher (prediction-PSI + calibration drift are real); (2) the per-model retrain DISPATCH callable is a sentinel stub (the retraining queue + triggers + timer are real; no model retrains automatically end-to-end yet). Promotion stays human-gated (rule 6)."
     },
     {
       "id": "4",

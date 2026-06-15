@@ -172,6 +172,15 @@ Underlying play-by-play data is not redistributed.**
   Treat per-park batted-ball numbers as directional, not calibrated, until that
   gate is green - see
   [`docs/cross-park-fidelity-plan.md`](docs/cross-park-fidelity-plan.md).
+- **Automated retraining and per-feature PSI are scaffolded, not fully wired.** The
+  retraining queue + the three triggers (scheduled / drift / manual) + the systemd
+  timer are real and tested, but the per-model retrain _dispatch_ callable is a
+  sentinel stub (`training/.../retraining/_dispatch.py`) pending wiring to each
+  Phase-2 trainer - no model retrains end-to-end automatically yet (promotion stays
+  human-gated regardless, rule 6). On the drift side, PSI-on-predictions and
+  calibration-vs-observed-outcome are real (ClickHouse-backed); per-_feature_ PSI
+  runs against a stub feature-distribution fetcher (returns empty) - the job and the
+  PSI math are wired, the real feature-distribution source is not.
 - Live game polling worker (MLB Stats API client + parser + per-game scheduled
   poll on the worker profile, feeding `pitches_live` and the `prediction_log`
   truth-join) is **built, merged, and unit-tested**, and is enabled in prod
