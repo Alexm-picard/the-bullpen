@@ -81,11 +81,21 @@ BATTED_BALL_FEATURES: Final[tuple[str, ...]] = (
     "outs",
 )
 
+# The retrodicted 5-outcome label DISTRIBUTION columns the per-park MLP champion trains on (KL
+# loss), distinct from the integer `label` (the realized outcome the CV harness scores against).
+# On the box these come from `bbip_retrodicted_labels`; in the sample they are synthesised.
+RETRO_COLS: Final[tuple[str, ...]] = tuple(f"retro_{i}" for i in range(5))
+
+# A small synthetic park set so the per-park MLP CV exercises the per-park train+route path without
+# the full 30-park cost on the Mac sample (the box full-data run carries the real 30 parks).
+SAMPLE_PARKS: Final[tuple[str, ...]] = ("BOS", "NYY", "LAD", "SFG", "COL", "HOU")
+
 # n_classes per dataset (pitch outcome = 5 labels; batted-ball = 5 outcomes).
 N_CLASSES: Final[dict[str, int]] = {
     "pitch_outcome_pre": 5,
     "pitch_outcome_post": 5,
     "batted_ball_lr_baseline": 5,
+    "batted_ball_mlp": 5,
 }
 
 # segment columns used by the per-segment breakdown in the artifact - chosen
@@ -94,6 +104,7 @@ SEGMENT_COLS: Final[dict[str, tuple[str, ...]]] = {
     "pitch_outcome_pre": ("count_strikes", "batter_stand_int"),
     "pitch_outcome_post": ("count_strikes", "batter_stand_int"),
     "batted_ball_lr_baseline": ("stand_R",),
+    "batted_ball_mlp": ("park",),
 }
 
 
@@ -102,7 +113,7 @@ def feature_cols_for(dataset: str) -> tuple[str, ...]:
         return PITCH_FEATURES
     if dataset == "pitch_outcome_post":
         return (*PITCH_FEATURES, *PITCH_POST_EXTRA)
-    if dataset == "batted_ball_lr_baseline":
+    if dataset in ("batted_ball_lr_baseline", "batted_ball_mlp"):
         return BATTED_BALL_FEATURES
     raise ValueError(f"unknown sample dataset {dataset!r}")
 
@@ -148,13 +159,22 @@ class ParquetSampleLoader:
                 )
             frames.append(pd.read_parquet(path))
         df = pd.concat(frames, ignore_index=True)
-        keep = [*self.feature_cols, "label"]
-        missing = [c for c in keep if c not in df.columns]
+        required = [*self.feature_cols, "label"]
+        missing = [c for c in required if c not in df.columns]
         if missing:
             raise ValueError(
                 f"sample parquet for {self.dataset} is missing columns {missing}; "
                 f"present: {sorted(df.columns)}"
             )
+        # Also surface the segment column(s) + the retrodicted-distribution columns when present:
+        # the per-park MLP model_factory routes by `park` (a segment col, not a feature) and trains
+        # on `retro_*`. Present-only, so pitch/LR datasets that lack these are unaffected.
+        optional = [
+            c
+            for c in (*SEGMENT_COLS.get(self.dataset, ()), *RETRO_COLS)
+            if c in df.columns and c not in required
+        ]
+        keep = [*required, *optional]
         # list-indexing returns a DataFrame at runtime; cast pins it for the type
         # checker (the pandas stubs widen df[[...]] to Series | DataFrame).
         return cast(pd.DataFrame, df[keep])
@@ -290,6 +310,28 @@ def _generate_batted_ball_year(rng: np.random.Generator, n: int) -> pd.DataFrame
     )
 
 
+def _generate_batted_ball_mlp_year(rng: np.random.Generator, n: int) -> pd.DataFrame:
+    """Per-park MLP champion sample: the batted-ball features + the integer outcome `label`, plus a
+    `park` segment and a synthetic retrodicted 5-outcome DISTRIBUTION (``retro_*``).
+
+    The per-park MLP trains on the retrodicted distribution (KL loss), NOT the realized label;
+    the CV harness scores predict_proba against the realized integer `label`. The synthetic retro
+    is a noisy softmax peaked near the true class - correlated with, but not equal to, the realized
+    outcome, the way the physics retrodiction is. Box full-data carries the real
+    `bbip_retrodicted_labels`.
+    """
+    df = _generate_batted_ball_year(rng, n)
+    label = df["label"].to_numpy()
+    df["park"] = rng.choice(np.asarray(SAMPLE_PARKS), size=n)
+    onehot = np.eye(5, dtype=np.float64)[label]
+    logits = 2.2 * onehot + rng.normal(0.0, 0.6, size=(n, 5))
+    retro = np.exp(logits - logits.max(axis=1, keepdims=True))
+    retro = retro / retro.sum(axis=1, keepdims=True)
+    for i in range(5):
+        df[f"retro_{i}"] = retro[:, i].astype("float32")
+    return df
+
+
 def generate_sample_dataset(
     root: Path,
     dataset: str,
@@ -317,6 +359,8 @@ def generate_sample_dataset(
             df = _generate_pitch_year(rng, rows_per_year, post=True)
         elif dataset == "batted_ball_lr_baseline":
             df = _generate_batted_ball_year(rng, rows_per_year)
+        elif dataset == "batted_ball_mlp":
+            df = _generate_batted_ball_mlp_year(rng, rows_per_year)
         else:
             raise ValueError(f"unknown sample dataset {dataset!r}")
         df.to_parquet(out_dir / f"year={year}.parquet", index=False)
@@ -329,6 +373,8 @@ __all__ = (
     "N_CLASSES",
     "PITCH_FEATURES",
     "PITCH_POST_EXTRA",
+    "RETRO_COLS",
+    "SAMPLE_PARKS",
     "SEGMENT_COLS",
     "ParquetSampleLoader",
     "feature_cols_for",

@@ -186,11 +186,12 @@ def test_paired_row_mismatch_raises() -> None:
 # --- the pre-declared criteria are well-formed -----------------------------
 
 
-def test_all_three_models_have_criteria() -> None:
+def test_all_registered_models_have_criteria() -> None:
     assert set(CRITERIA_BY_MODEL) == {
         "pitch_outcome_pre",
         "pitch_outcome_post",
         "batted_ball_lr_baseline",
+        "batted_ball_mlp",
     }
 
 

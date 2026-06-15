@@ -393,10 +393,42 @@ _BATTED_BALL_LR = PromotionCriteria(
 )
 
 
+_BATTED_BALL_MLP = PromotionCriteria(
+    model_name="batted_ball_mlp",
+    primary_metric=PrimaryMetric.BRIER,
+    # The per-park MLP CHAMPION (shared-backbone topology, one model per park, trained on the
+    # retrodicted outcome DISTRIBUTION via KL) must beat the co-registered batted-ball LR baseline's
+    # multiclass Brier by >= 0.003 (5 outcome classes: out/1b/2b/3b/hr). Conservative sample-stage
+    # bar; the full-box H2 re-run re-declares the production threshold.
+    primary_threshold=0.003,
+    sample_size_target=2_000,
+    guardrails=(
+        GuardrailSpec(
+            metric=PrimaryMetric.LOG_LOSS,
+            max_delta=0.01,
+            rationale="per-park MLP log-loss may not regress > 0.01 vs the LR baseline "
+            "(guards a Brier win that masks confident-wrong blowups on rare extra-base outcomes).",
+        ),
+        GuardrailSpec(
+            metric=PrimaryMetric.ECE,
+            max_delta=0.015,
+            rationale="per-park MLP ECE may not regress > 0.015 vs the LR baseline "
+            "(sample-stage allowance: the per-model ECE estimate is noisy at sample scale, so the "
+            "RELATIVE bar is loose; absolute calibration is gated by absolute_ece_bar below).",
+        ),
+    ),
+    absolute_ece_bar=0.02,  # Phase-2 exit bar: champion ECE must be < 0.02.
+    rationale="per-park batted-ball MLP champion (one model per park, trained on the retrodicted "
+    "outcome distribution via KL) vs the rule-9 co-registered LR baseline. Calibration gated by a "
+    "loose relative ECE guardrail (sample noise) + the absolute Phase-2 ECE bar.",
+)
+
+
 CRITERIA_BY_MODEL: Final[dict[str, PromotionCriteria]] = {
     _PITCH_PRE.model_name: _PITCH_PRE,
     _PITCH_POST.model_name: _PITCH_POST,
     _BATTED_BALL_LR.model_name: _BATTED_BALL_LR,
+    _BATTED_BALL_MLP.model_name: _BATTED_BALL_MLP,
 }
 
 
