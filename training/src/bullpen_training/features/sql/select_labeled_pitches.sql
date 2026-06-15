@@ -17,10 +17,13 @@ SELECT
     coalesce(outs, 0)             AS outs,
     coalesce(inning, 0)           AS inning,
     base_state,
-    -- score_diff: home minus away regardless of who is batting.
-    -- pitches table doesn't carry score yet; placeholder 0 here, real value
-    -- lands when V003 grows score columns (Phase 2a.2 backfill candidate).
-    toInt16(0)                    AS score_diff,
+    -- score_diff: the BATTING team's lead going INTO the pitch (bat_score - fld_score),
+    -- a pre-pitch game state with no leakage (it flips sign on top/bottom of the inning,
+    -- which is the point - "is the batter's side ahead or behind"). Sourced from
+    -- pitches.score_diff_live, which transform_raw_to_pitches propagates from
+    -- raw_statcast.bat_score_diff (a native pre-pitch Statcast field; the pull selects no
+    -- post_* score column). coalesce to 0 for rows predating the score_diff_live backfill.
+    toInt16(coalesce(score_diff_live, 0)) AS score_diff,
     p_throws                      AS pitcher_throws,
     stand                         AS batter_stand,
     park_id,
