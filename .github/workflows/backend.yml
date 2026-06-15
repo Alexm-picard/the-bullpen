@@ -13,7 +13,7 @@ on:
 #   - Phase 1+ ClickHouse tests use Testcontainers, which spawn their own
 #     ephemeral container from inside the JVM at test time. No service block needed.
 jobs:
-  test:
+  backend-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
