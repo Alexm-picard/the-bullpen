@@ -22,10 +22,11 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * A4 — per-IP rate limiting for the two unauthenticated, compute-bearing surfaces: the prediction
- * endpoints ({@code /v1/predict/**}) and the player autocomplete ({@code /v1/players/search}).
- * Everything else (Actuator, static assets, the public Ops reads, the Basic-auth admin paths) is
- * unthrottled.
+ * A4 - per-IP rate limiting for the compute-bearing and brute-force-prone surfaces: the
+ * unauthenticated prediction endpoints ({@code /v1/predict/**}) and player autocomplete ({@code
+ * /v1/players/search}), plus the Basic-auth admin paths ({@code /v1/admin/**}), which get a tighter
+ * bucket to blunt credential brute-forcing against HTTP Basic. Everything else (Actuator, static
+ * assets, the public Ops reads) is unthrottled.
  *
  * <p>Mechanism: a lazy continuous-refill token bucket per (route-class, client-IP), held in a
  * Caffeine cache (already a project dependency) that evicts idle keys after 10 minutes. This is an
@@ -51,10 +52,12 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
   private static final String PREDICT_PREFIX = "/v1/predict/";
   private static final String SEARCH_PATH = "/v1/players/search";
+  private static final String ADMIN_PREFIX = "/v1/admin/";
 
   private final boolean enabled;
   private final int predictPerMinute;
   private final int searchPerMinute;
+  private final int adminPerMinute;
   private final ObjectMapper objectMapper;
   private final Cache<String, TokenBucket> buckets =
       Caffeine.newBuilder().maximumSize(50_000).expireAfterAccess(Duration.ofMinutes(10)).build();
@@ -63,10 +66,12 @@ public class RateLimitFilter extends OncePerRequestFilter {
       @Value("${bullpen.ratelimit.enabled:true}") boolean enabled,
       @Value("${bullpen.ratelimit.predict-per-minute:60}") int predictPerMinute,
       @Value("${bullpen.ratelimit.search-per-minute:120}") int searchPerMinute,
+      @Value("${bullpen.ratelimit.admin-per-minute:20}") int adminPerMinute,
       ObjectMapper objectMapper) {
     this.enabled = enabled;
     this.predictPerMinute = predictPerMinute;
     this.searchPerMinute = searchPerMinute;
+    this.adminPerMinute = adminPerMinute;
     this.objectMapper = objectMapper;
   }
 
@@ -76,7 +81,9 @@ public class RateLimitFilter extends OncePerRequestFilter {
       return true;
     }
     String path = request.getRequestURI();
-    return !(path.startsWith(PREDICT_PREFIX) || path.equals(SEARCH_PATH));
+    return !(path.startsWith(PREDICT_PREFIX)
+        || path.equals(SEARCH_PATH)
+        || path.startsWith(ADMIN_PREFIX));
   }
 
   @Override
@@ -84,9 +91,19 @@ public class RateLimitFilter extends OncePerRequestFilter {
       HttpServletRequest request, HttpServletResponse response, FilterChain chain)
       throws ServletException, IOException {
     String path = request.getRequestURI();
-    boolean isSearch = path.equals(SEARCH_PATH);
-    int limit = isSearch ? searchPerMinute : predictPerMinute;
-    String key = (isSearch ? "search|" : "predict|") + clientIp(request);
+    final String routeClass;
+    final int limit;
+    if (path.startsWith(ADMIN_PREFIX)) {
+      routeClass = "admin";
+      limit = adminPerMinute;
+    } else if (path.equals(SEARCH_PATH)) {
+      routeClass = "search";
+      limit = searchPerMinute;
+    } else {
+      routeClass = "predict";
+      limit = predictPerMinute;
+    }
+    String key = routeClass + "|" + clientIp(request);
     TokenBucket bucket = buckets.get(key, k -> new TokenBucket(limit));
     if (bucket != null && bucket.tryConsume()) {
       chain.doFilter(request, response);

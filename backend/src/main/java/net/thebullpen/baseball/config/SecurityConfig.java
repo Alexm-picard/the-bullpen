@@ -12,6 +12,7 @@ import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.firewall.HttpStatusRequestRejectedHandler;
 import org.springframework.security.web.firewall.RequestRejectedHandler;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 
 /**
  * Authentication boundary for the Spring app — closes Risk Register G10 by splitting two URL
@@ -51,6 +52,21 @@ public class SecurityConfig {
             authz ->
                 authz.requestMatchers("/v1/admin/**").hasRole("ADMIN").anyRequest().permitAll())
         .httpBasic(Customizer.withDefaults())
+        // Security headers. HSTS is emitted only on requests Spring sees as secure; behind the
+        // Cloudflare Tunnel that means honoring X-Forwarded-Proto (enabled via
+        // server.forward-headers-strategy in application.yml), so HSTS rides the forwarded https
+        // scheme in prod and stays off plain-http localhost dev. nosniff + frame-DENY are Spring
+        // Security defaults; Referrer-Policy is not a default, so it is set explicitly here.
+        .headers(
+            headers ->
+                headers
+                    .httpStrictTransportSecurity(
+                        hsts -> hsts.includeSubDomains(true).maxAgeInSeconds(31_536_000L))
+                    .referrerPolicy(
+                        referrer ->
+                            referrer.policy(
+                                ReferrerPolicyHeaderWriter.ReferrerPolicy
+                                    .STRICT_ORIGIN_WHEN_CROSS_ORIGIN)))
         .formLogin(form -> form.disable())
         .logout(logout -> logout.disable())
         .build();
