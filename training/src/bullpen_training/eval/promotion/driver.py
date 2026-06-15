@@ -75,6 +75,7 @@ from bullpen_training.eval.promotion.criteria import (
 )
 from bullpen_training.eval.promotion.sample_loader import (
     N_CLASSES,
+    RETRO_COLS,
     SEGMENT_COLS,
     ParquetSampleLoader,
     feature_cols_for,
@@ -92,6 +93,12 @@ DEFAULT_OUT_DIR = REPO_ROOT / "training" / "data" / "eval" / "promotion"
 # booster / the LR solver, never the rolling-origin splits, which are pure
 # date windows. No random_state ever touches a split. rule: no random splits).
 _LGBM_SEED = 42
+# Seeds the per-park MLP weight init + the torch RNG (NOT a data split - the rolling-origin folds
+# are pure date windows). rule: no random splits.
+_MLP_SEED = 42
+# None -> the per-park trainer's production DEFAULT_EPOCHS. A module constant (not a threaded param)
+# so tests can monkeypatch a small epoch count for speed without touching the production path.
+_MLP_EPOCHS: int | None = None
 
 _CV_METRICS = (multiclass_brier, multiclass_log_loss, expected_calibration_error)
 
@@ -169,6 +176,52 @@ class _LGBMPredictor:
 
     def _raw(self, X: pd.DataFrame) -> np.ndarray:
         return np.asarray(self._booster.predict(X[list(self._cols)]), dtype=np.float64)
+
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+        raw = self._raw(X)
+        return raw if self._cal is None else self._cal.transform(raw)
+
+
+class _MLPPredictor:
+    """Per-park batted-ball MLP CHAMPION: one PerParkMLP per park (shared-backbone topology, trained
+    on the retrodicted outcome DISTRIBUTION via KL), routed by each row's ``park``. A pooled
+    all-parks model backs rows whose park was unseen in train (a cold park at val/test). Optional
+    per-class isotonic on val mirrors the LR/LGBM predictors so the champion-vs-baseline comparison
+    is calibration-fair."""
+
+    def __init__(
+        self,
+        park_models: dict[str, tuple[Any, Any]],
+        pooled: tuple[Any, Any],
+        feature_cols: tuple[str, ...],
+        n_classes: int,
+        calibrator: IsotonicCalibrator | None,
+    ) -> None:
+        self._models = park_models  # park -> (PerParkMLP, FeatureScaler)
+        self._pooled = pooled  # (PerParkMLP, FeatureScaler) cold-park fallback
+        self._cols = list(feature_cols)
+        self._k = n_classes
+        self._cal = calibrator
+
+    def _raw(self, X: pd.DataFrame) -> np.ndarray:
+        import torch
+
+        feat = X[self._cols].to_numpy(dtype=np.float64)
+        parks = X["park"].to_numpy().astype(str)
+        out = np.zeros((len(X), self._k), dtype=np.float64)
+        for park in np.unique(parks):
+            mask = parks == park
+            model, scaler = self._models.get(park, self._pooled)
+            x = np.ascontiguousarray(scaler.transform(feat[mask]), dtype=np.float32)
+            model.eval()
+            dev = next(
+                model.parameters()
+            ).device  # route input to the model's device (cpu/mps/cuda)
+            with torch.no_grad():
+                logits = model(torch.from_numpy(x).to(dev))
+                proba = torch.softmax(logits, dim=1).cpu().numpy()
+            out[mask] = np.asarray(proba, dtype=np.float64)
+        return out
 
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
         raw = self._raw(X)
@@ -265,6 +318,64 @@ def _lgbm_factory(
     return factory
 
 
+def _mlp_factory(
+    feature_cols: tuple[str, ...], n_classes: int
+) -> Callable[[pd.DataFrame, pd.DataFrame], _MLPPredictor]:
+    """Train the per-park batted-ball MLP CHAMPION the production way: one PerParkMLP per park,
+    fit on that park's retrodicted outcome DISTRIBUTION via KL loss (the realized integer ``label``
+    is NEVER a training target - only the CV harness scores against it). Reuses the production
+    ``train_single_park`` + ``FeatureScaler`` + ``PerParkDataset`` so the CV is faithful to how the
+    champion is actually trained. Parks are trained sequentially (one model resident at a time) to
+    stay off the memory ceiling the box flagged."""
+
+    def factory(train: pd.DataFrame, val: pd.DataFrame) -> _MLPPredictor:
+        from bullpen_training.battedball.mlp.dataset import FeatureScaler
+        from bullpen_training.battedball.mlp_per_park.dataset import PerParkDataset
+        from bullpen_training.battedball.mlp_per_park.train import train_single_park
+
+        cols = list(feature_cols)
+        retro = list(RETRO_COLS)
+
+        def _train(feat: np.ndarray, lab: np.ndarray) -> tuple[Any, Any]:
+            scaler = FeatureScaler.fit(feat)
+            ds = PerParkDataset(feat, lab, scaler=scaler)
+            if _MLP_EPOCHS is None:
+                model, _summary, _dev = train_single_park(
+                    ds, n_features=len(cols), n_outcomes=n_classes, seed=_MLP_SEED
+                )
+            else:
+                model, _summary, _dev = train_single_park(
+                    ds,
+                    n_features=len(cols),
+                    n_outcomes=n_classes,
+                    seed=_MLP_SEED,
+                    n_epochs=_MLP_EPOCHS,
+                )
+            return model, scaler
+
+        models: dict[str, tuple[Any, Any]] = {}
+        for park, grp in train.groupby("park", sort=True):
+            models[str(park)] = _train(
+                grp[cols].to_numpy(dtype=np.float32),
+                grp[retro].to_numpy(dtype=np.float32),
+            )
+
+        # Pooled all-parks fallback for a park unseen in train (cold park at val/test).
+        pooled = _train(
+            train[cols].to_numpy(dtype=np.float32),
+            train[retro].to_numpy(dtype=np.float32),
+        )
+
+        uncal = _MLPPredictor(models, pooled, feature_cols, n_classes, calibrator=None)
+        # Per-class isotonic on the val fold (never test) - the SAME calibration the LR/LGBM
+        # factories fit, so the champion-vs-baseline comparison is calibration-fair + leakage-clean.
+        raw_val = uncal._raw(val)
+        cal = _fit_isotonic_on_val(raw_val, np.asarray(val["label"], dtype=np.int64), n_classes)
+        return _MLPPredictor(models, pooled, feature_cols, n_classes, calibrator=cal)
+
+    return factory
+
+
 @dataclass(frozen=True)
 class _ModelPair:
     """The two co-registered models for one model_name's evidence run."""
@@ -289,6 +400,15 @@ def _model_pair(model_name: str, feature_cols: tuple[str, ...], n_classes: int) 
             baseline_factory=_marginal_factory(n_classes),
             challenger_name="batted_ball_lr_baseline",
             challenger_factory=_lr_factory(feature_cols, n_classes),
+        )
+    if model_name == "batted_ball_mlp":
+        # The CHAMPION (per-park MLP) vs the rule-9 co-registered LR baseline, both on the SAME
+        # features so the comparison is apples-to-apples.
+        return _ModelPair(
+            baseline_name="batted_ball_lr_baseline",
+            baseline_factory=_lr_factory(feature_cols, n_classes),
+            challenger_name="batted_ball_mlp",
+            challenger_factory=_mlp_factory(feature_cols, n_classes),
         )
     raise ValueError(f"no model pairing for {model_name!r}")
 
@@ -562,7 +682,15 @@ def write_artifact(run: EvidenceRun, out_dir: Path, data_source: str = "sample")
 # CLI
 # ---------------------------------------------------------------------------
 
-_MODEL_CHOICES = ("pitch_outcome_pre", "pitch_outcome_post", "batted_ball_lr_baseline", "all")
+# 'all' stays the fast, torch-free trio; the per-park MLP champion is run explicitly
+# (--model batted_ball_mlp) since it pulls torch + trains one model per park.
+_MODEL_CHOICES = (
+    "pitch_outcome_pre",
+    "pitch_outcome_post",
+    "batted_ball_lr_baseline",
+    "batted_ball_mlp",
+    "all",
+)
 
 
 @click.command()

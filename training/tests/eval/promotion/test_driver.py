@@ -163,3 +163,69 @@ def test_full_artifact_writes_distinct_filename(tmp_path: Path, sample_root: Pat
     import json
 
     assert json.loads(full_path.read_text())["data_source"] == "full"
+
+
+# ---------------------------------------------------------------------------
+# Batted-ball MLP CHAMPION (per-park) rolling-origin CV path (W?, audit weakness #1)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def mlp_sample_root(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    root = tmp_path_factory.mktemp("samples_dev_mlp")
+    generate_sample_dataset(root, "batted_ball_mlp", rows_per_year=360)
+    return root
+
+
+def test_batted_ball_mlp_is_wired(mlp_sample_root: Path) -> None:
+    """The per-park MLP champion is registered across criteria/loader/sample, and the loader
+    surfaces the `park` segment + retrodicted-distribution columns the model_factory needs (which
+    the generic feature+label subset would otherwise drop)."""
+    from bullpen_training.eval.promotion.criteria import criteria_for
+    from bullpen_training.eval.promotion.sample_loader import (
+        N_CLASSES,
+        SEGMENT_COLS,
+        ParquetSampleLoader,
+        feature_cols_for,
+    )
+
+    assert N_CLASSES["batted_ball_mlp"] == 5
+    assert SEGMENT_COLS["batted_ball_mlp"] == ("park",)
+    assert feature_cols_for("batted_ball_mlp")  # non-empty
+    assert criteria_for("batted_ball_mlp").model_name == "batted_ball_mlp"
+
+    df = ParquetSampleLoader(mlp_sample_root, "batted_ball_mlp")(2015, 2015, 1)
+    assert "park" in df.columns, "loader must surface the per-park segment column"
+    assert all(f"retro_{i}" in df.columns for i in range(5)), "loader must surface retrodicted cols"
+    assert "label" in df.columns
+
+
+def test_batted_ball_mlp_evidence_runs_the_per_park_champion(
+    mlp_sample_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End-to-end path proof: the per-park MLP CHAMPION is rolling-origin CV'd (4 folds) vs the
+    co-registered LR baseline and an experiment_results-shaped artifact is produced. Epochs are
+    monkeypatched down for speed; the synthetic-sample VERDICT is not asserted (the sample has no
+    real per-park retrodiction signal - the box full-data run is the real metric)."""
+    import bullpen_training.eval.promotion.driver as drv
+
+    monkeypatch.setattr(drv, "_MLP_EPOCHS", 8)
+    run = run_evidence("batted_ball_mlp", sample_root=mlp_sample_root, rows_per_year=360)
+
+    assert len(run.baseline_cv.per_fold) == 4
+    assert len(run.challenger_cv.per_fold) == 4
+    assert run.verdict.sample_size_observed > 0
+    assert run.final_test_year == 2025
+
+    art = experiment_results_artifact(run)
+    assert art["challenger_model_name"] == "batted_ball_mlp"
+    assert art["champion_model_name"] == "batted_ball_lr_baseline"
+    assert len(art["rolling_origin_cv"]["folds"]) == 4
+    assert art["status"] in {"passed", "failed"}
+    # rule 13: no 2026 in any fold.
+    touched = {
+        y
+        for f in art["rolling_origin_cv"]["folds"]
+        for y in (f["train_start_year"], f["train_end_year"], f["val_year"], f["test_year"])
+    }
+    assert 2026 not in touched and max(touched) == 2025
