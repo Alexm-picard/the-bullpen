@@ -43,6 +43,7 @@ from bullpen_training.features.tier_1_2 import (
     FEATURES_COLUMNS,
     FoldWindow,
     build_fold_features,
+    load_labeled_pitches,
 )
 from bullpen_training.ingest.clickhouse_client import ClickHouseSettings, make_client
 from tests.leakage.conftest import _signal_label  # per-pitcher signal so TE is non-trivial
@@ -128,6 +129,7 @@ def _recreate_pitches(ch: Client) -> None:
             p_throws FixedString(1),
             stand FixedString(1),
             park_id LowCardinality(String),
+            score_diff_live Nullable(Int16),
             ingested_at DateTime DEFAULT now()
         )
         ENGINE = ReplacingMergeTree(ingested_at)
@@ -378,3 +380,33 @@ def test_sql_final_dedups_reingested_train_pitch(ch: Client, tmp_path: Any) -> N
         "build - the pitch read is double-counting the pre-correction rows, i.e. "
         "`FROM pitches` is missing FINAL (DEF-H3)"
     )
+
+
+# --- score_diff correctness (no longer a hardcoded 0) -------------------------
+
+
+def test_score_diff_passes_through_score_diff_live(ch: Client) -> None:
+    """score_diff is no longer a hardcoded 0: select_labeled_pitches.sql now passes
+    pitches.score_diff_live through (the batting-team lead that transform_raw_to_pitches
+    propagates from raw_statcast.bat_score_diff), coalescing a NULL to 0. Drive the real
+    production loader and assert the value lands on the right pitch."""
+    _recreate_pitches(ch)
+    cols = (*_PITCH_INSERT_COLS, "score_diff_live")
+    gd = TRAIN_START + timedelta(days=2)
+    t = datetime(2024, 6, 1, 0, 0, 0)
+    rows = [
+        # (..., ingested_at, score_diff_live): batter's side +3, -2, and NULL (-> 0).
+        (700_900, gd, 1, 1, 11, 21, "ball", 0, 0, 0, 1, 0, "R", "R", "PARK01", t, 3),
+        (700_900, gd, 2, 1, 12, 22, "called_strike", 0, 0, 0, 1, 0, "L", "L", "PARK02", t, -2),
+        (700_900, gd, 3, 1, 13, 23, "foul", 0, 0, 0, 1, 0, "R", "L", "PARK03", t, None),
+    ]
+    ch.execute(f"INSERT INTO pitches ({', '.join(cols)}) VALUES", rows)
+
+    df = load_labeled_pitches(ch, start_date=TRAIN_START, end_date=TRAIN_END)
+    got = {int(ab): int(sd) for ab, sd in zip(df["at_bat_index"], df["score_diff"], strict=True)}
+
+    assert got == {
+        1: 3,
+        2: -2,
+        3: 0,
+    }, f"score_diff did not pass through score_diff_live (NULL must coalesce to 0): {got}"
