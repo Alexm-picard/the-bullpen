@@ -765,8 +765,8 @@ def experiment_results_artifact(run: EvidenceRun, data_source: str = "sample") -
 
 def _artifact_filename(model_name: str, data_source: str) -> str:
     """Artifact filename. A non-sample run gets a ``_{data_source}`` suffix so the box full-data H2
-    row never clobbers the committed sample-stage row. For batted_ball_mlp, a NON-default calibration
-    also appends ``_{_MLP_CALIBRATION}`` so a recalibration-experiment run never clobbers the
+    row never clobbers the committed sample-stage row. For batted_ball_mlp, a NON-default
+    calibration also appends ``_{_MLP_CALIBRATION}`` so a recalibration run never clobbers the
     committed isotonic H2 row (#115); isotonic keeps the original name."""
     suffix = "" if data_source == "sample" else f"_{data_source}"
     if model_name == "batted_ball_mlp" and _MLP_CALIBRATION != "isotonic":
