@@ -12,6 +12,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+
 from bullpen_training.eval.promotion import driver
 from bullpen_training.eval.promotion.driver import (
     _MIN_PARK_VAL_ROWS,
@@ -115,7 +116,7 @@ def test_mlp_factory_wires_each_calibration_strategy(
 
 def test_artifact_filename_encodes_nondefault_calibration(monkeypatch: pytest.MonkeyPatch) -> None:
     """A non-default calibration gets its own full-data filename so a recalibration run never
-    clobbers the committed isotonic H2 row (#115); isotonic + other models keep the original name."""
+    clobbers the committed isotonic H2 row (#115); isotonic + other models keep their name."""
     # isotonic (default) -> the #115 filename, unchanged.
     assert (
         driver._artifact_filename("batted_ball_mlp", "full")
