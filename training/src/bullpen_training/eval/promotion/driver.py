@@ -763,12 +763,20 @@ def experiment_results_artifact(run: EvidenceRun, data_source: str = "sample") -
     }
 
 
+def _artifact_filename(model_name: str, data_source: str) -> str:
+    """Artifact filename. A non-sample run gets a ``_{data_source}`` suffix so the box full-data H2
+    row never clobbers the committed sample-stage row. For batted_ball_mlp, a NON-default calibration
+    also appends ``_{_MLP_CALIBRATION}`` so a recalibration-experiment run never clobbers the
+    committed isotonic H2 row (#115); isotonic keeps the original name."""
+    suffix = "" if data_source == "sample" else f"_{data_source}"
+    if model_name == "batted_ball_mlp" and _MLP_CALIBRATION != "isotonic":
+        suffix += f"_{_MLP_CALIBRATION}"
+    return f"{model_name}_experiment_results{suffix}.json"
+
+
 def write_artifact(run: EvidenceRun, out_dir: Path, data_source: str = "sample") -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
-    # A non-sample run writes a distinct filename (e.g. <model>_experiment_results_full.json)
-    # so the box full-data H2 row never clobbers the committed sample-stage row.
-    suffix = "" if data_source == "sample" else f"_{data_source}"
-    path = out_dir / f"{run.model_name}_experiment_results{suffix}.json"
+    path = out_dir / _artifact_filename(run.model_name, data_source)
     path.write_text(json.dumps(experiment_results_artifact(run, data_source), indent=2) + "\n")
     return path
 

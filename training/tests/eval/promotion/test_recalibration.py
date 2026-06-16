@@ -112,3 +112,23 @@ def test_mlp_factory_wires_each_calibration_strategy(
     else:
         assert pred._temps is not None
         assert len(pred._temps) >= 1  # >= one park hit _MIN_PARK_VAL_ROWS and fit its own T
+
+
+def test_artifact_filename_encodes_nondefault_calibration(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A non-default calibration gets its own full-data filename so a recalibration run never clobbers
+    the committed isotonic H2 row (#115); isotonic + other models keep the original name."""
+    # isotonic (default) -> the #115 filename, unchanged.
+    assert (
+        driver._artifact_filename("batted_ball_mlp", "full")
+        == "batted_ball_mlp_experiment_results_full.json"
+    )
+    monkeypatch.setattr(driver, "_MLP_CALIBRATION", "per_park_temperature")
+    assert (
+        driver._artifact_filename("batted_ball_mlp", "full")
+        == "batted_ball_mlp_experiment_results_full_per_park_temperature.json"
+    )
+    # the calibration knob only affects batted_ball_mlp.
+    assert (
+        driver._artifact_filename("pitch_outcome_pre", "full")
+        == "pitch_outcome_pre_experiment_results_full.json"
+    )
