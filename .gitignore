@@ -44,7 +44,7 @@ training/*.egg-info/
 # rarely on the box and read by promote-model) IS versioned as the audit record. Ignore the dir
 # CONTENTS (not the dir) so the negation can re-include the full-data file.
 training/data/eval/promotion/*
-!training/data/eval/promotion/*_experiment_results_full.json
+!training/data/eval/promotion/*_experiment_results_full*.json
 training/data/samples/
 
 # Model artifacts NEVER go in git (CLAUDE.md hard never-rule)
