@@ -100,6 +100,21 @@ _MLP_SEED = 42
 # so tests can monkeypatch a small epoch count for speed without touching the production path.
 _MLP_EPOCHS: int | None = None
 
+# Recalibration knob for the batted-ball per-park MLP champion (set via --mlp-calibration).
+# "isotonic" is the original (global one-vs-rest isotonic on val) and stays the default so existing
+# evidence + the served gate are unchanged. The full-data H2 run (#115) missed the absolute ECE<0.02
+# bar at 0.0346 POST-isotonic, so these add post-hoc per-park temperature scaling (1 param/park,
+# robust on small per-park val) to reach the park-specific over/under-confidence a single global
+# calibrator cannot:
+#   "per_park_temperature"          - per-park T only (no isotonic)
+#   "per_park_temperature_isotonic" - per-park T, then global isotonic on the scaled val probs
+# Temperature on log-probs == logit temperature scaling (the softmax constant cancels), applied
+# after _raw with no forward-pass change.
+_MLP_CALIBRATION: str = "isotonic"
+_MLP_CALIBRATION_CHOICES = ("isotonic", "per_park_temperature", "per_park_temperature_isotonic")
+# A park needs >= this many val rows to fit its own temperature; below it, the pooled T is used.
+_MIN_PARK_VAL_ROWS: int = 200
+
 _CV_METRICS = (multiclass_brier, multiclass_log_loss, expected_calibration_error)
 
 
@@ -196,12 +211,18 @@ class _MLPPredictor:
         feature_cols: tuple[str, ...],
         n_classes: int,
         calibrator: IsotonicCalibrator | None,
+        temperatures: dict[str, float] | None = None,
+        default_temperature: float = 1.0,
     ) -> None:
         self._models = park_models  # park -> (PerParkMLP, FeatureScaler)
         self._pooled = pooled  # (PerParkMLP, FeatureScaler) cold-park fallback
         self._cols = list(feature_cols)
         self._k = n_classes
         self._cal = calibrator
+        # Optional per-park temperature scaling (recalibration experiment). Applied between _raw and
+        # the isotonic step; None == the original isotonic-only path.
+        self._temps = temperatures
+        self._default_t = default_temperature
 
     def _raw(self, X: pd.DataFrame) -> np.ndarray:
         import torch
@@ -225,6 +246,10 @@ class _MLPPredictor:
 
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
         raw = self._raw(X)
+        if self._temps is not None:
+            raw = _temperature_scale(
+                raw, X["park"].to_numpy().astype(str), self._temps, self._default_t
+            )
         return raw if self._cal is None else self._cal.transform(raw)
 
 
@@ -249,6 +274,55 @@ def _fit_isotonic_on_val(
     production models fit (decision [38]). Calibrating on val (never test)
     keeps the calibrator leakage-clean."""
     return IsotonicCalibrator.fit(y_val, raw_val_proba, class_labels=_class_labels(n_classes))
+
+
+def _temperature_scale(
+    probs: np.ndarray, parks: np.ndarray, temps: dict[str, float], default_t: float
+) -> np.ndarray:
+    """Apply a per-park temperature to softmax probs via log-prob scaling: softmax(log p / T)
+    equals logit temperature scaling (the per-row softmax constant cancels). T > 1 softens an
+    over-confident park, T < 1 sharpens an under-confident one. Parks absent from ``temps`` (cold
+    parks at test, or small parks pooled at fit) use ``default_t``."""
+    logp = np.log(np.clip(probs, 1e-12, 1.0))
+    out = np.empty_like(probs)
+    for park in np.unique(parks):
+        mask = parks == park
+        scaled = logp[mask] / temps.get(str(park), default_t)
+        scaled = scaled - scaled.max(axis=1, keepdims=True)
+        e = np.exp(scaled)
+        out[mask] = e / e.sum(axis=1, keepdims=True)
+    return out
+
+
+def _fit_temperature(logp: np.ndarray, y: np.ndarray) -> float:
+    """Fit a single temperature T (logits/T) minimising NLL on (log-probs, integer labels). One free
+    parameter, so it is robust on small samples; the bounded search avoids a degenerate T."""
+    from scipy.optimize import minimize_scalar
+
+    def nll(t: float) -> float:
+        scaled = logp / t
+        scaled = scaled - scaled.max(axis=1, keepdims=True)
+        ls = scaled - np.log(np.exp(scaled).sum(axis=1, keepdims=True))
+        return float(-ls[np.arange(len(y)), y].mean())
+
+    res = minimize_scalar(nll, bounds=(0.05, 20.0), method="bounded")
+    return float(res.x)
+
+
+def _fit_per_park_temperature(
+    raw_val: np.ndarray, parks_val: np.ndarray, y_val: np.ndarray
+) -> tuple[dict[str, float], float]:
+    """Per-park temperatures + a pooled default, fit on val only (leakage-clean, mirroring the
+    isotonic path). A park with >= ``_MIN_PARK_VAL_ROWS`` val rows fits its own T; smaller parks
+    (and cold parks at test) fall back to the pooled T fit on ALL val rows."""
+    logp = np.log(np.clip(raw_val, 1e-12, 1.0))
+    pooled_t = _fit_temperature(logp, y_val)
+    temps: dict[str, float] = {}
+    for park in np.unique(parks_val):
+        mask = parks_val == park
+        if int(mask.sum()) >= _MIN_PARK_VAL_ROWS:
+            temps[str(park)] = _fit_temperature(logp[mask], y_val[mask])
+    return temps, pooled_t
 
 
 def _lr_factory(
@@ -367,11 +441,31 @@ def _mlp_factory(
         )
 
         uncal = _MLPPredictor(models, pooled, feature_cols, n_classes, calibrator=None)
-        # Per-class isotonic on the val fold (never test) - the SAME calibration the LR/LGBM
-        # factories fit, so the champion-vs-baseline comparison is calibration-fair + leakage-clean.
+        # Calibrate on the val fold only (never test) - leakage-clean, and the SAME val the LR/LGBM
+        # factories isotonic-fit, so the champion-vs-baseline comparison stays calibration-fair.
         raw_val = uncal._raw(val)
-        cal = _fit_isotonic_on_val(raw_val, np.asarray(val["label"], dtype=np.int64), n_classes)
-        return _MLPPredictor(models, pooled, feature_cols, n_classes, calibrator=cal)
+        y_val = np.asarray(val["label"], dtype=np.int64)
+        if _MLP_CALIBRATION == "isotonic":
+            cal = _fit_isotonic_on_val(raw_val, y_val, n_classes)
+            return _MLPPredictor(models, pooled, feature_cols, n_classes, calibrator=cal)
+        # Recalibration: per-park temperature scaling, optionally + global isotonic on top.
+        parks_val = val["park"].to_numpy().astype(str)
+        temps, pooled_t = _fit_per_park_temperature(raw_val, parks_val, y_val)
+        cal = None
+        if _MLP_CALIBRATION == "per_park_temperature_isotonic":
+            scaled_val = _temperature_scale(raw_val, parks_val, temps, pooled_t)
+            cal = _fit_isotonic_on_val(scaled_val, y_val, n_classes)
+        elif _MLP_CALIBRATION != "per_park_temperature":
+            raise ValueError(f"unknown _MLP_CALIBRATION {_MLP_CALIBRATION!r}")
+        return _MLPPredictor(
+            models,
+            pooled,
+            feature_cols,
+            n_classes,
+            calibrator=cal,
+            temperatures=temps,
+            default_temperature=pooled_t,
+        )
 
     return factory
 
@@ -664,6 +758,7 @@ def experiment_results_artifact(run: EvidenceRun, data_source: str = "sample") -
             "segment_cols": list(SEGMENT_COLS[run.model_name]),
             "rule_13_holdout": "2026 excluded from every split (sample mirror is 2015-2025 only)",
             "split_discipline": "rolling-origin temporal CV; no random_state on any split",
+            "mlp_calibration": _MLP_CALIBRATION,
         },
     }
 
@@ -731,6 +826,15 @@ _MODEL_CHOICES = (
     "gate, written as <model>_experiment_results_full.json so it never clobbers the sample row. "
     "For 'full', point --sample-root at the full-box parquet.",
 )
+@click.option(
+    "--mlp-calibration",
+    type=click.Choice(_MLP_CALIBRATION_CHOICES),
+    default="isotonic",
+    show_default=True,
+    help="batted_ball_mlp calibration (recalibration experiment). 'isotonic' is the original; the "
+    "'per_park_temperature*' options add per-park temperature scaling to chase the absolute "
+    "ECE<0.02 bar the #115 H2 run missed at 0.0346. Only affects --model batted_ball_mlp.",
+)
 def main(
     model: str,
     sample_root: Path,
@@ -738,7 +842,10 @@ def main(
     generate_sample: bool,
     rows_per_year: int,
     data_source: str,
+    mlp_calibration: str,
 ) -> None:
+    global _MLP_CALIBRATION
+    _MLP_CALIBRATION = mlp_calibration
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     models = (
         ("pitch_outcome_pre", "pitch_outcome_post", "batted_ball_lr_baseline")
