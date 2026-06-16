@@ -18,12 +18,11 @@ from __future__ import annotations
 import os
 from collections.abc import Iterator
 from dataclasses import replace
+from datetime import date
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
-from clickhouse_driver import Client
-
 from bullpen_training.eval.promotion.export_batted_ball_full import export_batted_ball_full
 from bullpen_training.eval.promotion.sample_loader import (
     BATTED_BALL_FEATURES,
@@ -31,6 +30,7 @@ from bullpen_training.eval.promotion.sample_loader import (
     ParquetSampleLoader,
 )
 from bullpen_training.ingest.clickhouse_client import ClickHouseSettings, make_client
+from clickhouse_driver import Client
 
 TEST_DB = "batted_export_test"
 REQUIRE_CH = os.environ.get("BULLPEN_REQUIRE_CH") == "1"
@@ -106,7 +106,8 @@ def _recreate(ch: Client) -> None:
 
 
 # Pitch row fields: game_id, gd, ab, pn, description, ls, la, hcx, hcy, dist, stand, outs, bs, park
-_GD = "2024-05-01"
+# game_date is a real date object: clickhouse_driver's Date column needs date, not an ISO string.
+_GD = date(2024, 5, 1)
 _PITCHES = [
     # A: valid in-play HR at BOS -> survives, label 4.
     (900001, _GD, 1, 1, "in_play", 104.2, 27.5, 100.0, 80.0, 418.0, "R", 1, 0, "BOS"),
