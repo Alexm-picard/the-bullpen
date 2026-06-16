@@ -39,8 +39,12 @@ training/dist/
 training/*.egg-info/
 
 # Promotion-evidence run products + local sample mirror (W5; not source -
-# dev samples come from R2/MinIO per ADR-0007, evidence JSON regenerates per run)
-training/data/eval/promotion/
+# dev samples come from R2/MinIO per ADR-0007). The SAMPLE evidence JSON regenerates per run so it
+# stays ignored; the durable FULL-data H2 champion evidence (*_experiment_results_full.json, produced
+# rarely on the box and read by promote-model) IS versioned as the audit record. Ignore the dir
+# CONTENTS (not the dir) so the negation can re-include the full-data file.
+training/data/eval/promotion/*
+!training/data/eval/promotion/*_experiment_results_full.json
 training/data/samples/
 
 # Model artifacts NEVER go in git (CLAUDE.md hard never-rule)
