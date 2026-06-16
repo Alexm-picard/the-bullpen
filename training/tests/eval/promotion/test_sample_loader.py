@@ -77,7 +77,9 @@ def test_generator_seed_is_stable_not_builtin_hash(tmp_path: Path) -> None:
     generate_sample_dataset(tmp_path, "batted_ball_lr_baseline", rows_per_year=200)
     df = pd.read_parquet(tmp_path / "batted_ball_lr_baseline" / "year=2020.parquet")
     digest = hashlib.sha256(df.to_csv(index=False).encode()).hexdigest()
-    assert digest == "89b010d56f0e82cd7905707586871e2d399874ae297e4a9a513e8a31a9a1cbb7"
+    # Re-pinned 2026-06-16 when BATTED_BALL_FEATURES widened to the production 15 (added
+    # base_state_0..7); determinism is unchanged (stable blake2b seed), only the content.
+    assert digest == "e8cd5bb10ede4f9de99961e3ebfade2f6afb09b9c4cc5b198f358baf0f38eff5"
 
 
 def test_loader_missing_file_is_loud(tmp_path: Path) -> None:

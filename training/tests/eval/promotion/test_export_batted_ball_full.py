@@ -26,13 +26,14 @@ from bullpen_training.eval.promotion.sample_loader import (
     feature_cols_for,
 )
 
-# Three synthetic home-park BIPs. Columns match build_year_query's SELECT order:
-# launch_speed, launch_angle, hc_x, hc_y, hit_distance, stand, outs, park, label, prob_out..prob_hr.
-# Row 0: a barrel -> hr (label 4); row 1: a grounder out (label 0); row 2: a single (label 1).
+# Three synthetic home-park BIPs. Columns match build_year_query's SELECT order: launch_speed,
+# launch_angle, hc_x, hc_y, hit_distance, stand, outs, base_state, park, label, prob_out..prob_hr.
+# Row 0: a barrel -> hr (label 4, base_state 0); row 1: a grounder out (label 0, base_state 3);
+# row 2: a single (label 1, base_state 7).
 _TSV = (
-    "104.2\t27.5\t100.0\t80.0\t418.0\tR\t1\tNYY\t4\t0.02\t0.03\t0.05\t0.05\t0.85\n"
-    "88.1\t-5.0\t150.0\t150.0\t40.0\tL\t2\tBOS\t0\t0.93\t0.04\t0.02\t0.01\t0.00\n"
-    "95.0\t12.0\t90.0\t170.0\t180.0\tR\t0\tLAD\t1\t0.40\t0.45\t0.10\t0.04\t0.01\n"
+    "104.2\t27.5\t100.0\t80.0\t418.0\tR\t1\t0\tNYY\t4\t0.02\t0.03\t0.05\t0.05\t0.85\n"
+    "88.1\t-5.0\t150.0\t150.0\t40.0\tL\t2\t3\tBOS\t0\t0.93\t0.04\t0.02\t0.01\t0.00\n"
+    "95.0\t12.0\t90.0\t170.0\t180.0\tR\t0\t7\tLAD\t1\t0.40\t0.45\t0.10\t0.04\t0.01\n"
 )
 
 
@@ -53,6 +54,13 @@ def test_rows_to_frame_matches_loader_schema() -> None:
     assert retro.shape == (3, 5)
     for row in retro:
         assert abs(float(row.sum()) - 1.0) < 1e-5
+    # base_state one-hot is carried (the 15-feature champion vector): rows set bit 0 / 3 / 7,
+    # exactly one bit per row.
+    assert df["base_state_0"].iloc[0] == 1.0
+    assert df["base_state_3"].iloc[1] == 1.0
+    assert df["base_state_7"].iloc[2] == 1.0
+    bs = df[[f"base_state_{b}" for b in range(8)]].to_numpy()
+    assert (bs.sum(axis=1) == 1.0).all()
 
 
 def test_feature_derivation_matches_production() -> None:
@@ -104,6 +112,7 @@ def test_query_mirrors_production_filters() -> None:
     assert "r.park_id = p.park_id" in q
     assert "r.observed_outcome IS NOT NULL" in q
     assert "toUInt8(r.observed_outcome)" in q  # the realized label, wrapped in toString for TSV
+    assert "p.base_state" in q  # the 15-feature champion carries the base_state one-hot
     assert "toYear(p.game_date) = 2024" in q
     for gate in ("launch_speed_mph IS NOT NULL", "hc_x IS NOT NULL", "hit_distance_ft IS NOT NULL"):
         assert gate in q

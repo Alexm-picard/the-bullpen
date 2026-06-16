@@ -80,6 +80,7 @@ _RAW_COLS: tuple[str, ...] = (
     "hit_distance_ft",
     "stand",
     "outs",
+    "base_state",
     "park",
     "label",
     "prob_out",
@@ -107,6 +108,7 @@ def build_year_query(year: int) -> str:
       toString(p.hit_distance_ft)  AS hit_distance_ft,
       p.stand                      AS stand,
       toString(p.outs)             AS outs,
+      toString(p.base_state)       AS base_state,
       p.park_id                    AS park,
       toString(toUInt8(r.observed_outcome)) AS label,
       toString(r.prob_out)         AS prob_out,
@@ -134,7 +136,8 @@ def build_year_query(year: int) -> str:
 
 def rows_to_frame(tsv: str) -> pd.DataFrame:
     """Parse the per-year TSV into the ParquetSampleLoader schema for ``batted_ball_mlp``:
-    the 7 ``BATTED_BALL_FEATURES`` + integer ``label`` + ``park`` + ``retro_0..4``.
+    the 15 ``BATTED_BALL_FEATURES`` (= production ``FEATURE_NAMES``) + integer ``label`` + ``park``
+    + ``retro_0..4``.
 
     Pure (no I/O) so the transform is unit-testable on the Mac with a synthetic TSV."""
     empty = _empty_frame()
@@ -172,7 +175,12 @@ def rows_to_frame(tsv: str) -> pd.DataFrame:
     )
     for i, name in enumerate(OUTCOME_NAMES):
         out[f"retro_{i}"] = raw[f"prob_{name}"].to_numpy(dtype="float32")
-    # Column order: features, label, park, then retro - matches the generator's output.
+    # base_state one-hot (FEATURE_NAMES positions 6..13), matching battedball.base_state_one_hot -
+    # the production per-park MLP trains on these 8 dims, so the CV must carry them.
+    base_state = raw["base_state"].to_numpy(dtype="int64")
+    for b in range(8):
+        out[f"base_state_{b}"] = (base_state == b).astype("float32")
+    # Column order = FEATURE_NAMES features, label, park, then retro (matches the generator).
     return cast(pd.DataFrame, out[[*BATTED_BALL_FEATURES, "label", "park", *RETRO_COLS]])
 
 
