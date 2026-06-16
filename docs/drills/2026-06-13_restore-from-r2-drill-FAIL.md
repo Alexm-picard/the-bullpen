@@ -1,5 +1,10 @@
 # Restore Drill - 2026-06-13 (restore-FROM-R2 - FAIL, restore path not backup)
 
+> **SUPERSEDED by [`2026-06-15_restore.md`](2026-06-15_restore.md) (PASS, rule 8 closed).** The
+> root cause here (64k-object restore path) plus six further harness/storage/boot-config gaps were
+> fixed across #75/#79/#92/#96/#97/#109/#110; the canonical self-contained drill passed 2026-06-16.
+> This report is retained as the historical record of the first valid FAIL.
+
 - **Operator:** alepic (derpthund@gmail.com)
 - **Drill type:** disaster-recovery restore-from-R2 (CLAUDE.md rule 8), first run of the
   `ops/scripts/restore-drill.sh --from-r2` mode shipped in #74
