@@ -103,6 +103,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TOY_ARTIFACTS_DIR="${BULLPEN_INFERENCE_TOY_ARTIFACTS_DIR:-${REPO_ROOT}/training/artifacts/_toy/v0}"
 TOY_CONTRACT_PATH="${BULLPEN_INFERENCE_CONTRACT_PATH:-${REPO_ROOT}/contracts/feature_pipeline_toy.json}"
+# SecurityConfig.adminUser fail-closes on a blank bullpen.admin.basicauth (prod supplies it via
+# /etc/default/bullpen's THEBULLPEN_ADMIN_BASIC_AUTH; the bundled yml default is empty). The scratch
+# boot serves no real admin traffic, so a throwaway "user:password" satisfies the bean - same class of
+# fix as the toy path. This is the LAST api fail-closed env gap: an audit of every @Value-without-
+# default + IllegalStateException-on-blank in the api profile found only clickhouse.password (already
+# passed) and this; R2ArchiveClient is @ConditionalOnExpression-gated off when S3_ENDPOINT_URL is
+# unset, and WarmupReadiness's missing-champion failure only downs the /readiness probe group, not the
+# top-level /actuator/health the boot gate checks.
+DRILL_ADMIN_BASICAUTH="${DRILL_ADMIN_BASICAUTH:-drill:drill}"
 
 # One per-run temp dir on a DISK-backed fs (NOT tmpfs). Two drill findings drive this:
 #   - /tmp is tmpfs on the box (~5.8G); r2 mode stages a multi-GB clickhouse.tar AND
@@ -368,6 +377,7 @@ boot_profile() {
     --bullpen.ingest.players.enabled=false \
     --bullpen.inference.toy.artifacts-dir="$TOY_ARTIFACTS_DIR" \
     --bullpen.inference.contract-path="$TOY_CONTRACT_PATH" \
+    --bullpen.admin.basicauth="$DRILL_ADMIN_BASICAUTH" \
     >"${DRILL_TMP}/boot-${profile}.log" 2>&1 &
   local pid=$!
   APP_PIDS+=("$pid")
@@ -390,6 +400,9 @@ boot_profile() {
     # backup set (artifacts live in R2 snapshots/, gitignored locally). 404 here is
     # acceptable - the hard gate is actuator UP, which proves DB connectivity to the
     # restored scratch CH + registry. Logged for the report, never fatal.
+    # Expect a "warm-up failed; readiness stays DOWN" line in boot-api.log too: WarmupReadiness
+    # tries to warm the registry champion, whose artifact is absent in a DATA restore. That downs
+    # only the /actuator/health/readiness probe group, NOT the top-level /actuator/health gated above.
     local code
     code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:${port}/v1/predict/pitch" \
       -H 'content-type: application/json' \
