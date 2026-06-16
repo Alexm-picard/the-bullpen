@@ -44,6 +44,8 @@ from typing import Final, cast
 import numpy as np
 import pandas as pd
 
+from bullpen_training.battedball.features_shared import FEATURE_NAMES
+
 # Holdout fence (rule 13). The loader + generator both refuse 2026+.
 HOLDOUT_YEAR: Final[int] = 2026
 
@@ -71,15 +73,12 @@ PITCH_POST_EXTRA: Final[tuple[str, ...]] = (
     "plate_z_in",
     "pitch_type_int",
 )
-BATTED_BALL_FEATURES: Final[tuple[str, ...]] = (
-    "launch_speed_mph",
-    "launch_angle_deg",
-    "spray_angle_deg",
-    "hit_distance_ft",
-    "stand_R",
-    "stand_L",
-    "outs",
-)
+# The per-park MLP champion AND its co-registered LR baseline both train on the production
+# FEATURE_NAMES (15: the 4 physics measures + stand one-hot + the 8-dim base_state one-hot + outs).
+# The CV reuses that exact tuple so the H2 gate certifies the SERVED champion's representation, not
+# a reduced proxy (the served contract carries base_state_0..7). base_state is ~irrelevant to the
+# batted-ball OUTCOME class but it IS what production trains, so faithful > tidy here.
+BATTED_BALL_FEATURES: Final[tuple[str, ...]] = FEATURE_NAMES
 
 # The retrodicted 5-outcome label DISTRIBUTION columns the per-park MLP champion trains on (KL
 # loss), distinct from the integer `label` (the realized outcome the CV harness scores against).
@@ -295,8 +294,13 @@ def _generate_batted_ball_year(rng: np.random.Generator, n: int) -> pd.DataFrame
     raw = score + noise
     qs = np.quantile(raw, [0.55, 0.78, 0.9, 0.97])  # most BIP are outs
     label = np.digitize(raw, qs).astype(np.int64)
+    # base_state drawn AFTER the physics/label draws (purely additive, does not perturb them) and
+    # deliberately NOT a label driver: ~irrelevant to a batted ball's outcome CLASS (it matters for
+    # run-scoring, not single-vs-HR). Carried so the sample exercises the full 15-feature
+    # FEATURE_NAMES vector the champion trains on.
+    base_state = rng.integers(0, 8, n)
 
-    return pd.DataFrame(
+    df = pd.DataFrame(
         {
             "launch_speed_mph": launch_speed,
             "launch_angle_deg": launch_angle,
@@ -308,6 +312,10 @@ def _generate_batted_ball_year(rng: np.random.Generator, n: int) -> pd.DataFrame
             "label": label,
         }
     )
+    # base_state one-hot (FEATURE_NAMES positions 6..13), matching battedball.base_state_one_hot.
+    for b in range(8):
+        df[f"base_state_{b}"] = (base_state == b).astype("float32")
+    return df
 
 
 def _generate_batted_ball_mlp_year(rng: np.random.Generator, n: int) -> pd.DataFrame:
