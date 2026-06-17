@@ -14,9 +14,17 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from bullpen_training.eval.cv_harness import CVResult
 from bullpen_training.eval.promotion import driver
+from bullpen_training.eval.promotion.criteria import (
+    MetricSummary,
+    Verdict,
+    VerdictOutcome,
+    criteria_for,
+)
 from bullpen_training.eval.promotion.driver import (
     _MIN_PARK_VAL_ROWS,
+    _aggregate_retro_ece,
     _fit_per_park_isotonic,
     _fit_per_park_temperature,
     _fit_temperature,
@@ -164,3 +172,71 @@ def test_artifact_filename_encodes_nondefault_calibration(monkeypatch: pytest.Mo
         driver._artifact_filename("pitch_outcome_pre", "full")
         == "pitch_outcome_pre_experiment_results_full.json"
     )
+
+
+# --- the retro-ECE gate ([141]) + the label-ECE reality diagnostic ------------
+
+
+def test_aggregate_retro_ece_zero_when_proba_matches_retro() -> None:
+    rng = np.random.default_rng(7)
+    retro = rng.dirichlet(np.ones(5), size=500).astype(np.float64)
+    # calibrate-to-retro then score-vs-retro is self-referential -> ~0 (the point of the caveat).
+    assert _aggregate_retro_ece(retro.copy(), retro) == pytest.approx(0.0, abs=1e-9)
+    # a mismatched prediction has a positive retro-ECE.
+    assert _aggregate_retro_ece(np.roll(retro, 1, axis=1), retro) > 0.01
+
+
+def _evidence_run(model_name: str, *, retro_ce: float | None, retro_bl: float | None) -> object:
+    crit = criteria_for(model_name)
+    ch = MetricSummary(brier=0.08, log_loss=0.74, ece=0.0346)  # ece = the REALITY label-ECE
+    bl = MetricSummary(brier=0.084, log_loss=0.73, ece=0.0461)
+    verdict = Verdict(
+        outcome=VerdictOutcome.WOULD_PASS,
+        sample_size_observed=123345,
+        baseline_metrics=bl,
+        challenger_metrics=ch,
+        primary_metric=crit.primary_metric,
+        primary_threshold=crit.primary_threshold,
+        guardrail_deltas={},
+        guardrails_violated={},
+    )
+    cv = CVResult(per_fold=(), summary={"multiclass_brier": (0.08, 0.001)})
+    return driver.EvidenceRun(
+        model_name=model_name,
+        criteria=crit,
+        baseline_cv=cv,
+        challenger_cv=cv,
+        verdict=verdict,
+        baseline_name="b",
+        challenger_name=model_name,
+        final_fold_id=4,
+        final_test_year=2025,
+        sample_root=Path("/tmp/x"),
+        rows_per_year=1,
+        challenger_retro_ece=retro_ce,
+        baseline_retro_ece=retro_bl,
+    )
+
+
+def test_artifact_batted_ball_gate_uses_retro_ece_and_reports_both() -> None:
+    run = _evidence_run("batted_ball_mlp", retro_ce=0.012, retro_bl=0.04)
+    art = driver.experiment_results_artifact(run, "full")  # type: ignore[arg-type]
+    supp = art["supplementary_checks"][0]
+    assert supp["name"] == "absolute_ece_phase2_bar"
+    assert supp["metric"] == "ece_vs_retro"  # the [141] gate metric, NOT label-ECE
+    assert supp["observed"] == pytest.approx(0.012)  # retro-ECE, not the 0.0346 label-ECE
+    assert supp["passed"] is True  # 0.012 < 0.02
+    # both ECEs reported - reality label-ECE AND the retro gate (neither hides the other).
+    assert art["challenger_full_metrics"]["ece"] == pytest.approx(0.0346)
+    assert art["challenger_full_metrics"]["ece_vs_retro"] == pytest.approx(0.012)
+    note = art["calibration_note"]
+    assert note is not None and "SELF-REFERENTIAL" in note and "reality" in note
+
+
+def test_artifact_pitch_gate_stays_label_ece_with_no_note() -> None:
+    run = _evidence_run("pitch_outcome_pre", retro_ce=None, retro_bl=None)
+    art = driver.experiment_results_artifact(run, "full")  # type: ignore[arg-type]
+    supp = art["supplementary_checks"][0]
+    assert supp["metric"] == "ece"  # pitch has no retrodiction -> label-ECE gate
+    assert supp["observed"] == pytest.approx(0.0346)
+    assert art["calibration_note"] is None
