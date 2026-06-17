@@ -593,6 +593,11 @@ class EvidenceRun:
     final_test_year: int
     sample_root: Path
     rows_per_year: int
+    # Production per-class ECE vs the retrodicted distribution on the final-fold test - the metric
+    # [141]'s "test ECE < 0.02" gate is defined on (comparison.py's 2c.6 convention). batted-ball
+    # only (needs the retro_* cols); None for pitch, whose gate is label-ECE.
+    challenger_retro_ece: float | None = None
+    baseline_retro_ece: float | None = None
 
 
 def run_evidence(
@@ -646,6 +651,15 @@ def run_evidence(
         challenger_proba=challenger_proba,
     )
 
+    # batted-ball: also compute the [141] gate metric - per-class ECE vs the retro distribution
+    # (comparison.py's 2c.6 convention). The verdict's label-ECE is the reality measure; this is the
+    # (self-referential) physics-calibration gate. Pitch has no retrodiction -> stays None.
+    challenger_retro_ece = baseline_retro_ece = None
+    if all(col in test_df.columns for col in RETRO_COLS):
+        retro = test_df[list(RETRO_COLS)].to_numpy(dtype=np.float64)
+        challenger_retro_ece = _aggregate_retro_ece(challenger_proba, retro)
+        baseline_retro_ece = _aggregate_retro_ece(baseline_proba, retro)
+
     return EvidenceRun(
         model_name=model_name,
         criteria=criteria,
@@ -658,6 +672,8 @@ def run_evidence(
         final_test_year=final.test_year,
         sample_root=Path(sample_root),
         rows_per_year=rows_per_year,
+        challenger_retro_ece=challenger_retro_ece,
+        baseline_retro_ece=baseline_retro_ece,
     )
 
 
@@ -677,6 +693,18 @@ def _git_commit_sha() -> str:
 
 def _cv_summary_dict(cv: CVResult) -> dict[str, dict[str, float]]:
     return {name: {"mean": mean, "std": std} for name, (mean, std) in cv.summary.items()}
+
+
+def _aggregate_retro_ece(proba: np.ndarray, retro: np.ndarray) -> float:
+    """The production batted-ball ECE: per-class ECE of the predicted prob vs the retrodicted
+    distribution, averaged over classes (battedball.mlp.calibration's convention, decision [51] /
+    comparison.py's 2c.6 ECE - the metric [141]'s "test ECE < 0.02" gate is defined on). It is
+    SELF-REFERENTIAL: the champion is calibrated TO the retrodiction, then scored against it, so a
+    low value proves agreement with the physics sim, NOT reality (label-ECE is reality)."""
+    from bullpen_training.battedball.mlp.calibration import expected_calibration_error as _prod_ece
+
+    n_classes = proba.shape[1]
+    return float(np.mean([_prod_ece(proba[:, c], retro[:, c]) for c in range(n_classes)]))
 
 
 def experiment_results_artifact(run: EvidenceRun, data_source: str = "sample") -> dict[str, Any]:
@@ -709,18 +737,34 @@ def experiment_results_artifact(run: EvidenceRun, data_source: str = "sample") -
     # degenerate baseline's ECE.
     supplementary: list[dict[str, Any]] = []
     if c.absolute_ece_bar is not None:
-        observed_ece = v.challenger_metrics.ece
+        # The [141] gate is defined on retro-ECE for batted-ball (comparison.py's 2c.6 convention,
+        # per-class ECE vs the retro distribution); pitch has no retrodiction, so theirs stays the
+        # label-ECE the verdict already computed.
+        if run.challenger_retro_ece is not None:
+            observed_ece = run.challenger_retro_ece
+            ece_metric = "ece_vs_retro"
+            rationale = (
+                "Phase-2 exit bar ([141]/[51]). batted-ball uses ece_vs_retro (per-class ECE vs "
+                "the retro distribution) - but the champion is calibrated TO that retrodiction, "
+                "so this is a SELF-REFERENTIAL physics-calibration check, NOT reality. See "
+                "calibration_note + the reality label-ECE in *_full_metrics.ece."
+            )
+        else:
+            observed_ece = v.challenger_metrics.ece
+            ece_metric = "ece"
+            rationale = (
+                "Phase-2 exit bar ECE < bar per model (label-ECE); supplements the relative ECE "
+                "guardrail (loose at sample scale, meaningless vs a degenerate baseline)."
+            )
         passed_abs_ece = observed_ece < c.absolute_ece_bar
         supplementary.append(
             {
                 "name": "absolute_ece_phase2_bar",
-                "metric": "ece",
+                "metric": ece_metric,
                 "max_allowed": c.absolute_ece_bar,
                 "observed": observed_ece,
                 "passed": passed_abs_ece,
-                "rationale": "Phase-2 exit bar ECE < bar per model; supplements the "
-                "relative ECE guardrail (which is loose at sample scale and "
-                "meaningless against a degenerately-calibrated baseline).",
+                "rationale": rationale,
             }
         )
 
@@ -787,17 +831,33 @@ def experiment_results_artifact(run: EvidenceRun, data_source: str = "sample") -
             "absolute_ece_bar": c.absolute_ece_bar,
             "rationale": c.rationale,
         },
-        # full metric tables for both predictors ----------------------------
+        # full metric tables for both predictors. `ece` is the REALITY measure (label-ECE); for
+        # batted-ball `ece_vs_retro` is the [141] gate metric (self-referential - see
+        # calibration_note). Both are reported so neither hides the other.
         "champion_full_metrics": {
             "brier": v.baseline_metrics.brier,
             "log_loss": v.baseline_metrics.log_loss,
             "ece": v.baseline_metrics.ece,
+            "ece_vs_retro": run.baseline_retro_ece,
         },
         "challenger_full_metrics": {
             "brier": v.challenger_metrics.brier,
             "log_loss": v.challenger_metrics.log_loss,
             "ece": v.challenger_metrics.ece,
+            "ece_vs_retro": run.challenger_retro_ece,
         },
+        "calibration_note": (
+            (
+                "ece_vs_retro is the [141]/[51] gate metric (per-class ECE vs the retro "
+                "distribution) - SELF-REFERENTIAL: the champion is calibrated TO the retrodiction, "
+                "so a low value proves agreement with the physics sim, NOT reality. `ece` (vs the "
+                "realized label) is the reality measure and is mediocre, bounded by the weak "
+                "retrodiction (rho~0.30 vs reality, [141]'s documented future work). This model is "
+                "a calibrated PHYSICS ESTIMATE, not a reality-validated predictor."
+            )
+            if run.challenger_retro_ece is not None
+            else None
+        ),
         # rolling-origin CV summaries (4-fold mean+/-std, both models) -------
         "rolling_origin_cv": {
             "folds": [
