@@ -1,9 +1,10 @@
-"""Tests for the batted-ball MLP recalibration experiment (per-park temperature scaling).
+"""Tests for the batted-ball MLP recalibration strategies (--mlp-calibration).
 
-The full-data H2 run (#115) missed the absolute ECE < 0.02 bar at 0.0346 POST-isotonic, so the
-driver gained per-park temperature scaling (via --mlp-calibration). These pin the temperature math
-(identity at T=1, softening at T>1, per-park routing + cold-park default), the val-only fit, and
-that all three calibration strategies wire end-to-end through _mlp_factory and emit valid probs.
+The #115 H2 run missed the absolute ECE < 0.02 bar at 0.0346 with a GLOBAL isotonic that is NOT the
+served champion's calibration. The driver gained per-park temperature scaling (a negative result)
+and, faithfully, per-(park, class) isotonic - the production calibration (decision [51]). These pin
+the temperature math (identity at T=1, softening at T>1, per-park routing + cold default), the
+val-only fits, and that all four strategies wire through _mlp_factory and emit valid probs.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ import pytest
 from bullpen_training.eval.promotion import driver
 from bullpen_training.eval.promotion.driver import (
     _MIN_PARK_VAL_ROWS,
+    _fit_per_park_isotonic,
     _fit_per_park_temperature,
     _fit_temperature,
     _temperature_scale,
@@ -83,18 +85,45 @@ def test_fit_per_park_temperature_small_park_falls_back_to_pooled() -> None:
     assert pooled_t > 0.0
 
 
+# --- production-faithful per-(park, class) isotonic ---------------------------
+
+
+def test_per_park_isotonic_valid_distribution_and_pools_small_and_cold_parks() -> None:
+    rng = np.random.default_rng(3)
+    n_big, n_small = _MIN_PARK_VAL_ROWS + 50, 10
+    raw = rng.dirichlet(np.ones(5), size=n_big + n_small).astype(np.float64)
+    retro = rng.dirichlet(np.ones(5), size=n_big + n_small).astype(np.float64)
+    parks = np.array(["BIG"] * n_big + ["SMALL"] * n_small)
+    pp = _fit_per_park_isotonic(raw, retro, parks, 5)
+    assert "BIG" in pp._per_park  # >= _MIN_PARK_VAL_ROWS rows -> own grid
+    assert "SMALL" not in pp._per_park  # too few rows -> pooled grid at apply time
+    out = pp.transform(raw, parks)
+    assert out.shape == raw.shape
+    np.testing.assert_allclose(out.sum(axis=1), 1.0, atol=1e-6)
+    # a cold park (unseen) routes to the pooled grid without error.
+    cold = pp.transform(raw[:3], np.array(["ZZZ", "ZZZ", "ZZZ"]))
+    np.testing.assert_allclose(cold.sum(axis=1), 1.0, atol=1e-6)
+
+
 # --- end-to-end through _mlp_factory ------------------------------------------
 
 
 @pytest.mark.parametrize(
-    "strategy", ["isotonic", "per_park_temperature", "per_park_temperature_isotonic"]
+    "strategy",
+    [
+        "isotonic",
+        "per_park_isotonic",
+        "per_park_temperature",
+        "per_park_temperature_isotonic",
+    ],
 )
 def test_mlp_factory_wires_each_calibration_strategy(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, strategy: str
 ) -> None:
-    """All three calibration strategies train through _mlp_factory and emit a valid 5-class
-    distribution. Tiny epochs keep it fast; isotonic carries no temperatures, the temperature
-    strategies do (and fit at least one per-park T at 250 val rows/park)."""
+    """All four calibration strategies train through _mlp_factory and emit a valid 5-class
+    distribution. Tiny epochs keep it fast. Each strategy attaches the right calibration object:
+    isotonic = global only; per_park_isotonic = the production per-(park,class) grid; temperature
+    strategies = per-park T (>= one per-park cell at 250 val rows/park)."""
     monkeypatch.setattr(driver, "_MLP_EPOCHS", 2)
     monkeypatch.setattr(driver, "_MLP_CALIBRATION", strategy)
     generate_sample_dataset(tmp_path, "batted_ball_mlp", rows_per_year=1500, years=[2015, 2016])
@@ -108,7 +137,10 @@ def test_mlp_factory_wires_each_calibration_strategy(
     assert proba.shape == (len(val), 5)
     np.testing.assert_allclose(proba.sum(axis=1), 1.0, atol=1e-5)
     if strategy == "isotonic":
-        assert pred._temps is None
+        assert pred._temps is None and pred._pp_isotonic is None
+    elif strategy == "per_park_isotonic":
+        assert pred._pp_isotonic is not None and pred._temps is None
+        assert len(pred._pp_isotonic._per_park) >= 1  # >= one park fit its own grid
     else:
         assert pred._temps is not None
         assert len(pred._temps) >= 1  # >= one park hit _MIN_PARK_VAL_ROWS and fit its own T
