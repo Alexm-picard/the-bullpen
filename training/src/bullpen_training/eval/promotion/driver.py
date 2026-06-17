@@ -101,17 +101,22 @@ _MLP_SEED = 42
 _MLP_EPOCHS: int | None = None
 
 # Recalibration knob for the batted-ball per-park MLP champion (set via --mlp-calibration).
-# "isotonic" is the original (global one-vs-rest isotonic on val) and stays the default so existing
-# evidence + the served gate are unchanged. The full-data H2 run (#115) missed the absolute ECE<0.02
-# bar at 0.0346 POST-isotonic, so these add post-hoc per-park temperature scaling (1 param/park,
-# robust on small per-park val) to reach the park-specific over/under-confidence a single global
-# calibrator cannot:
-#   "per_park_temperature"          - per-park T only (no isotonic)
-#   "per_park_temperature_isotonic" - per-park T, then global isotonic on the scaled val probs
-# Temperature on log-probs == logit temperature scaling (the softmax constant cancels), applied
-# after _raw with no forward-pass change.
+# "isotonic" (default) is a GLOBAL one-vs-rest isotonic on val (what #115 used); it stays the
+# default so #115's evidence + existing tests reproduce, but it is NOT the served champion's
+# calibration. The served champion uses per-(park, class) isotonic (decision [51]) - use
+# "per_park_isotonic" for a faithful H2 verdict:
+#   "per_park_isotonic"             - PRODUCTION-faithful per-(park, class) isotonic (raw -> retro)
+#   "per_park_temperature"          - per-park temperature only (experiment; negative result)
+#   "per_park_temperature_isotonic" - per-park T then global isotonic (experiment; negative result)
+# The temperature variants chased the absolute ECE<0.02 bar #115 missed at 0.0346; both came back
+# worse than plain isotonic, so per_park_isotonic (the faithful calibration) is the real H2 path.
 _MLP_CALIBRATION: str = "isotonic"
-_MLP_CALIBRATION_CHOICES = ("isotonic", "per_park_temperature", "per_park_temperature_isotonic")
+_MLP_CALIBRATION_CHOICES = (
+    "isotonic",
+    "per_park_isotonic",
+    "per_park_temperature",
+    "per_park_temperature_isotonic",
+)
 # A park needs >= this many val rows to fit its own temperature; below it, the pooled T is used.
 _MIN_PARK_VAL_ROWS: int = 200
 
@@ -213,6 +218,7 @@ class _MLPPredictor:
         calibrator: IsotonicCalibrator | None,
         temperatures: dict[str, float] | None = None,
         default_temperature: float = 1.0,
+        pp_isotonic: _PerParkIsotonic | None = None,
     ) -> None:
         self._models = park_models  # park -> (PerParkMLP, FeatureScaler)
         self._pooled = pooled  # (PerParkMLP, FeatureScaler) cold-park fallback
@@ -223,6 +229,10 @@ class _MLPPredictor:
         # the isotonic step; None == the original isotonic-only path.
         self._temps = temperatures
         self._default_t = default_temperature
+        # Optional per-(park, class) isotonic - the PRODUCTION batted-ball calibration (decision
+        # [51]); when set it REPLACES the global ``calibrator`` so the CV evaluates the served
+        # champion's actual calibration.
+        self._pp_isotonic = pp_isotonic
 
     def _raw(self, X: pd.DataFrame) -> np.ndarray:
         import torch
@@ -246,10 +256,11 @@ class _MLPPredictor:
 
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
         raw = self._raw(X)
+        parks = X["park"].to_numpy().astype(str)
         if self._temps is not None:
-            raw = _temperature_scale(
-                raw, X["park"].to_numpy().astype(str), self._temps, self._default_t
-            )
+            raw = _temperature_scale(raw, parks, self._temps, self._default_t)
+        if self._pp_isotonic is not None:
+            return self._pp_isotonic.transform(raw, parks)
         return raw if self._cal is None else self._cal.transform(raw)
 
 
@@ -323,6 +334,55 @@ def _fit_per_park_temperature(
         if int(mask.sum()) >= _MIN_PARK_VAL_ROWS:
             temps[str(park)] = _fit_temperature(logp[mask], y_val[mask])
     return temps, pooled_t
+
+
+class _PerParkIsotonic:
+    """Per-(park, class) isotonic - the PRODUCTION batted-ball calibration (decision [51],
+    ``battedball.mlp.calibration``): one sklearn ``IsotonicRegression`` per (park, outcome), applied
+    per row by the row's park then renormalised (floor 1e-9, as production does). Cold parks at test
+    use a pooled all-park grid. This is the calibration the SERVED champion uses, so the CV scores
+    the real model rather than a global-isotonic surrogate."""
+
+    def __init__(self, per_park: dict[str, list[Any]], pooled: list[Any], n_classes: int) -> None:
+        self._per_park = per_park  # park -> [IsotonicRegression] * K
+        self._pooled = pooled  # [IsotonicRegression] * K (cold-park fallback)
+        self._k = n_classes
+
+    def transform(self, raw: np.ndarray, parks: np.ndarray) -> np.ndarray:
+        out = np.empty_like(raw, dtype=np.float64)
+        for park in np.unique(parks):
+            mask = parks == park
+            isos = self._per_park.get(str(park), self._pooled)
+            for c in range(self._k):
+                out[mask, c] = isos[c].transform(raw[mask, c])
+        out = np.maximum(out, 1e-9)
+        return out / out.sum(axis=1, keepdims=True)
+
+
+def _fit_per_park_isotonic(
+    raw_val: np.ndarray, retro_val: np.ndarray, parks_val: np.ndarray, n_classes: int
+) -> _PerParkIsotonic:
+    """Fit the production per-(park, class) isotonic on val only (leakage-clean): each cell maps the
+    MLP's raw prob to the retrodicted-distribution target - the SAME target + method production uses
+    (decision [51]). A park with >= _MIN_PARK_VAL_ROWS val rows fits its own grid; smaller + cold
+    parks use a pooled grid fit on all val."""
+    from sklearn.isotonic import IsotonicRegression
+
+    def fit_grid(raw: np.ndarray, retro: np.ndarray) -> list[Any]:
+        grid: list[Any] = []
+        for c in range(n_classes):
+            iso = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0)
+            iso.fit(raw[:, c], retro[:, c])
+            grid.append(iso)
+        return grid
+
+    pooled = fit_grid(raw_val, retro_val)
+    per_park: dict[str, list[Any]] = {}
+    for park in np.unique(parks_val):
+        mask = parks_val == park
+        if int(mask.sum()) >= _MIN_PARK_VAL_ROWS:
+            per_park[str(park)] = fit_grid(raw_val[mask], retro_val[mask])
+    return _PerParkIsotonic(per_park, pooled, n_classes)
 
 
 def _lr_factory(
@@ -445,11 +505,19 @@ def _mlp_factory(
         # factories isotonic-fit, so the champion-vs-baseline comparison stays calibration-fair.
         raw_val = uncal._raw(val)
         y_val = np.asarray(val["label"], dtype=np.int64)
+        parks_val = val["park"].to_numpy().astype(str)
         if _MLP_CALIBRATION == "isotonic":
             cal = _fit_isotonic_on_val(raw_val, y_val, n_classes)
             return _MLPPredictor(models, pooled, feature_cols, n_classes, calibrator=cal)
+        if _MLP_CALIBRATION == "per_park_isotonic":
+            # PRODUCTION-faithful: per-(park, class) isotonic mapping raw prob -> retro target
+            # (decision [51]) - the calibration the served champion actually uses.
+            retro_val = val[list(RETRO_COLS)].to_numpy(dtype=np.float64)
+            pp = _fit_per_park_isotonic(raw_val, retro_val, parks_val, n_classes)
+            return _MLPPredictor(
+                models, pooled, feature_cols, n_classes, calibrator=None, pp_isotonic=pp
+            )
         # Recalibration: per-park temperature scaling, optionally + global isotonic on top.
-        parks_val = val["park"].to_numpy().astype(str)
         temps, pooled_t = _fit_per_park_temperature(raw_val, parks_val, y_val)
         cal = None
         if _MLP_CALIBRATION == "per_park_temperature_isotonic":
