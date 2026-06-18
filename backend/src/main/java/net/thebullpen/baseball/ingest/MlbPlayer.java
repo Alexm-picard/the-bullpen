@@ -8,6 +8,16 @@ package net.thebullpen.baseball.ingest;
  *
  * <p>{@code throwsHand} because {@code throws} is a Java keyword; it maps to the table's {@code
  * throws} column.
+ *
+ * <p>{@code team} is the MLB abbreviation of the player's current club (BOS, NYY, AZ, ATH, ...),
+ * matching the frontend teamColors keys; {@code ""} when the roster document carries no currentTeam
+ * (free agent / inactive). Added V024 for Browse-by-team.
  */
 public record MlbPlayer(
-    long id, String name, String primaryPosition, String bats, String throwsHand, boolean active) {}
+    long id,
+    String name,
+    String primaryPosition,
+    String bats,
+    String throwsHand,
+    boolean active,
+    String team) {}

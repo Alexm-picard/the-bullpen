@@ -16,8 +16,20 @@ import {
 } from "./players";
 
 const ROWS: PlayerSearchResult[] = [
-  { id: 660271, name: "Aaron Judge", primaryPosition: "RF", active: true },
-  { id: 660272, name: "Other Judge", primaryPosition: "C", active: false },
+  {
+    id: 660271,
+    name: "Aaron Judge",
+    primaryPosition: "RF",
+    active: true,
+    team: "NYY",
+  },
+  {
+    id: 660272,
+    name: "Other Judge",
+    primaryPosition: "C",
+    active: false,
+    team: "NYY",
+  },
 ];
 
 describe("searchPlayers", () => {

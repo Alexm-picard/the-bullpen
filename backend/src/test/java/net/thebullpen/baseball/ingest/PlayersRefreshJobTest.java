@@ -34,7 +34,7 @@ class PlayersRefreshJobTest {
   private final PlayersRefreshJob job = new PlayersRefreshJob(client, repo);
 
   private static MlbPlayer player(long id, String name, boolean active) {
-    return new MlbPlayer(id, name, "P", "R", "R", active);
+    return new MlbPlayer(id, name, "P", "R", "R", active, "DET");
   }
 
   @Test

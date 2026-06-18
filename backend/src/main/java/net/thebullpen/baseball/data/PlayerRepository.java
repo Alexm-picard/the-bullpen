@@ -1,6 +1,7 @@
 package net.thebullpen.baseball.data;
 
 import java.sql.ResultSet;
+import java.util.ArrayList;
 import java.util.List;
 import javax.sql.DataSource;
 import net.thebullpen.baseball.api.dto.PlayerSearchResult;
@@ -36,19 +37,19 @@ import org.springframework.stereotype.Repository;
 public class PlayerRepository {
 
   private static final String SEARCH_BY_NAME =
-      "SELECT id, name, primary_position, active FROM players FINAL"
+      "SELECT id, name, primary_position, active, team FROM players FINAL"
           + " WHERE positionCaseInsensitive(name, ?) > 0"
           + " ORDER BY active DESC, name ASC"
           + " LIMIT ?";
 
   private static final String SEARCH_BY_ID_PREFIX =
-      "SELECT id, name, primary_position, active FROM players FINAL"
+      "SELECT id, name, primary_position, active, team FROM players FINAL"
           + " WHERE startsWith(toString(id), ?)"
           + " ORDER BY active DESC, id ASC"
           + " LIMIT ?";
 
   private static final String FIND_BY_ID =
-      "SELECT id, name, primary_position, active FROM players FINAL WHERE id = ?";
+      "SELECT id, name, primary_position, active, team FROM players FINAL WHERE id = ?";
 
   private static final RowMapper<PlayerSearchResult> MAPPER =
       (ResultSet rs, int n) ->
@@ -56,7 +57,8 @@ public class PlayerRepository {
               rs.getLong("id"),
               rs.getString("name"),
               rs.getString("primary_position").trim(),
-              rs.getInt("active") == 1);
+              rs.getInt("active") == 1,
+              rs.getString("team").trim());
 
   private final JdbcTemplate jdbc;
 
@@ -78,6 +80,33 @@ public class PlayerRepository {
   public java.util.Optional<PlayerSearchResult> findById(long id) {
     List<PlayerSearchResult> hits = jdbc.query(FIND_BY_ID, MAPPER, id);
     return hits.isEmpty() ? java.util.Optional.empty() : java.util.Optional.of(hits.get(0));
+  }
+
+  /**
+   * Active players filtered by {@code team} and/or {@code position} (the Browse surface). Either
+   * filter may be blank to mean "no constraint"; both blank returns the active roster capped by
+   * {@code limit}. {@code position} matches the MLB primary abbreviation (C, 1B, SS, P, ...) -
+   * {@code primary_position} is FixedString(2) which compares zero-padded, so "P" matches the
+   * stored "P\0". Empty list when nothing matches (the UI renders "no players").
+   */
+  public List<PlayerSearchResult> roster(String team, String position, int limit) {
+    String t = team == null ? "" : team.trim();
+    String p = position == null ? "" : position.trim();
+    StringBuilder sql =
+        new StringBuilder(
+            "SELECT id, name, primary_position, active, team FROM players FINAL WHERE active = 1");
+    List<Object> args = new ArrayList<>();
+    if (!t.isEmpty()) {
+      sql.append(" AND team = ?");
+      args.add(t);
+    }
+    if (!p.isEmpty()) {
+      sql.append(" AND primary_position = ?");
+      args.add(p);
+    }
+    sql.append(" ORDER BY name ASC LIMIT ?");
+    args.add(limit);
+    return jdbc.query(sql.toString(), MAPPER, args.toArray());
   }
 
   private static boolean looksLikeId(String s) {

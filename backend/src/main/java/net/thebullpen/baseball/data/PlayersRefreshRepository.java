@@ -30,8 +30,8 @@ import org.springframework.stereotype.Repository;
 public class PlayersRefreshRepository {
 
   private static final String INSERT =
-      "INSERT INTO players (id, name, primary_position, bats, throws, active)"
-          + " VALUES (?, ?, ?, ?, ?, ?)";
+      "INSERT INTO players (id, name, primary_position, bats, throws, active, team)"
+          + " VALUES (?, ?, ?, ?, ?, ?, ?)";
 
   // FINAL so a re-pull's re-written rows don't double-count before parts compact.
   private static final String COUNT = "SELECT count() FROM players FINAL";
@@ -61,6 +61,7 @@ public class PlayersRefreshRepository {
           ps.setString(4, p.bats());
           ps.setString(5, p.throwsHand());
           ps.setInt(6, p.active() ? 1 : 0);
+          ps.setString(7, p.team());
         });
     return players.size();
   }

@@ -28,6 +28,7 @@ import {
   broadcastKeyNotesPalette,
   broadcastStatTablePalette,
 } from "../components/broadcast/palettes";
+import { BrowsePlayers } from "../components/players/browse-players";
 import { FeaturedReports } from "../components/players/featured-reports";
 import { ModelStandouts } from "../components/players/model-standouts";
 import { PlayerSearch } from "../components/players/player-search";
@@ -171,6 +172,8 @@ export default function PlayersPage() {
         </section>
 
         <ModelStandouts />
+
+        <BrowsePlayers />
       </div>
     </div>
   );

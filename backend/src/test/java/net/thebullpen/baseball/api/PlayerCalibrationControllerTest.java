@@ -37,7 +37,7 @@ class PlayerCalibrationControllerTest {
   @Test
   void returns_bins_for_known_player_and_model() throws Exception {
     when(players.findById(660271L))
-        .thenReturn(Optional.of(new PlayerSearchResult(660271L, "Aaron Judge", "RF", true)));
+        .thenReturn(Optional.of(new PlayerSearchResult(660271L, "Aaron Judge", "RF", true, "NYY")));
     when(calibration.computePlayerBins("pitch_outcome_pre", 660271L))
         .thenReturn(
             List.of(
@@ -55,7 +55,7 @@ class PlayerCalibrationControllerTest {
   @Test
   void empty_array_when_repo_returns_no_bins() throws Exception {
     when(players.findById(660271L))
-        .thenReturn(Optional.of(new PlayerSearchResult(660271L, "Aaron Judge", "RF", true)));
+        .thenReturn(Optional.of(new PlayerSearchResult(660271L, "Aaron Judge", "RF", true, "NYY")));
     when(calibration.computePlayerBins("batted_ball", 660271L)).thenReturn(List.of());
 
     mvc.perform(get("/v1/players/660271/calibration").param("model", "batted_ball"))
@@ -91,7 +91,7 @@ class PlayerCalibrationControllerTest {
   @Test
   void delegates_to_repo_with_correct_args() throws Exception {
     when(players.findById(660271L))
-        .thenReturn(Optional.of(new PlayerSearchResult(660271L, "Aaron Judge", "RF", true)));
+        .thenReturn(Optional.of(new PlayerSearchResult(660271L, "Aaron Judge", "RF", true, "NYY")));
     when(calibration.computePlayerBins("pitch_outcome_post", 660271L)).thenReturn(List.of());
 
     mvc.perform(get("/v1/players/660271/calibration").param("model", "pitch_outcome_post"))

@@ -42,6 +42,7 @@ public class PlayerController {
   private static final int LIMIT_MIN = 1;
   private static final int LIMIT_MAX = 50;
   private static final int PREDICTIONS_LIMIT_MAX = 200;
+  private static final int ROSTER_LIMIT_MAX = 100;
 
   private final PlayerRepository repo;
   private final PlayerPredictionsRepository predictions;
@@ -65,6 +66,23 @@ public class PlayerController {
           HttpStatus.BAD_REQUEST, "limit must be in [" + LIMIT_MIN + ", " + LIMIT_MAX + "]");
     }
     return repo.search(q.trim(), limit);
+  }
+
+  /**
+   * Active roster filtered by {@code team} and/or {@code position}, for the Browse surface. Both
+   * params optional (the UI picks one facet at a time); {@code limit} in [1, 100], default 50. A
+   * literal {@code /roster} path so it never collides with {@code /{id}}.
+   */
+  @GetMapping("/roster")
+  public List<PlayerSearchResult> roster(
+      @RequestParam(name = "team", required = false) String team,
+      @RequestParam(name = "position", required = false) String position,
+      @RequestParam(name = "limit", defaultValue = "50") int limit) {
+    if (limit < LIMIT_MIN || limit > ROSTER_LIMIT_MAX) {
+      throw new ResponseStatusException(
+          HttpStatus.BAD_REQUEST, "limit must be in [" + LIMIT_MIN + ", " + ROSTER_LIMIT_MAX + "]");
+    }
+    return repo.roster(team, position, limit);
   }
 
   @GetMapping("/{id}")

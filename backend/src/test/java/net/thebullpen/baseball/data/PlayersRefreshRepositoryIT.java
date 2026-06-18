@@ -79,14 +79,14 @@ class PlayersRefreshRepositoryIT {
     int written =
         repo.upsertAll(
             List.of(
-                new MlbPlayer(660271, "Shohei Ohtani", "TW", "L", "R", true),
-                new MlbPlayer(671096, "Andrew Abbott", "P", "L", "L", true)));
+                new MlbPlayer(660271, "Shohei Ohtani", "TW", "L", "R", true, "LAD"),
+                new MlbPlayer(671096, "Andrew Abbott", "P", "L", "L", true, "CIN")));
     assertThat(written).isEqualTo(2);
     assertThat(repo.countAll()).isEqualTo(2);
 
     Map<String, Object> row =
         ch.queryForMap(
-            "SELECT name, primary_position, bats, throws, active FROM players FINAL"
+            "SELECT name, primary_position, bats, throws, active, team FROM players FINAL"
                 + " WHERE id = 660271");
     assertThat(row.get("name")).isEqualTo("Shohei Ohtani");
     // FixedString zero-pads short values; trim like the read side (PlayerRepository) does.
@@ -94,11 +94,12 @@ class PlayersRefreshRepositoryIT {
     assertThat(str(row, "bats")).isEqualTo("L");
     assertThat(str(row, "throws")).isEqualTo("R");
     assertThat(((Number) row.get("active")).intValue()).isEqualTo(1);
+    assertThat(row.get("team")).isEqualTo("LAD");
 
     // updated_at is DateTime (second granularity): make the re-pull's version strictly newer so
     // the ReplacingMergeTree pick is deterministic.
     Thread.sleep(1100);
-    repo.upsertAll(List.of(new MlbPlayer(660271, "Shohei Ohtani", "DH", "L", "R", false)));
+    repo.upsertAll(List.of(new MlbPlayer(660271, "Shohei Ohtani", "DH", "L", "R", false, "LAD")));
 
     Map<String, Object> replaced =
         ch.queryForMap(

@@ -15,6 +15,8 @@ export type PlayerSearchResult = {
   name: string;
   primaryPosition: string;
   active: boolean;
+  /** MLB team abbreviation (V024); "" when unaffiliated. */
+  team: string;
 };
 
 export class PlayerLookupError extends Error {
@@ -75,6 +77,47 @@ export function usePlayer(id: number | null) {
       return getPlayer(id);
     },
     enabled: id != null,
+    staleTime: 60_000,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Roster browse — GET /v1/players/roster?team=&position= (the Browse surface)
+// ---------------------------------------------------------------------------
+
+export async function fetchRoster(
+  team?: string,
+  position?: string,
+  limit = 50,
+): Promise<PlayerSearchResult[]> {
+  const params = new URLSearchParams();
+  if (team) params.set("team", team);
+  if (position) params.set("position", position);
+  params.set("limit", String(limit));
+  const res = await fetch(`${API_BASE}/v1/players/roster?${params.toString()}`);
+  if (!res.ok) {
+    throw new PlayerLookupError(
+      res.status,
+      `roster failed: HTTP ${res.status}`,
+    );
+  }
+  return (await res.json()) as PlayerSearchResult[];
+}
+
+/**
+ * Active roster by team OR position. Disabled until a facet is chosen (no facet
+ * = no fetch, so the section is quiet until the user clicks a pill). Roster moves
+ * slowly, so a 60s staleTime matches the search hook.
+ */
+export function usePlayerRoster(
+  team: string | null,
+  position: string | null,
+  limit = 50,
+) {
+  return useQuery<PlayerSearchResult[], PlayerLookupError>({
+    queryKey: ["players", "roster", team ?? "", position ?? "", limit],
+    queryFn: () => fetchRoster(team ?? undefined, position ?? undefined, limit),
+    enabled: team != null || position != null,
     staleTime: 60_000,
   });
 }

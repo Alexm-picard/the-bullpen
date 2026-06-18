@@ -2,6 +2,7 @@ package net.thebullpen.baseball.api;
 
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -50,8 +51,8 @@ class PlayerControllerTest {
     when(repo.search(eq("judge"), anyInt()))
         .thenReturn(
             List.of(
-                new PlayerSearchResult(660271L, "Aaron Judge", "RF", true),
-                new PlayerSearchResult(660272L, "Other Judge", "C", false)));
+                new PlayerSearchResult(660271L, "Aaron Judge", "RF", true, "NYY"),
+                new PlayerSearchResult(660272L, "Other Judge", "C", false, "NYY")));
 
     mvc.perform(get("/v1/players/search").param("q", "judge"))
         .andExpect(status().isOk())
@@ -59,7 +60,36 @@ class PlayerControllerTest {
         .andExpect(jsonPath("$[0].name").value("Aaron Judge"))
         .andExpect(jsonPath("$[0].primaryPosition").value("RF"))
         .andExpect(jsonPath("$[0].active").value(true))
+        .andExpect(jsonPath("$[0].team").value("NYY"))
         .andExpect(jsonPath("$[1].active").value(false));
+  }
+
+  // --- roster (Browse) ---------------------------------------------------
+
+  @Test
+  void roster_byTeam_delegates_and_serializes_team() throws Exception {
+    when(repo.roster(eq("NYY"), isNull(), anyInt()))
+        .thenReturn(List.of(new PlayerSearchResult(660271L, "Aaron Judge", "RF", true, "NYY")));
+
+    mvc.perform(get("/v1/players/roster").param("team", "NYY"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].name").value("Aaron Judge"))
+        .andExpect(jsonPath("$[0].team").value("NYY"));
+    verify(repo).roster("NYY", null, 50);
+  }
+
+  @Test
+  void roster_byPosition_delegates_with_default_limit() throws Exception {
+    when(repo.roster(isNull(), eq("SS"), eq(50))).thenReturn(List.of());
+
+    mvc.perform(get("/v1/players/roster").param("position", "SS")).andExpect(status().isOk());
+    verify(repo).roster(null, "SS", 50);
+  }
+
+  @Test
+  void roster_limit_outOfRange_returns_400() throws Exception {
+    mvc.perform(get("/v1/players/roster").param("team", "NYY").param("limit", "500"))
+        .andExpect(status().isBadRequest());
   }
 
   @Test
@@ -99,7 +129,7 @@ class PlayerControllerTest {
   @Test
   void get_byId_present_returns_200() throws Exception {
     when(repo.findById(660271L))
-        .thenReturn(Optional.of(new PlayerSearchResult(660271L, "Aaron Judge", "RF", true)));
+        .thenReturn(Optional.of(new PlayerSearchResult(660271L, "Aaron Judge", "RF", true, "NYY")));
 
     mvc.perform(get("/v1/players/660271"))
         .andExpect(status().isOk())
@@ -118,7 +148,7 @@ class PlayerControllerTest {
   @Test
   void predictionsFor_returns_rows_when_player_exists() throws Exception {
     when(repo.findById(660271L))
-        .thenReturn(Optional.of(new PlayerSearchResult(660271L, "Aaron Judge", "RF", true)));
+        .thenReturn(Optional.of(new PlayerSearchResult(660271L, "Aaron Judge", "RF", true, "NYY")));
     when(predictions.findRecentForPlayer(660271L, 50))
         .thenReturn(
             List.of(
@@ -142,7 +172,7 @@ class PlayerControllerTest {
   @Test
   void predictionsFor_empty_list_when_no_traffic() throws Exception {
     when(repo.findById(660271L))
-        .thenReturn(Optional.of(new PlayerSearchResult(660271L, "Aaron Judge", "RF", true)));
+        .thenReturn(Optional.of(new PlayerSearchResult(660271L, "Aaron Judge", "RF", true, "NYY")));
     when(predictions.findRecentForPlayer(660271L, 50)).thenReturn(List.of());
 
     mvc.perform(get("/v1/players/660271/predictions"))
@@ -160,7 +190,7 @@ class PlayerControllerTest {
   @Test
   void predictionsFor_400_when_limit_out_of_range() throws Exception {
     when(repo.findById(660271L))
-        .thenReturn(Optional.of(new PlayerSearchResult(660271L, "Aaron Judge", "RF", true)));
+        .thenReturn(Optional.of(new PlayerSearchResult(660271L, "Aaron Judge", "RF", true, "NYY")));
 
     mvc.perform(get("/v1/players/660271/predictions").param("limit", "5000"))
         .andExpect(status().isBadRequest());
@@ -171,7 +201,7 @@ class PlayerControllerTest {
   @Test
   void predictionsFor_respects_custom_limit() throws Exception {
     when(repo.findById(660271L))
-        .thenReturn(Optional.of(new PlayerSearchResult(660271L, "Aaron Judge", "RF", true)));
+        .thenReturn(Optional.of(new PlayerSearchResult(660271L, "Aaron Judge", "RF", true, "NYY")));
     when(predictions.findRecentForPlayer(660271L, 25)).thenReturn(List.of());
 
     mvc.perform(get("/v1/players/660271/predictions").param("limit", "25"))
