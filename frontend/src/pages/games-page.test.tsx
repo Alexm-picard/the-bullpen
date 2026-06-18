@@ -1,9 +1,10 @@
 /**
- * Page-level smoke test for /games on the BROADCAST identity (redesign PR-3,
- * decision [160]). Narrow by design: the page wires `useTodaysGames()` live,
- * so we assert the chrome renders, the one-h1 rule holds, and the loading
- * state shows. Data states live in todays-slate-table.test.tsx; the e2e suite
- * covers the network-mocked empty + populated flows.
+ * Page-level smoke test for /games on the BROADCAST identity (decision [160]).
+ * Narrow by design: the page wires `useTodaysGames()` + `useTodaysMatchups()`
+ * live and merges them, so we assert the chrome renders, the one-h1 rule holds,
+ * the status filter renders, and the loading state shows. The merge is covered
+ * in slate-view.test.ts and the card states in slate-board.test.tsx; the e2e
+ * suite covers the network-mocked empty + populated + fallback flows.
  */
 import { MantineProvider } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -52,6 +53,13 @@ describe("GamesPage (broadcast slate)", () => {
 
   it("renders the chrome footer", () => {
     const html = render(<GamesPage />);
-    expect(html).toContain("THE BULLPEN · LIVE SLATE");
+    expect(html).toContain("THE BULLPEN · TODAY");
+  });
+
+  it("renders the status filter (all / live / scheduled / completed)", () => {
+    const html = render(<GamesPage />);
+    expect(html).toContain("Filter games by status");
+    expect(html).toContain(">All<");
+    expect(html).toContain(">Completed<");
   });
 });
