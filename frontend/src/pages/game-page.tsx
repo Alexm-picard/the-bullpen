@@ -29,7 +29,9 @@ import { BroadcastPanel } from "../components/broadcast/broadcast-panel";
 import { LowerThird } from "../components/broadcast/lower-third";
 import { Scorebug } from "../components/broadcast/scorebug";
 import { TickerStrip } from "../components/broadcast/ticker-strip";
+import { BattedBallExplorer } from "../components/games/batted-ball-explorer";
 import { LivePitchBoard } from "../components/games/live-pitch-board";
+import { SHOWCASE_BATTED_BALL } from "../data/batted-ball-fixtures";
 import { colors, layouts, typography } from "../design/broadcast";
 
 /** Stable build metadata fallback so the footer always renders. */
@@ -198,6 +200,15 @@ export function GamePage() {
             />
           </div>
         </BroadcastPanel>
+
+        <section aria-labelledby="batted-ball-label">
+          <div style={{ marginBottom: 12 }}>
+            <LowerThird id="batted-ball-label" meta="SHOWCASE · CHAMPION">
+              Last Batted Ball
+            </LowerThird>
+          </div>
+          <BattedBallExplorer data={SHOWCASE_BATTED_BALL} />
+        </section>
 
         <section aria-labelledby="game-pitch-log-label">
           <div style={{ marginBottom: 12 }}>
