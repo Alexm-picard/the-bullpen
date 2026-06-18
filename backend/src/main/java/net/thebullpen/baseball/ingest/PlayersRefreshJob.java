@@ -9,6 +9,7 @@ import java.util.Map;
 import net.thebullpen.baseball.data.PlayersRefreshRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.annotation.Profile;
@@ -55,15 +56,38 @@ public class PlayersRefreshJob {
 
   private final MlbStatsApiClient client;
   private final PlayersRefreshRepository repo;
+  private final boolean forceRefreshOnBoot;
 
-  public PlayersRefreshJob(MlbStatsApiClient client, PlayersRefreshRepository repo) {
+  public PlayersRefreshJob(
+      MlbStatsApiClient client,
+      PlayersRefreshRepository repo,
+      @Value("${bullpen.ingest.players.force-refresh-on-boot:false}") boolean forceRefreshOnBoot) {
     this.client = client;
     this.repo = repo;
+    this.forceRefreshOnBoot = forceRefreshOnBoot;
   }
 
+  /**
+   * On boot: the normal path backfills only when the table is empty; when {@code
+   * bullpen.ingest.players.force-refresh-on-boot} is set, force a current-season re-pull even on a
+   * populated table. The forced path exists to backfill a newly-added column (V024 {@code team})
+   * onto an existing roster - {@link #backfillIfEmpty} no-ops once rows exist and the weekly
+   * refresh is Monday-only. Set the flag for one deploy, then clear it.
+   */
   @EventListener(ApplicationReadyEvent.class)
   public void onStartup() {
-    Thread.ofVirtual().name("players-backfill").start(this::backfillIfEmptySafely);
+    Runnable task = forceRefreshOnBoot ? this::forceRefreshSafely : this::backfillIfEmptySafely;
+    Thread.ofVirtual().name("players-backfill").start(task);
+  }
+
+  /** Visible-for-tests: forced current-season re-pull (writes even on a populated table). */
+  void forceRefreshSafely() {
+    try {
+      int n = refreshOnce();
+      log.info("PlayersRefreshJob: forced boot refresh wrote {} players", n);
+    } catch (IOException | RuntimeException e) {
+      log.error("PlayersRefreshJob: forced boot refresh failed", e);
+    }
   }
 
   /** Visible-for-tests: the swallow wrapper the startup thread runs. */

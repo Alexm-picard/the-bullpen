@@ -31,7 +31,7 @@ class PlayersRefreshJobTest {
 
   private final MlbStatsApiClient client = mock(MlbStatsApiClient.class);
   private final PlayersRefreshRepository repo = mock(PlayersRefreshRepository.class);
-  private final PlayersRefreshJob job = new PlayersRefreshJob(client, repo);
+  private final PlayersRefreshJob job = new PlayersRefreshJob(client, repo, false);
 
   private static MlbPlayer player(long id, String name, boolean active) {
     return new MlbPlayer(id, name, "P", "R", "R", active, "DET");
@@ -114,6 +114,28 @@ class PlayersRefreshJobTest {
     assertThat(job.refreshOnce()).isEqualTo(1);
     verify(client, times(1)).fetchPlayers(anyInt());
     verify(client).fetchPlayers(CURRENT_SEASON);
+  }
+
+  @Test
+  void forceRefresh_onBoot_repulls_even_when_table_is_populated() throws IOException {
+    var forced = new PlayersRefreshJob(client, repo, true);
+    when(client.fetchPlayers(CURRENT_SEASON)).thenReturn(List.of(player(1, "A Player", true)));
+    when(repo.upsertAll(anyList())).thenAnswer(inv -> ((List<?>) inv.getArgument(0)).size());
+
+    forced.forceRefreshSafely();
+
+    // Forced path re-pulls the current season and writes WITHOUT the empty-table gate.
+    verify(client).fetchPlayers(CURRENT_SEASON);
+    verify(repo).upsertAll(anyList());
+    verify(repo, never()).countAll();
+  }
+
+  @Test
+  void forceRefresh_swallows_a_fetch_failure() throws IOException {
+    var forced = new PlayersRefreshJob(client, repo, true);
+    when(client.fetchPlayers(anyInt())).thenThrow(new IOException("MLB API down"));
+
+    assertThatCode(forced::forceRefreshSafely).doesNotThrowAnyException();
   }
 
   @Test
