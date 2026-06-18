@@ -45,6 +45,12 @@ training/*.egg-info/
 # CONTENTS (not the dir) so the negation can re-include the full-data file.
 training/data/eval/promotion/*
 !training/data/eval/promotion/*_experiment_results_full*.json
+# ...but keep the exploratory temperature calibrations box-local (superseded
+# side-quests). The versioned record is isotonic (the standing best) +
+# per_park_isotonic (the gate-gaming negative); the *_temperature* runs were
+# negative side-quests and just trip --allow-dirty on the box otherwise. This
+# pattern follows the negation so it re-ignores them.
+training/data/eval/promotion/*_temperature*.json
 training/data/samples/
 
 # Model artifacts NEVER go in git (CLAUDE.md hard never-rule)
