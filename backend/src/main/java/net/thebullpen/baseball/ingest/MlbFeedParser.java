@@ -10,6 +10,7 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import org.springframework.stereotype.Component;
 
 /**
@@ -326,6 +327,44 @@ public class MlbFeedParser {
    * throws are single-letter FixedString(1) codes. Missing codes store as "" (FixedString
    * zero-pads; the read side trims).
    */
+  /**
+   * MLB team id -&gt; abbreviation, matching the frontend teamColors keys (AZ not ARI, ATH not OAK,
+   * CWS not CHW, WSH not WSN). Ids are stable; an unmapped or absent currentTeam yields "" (free
+   * agent / inactive).
+   */
+  private static final Map<Integer, String> TEAM_ABBR =
+      Map.ofEntries(
+          Map.entry(108, "LAA"),
+          Map.entry(109, "AZ"),
+          Map.entry(110, "BAL"),
+          Map.entry(111, "BOS"),
+          Map.entry(112, "CHC"),
+          Map.entry(113, "CIN"),
+          Map.entry(114, "CLE"),
+          Map.entry(115, "COL"),
+          Map.entry(116, "DET"),
+          Map.entry(117, "HOU"),
+          Map.entry(118, "KC"),
+          Map.entry(119, "LAD"),
+          Map.entry(120, "WSH"),
+          Map.entry(121, "NYM"),
+          Map.entry(133, "ATH"),
+          Map.entry(134, "PIT"),
+          Map.entry(135, "SD"),
+          Map.entry(136, "SEA"),
+          Map.entry(137, "SF"),
+          Map.entry(138, "STL"),
+          Map.entry(139, "TB"),
+          Map.entry(140, "TEX"),
+          Map.entry(141, "TOR"),
+          Map.entry(142, "MIN"),
+          Map.entry(143, "PHI"),
+          Map.entry(144, "ATL"),
+          Map.entry(145, "CWS"),
+          Map.entry(146, "MIA"),
+          Map.entry(147, "NYY"),
+          Map.entry(158, "MIL"));
+
   public List<MlbPlayer> parsePlayers(String json) throws IOException {
     JsonNode root = mapper.readTree(json);
     List<MlbPlayer> players = new ArrayList<>();
@@ -335,6 +374,7 @@ public class MlbFeedParser {
       if (id <= 0 || name == null || name.isBlank()) {
         continue;
       }
+      String team = TEAM_ABBR.getOrDefault(p.path("currentTeam").path("id").asInt(0), "");
       players.add(
           new MlbPlayer(
               id,
@@ -342,7 +382,8 @@ public class MlbFeedParser {
               clamp(p.path("primaryPosition").path("abbreviation"), 2),
               clamp(p.path("batSide").path("code"), 1),
               clamp(p.path("pitchHand").path("code"), 1),
-              p.path("active").asBoolean(false)));
+              p.path("active").asBoolean(false),
+              team));
     }
     return players;
   }

@@ -70,12 +70,12 @@ class PlayerRepositoryIT {
         var stmt = conn.createStatement()) {
       stmt.execute("TRUNCATE TABLE IF EXISTS players");
       stmt.execute(
-          "INSERT INTO players (id, name, primary_position, bats, throws, active) VALUES"
-              + " (660271, 'Aaron Judge',   'RF', 'R', 'R', 1),"
-              + " (545361, 'Mike Trout',    'CF', 'R', 'R', 1),"
-              + " (100001, 'Babe Ruth',     'LF', 'L', 'L', 0),"
-              + " (700001, 'Trouton Smith', 'SS', 'R', 'R', 1),"
-              + " (660272, 'Other Judge',   'C',  'R', 'R', 0)");
+          "INSERT INTO players (id, name, primary_position, bats, throws, active, team) VALUES"
+              + " (660271, 'Aaron Judge',   'RF', 'R', 'R', 1, 'NYY'),"
+              + " (545361, 'Mike Trout',    'CF', 'R', 'R', 1, 'LAA'),"
+              + " (100001, 'Babe Ruth',     'LF', 'L', 'L', 0, 'NYY'),"
+              + " (700001, 'Trouton Smith', 'SS', 'R', 'R', 1, 'NYY'),"
+              + " (660272, 'Other Judge',   'C',  'R', 'R', 0, 'NYY')");
     }
   }
 
@@ -138,5 +138,43 @@ class PlayerRepositoryIT {
     assertThat(repo.findById(660271L)).isPresent();
     assertThat(repo.findById(660271L).orElseThrow().name()).isEqualTo("Aaron Judge");
     assertThat(repo.findById(9_999_999L)).isEmpty();
+  }
+
+  @Test
+  void findById_carries_the_team() {
+    assertThat(repo.findById(660271L).orElseThrow().team()).isEqualTo("NYY");
+  }
+
+  // --- roster (Browse) ---------------------------------------------------
+
+  @Test
+  void roster_byTeam_returns_only_active_players_for_that_team() {
+    var hits = repo.roster("NYY", "", 50);
+    // active NYY only: Judge (RF) + Trouton Smith (SS); Ruth + Other Judge are inactive.
+    assertThat(hits)
+        .extracting(p -> p.name())
+        .containsExactlyInAnyOrder("Aaron Judge", "Trouton Smith");
+    assertThat(hits).allSatisfy(p -> assertThat(p.team()).isEqualTo("NYY"));
+  }
+
+  @Test
+  void roster_byPosition_returns_active_players_at_that_position() {
+    assertThat(repo.roster("", "SS", 50))
+        .extracting(p -> p.name())
+        .containsExactly("Trouton Smith");
+  }
+
+  @Test
+  void roster_byTeamAndPosition_intersects_both_filters() {
+    assertThat(repo.roster("NYY", "RF", 50))
+        .extracting(p -> p.name())
+        .containsExactly("Aaron Judge");
+    assertThat(repo.roster("NYY", "CF", 50)).isEmpty();
+  }
+
+  @Test
+  void roster_noFilters_returns_all_active() {
+    // Judge, Trout, Trouton Smith are active; Ruth + Other Judge are not.
+    assertThat(repo.roster("", "", 50)).hasSize(3);
   }
 }

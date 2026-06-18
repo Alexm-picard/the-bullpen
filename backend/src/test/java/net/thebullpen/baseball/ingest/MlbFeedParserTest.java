@@ -296,15 +296,18 @@ class MlbFeedParserTest {
     assertEquals("L", ohtani.bats());
     assertEquals("R", ohtani.throwsHand());
     assertTrue(ohtani.active());
+    assertEquals("LAD", ohtani.team(), "currentTeam id 119 maps to the LAD abbreviation");
 
     MlbPlayer albies = players.stream().filter(p -> p.id() == 645277L).findFirst().orElseThrow();
     assertEquals("Ozzie Albies", albies.name());
     assertEquals("2B", albies.primaryPosition());
     assertEquals("S", albies.bats(), "switch hitter keeps the S code");
+    assertEquals("ATL", albies.team(), "currentTeam id 144 maps to ATL");
 
     MlbPlayer abbott = players.stream().filter(p -> p.id() == 671096L).findFirst().orElseThrow();
     assertEquals("P", abbott.primaryPosition());
     assertEquals("L", abbott.throwsHand());
+    assertEquals("CIN", abbott.team(), "currentTeam id 113 maps to CIN");
   }
 
   @Test

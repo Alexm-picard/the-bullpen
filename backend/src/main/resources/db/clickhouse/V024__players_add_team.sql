@@ -1,0 +1,11 @@
+-- V024 - team affiliation on the players dimension (Browse-by-team).
+--
+-- Additive ALTER: existing rows take the '' default until the next roster pull
+-- re-writes them with currentTeam. players is a ReplacingMergeTree on updated_at
+-- keyed by id, so the re-pull's fresh rows win on FINAL reads - no backfill DML
+-- needed, just a re-run of PlayersRefreshJob after this lands.
+--
+-- team holds the MLB abbreviation (BOS, NYY, AZ, ATH, ...) matching the frontend
+-- teamColors keys; '' means unaffiliated (free agent / inactive) or not yet
+-- backfilled. LowCardinality because the domain is the 30 clubs.
+ALTER TABLE players ADD COLUMN IF NOT EXISTS team LowCardinality(String) DEFAULT '' AFTER active;
