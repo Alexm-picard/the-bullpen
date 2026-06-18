@@ -35,6 +35,7 @@ import { LowerThird } from "../components/broadcast/lower-third";
 import { ISSUE_META, MODEL_CHIPS } from "../data/home-fixtures";
 import type { ModelChip, ModelChipState } from "../data/home-fixtures";
 import { SHOWCASE_MATCHUPS } from "../data/matchups-showcase";
+import { SHOWCASE_GAMES } from "../data/slate-fixtures";
 import { colors, layouts, typography } from "../design/broadcast";
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -195,24 +196,27 @@ export default function HomePage() {
             <LowerThird
               id="tonight-games-label"
               meta={
-                todaysGames.data && todaysGames.data.length > 0
-                  ? `LIVE · ${todaysGames.data.length} GAMES`
-                  : "LIVE"
+                todaysGames.isError
+                  ? "SHOWCASE"
+                  : todaysGames.data && todaysGames.data.length > 0
+                    ? `LIVE · ${todaysGames.data.length} GAMES`
+                    : "LIVE"
               }
             >
               Tonight&rsquo;s Games
             </LowerThird>
           </div>
-          {todaysGames.isError ? (
-            <p style={captionStyle}>
-              Could not load tonight&rsquo;s games
-              {todaysGames.error instanceof Error
-                ? `: ${todaysGames.error.message}`
-                : ""}
-              .
-            </p>
-          ) : todaysGames.isLoading ? (
+          {todaysGames.isLoading ? (
             <p style={captionStyle}>Loading tonight&rsquo;s games&hellip;</p>
+          ) : todaysGames.isError ? (
+            // Degrade gracefully like the fleet strip + matchups board, instead
+            // of a raw "Failed to fetch": show the showcase slate + honest caption.
+            <>
+              <LiveTonightStrip games={SHOWCASE_GAMES} />
+              <p style={captionStyle}>
+                Tonight&rsquo;s games · showcase data (backend unreachable)
+              </p>
+            </>
           ) : (
             <LiveTonightStrip games={todaysGames.data ?? []} />
           )}
