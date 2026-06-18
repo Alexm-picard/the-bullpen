@@ -28,6 +28,8 @@ import {
   broadcastKeyNotesPalette,
   broadcastStatTablePalette,
 } from "../components/broadcast/palettes";
+import { FeaturedReports } from "../components/players/featured-reports";
+import { ModelStandouts } from "../components/players/model-standouts";
 import { PlayerSearch } from "../components/players/player-search";
 import { KeyNotes } from "../components/scouting/key-notes";
 import { MatchupHeader } from "../components/scouting/matchup-header";
@@ -48,6 +50,7 @@ import {
   type MatchupReport,
   type ScoutingPlayer,
 } from "../data/matchup-fixtures";
+import { FEATURED_REPORTS } from "../data/players-landing-fixtures";
 import { colors, layouts, typography } from "../design/broadcast";
 
 import "../components/scouting/matchup.css";
@@ -105,7 +108,7 @@ export default function PlayersPage() {
   const navigate = useNavigate();
   return (
     <div style={fieldStyle}>
-      <div style={{ ...columnStyle, maxWidth: 760 }}>
+      <div style={columnStyle}>
         <header>
           <p
             style={{
@@ -157,6 +160,17 @@ export default function PlayersPage() {
             Search the full roster · type a name or jersey #
           </div>
         </BroadcastPanel>
+
+        <section aria-labelledby="featured-reports-label">
+          <div style={{ marginBottom: 14 }}>
+            <LowerThird id="featured-reports-label" meta="SHOWCASE">
+              Featured Reports
+            </LowerThird>
+          </div>
+          <FeaturedReports reports={FEATURED_REPORTS} />
+        </section>
+
+        <ModelStandouts />
       </div>
     </div>
   );
