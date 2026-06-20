@@ -944,7 +944,10 @@ def experiment_results_artifact(run: EvidenceRun, data_source: str = "sample") -
             "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
             "sample_root": str(run.fold_root) if run.fold_root else str(run.sample_root),
             "loader": "fold_export" if run.fold_root else "per_year_mirror",
-            "rows_per_year": run.rows_per_year,
+            # rows_per_year is the per-year-mirror knob; on the fold-export path the loader reads
+            # WHOLE folds, so the default would mislead - record null there (the real scale lives
+            # in the verdict's sample_size_observed).
+            "rows_per_year": None if run.fold_root else run.rows_per_year,
             "segment_cols": list(SEGMENT_COLS[run.model_name]),
             "rule_13_holdout": "2026 excluded from every split (sample mirror is 2015-2025 only)",
             "split_discipline": "rolling-origin temporal CV; no random_state on any split",
