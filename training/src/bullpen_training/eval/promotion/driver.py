@@ -60,7 +60,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-from bullpen_training.eval.cv_harness import FOLDS, CVResult
+from bullpen_training.eval.cv_harness import FOLDS, CVResult, FeatureLoader
 from bullpen_training.eval.cv_harness import run as cv_run
 from bullpen_training.eval.metrics import (
     expected_calibration_error,
@@ -81,6 +81,7 @@ from bullpen_training.eval.promotion.sample_loader import (
     feature_cols_for,
     generate_sample_dataset,
 )
+from bullpen_training.pitch.fold_store import ParquetFoldLoader
 from bullpen_training.pitch.isotonic import IsotonicCalibrator
 
 log = logging.getLogger(__name__)
@@ -598,6 +599,22 @@ class EvidenceRun:
     # only (needs the retro_* cols); None for pitch, whose gate is label-ECE.
     challenger_retro_ece: float | None = None
     baseline_retro_ece: float | None = None
+    # When set, evidence came from the production fold-export (ParquetFoldLoader) instead of a
+    # per-year mirror - the safe full-box path for the pitch heads (reuses the schema-hash-pinned,
+    # leak-safe served contract; no re-derivation). Recorded in provenance.
+    fold_root: Path | None = None
+
+
+def _make_loader(model_name: str, sample_root: Path, fold_root: Path | None) -> FeatureLoader:
+    """The CV FeatureLoader. With ``fold_root`` set, read the production fold-export via
+    ParquetFoldLoader - the safe full-box path: it reuses the served contract's exact features and
+    fails loud on a rule-7 schema-hash mismatch, so no feature re-derivation (and no chance of
+    drifting from the registered hash) happens here. Otherwise the per-year sample/full mirror via
+    ParquetSampleLoader - both satisfy cv_harness's ``FeatureLoader`` protocol
+    (Callable[[int, int, int], DataFrame])."""
+    if fold_root is not None:
+        return ParquetFoldLoader(fold_root)
+    return ParquetSampleLoader(sample_root, model_name)
 
 
 def run_evidence(
@@ -605,15 +622,17 @@ def run_evidence(
     *,
     sample_root: Path,
     rows_per_year: int,
+    fold_root: Path | None = None,
 ) -> EvidenceRun:
-    """Run the dual rolling-origin CV + compute the challenger-vs-baseline
-    verdict for ``model_name`` on the sample mirror at ``sample_root``."""
+    """Run the dual rolling-origin CV + compute the challenger-vs-baseline verdict for
+    ``model_name``. Reads the per-year mirror at ``sample_root``, or - when ``fold_root`` is set -
+    the production fold-export (the safe full-box path; see :func:`_make_loader`)."""
     criteria = criteria_for(model_name)
     feature_cols = feature_cols_for(model_name)
     n_classes = N_CLASSES[model_name]
     pair = _model_pair(model_name, feature_cols, n_classes)
 
-    loader = ParquetSampleLoader(sample_root, model_name)
+    loader = _make_loader(model_name, sample_root, fold_root)
 
     log.info("evidence: rolling-origin CV for baseline=%s", pair.baseline_name)
     baseline_cv = cv_run(
@@ -674,6 +693,7 @@ def run_evidence(
         rows_per_year=rows_per_year,
         challenger_retro_ece=challenger_retro_ece,
         baseline_retro_ece=baseline_retro_ece,
+        fold_root=Path(fold_root) if fold_root is not None else None,
     )
 
 
@@ -881,7 +901,8 @@ def experiment_results_artifact(run: EvidenceRun, data_source: str = "sample") -
         "provenance": {
             "git_commit": _git_commit_sha(),
             "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
-            "sample_root": str(run.sample_root),
+            "sample_root": str(run.fold_root) if run.fold_root else str(run.sample_root),
+            "loader": "fold_export" if run.fold_root else "per_year_mirror",
             "rows_per_year": run.rows_per_year,
             "segment_cols": list(SEGMENT_COLS[run.model_name]),
             "rule_13_holdout": "2026 excluded from every split (sample mirror is 2015-2025 only)",
@@ -963,6 +984,15 @@ _MODEL_CHOICES = (
     "For 'full', point --sample-root at the full-box parquet.",
 )
 @click.option(
+    "--fold-root",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    default=None,
+    help="Production fold-export dir (pitch/fold_store ParquetFoldLoader). When set, the gate "
+    "reads the schema-hash-pinned, leak-safe served-contract folds from here instead of a "
+    "per-year mirror - the safe full-box path for the pitch heads. Needs an explicit single "
+    "--model; pair with --data-source full.",
+)
+@click.option(
     "--mlp-calibration",
     type=click.Choice(_MLP_CALIBRATION_CHOICES),
     default="isotonic",
@@ -978,6 +1008,7 @@ def main(
     generate_sample: bool,
     rows_per_year: int,
     data_source: str,
+    fold_root: Path | None,
     mlp_calibration: str,
 ) -> None:
     global _MLP_CALIBRATION
@@ -988,12 +1019,19 @@ def main(
         if model == "all"
         else (model,)
     )
+    if fold_root is not None and model == "all":
+        raise click.UsageError(
+            "--fold-root needs an explicit single --model (the fold-export is model-specific)."
+        )
     for m in models:
-        dataset_dir = Path(sample_root) / m
-        if generate_sample and not dataset_dir.is_dir():
-            log.info("evidence: generating sample mirror for %s under %s", m, dataset_dir)
-            generate_sample_dataset(sample_root, m, rows_per_year=rows_per_year)
-        run = run_evidence(m, sample_root=Path(sample_root), rows_per_year=rows_per_year)
+        if fold_root is None and generate_sample:
+            dataset_dir = Path(sample_root) / m
+            if not dataset_dir.is_dir():
+                log.info("evidence: generating sample mirror for %s under %s", m, dataset_dir)
+                generate_sample_dataset(sample_root, m, rows_per_year=rows_per_year)
+        run = run_evidence(
+            m, sample_root=Path(sample_root), rows_per_year=rows_per_year, fold_root=fold_root
+        )
         art = experiment_results_artifact(run, data_source)
         path = write_artifact(run, Path(out_dir), data_source=data_source)
         v = run.verdict
