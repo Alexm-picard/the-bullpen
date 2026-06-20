@@ -1,10 +1,9 @@
 package net.thebullpen.baseball.inference.routing;
 
 import java.sql.ResultSet;
-import java.sql.Timestamp;
-import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import net.thebullpen.baseball.data.JdbcTimes;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -103,10 +102,8 @@ public class RoutingRepository {
             challengerId,
             rs.getDouble("challenger_traffic_pct"),
             RoutingMode.fromDbValue(rs.getString("mode")),
-            toInstant(rs.getTimestamp("updated_at")));
+            // updated_at is UTC (CURRENT_TIMESTAMP); read tz-explicitly so the box's ET JVM does
+            // not shift it +4h.
+            JdbcTimes.utcInstant(rs, "updated_at"));
       };
-
-  private static Instant toInstant(Timestamp ts) {
-    return ts == null ? null : ts.toInstant();
-  }
 }

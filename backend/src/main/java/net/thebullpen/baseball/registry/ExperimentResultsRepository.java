@@ -1,10 +1,10 @@
 package net.thebullpen.baseball.registry;
 
 import java.sql.ResultSet;
-import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import net.thebullpen.baseball.data.JdbcTimes;
 import net.thebullpen.baseball.registry.dto.ExperimentResult;
 import net.thebullpen.baseball.registry.dto.ExperimentResult.Status;
 import org.springframework.dao.EmptyResultDataAccessException;
@@ -214,8 +214,8 @@ public class ExperimentResultsRepository {
               rs.getString("model_name"),
               rs.getLong("champion_version_id"),
               rs.getLong("challenger_version_id"),
-              toInstant(rs.getTimestamp("started_at")),
-              toInstant(rs.getTimestamp("ended_at")),
+              JdbcTimes.utcInstant(rs, "started_at"),
+              JdbcTimes.utcInstant(rs, "ended_at"),
               rs.getString("primary_metric"),
               rs.getDouble("primary_threshold"),
               rs.getString("guardrails"),
@@ -226,11 +226,9 @@ public class ExperimentResultsRepository {
               rs.getString("guardrails_observed"),
               Status.fromDbValue(rs.getString("status")),
               rs.getString("notes"),
-              toInstant(rs.getTimestamp("created_at")));
-
-  private static Instant toInstant(Timestamp ts) {
-    return ts == null ? null : ts.toInstant();
-  }
+              // started_at/ended_at/created_at are UTC (CURRENT_TIMESTAMP); read tz-explicitly so
+              // the box's ET JVM does not shift them +4h.
+              JdbcTimes.utcInstant(rs, "created_at"));
 
   private static Long getNullableLong(ResultSet rs, String col) throws java.sql.SQLException {
     long v = rs.getLong(col);

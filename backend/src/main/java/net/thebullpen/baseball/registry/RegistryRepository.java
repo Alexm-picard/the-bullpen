@@ -7,6 +7,7 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import net.thebullpen.baseball.data.JdbcTimes;
 import net.thebullpen.baseball.registry.dto.ModelVersion;
 import net.thebullpen.baseball.registry.dto.Stage;
 import org.springframework.dao.EmptyResultDataAccessException;
@@ -301,13 +302,17 @@ public class RegistryRepository {
               rs.getString("training_data_window"),
               rs.getString("feature_schema_hash"),
               rs.getString("eval_metrics"),
+              // trained_at is written app-side via a bare setTimestamp (JVM zone), so it is read
+              // back bare too - a matched pair that round-trips the instant losslessly. The other
+              // three are DB-written UTC (CURRENT_TIMESTAMP) and must be read tz-explicitly, or the
+              // box's ET JVM shifts them +4h (the audit-timestamp skew).
               toInstant(rs.getTimestamp("trained_at")),
-              toInstant(rs.getTimestamp("promoted_at")),
+              JdbcTimes.utcInstant(rs, "promoted_at"),
               Stage.fromDbValue(rs.getString("stage")),
               rs.getString("created_by"),
               rs.getString("notes"),
-              toInstant(rs.getTimestamp("created_at")),
-              toInstant(rs.getTimestamp("updated_at")));
+              JdbcTimes.utcInstant(rs, "created_at"),
+              JdbcTimes.utcInstant(rs, "updated_at"));
 
   private static Instant toInstant(Timestamp ts) {
     return ts == null ? null : ts.toInstant();
