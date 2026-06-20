@@ -86,6 +86,9 @@ def test_artifact_records_fold_export_provenance() -> None:
     assert prov["loader"] == "fold_export"
     # the data-root provenance points at the fold-export, not a per-year mirror
     assert prov["sample_root"] == "/box/fold_export/v2-clean"
+    # rows_per_year is meaningless on the fold-export path (whole folds loaded) -> null, not the
+    # misleading per-year-mirror default. Real scale lives in the verdict's sample_size_observed.
+    assert prov["rows_per_year"] is None
 
 
 def test_artifact_records_per_year_loader_without_fold_root() -> None:
@@ -93,6 +96,8 @@ def test_artifact_records_per_year_loader_without_fold_root() -> None:
     art = driver.experiment_results_artifact(run, "full")  # type: ignore[arg-type]
     assert art["provenance"]["loader"] == "per_year_mirror"
     assert art["provenance"]["sample_root"] == "/unused"
+    # the per-year mirror path keeps the real knob (the _pitch_run helper sets rows_per_year=1).
+    assert art["provenance"]["rows_per_year"] == 1
 
 
 # --- the feature set the gate actually certifies (the deeper #126 fix) ------------------------
