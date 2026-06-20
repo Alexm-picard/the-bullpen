@@ -56,6 +56,7 @@ from typing import Any
 import click
 import numpy as np
 import pandas as pd
+from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -81,6 +82,7 @@ from bullpen_training.eval.promotion.sample_loader import (
     feature_cols_for,
     generate_sample_dataset,
 )
+from bullpen_training.pitch import PITCH_FEATURE_COLUMNS, PITCH_FEATURE_COLUMNS_POST
 from bullpen_training.pitch.fold_store import ParquetFoldLoader
 from bullpen_training.pitch.isotonic import IsotonicCalibrator
 
@@ -400,8 +402,16 @@ def _lr_factory(
             anchors = np.tile(x.mean(axis=0, keepdims=True), (len(absent), 1))
             x = np.vstack([x, anchors])
             y = np.concatenate([y, np.asarray(absent, dtype=y.dtype)])
+        # Mirror production's LR baseline pipeline (train_lr_baseline._build_pipeline): the
+        # SimpleImputer is REQUIRED on real data - the production feature set carries NULLs
+        # (Tier-3 rolling at season start, Tier-4 sparse pre-2024) that sklearn LR rejects. The
+        # sample proxy had none, which is why this only surfaced on the first fold-export gate.
         pipe = Pipeline(
-            [("scale", StandardScaler()), ("lr", LogisticRegression(max_iter=2000))]
+            [
+                ("imputer", SimpleImputer(strategy="median")),
+                ("scale", StandardScaler(copy=False)),
+                ("lr", LogisticRegression(max_iter=2000)),
+            ]
         ).fit(x, y)
         uncal = _LRPredictor(pipe, feature_cols, n_classes, calibrator=None)
         # Fit isotonic on the val fold (never test) - mirrors production.
@@ -549,29 +559,60 @@ class _ModelPair:
     challenger_factory: Callable[[pd.DataFrame, pd.DataFrame], Any]
 
 
-def _model_pair(model_name: str, feature_cols: tuple[str, ...], n_classes: int) -> _ModelPair:
+def _evidence_feature_cols(
+    model_name: str, fold_root: Path | None
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Return ``(challenger_cols, baseline_cols)`` for the evidence run.
+
+    On the fold-export path the gate must certify the PRODUCTION feature set the registered head
+    actually serves, not the sample mirror's reduced proxy: the pitch challenger consumes
+    ``PITCH_FEATURE_COLUMNS_POST`` (41) / ``PITCH_FEATURE_COLUMNS`` (31), and the rule-9 baseline is
+    the PRE-31 LR per decision [37] (the co-registered cross-head sanity check - there is no
+    separate POST LR baseline). The sample path keeps the synthetic proxy for both heads; that
+    mirror carries only the proxy columns, so the production names would KeyError there."""
+    if fold_root is not None and model_name in ("pitch_outcome_pre", "pitch_outcome_post"):
+        challenger = (
+            PITCH_FEATURE_COLUMNS_POST
+            if model_name == "pitch_outcome_post"
+            else PITCH_FEATURE_COLUMNS
+        )
+        return challenger, PITCH_FEATURE_COLUMNS
+    cols = feature_cols_for(model_name)
+    return cols, cols
+
+
+def _model_pair(
+    model_name: str,
+    challenger_cols: tuple[str, ...],
+    baseline_cols: tuple[str, ...],
+    n_classes: int,
+) -> _ModelPair:
+    """Pair a challenger with its rule-9 co-registered baseline. ``challenger_cols`` and
+    ``baseline_cols`` differ only for the pitch heads on the fold-export path, where the
+    challenger consumes the production POST/PRE set and the baseline is the PRE-31 LR ([37]);
+    batted-ball passes the same tuple for both (apples-to-apples)."""
     if model_name in ("pitch_outcome_pre", "pitch_outcome_post"):
         return _ModelPair(
             baseline_name="pitch_outcome_lr_baseline",
-            baseline_factory=_lr_factory(feature_cols, n_classes),
+            baseline_factory=_lr_factory(baseline_cols, n_classes),
             challenger_name=model_name,
-            challenger_factory=_lgbm_factory(feature_cols, n_classes),
+            challenger_factory=_lgbm_factory(challenger_cols, n_classes),
         )
     if model_name == "batted_ball_lr_baseline":
         return _ModelPair(
             baseline_name="marginal_class_floor",
             baseline_factory=_marginal_factory(n_classes),
             challenger_name="batted_ball_lr_baseline",
-            challenger_factory=_lr_factory(feature_cols, n_classes),
+            challenger_factory=_lr_factory(challenger_cols, n_classes),
         )
     if model_name == "batted_ball_mlp":
         # The CHAMPION (per-park MLP) vs the rule-9 co-registered LR baseline, both on the SAME
         # features so the comparison is apples-to-apples.
         return _ModelPair(
             baseline_name="batted_ball_lr_baseline",
-            baseline_factory=_lr_factory(feature_cols, n_classes),
+            baseline_factory=_lr_factory(baseline_cols, n_classes),
             challenger_name="batted_ball_mlp",
-            challenger_factory=_mlp_factory(feature_cols, n_classes),
+            challenger_factory=_mlp_factory(challenger_cols, n_classes),
         )
     raise ValueError(f"no model pairing for {model_name!r}")
 
@@ -628,9 +669,9 @@ def run_evidence(
     ``model_name``. Reads the per-year mirror at ``sample_root``, or - when ``fold_root`` is set -
     the production fold-export (the safe full-box path; see :func:`_make_loader`)."""
     criteria = criteria_for(model_name)
-    feature_cols = feature_cols_for(model_name)
     n_classes = N_CLASSES[model_name]
-    pair = _model_pair(model_name, feature_cols, n_classes)
+    challenger_cols, baseline_cols = _evidence_feature_cols(model_name, fold_root)
+    pair = _model_pair(model_name, challenger_cols, baseline_cols, n_classes)
 
     loader = _make_loader(model_name, sample_root, fold_root)
 

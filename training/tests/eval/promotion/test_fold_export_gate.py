@@ -21,7 +21,11 @@ from bullpen_training.eval.promotion.criteria import (
     VerdictOutcome,
     criteria_for,
 )
-from bullpen_training.eval.promotion.sample_loader import ParquetSampleLoader
+from bullpen_training.eval.promotion.sample_loader import (
+    ParquetSampleLoader,
+    feature_cols_for,
+)
+from bullpen_training.pitch import PITCH_FEATURE_COLUMNS, PITCH_FEATURE_COLUMNS_POST
 
 
 def test_make_loader_uses_fold_loader_when_fold_root_set(
@@ -89,3 +93,42 @@ def test_artifact_records_per_year_loader_without_fold_root() -> None:
     art = driver.experiment_results_artifact(run, "full")  # type: ignore[arg-type]
     assert art["provenance"]["loader"] == "per_year_mirror"
     assert art["provenance"]["sample_root"] == "/unused"
+
+
+# --- the feature set the gate actually certifies (the deeper #126 fix) ------------------------
+#
+# #126 wired the fold-export DATA but left the feature LIST as the sample mirror's reduced proxy,
+# so the gate would have certified a ~17-feature model instead of the registered 41-feature POST
+# head. These pin that the fold-export path uses the PRODUCTION columns, with a PRE-31 LR baseline
+# per decision [37], while the sample path stays on the proxy.
+
+
+def test_evidence_feature_cols_fold_export_post_uses_production_41_and_pre_31_baseline() -> None:
+    challenger, baseline = driver._evidence_feature_cols(
+        "pitch_outcome_post", Path("/box/fold_export/v2-clean")
+    )
+    # Challenger certified on the PRODUCTION 41-feature set the registered head serves.
+    assert challenger == PITCH_FEATURE_COLUMNS_POST
+    assert len(challenger) == 41
+    # Rule-9 baseline is the PRE-31 LR ([37]): the co-registered cross-head sanity check.
+    assert baseline == PITCH_FEATURE_COLUMNS
+    assert len(baseline) == 31
+    # ...and emphatically NOT the synthetic sample proxy (the bug this fix closes).
+    assert challenger != feature_cols_for("pitch_outcome_post")
+
+
+def test_evidence_feature_cols_fold_export_pre_uses_31_for_both() -> None:
+    challenger, baseline = driver._evidence_feature_cols(
+        "pitch_outcome_pre", Path("/box/fold_export/v2-clean")
+    )
+    assert challenger == PITCH_FEATURE_COLUMNS
+    assert baseline == PITCH_FEATURE_COLUMNS
+
+
+def test_evidence_feature_cols_sample_path_keeps_proxy_for_both() -> None:
+    # Without a fold_root (the synthetic per-year mirror) both heads stay on the proxy - the mirror
+    # carries only proxy columns, so the production names would KeyError there.
+    challenger, baseline = driver._evidence_feature_cols("pitch_outcome_post", None)
+    proxy = feature_cols_for("pitch_outcome_post")
+    assert challenger == proxy
+    assert baseline == proxy
