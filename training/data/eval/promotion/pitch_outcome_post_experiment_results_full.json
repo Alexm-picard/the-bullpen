@@ -1,0 +1,153 @@
+{
+  "schema_version": 1,
+  "artifact_name": "promotion_evidence",
+  "data_source": "full",
+  "data_source_note": "FULL-box data evidence for the LIVE/CHAMPION promotion gate (operator hand-off H2) - this is the row the promote-model skill reads. No promotion is performed here (rule 6); promotion stays human-gated.",
+  "model_name": "pitch_outcome_post",
+  "champion_model_name": "pitch_outcome_lr_baseline",
+  "challenger_model_name": "pitch_outcome_post",
+  "primary_metric": "brier",
+  "primary_threshold": 0.002,
+  "guardrails": {
+    "log-loss": 0.01,
+    "ece": 0.015
+  },
+  "sample_size_target": 2000,
+  "sample_size_observed": 710600,
+  "champion_metric": 0.1485224536730556,
+  "challenger_metric": 0.10368198397009791,
+  "guardrails_observed": {
+    "log-loss": -0.48746392689908147,
+    "ece": -0.0003414834332958747
+  },
+  "guardrails_violated": {},
+  "status": "passed",
+  "verdict": {
+    "outcome": "would_pass",
+    "passed": true,
+    "sample_size_met": true,
+    "supplementary_checks_passed": true,
+    "primary_margin_required": 0.002,
+    "primary_margin_observed": 0.0448404697029577
+  },
+  "supplementary_checks": [
+    {
+      "name": "absolute_ece_phase2_bar",
+      "metric": "ece",
+      "max_allowed": 0.02,
+      "observed": 0.0012649687323074393,
+      "passed": true,
+      "rationale": "Phase-2 exit bar ECE < bar per model (label-ECE); supplements the relative ECE guardrail (loose at sample scale, meaningless vs a degenerate baseline)."
+    }
+  ],
+  "pre_declared_criteria": {
+    "primary_metric": "brier",
+    "primary_threshold": 0.002,
+    "sample_size_target": 2000,
+    "guardrails": [
+      {
+        "metric": "log-loss",
+        "max_delta": 0.01,
+        "rationale": "post-head log-loss may not regress > 0.01 vs the LR baseline."
+      },
+      {
+        "metric": "ece",
+        "max_delta": 0.015,
+        "rationale": "post-head ECE may not regress > 0.015 vs the LR baseline (sample-stage allowance; absolute calibration gated by absolute_ece_bar)."
+      }
+    ],
+    "absolute_ece_bar": 0.02,
+    "rationale": "post-pitch LightGBM challenger vs the rule-9 co-registered LR baseline. Calibration gated by a loose relative ECE guardrail + the absolute Phase-2 ECE bar."
+  },
+  "champion_full_metrics": {
+    "brier": 0.1485224536730556,
+    "log_loss": 1.464813316622979,
+    "ece": 0.001606452165603314,
+    "ece_vs_retro": null
+  },
+  "challenger_full_metrics": {
+    "brier": 0.10368198397009791,
+    "log_loss": 0.9773493897238976,
+    "ece": 0.0012649687323074393,
+    "ece_vs_retro": null
+  },
+  "calibration_note": null,
+  "rolling_origin_cv": {
+    "folds": [
+      {
+        "fold_id": 1,
+        "train_start_year": 2015,
+        "train_end_year": 2020,
+        "val_year": 2021,
+        "test_year": 2022
+      },
+      {
+        "fold_id": 2,
+        "train_start_year": 2015,
+        "train_end_year": 2021,
+        "val_year": 2022,
+        "test_year": 2023
+      },
+      {
+        "fold_id": 3,
+        "train_start_year": 2015,
+        "train_end_year": 2022,
+        "val_year": 2023,
+        "test_year": 2024
+      },
+      {
+        "fold_id": 4,
+        "train_start_year": 2015,
+        "train_end_year": 2023,
+        "val_year": 2024,
+        "test_year": 2025
+      }
+    ],
+    "champion_summary": {
+      "multiclass_brier": {
+        "mean": 0.14866004909610855,
+        "std": 0.00013889855082271726
+      },
+      "multiclass_log_loss": {
+        "mean": 1.4666480664696309,
+        "std": 0.0016408867752847982
+      },
+      "expected_calibration_error": {
+        "mean": 0.004071635664992666,
+        "std": 0.002255765606951022
+      }
+    },
+    "challenger_summary": {
+      "multiclass_brier": {
+        "mean": 0.10377467408102027,
+        "std": 0.00019701485879388295
+      },
+      "multiclass_log_loss": {
+        "mean": 0.9791765682562525,
+        "std": 0.002637066199874861
+      },
+      "expected_calibration_error": {
+        "mean": 0.002570057226505029,
+        "std": 0.001343585385248022
+      }
+    }
+  },
+  "verdict_fold": {
+    "fold_id": 4,
+    "test_year": 2025
+  },
+  "provenance": {
+    "git_commit": "1a98af8624b50a89780e8aaff21932efcbd6c87e",
+    "generated_at": "2026-06-20T14:14:32+00:00",
+    "sample_root": "data/fold_export/v2-clean",
+    "loader": "fold_export",
+    "rows_per_year": 1500,
+    "segment_cols": [
+      "count_strikes",
+      "batter_stand_int"
+    ],
+    "rule_13_holdout": "2026 excluded from every split (sample mirror is 2015-2025 only)",
+    "split_discipline": "rolling-origin temporal CV; no random_state on any split",
+    "mlp_calibration": "isotonic"
+  }
+}
