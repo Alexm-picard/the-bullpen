@@ -3,13 +3,17 @@ package net.thebullpen.baseball.data;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.List;
+import java.util.TimeZone;
 import java.util.UUID;
 import net.thebullpen.baseball.api.dto.OpsEvent;
 import net.thebullpen.baseball.api.dto.OpsEventType;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -35,6 +39,14 @@ class OpsEventsRepositoryIT {
   }
 
   @Autowired private OpsEventsRepository repo;
+  @Autowired private JdbcTemplate jdbc;
+
+  // The methods share one tmp SQLite (the DB is per-class), so isolate each: start from an empty
+  // ops_events instead of relying on JUnit's method-execution order.
+  @BeforeEach
+  void cleanSlate() {
+    jdbc.update("DELETE FROM ops_events");
+  }
 
   @Test
   void recordsAndReadsBackNewestFirst() {
@@ -60,5 +72,26 @@ class OpsEventsRepositoryIT {
       repo.record(OpsEventType.DEPLOY, "build deploy " + i);
     }
     assertThat(repo.findRecent(2)).hasSize(2);
+  }
+
+  @Test
+  void occurredAtReadsAsUtc_notSkewedByEtJvmZone() {
+    // Reproduce the prod box: a non-UTC (America/New_York) JVM default zone. occurred_at is written
+    // UTC by SQLite CURRENT_TIMESTAMP; a bare getTimestamp() would reinterpret it in this zone and
+    // shift it +4h. The tz-explicit read (JdbcTimes.utcInstant) must recover the real UTC instant -
+    // i.e. land inside the write window, not ~4h in the future.
+    TimeZone original = TimeZone.getDefault();
+    try {
+      TimeZone.setDefault(TimeZone.getTimeZone("America/New_York"));
+      Instant before = Instant.now().minusSeconds(30);
+      repo.record(OpsEventType.DEPLOY, "tz skew check");
+      Instant after = Instant.now().plusSeconds(30);
+
+      Instant occurredAt = repo.findRecent(1).get(0).occurredAt();
+
+      assertThat(occurredAt).isAfterOrEqualTo(before).isBeforeOrEqualTo(after);
+    } finally {
+      TimeZone.setDefault(original);
+    }
   }
 }

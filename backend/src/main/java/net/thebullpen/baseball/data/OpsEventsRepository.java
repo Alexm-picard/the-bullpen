@@ -24,7 +24,9 @@ public class OpsEventsRepository {
       (ResultSet rs, int n) ->
           new OpsEvent(
               rs.getLong("id"),
-              rs.getTimestamp("occurred_at").toInstant(),
+              // occurred_at is UTC (CURRENT_TIMESTAMP); read tz-explicitly so the box's ET JVM
+              // does not shift it +4h (the registry/ops audit-timestamp skew).
+              JdbcTimes.utcInstant(rs, "occurred_at"),
               OpsEventType.valueOf(rs.getString("type")),
               rs.getString("detail"));
 
