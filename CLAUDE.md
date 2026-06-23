@@ -41,11 +41,13 @@ session and most "obvious" alternatives have already been considered and rejecte
   The full producer chain (MLB Stats API client + parser + per-game poll + `pitches_live` writer +
   the `prediction_log` truth-join) is merged, unit-tested, and enabled in prod behind
   `BULLPEN_INGEST_LIVE_ENABLED` (flipped 2026-06-11, decision [157]). It serves NO user-visible
-  pitch prediction _by design_ ([154]/ADR-0011): no pitch head has cleared an honest promotion gate,
-  and promoting one on a failed primary would be a threshold bypass. Predictions light up when the
-  POST head (the strong candidate; sample-stage gate PASSED, Brier margin ~0.021) clears its
-  full-box re-run (hand-off H2). Open evidence artifact: a committed real-feed operating trace
-  (issue #1, `docs/runbooks/live-data-setup.md`).
+  pitch prediction _by design_ ([154]/ADR-0011): promoting a pitch head on a failed primary would be
+  a threshold bypass. The POST head (the strong candidate) has now **PASSED its full-box gate**
+  (decision [164]; Brier 0.104 vs LR baseline 0.149, ECE 0.0013, 710k rows, no guardrails violated),
+  but going user-visible is intentionally **held** - promotion stays human-gated (rule 6) pending the
+  committed real-feed operating-trace evidence artifact (issue #1, `docs/runbooks/live-data-setup.md`)
+  and a box-side parity re-check. The PRE head's only evidence row still reads FAILED on its declared
+  primary.
 - **Coverage is measured everywhere; backend and training now gate, frontend does not.** Backend
   JaCoCo (in `backend/build.gradle.kts` and `backend.yml`) gates on a regression floor (LINE >= 72%,
   BRANCH >= 58%, a few points under the 2026-06-15 CI baseline of 77.85% / 65.67%), enforced only
@@ -60,8 +62,9 @@ session and most "obvious" alternatives have already been considered and rejecte
 
 The Bullpen (`thebullpen.net`) — a self-hosted baseball analytics platform with a custom
 ML systems wrapper (registry, A/B routing, drift detection, retraining triggers) around three
-calibrated models: a batted-ball champion serving live, plus two pitch-outcome heads in shadow
-pending an honest promotion gate (no pitch champion promoted yet - [154]/ADR-0011). Solo
+calibrated models: a batted-ball champion serving live (a per-park calibrated PHYSICS ESTIMATE,
+honest about its reality gap - decision [163], surfaced as such on `/parks`), plus two pitch-outcome
+heads in shadow pending an honest promotion gate (no pitch champion promoted yet - [154]/ADR-0011). Solo
 developer, ~8–10 months calendar at 12–15h/week. Operated through at least one MLB season for a
 real drift postmortem.
 

@@ -2,8 +2,9 @@
 
 A self-hosted baseball-analytics platform built primarily as an ML-systems +
 serving wrapper (registry, A/B routing, drift, retraining) around three calibrated
-models: a batted-ball champion serving live, with two pitch-outcome heads in shadow
-behind an honest promotion gate. Operates through at least one MLB season for a real
+models: a batted-ball champion serving live (a per-park calibrated physics estimate,
+honest about its reality gap - see the cross-park limitation below), with two pitch-outcome
+heads in shadow behind an honest promotion gate. Operates through at least one MLB season for a real
 drift postmortem.
 
 - **Live site**: https://thebullpen.net/
@@ -175,7 +176,9 @@ Underlying play-by-play data is not redistributed.**
   weather + wind backfill (`park_daily_weather`) that should lift the ordering is
   staged but not yet shipped. Treat per-park batted-ball numbers as directional, not
   calibrated, until that gate is green - see
-  [`docs/cross-park-fidelity-plan.md`](docs/cross-park-fidelity-plan.md).
+  [`docs/cross-park-fidelity-plan.md`](docs/cross-park-fidelity-plan.md). The `/parks` heatmap and
+  the About page surface this physics-estimate framing (and the rho gap) directly to users rather
+  than presenting raw P(HR) as fact (decision [163]).
 - **Automated retraining and per-feature PSI are scaffolded, not fully wired.** The
   retraining queue + the three triggers (scheduled / drift / manual) + the systemd
   timer are real and tested, but the per-model retrain _dispatch_ callable is a
