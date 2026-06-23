@@ -75,6 +75,10 @@ export function ReliabilityDiagram({
   const xToPx = (p: number) => PLOT.marginLeft + p * PLOT.width;
   const yToPx = (p: number) => PLOT.marginTop + (1 - p) * PLOT.height;
   const maxN = Math.max(...bins.map((b) => b.n));
+  // No truth-join behind this endpoint yet, so `actual` is null on every bin. Render a predicted-only
+  // distribution (no y=x diagonal, no fabricated points) rather than implying calibration we never
+  // measured. The scatter + diagonal light up automatically once a real truth-join populates actual.
+  const hasActual = bins.some((b) => b.actual != null);
 
   return (
     <Stack gap={4}>
@@ -83,7 +87,11 @@ export function ReliabilityDiagram({
         height={SVG_HEIGHT}
         viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
         role="img"
-        aria-label="Reliability diagram"
+        aria-label={
+          hasActual
+            ? "Reliability diagram"
+            : "Predicted-probability distribution (calibration pending truth)"
+        }
         style={{
           fontFamily: typography.fonts.mono,
           fontSize: typography.scale[0] - 1,
@@ -141,38 +149,67 @@ export function ReliabilityDiagram({
           </g>
         ))}
 
-        {/* Diagonal y = x reference */}
-        <line
-          x1={xToPx(0)}
-          y1={yToPx(0)}
-          x2={xToPx(1)}
-          y2={yToPx(1)}
-          stroke={colors.goldInk}
-          strokeWidth={1.5}
-        />
+        {/* Diagonal y = x reference - only meaningful once `actual` (observed frequency) exists. */}
+        {hasActual ? (
+          <line
+            x1={xToPx(0)}
+            y1={yToPx(0)}
+            x2={xToPx(1)}
+            y2={yToPx(1)}
+            stroke={colors.goldInk}
+            strokeWidth={1.5}
+          />
+        ) : null}
 
-        {/* Bin points */}
-        {bins.map((b, i) => {
-          const cx = xToPx(b.predicted);
-          const cy = yToPx(b.actual);
-          const r = 4 + 4 * (b.n / maxN);
-          const intensity = Math.min(4, Math.floor((b.n / maxN) * 4));
-          const fill = colors.viz.viridis[intensity];
-          return (
-            <circle
-              key={`bin-${i}`}
-              cx={cx}
-              cy={cy}
-              r={r}
-              fill={fill}
-              fillOpacity={0.85}
-              stroke={colors.ink}
-              strokeWidth={0.5}
-            >
-              <title>{`n=${b.n} · predicted=${b.predicted.toFixed(3)} · actual=${b.actual.toFixed(3)}`}</title>
-            </circle>
-          );
-        })}
+        {hasActual
+          ? /* Reliability scatter: predicted (x) vs observed frequency (y). */
+            bins.map((b, i) => {
+              if (b.actual == null) return null;
+              const cx = xToPx(b.predicted);
+              const cy = yToPx(b.actual);
+              const r = 4 + 4 * (b.n / maxN);
+              const intensity = Math.min(4, Math.floor((b.n / maxN) * 4));
+              const fill = colors.viz.viridis[intensity];
+              return (
+                <circle
+                  key={`bin-${i}`}
+                  cx={cx}
+                  cy={cy}
+                  r={r}
+                  fill={fill}
+                  fillOpacity={0.85}
+                  stroke={colors.ink}
+                  strokeWidth={0.5}
+                >
+                  <title>{`n=${b.n} · predicted=${b.predicted.toFixed(3)} · actual=${b.actual.toFixed(3)}`}</title>
+                </circle>
+              );
+            })
+          : /* Predicted-only: a histogram of n across the predicted-probability bins. No diagonal,
+               no observed axis - this asserts WHERE predictions fall, never how calibrated they are. */
+            bins.map((b, i) => {
+              const x = xToPx(b.binStart);
+              const w = Math.max(xToPx(b.binEnd) - xToPx(b.binStart) - 2, 1);
+              const h = (b.n / maxN) * PLOT.height;
+              const y = PLOT.marginTop + PLOT.height - h;
+              const intensity = Math.min(4, Math.floor((b.n / maxN) * 4));
+              const fill = colors.viz.viridis[intensity];
+              return (
+                <rect
+                  key={`bar-${i}`}
+                  x={x}
+                  y={y}
+                  width={w}
+                  height={h}
+                  fill={fill}
+                  fillOpacity={0.85}
+                  stroke={colors.ink}
+                  strokeWidth={0.5}
+                >
+                  <title>{`n=${b.n} · predicted=${b.predicted.toFixed(3)}`}</title>
+                </rect>
+              );
+            })}
 
         {/* Axis labels */}
         <text
@@ -192,9 +229,15 @@ export function ReliabilityDiagram({
           fill={colors.text}
           fontSize={typography.scale[0]}
         >
-          actual frequency
+          {hasActual ? "actual frequency" : "share of predictions"}
         </text>
       </svg>
+      {!hasActual ? (
+        <Text size="xs" c="dimmed">
+          Empirical calibration pending live truth — predicted-probability
+          distribution only (n per bin); accuracy is measured offline, not live.
+        </Text>
+      ) : null}
       {caption ? (
         <Text size="xs" c="dimmed">
           {caption} · n={totalN}

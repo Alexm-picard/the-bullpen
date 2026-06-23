@@ -1,5 +1,6 @@
 package net.thebullpen.baseball.api;
 
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -38,17 +39,20 @@ class PlayerCalibrationControllerTest {
   void returns_bins_for_known_player_and_model() throws Exception {
     when(players.findById(660271L))
         .thenReturn(Optional.of(new PlayerSearchResult(660271L, "Aaron Judge", "RF", true, "NYY")));
+    // actual is null - no truth-join behind this endpoint yet (the honest contract). predicted + n
+    // are real; the controller passes the repo's bins through verbatim.
     when(calibration.computePlayerBins("pitch_outcome_pre", 660271L))
         .thenReturn(
             List.of(
-                new CalibrationBin(0.0, 0.1, 0.05, 0.06, 100L),
-                new CalibrationBin(0.4, 0.5, 0.45, 0.43, 250L)));
+                new CalibrationBin(0.0, 0.1, 0.05, null, 100L),
+                new CalibrationBin(0.4, 0.5, 0.45, null, 250L)));
 
     mvc.perform(get("/v1/players/660271/calibration").param("model", "pitch_outcome_pre"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$").isArray())
         .andExpect(jsonPath("$[0].binStart").value(0.0))
         .andExpect(jsonPath("$[0].n").value(100))
+        .andExpect(jsonPath("$[0].actual").value(nullValue()))
         .andExpect(jsonPath("$[1].predicted").value(0.45));
   }
 
