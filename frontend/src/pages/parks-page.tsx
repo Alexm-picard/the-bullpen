@@ -14,6 +14,7 @@
 import { NumberInput, SegmentedControl } from "@mantine/core";
 import { useDebouncedValue } from "@mantine/hooks";
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 
 import { useAllParksPrediction } from "../api/parks";
 import type { AllParksRequest } from "../api/parks";
@@ -31,6 +32,7 @@ import {
   PARK_THUMBNAILS,
   PARKS_META,
 } from "../data/parks-fixtures";
+import { BUILD_DATE, BUILD_SHA } from "../build-info";
 import { colors, layouts, typography } from "../design/broadcast";
 
 import "./parks/parks.css";
@@ -82,6 +84,20 @@ const errorStyle: React.CSSProperties = {
   fontFamily: typography.fonts.body,
   fontWeight: typography.weights.semibold,
   color: colors.goldInk,
+};
+
+// M1 / decision [163]: the live HR heatmap is served by the batted-ball MLP, which is an honestly
+// re-scoped per-park CALIBRATED PHYSICS ESTIMATE (not a reality-validated predictor) - so the
+// section carries that caveat rather than presenting raw P(HR) as fact.
+const caveatStyle: React.CSSProperties = {
+  margin: "0 0 12px",
+  padding: "8px 12px",
+  borderLeft: `3px solid ${colors.gold}`,
+  backgroundColor: colors.fieldSubtle,
+  fontFamily: typography.fonts.body,
+  fontSize: 13,
+  lineHeight: typography.lineHeights.body,
+  color: colors.text,
 };
 
 export default function ParksPage() {
@@ -137,6 +153,7 @@ export default function ParksPage() {
         />
 
         <ParksMethodology line={PARKS_META.methodologyLine} />
+        <p style={noteStyle}>{SHOWCASE_NOTE}</p>
 
         <section aria-labelledby="parks-hr-label">
           <div style={{ marginBottom: 12 }}>
@@ -144,6 +161,20 @@ export default function ParksPage() {
               Home-Run Probability by Park
             </LowerThird>
           </div>
+          <p style={caveatStyle}>
+            <strong>
+              Physics estimate, not a reality-validated predictor.
+            </strong>{" "}
+            These per-park probabilities come from a calibrated batted-ball
+            model whose physics retrodiction correlates only about 0.30 with
+            realized outcomes (its linear baseline still wins on aggregate
+            Brier). Read them as relative comparisons between parks, not
+            absolute HR rates - see{" "}
+            <Link to="/about" style={{ color: colors.goldInk }}>
+              About
+            </Link>{" "}
+            for the methodology and roadmap.
+          </p>
           <div style={controlsRowStyle}>
             <NumberInput
               label="Exit velo (mph)"
@@ -205,8 +236,8 @@ export default function ParksPage() {
             <>
               <p style={noteStyle}>
                 Live: {allParks.data.modelName} {allParks.data.modelVersion} -
-                P(HR) for a {launchSpeedMph} mph / {launchAngleDeg}&deg; /{" "}
-                {sprayAngleDeg}&deg; spray batted ball,{" "}
+                estimated P(HR) for a {launchSpeedMph} mph / {launchAngleDeg}
+                &deg; / {sprayAngleDeg}&deg; spray batted ball,{" "}
                 {stand === "R" ? "RHB" : "LHB"}, at each park.
               </p>
               <ParkHrHeatmap
@@ -268,7 +299,7 @@ export default function ParksPage() {
         >
           <span>THE BULLPEN · PARK FACTORS</span>
           <span>
-            build {PARKS_META.buildSha} · {PARKS_META.buildDate}
+            build {BUILD_SHA} · {BUILD_DATE}
           </span>
         </footer>
       </div>

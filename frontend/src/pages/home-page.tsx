@@ -32,10 +32,11 @@ import { FeaturedMatchupPanel } from "../components/home/featured-matchup-panel"
 import { LiveTonightStrip } from "../components/home/live-tonight-strip";
 import { TonightsMatchupsBoard } from "../components/home/tonights-matchups-board";
 import { LowerThird } from "../components/broadcast/lower-third";
-import { ISSUE_META, MODEL_CHIPS } from "../data/home-fixtures";
+import { MODEL_CHIPS } from "../data/home-fixtures";
 import type { ModelChip, ModelChipState } from "../data/home-fixtures";
 import { SHOWCASE_MATCHUPS } from "../data/matchups-showcase";
 import { SHOWCASE_GAMES } from "../data/slate-fixtures";
+import { BUILD_DATE, BUILD_SHA } from "../build-info";
 import { colors, layouts, typography } from "../design/broadcast";
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -278,7 +279,7 @@ export default function HomePage() {
         >
           <span>THE BULLPEN · TONIGHT&rsquo;S SLATE</span>
           <span>
-            build {ISSUE_META.buildSha} · {ISSUE_META.buildDate}
+            build {BUILD_SHA} · {BUILD_DATE}
           </span>
         </footer>
       </div>

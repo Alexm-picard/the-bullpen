@@ -14,7 +14,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 
-import { ABOUT_META } from "../data/about-fixtures";
+import { BUILD_DATE, BUILD_SHA } from "../build-info";
 import { theme } from "../design/theme";
 
 import AboutPage from "./about-page";
@@ -65,8 +65,8 @@ describe("AboutPage", () => {
 
   it("renders the colophon footer with build SHA + date", () => {
     const html = render(<AboutPage />);
-    expect(html).toContain(ABOUT_META.buildSha);
-    expect(html).toContain(ABOUT_META.buildDate);
+    expect(html).toContain(BUILD_SHA);
+    expect(html).toContain(BUILD_DATE);
     expect(html).toContain("COLOPHON");
   });
 

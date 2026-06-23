@@ -25,12 +25,8 @@ import { LowerThird } from "../components/broadcast/lower-third";
 import { SlateBoard } from "../components/games/slate-board";
 import { SHOWCASE_MATCHUPS } from "../data/matchups-showcase";
 import { SHOWCASE_GAMES } from "../data/slate-fixtures";
+import { BUILD_DATE, BUILD_SHA } from "../build-info";
 import { colors, layouts, typography } from "../design/broadcast";
-
-const BUILD_FALLBACK = {
-  sha: "live",
-  date: new Date().toISOString().slice(0, 10),
-};
 
 function todayIssueDate(): string {
   return new Intl.DateTimeFormat("en-US", {
@@ -240,7 +236,7 @@ export default function GamesPage() {
         >
           <span>THE BULLPEN · TODAY&rsquo;S GAMES</span>
           <span>
-            build {BUILD_FALLBACK.sha} · {BUILD_FALLBACK.date}
+            build {BUILD_SHA} · {BUILD_DATE}
           </span>
         </footer>
       </div>

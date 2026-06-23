@@ -11,6 +11,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 
+import { BUILD_SHA } from "../build-info";
 import { PARK_ROWS } from "../data/parks-fixtures";
 import { theme } from "../design/theme";
 
@@ -63,6 +64,6 @@ describe("ParksPage", () => {
 
   it("renders the footer build SHA", () => {
     const html = render(<ParksPage />);
-    expect(html).toContain("b1b62ec");
+    expect(html).toContain(BUILD_SHA);
   });
 });
