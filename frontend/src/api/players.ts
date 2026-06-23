@@ -164,6 +164,76 @@ export function usePitcherArsenal(id: number | null) {
 }
 
 // ---------------------------------------------------------------------------
+// Phase 2.2/2.3 — batter in-play batted balls, GET /{id}/batted-balls
+// ---------------------------------------------------------------------------
+
+export type BattedBallRow = {
+  gameDate: string; // YYYY-MM-DD
+  events: string; // at-bat result, e.g. home_run / single / field_out
+  bbType: string; // hit type, e.g. ground_ball / fly_ball / line_drive / popup
+  launchSpeedMph: number | null;
+  launchAngleDeg: number | null;
+  hitDistanceFt: number | null;
+  parkId: string;
+  stand: string;
+};
+
+export type BattedBallFilters = {
+  bbType?: string;
+  event?: string;
+  from?: string; // YYYY-MM-DD
+  to?: string; // YYYY-MM-DD
+  limit?: number;
+};
+
+export async function fetchBattedBalls(
+  id: number,
+  f: BattedBallFilters,
+): Promise<BattedBallRow[]> {
+  const params = new URLSearchParams();
+  if (f.bbType) params.set("bbType", f.bbType);
+  if (f.event) params.set("event", f.event);
+  if (f.from) params.set("from", f.from);
+  if (f.to) params.set("to", f.to);
+  params.set("limit", String(f.limit ?? 200));
+  const res = await fetch(
+    `${API_BASE}/v1/players/${id}/batted-balls?${params.toString()}`,
+  );
+  if (res.status === 404) {
+    throw new PlayerLookupError(404, "player not found");
+  }
+  if (!res.ok) {
+    throw new PlayerLookupError(
+      res.status,
+      `batted-balls failed: HTTP ${res.status}`,
+    );
+  }
+  return (await res.json()) as BattedBallRow[];
+}
+
+/** A batter's in-play batted balls, newest first, with the active filters. Disabled until an id. */
+export function useBatterBattedBalls(id: number | null, f: BattedBallFilters) {
+  return useQuery<BattedBallRow[], PlayerLookupError>({
+    queryKey: [
+      "players",
+      "battedBalls",
+      id,
+      f.bbType ?? "",
+      f.event ?? "",
+      f.from ?? "",
+      f.to ?? "",
+      f.limit ?? 200,
+    ],
+    queryFn: () => {
+      if (id == null) throw new Error("id is required");
+      return fetchBattedBalls(id, f);
+    },
+    enabled: id != null,
+    staleTime: 60_000,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // 4b.2 — recent predictions for a player (joined to outcomes lands later)
 // ---------------------------------------------------------------------------
 
