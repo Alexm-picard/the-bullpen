@@ -1,0 +1,39 @@
+# Cloudflare Tunnel (cloudflared) config - EXAMPLE (M2).
+#
+# The tunnel is the ONLY public ingress to the box (decision [9]); there is no other path in. This
+# committed template lets a clean `git clone` + bootstrap reconstruct the ingress. Copy it to the
+# box's cloudflared config dir (default /etc/cloudflared/config.yml) and replace the placeholders.
+# The real config + the tunnel credentials JSON are NOT in git.
+#
+# Bootstrap (one time):
+#   cloudflared tunnel login
+#   cloudflared tunnel create bullpen           # prints the <TUNNEL_UUID> + writes the creds JSON
+#   cloudflared tunnel route dns bullpen api.thebullpen.net
+#   # then fill in the UUID below and: sudo cloudflared service install
+#
+# The frontend (thebullpen.net) is served by Vercel, NOT this tunnel; the tunnel only fronts the
+# backend API at api.thebullpen.net -> localhost:8080.
+
+tunnel: REPLACE_WITH_TUNNEL_UUID
+credentials-file: /etc/cloudflared/REPLACE_WITH_TUNNEL_UUID.json
+
+# Sensible origin defaults (the box is on the same host, so these are local).
+originRequest:
+  connectTimeout: 10s
+  noTLSVerify: false
+
+ingress:
+  # M5 - the metrics surface leaks queue depths, per-model prediction counts, and JVM internals.
+  # It is ADMIN-gated in the app's SecurityConfig; deny it at the edge too (defense in depth).
+  # First-match-wins, so this MUST precede the catch-all api rule below. /actuator/health and
+  # /actuator/info are intentionally NOT denied - Uptime Robot probes /actuator/health externally.
+  - hostname: api.thebullpen.net
+    path: ^/actuator/(prometheus|metrics).*
+    service: http_status:404
+
+  # The backend API.
+  - hostname: api.thebullpen.net
+    service: http://localhost:8080
+
+  # Everything else gets a 404 (required catch-all rule).
+  - service: http_status:404
