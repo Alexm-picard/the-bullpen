@@ -4,7 +4,8 @@ A self-hosted baseball-analytics platform built primarily as an ML-systems +
 serving wrapper (registry, A/B routing, drift, retraining) around three calibrated
 models: a batted-ball champion serving live (a per-park calibrated physics estimate,
 honest about its reality gap - see the cross-park limitation below), with two pitch-outcome
-heads in shadow behind an honest promotion gate. Operates through at least one MLB season for a real
+heads not yet serving any user-visible prediction (post is champion-stage but UI-held, pre stays
+shadow on a failed primary - decisions [154]/[165]). Operates through at least one MLB season for a real
 drift postmortem.
 
 - **Live site**: https://thebullpen.net/
