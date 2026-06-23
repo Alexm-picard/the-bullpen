@@ -21,6 +21,7 @@ import { useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import {
+  usePitcherArsenal,
   usePlayer,
   usePlayerCalibration,
   usePlayerPredictions,
@@ -35,6 +36,7 @@ import {
 import { BrowsePlayers } from "../components/players/browse-players";
 import { FeaturedReports } from "../components/players/featured-reports";
 import { ModelStandouts } from "../components/players/model-standouts";
+import { PitcherArsenalCard } from "../components/players/pitcher-arsenal-card";
 import { PlayerSearch } from "../components/players/player-search";
 import { KeyNotes } from "../components/scouting/key-notes";
 import { MatchupHeader } from "../components/scouting/matchup-header";
@@ -346,6 +348,14 @@ export function PlayerProfilePage() {
   const realPlayer = usePlayer(playerId);
   const report = getDefaultMatchup(id);
 
+  // Arsenal (Phase 2.1) is fetched only once we know the player is a pitcher (position arrives with
+  // the realPlayer query); a batter's arsenal would be empty, so we don't fire that request.
+  const position = realPlayer.data?.primaryPosition.trim() ?? "";
+  const isPitcher = position === "P" || position === "SP" || position === "RP";
+  const arsenal = usePitcherArsenal(
+    isRealPlayer && isPitcher ? playerId : null,
+  );
+
   // B2: the Recent Predictions + Calibration sections are LIVE for this player
   // (prediction_log via /v1/players/:id/...). The matchup scaffold (header,
   // columns, key notes) stays showcase. prediction_log is sparse until the pitch
@@ -375,39 +385,62 @@ export function PlayerProfilePage() {
     <div style={fieldStyle}>
       <div style={columnStyle}>
         {isRealPlayer ? (
-          <header>
-            <p
-              style={{
-                margin: "0 0 4px",
-                fontFamily: typography.fonts.mono,
-                fontSize: 12,
-                fontWeight: typography.weights.semibold,
-                letterSpacing: "0.12em",
-                textTransform: "uppercase",
-                color: colors.goldInk,
-              }}
-            >
-              Player Profile
-            </p>
-            <h1 style={h1Style}>
-              {realPlayer.data?.name ??
-                (realPlayer.isError
-                  ? "Player not found"
-                  : realPlayer.isLoading
-                    ? "Loading…"
-                    : `Player #${playerId}`)}
-            </h1>
-            {realPlayer.data ? (
+          <>
+            <header>
+              <p
+                style={{
+                  margin: "0 0 4px",
+                  fontFamily: typography.fonts.mono,
+                  fontSize: 12,
+                  fontWeight: typography.weights.semibold,
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
+                  color: colors.goldInk,
+                }}
+              >
+                Player Profile
+              </p>
+              <h1 style={h1Style}>
+                {realPlayer.data?.name ??
+                  (realPlayer.isError
+                    ? "Player not found"
+                    : realPlayer.isLoading
+                      ? "Loading…"
+                      : `Player #${playerId}`)}
+              </h1>
+              {realPlayer.data ? (
+                <p style={liveLoadingStyle}>
+                  {realPlayer.data.primaryPosition.trim() || "—"}
+                  {realPlayer.data.team ? ` · ${realPlayer.data.team}` : ""}
+                </p>
+              ) : null}
+            </header>
+            {isPitcher ? (
+              <section aria-labelledby="arsenal-label">
+                <div style={{ marginBottom: 12 }}>
+                  <LowerThird id="arsenal-label">
+                    Arsenal · Velocity Range
+                  </LowerThird>
+                </div>
+                {arsenal.isError ? (
+                  <p style={liveErrorStyle}>
+                    Could not load this pitcher&rsquo;s arsenal.
+                  </p>
+                ) : arsenal.isLoading ? (
+                  <p style={liveLoadingStyle}>Loading arsenal&hellip;</p>
+                ) : (
+                  <BroadcastPanel padding={12}>
+                    <PitcherArsenalCard pitches={arsenal.data ?? []} />
+                  </BroadcastPanel>
+                )}
+              </section>
+            ) : realPlayer.data ? (
               <p style={liveLoadingStyle}>
-                {realPlayer.data.primaryPosition.trim() || "—"}
-                {realPlayer.data.team ? ` · ${realPlayer.data.team}` : ""}
+                The hitter view (all in-play balls, filterable by hit type and
+                date; HR log) is coming next. Live model history below.
               </p>
             ) : null}
-            <p style={liveLoadingStyle}>
-              Full scouting card (arsenal with velocity range, splits, spray) is
-              coming. Live model history below.
-            </p>
-          </header>
+          </>
         ) : (
           <>
             <MatchupHeader
