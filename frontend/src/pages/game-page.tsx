@@ -24,6 +24,7 @@ import {
   type GameSummary,
   type LivePitchRow,
 } from "../api/games";
+import { usePlayer } from "../api/players";
 import { BigStat } from "../components/broadcast/big-stat";
 import { BroadcastPanel } from "../components/broadcast/broadcast-panel";
 import { LowerThird } from "../components/broadcast/lower-third";
@@ -110,6 +111,10 @@ export function GamePage() {
 
   const game = useGame(valid ? numericId : null);
   const pitches = useLivePitches(valid ? numericId : null, game.data?.status);
+  const mostRecent = pitches.pitches[0];
+  // Current pitcher + batter (id -> name). Hooks run before the early return; null id disables them.
+  const currentPitcher = usePlayer(mostRecent?.pitcherId ?? null);
+  const currentBatter = usePlayer(mostRecent?.batterId ?? null);
 
   if (!valid) {
     return (
@@ -122,7 +127,15 @@ export function GamePage() {
   }
 
   const summary = game.data;
-  const mostRecent = pitches.pitches[0];
+  const pitcherName =
+    currentPitcher.data?.name ??
+    (mostRecent ? `#${mostRecent.pitcherId}` : "—");
+  const batterName =
+    currentBatter.data?.name ?? (mostRecent ? `#${mostRecent.batterId}` : "—");
+  // Per-pitcher pitch count - the CURRENT pitcher only, not the whole-game total.
+  const pitcherPitchCount = mostRecent
+    ? pitches.pitches.filter((p) => p.pitcherId === mostRecent.pitcherId).length
+    : 0;
 
   return (
     <div style={fieldStyle}>
@@ -166,6 +179,17 @@ export function GamePage() {
             live={isLive(summary)}
             detail={mostRecent ? lastPitchRead(mostRecent) : undefined}
           />
+          <p
+            style={{
+              margin: "10px 0 0",
+              fontFamily: typography.fonts.body,
+              fontSize: 13,
+              color: colors.text,
+            }}
+          >
+            Pitching: <strong>{pitcherName}</strong> &middot; At bat:{" "}
+            <strong>{batterName}</strong>
+          </p>
         </header>
 
         {game.isError ? (
@@ -189,8 +213,8 @@ export function GamePage() {
             />
             <BigStat label="Last Pitch" value={lastPitchRead(mostRecent)} />
             <BigStat
-              label="Pitches"
-              value={String(pitches.pitches.length)}
+              label="Pitcher Pitches"
+              value={String(pitcherPitchCount)}
               tone="gold"
             />
           </div>
@@ -198,10 +222,23 @@ export function GamePage() {
 
         <section aria-labelledby="batted-ball-label">
           <div style={{ marginBottom: 12 }}>
-            <LowerThird id="batted-ball-label" meta="SHOWCASE · CHAMPION">
-              Last Batted Ball
+            <LowerThird id="batted-ball-label" meta="MODEL EXAMPLE">
+              Batted-Ball Model
             </LowerThird>
           </div>
+          <p
+            style={{
+              margin: "0 0 12px",
+              fontFamily: typography.fonts.body,
+              fontSize: 12,
+              color: colors.textMuted,
+            }}
+          >
+            A static example of the per-park HR model - not this game&rsquo;s
+            batted ball. Live batted-ball capture (exit velo / launch /
+            distance) is pending: the live feed doesn&rsquo;t carry batted-ball
+            physics yet.
+          </p>
           <BattedBallExplorer data={SHOWCASE_BATTED_BALL} />
         </section>
 
