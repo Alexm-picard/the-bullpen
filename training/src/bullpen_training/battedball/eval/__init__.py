@@ -19,8 +19,10 @@ from __future__ import annotations
 
 from bullpen_training.battedball.eval.comparison import (
     AggregateMetrics,
+    ClassMetrics,
     ComparisonReport,
     ParkMetrics,
+    class_precision_recall,
     compare_models,
     decide_winner,
     per_park_metrics,
@@ -32,8 +34,10 @@ from bullpen_training.battedball.eval.report import (
 
 __all__ = (
     "AggregateMetrics",
+    "ClassMetrics",
     "ComparisonReport",
     "ParkMetrics",
+    "class_precision_recall",
     "compare_models",
     "decide_winner",
     "per_park_metrics",
