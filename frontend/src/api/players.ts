@@ -287,7 +287,10 @@ export type CalibrationBin = {
   binStart: number;
   binEnd: number;
   predicted: number;
-  actual: number;
+  /** Empirical outcome frequency, or null when no truth-join has been performed (the current
+   * state - the endpoint bins predicted probabilities only). null renders predicted-only, never a
+   * fabricated on-diagonal point. */
+  actual: number | null;
   n: number;
 };
 

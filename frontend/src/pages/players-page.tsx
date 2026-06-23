@@ -509,7 +509,7 @@ export function PlayerProfilePage() {
               <BroadcastPanel padding={12}>
                 <ReliabilityDiagram
                   bins={calibration.data}
-                  caption="this player · predicted vs. actual frequency (live)"
+                  caption="this player · predicted-probability distribution"
                 />
               </BroadcastPanel>
             ) : (
