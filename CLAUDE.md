@@ -37,17 +37,18 @@ session and most "obvious" alternatives have already been considered and rejecte
   offline - so Ops is live-wired, not "fixtures"). Still pure fixtures from
   `frontend/src/data/*-fixtures.ts`: the `/parks` factor table, the `/about` methodology page,
   and the Ops drift-snapshot skeleton (no drift endpoint yet).
-- **Live game poller is enabled ingest-only; user-visible pitch predictions are held by design.**
+- **Live game poller is enabled ingest-only; no user-visible pitch prediction (POST is champion-stage but UI-held).**
   The full producer chain (MLB Stats API client + parser + per-game poll + `pitches_live` writer +
   the `prediction_log` truth-join) is merged, unit-tested, and enabled in prod behind
-  `BULLPEN_INGEST_LIVE_ENABLED` (flipped 2026-06-11, decision [157]). It serves NO user-visible
-  pitch prediction _by design_ ([154]/ADR-0011): promoting a pitch head on a failed primary would be
-  a threshold bypass. The POST head (the strong candidate) has now **PASSED its full-box gate**
-  (decision [164]; Brier 0.104 vs LR baseline 0.149, ECE 0.0013, 710k rows, no guardrails violated),
-  but going user-visible is intentionally **held** - promotion stays human-gated (rule 6) pending the
-  committed real-feed operating-trace evidence artifact (issue #1, `docs/runbooks/live-data-setup.md`)
-  and a box-side parity re-check. The PRE head's only evidence row still reads FAILED on its declared
-  primary.
+  `BULLPEN_INGEST_LIVE_ENABLED` (flipped 2026-06-11, decision [157]). The POST head PASSED its
+  full-box gate (Brier 0.104 vs LR baseline 0.149, ECE 0.0013, 710k rows) and was promoted
+  SHADOW->CHAMPION at the registry STAGE level on 2026-06-20 (box-verified: `ops_events` #18;
+  decisions [164] then corrected by [165]). It is still NOT user-visible: `POST /v1/predict/pitch?head=post`
+  WOULD serve post v1 to a direct API caller (in SHADOW routing the champion serves, exactly as
+  `/parks` serves the batted-ball champion), but NO frontend surface calls the pitch prediction
+  endpoint, and the live game page's next-pitch is PRE-head-only ([143]) with PRE having no champion
+  (failed primary). So the [154]/ADR-0011 "no user-visible pitch prediction" guarantee holds via the
+  absent UI caller, NOT routing mode.
 - **Coverage is measured everywhere; backend and training now gate, frontend does not.** Backend
   JaCoCo (in `backend/build.gradle.kts` and `backend.yml`) gates on a regression floor (LINE >= 72%,
   BRANCH >= 58%, a few points under the 2026-06-15 CI baseline of 77.85% / 65.67%), enforced only
@@ -64,7 +65,8 @@ The Bullpen (`thebullpen.net`) — a self-hosted baseball analytics platform wit
 ML systems wrapper (registry, A/B routing, drift detection, retraining triggers) around three
 calibrated models: a batted-ball champion serving live (a per-park calibrated PHYSICS ESTIMATE,
 honest about its reality gap - decision [163], surfaced as such on `/parks`), plus two pitch-outcome
-heads in shadow pending an honest promotion gate (no pitch champion promoted yet - [154]/ADR-0011). Solo
+heads with no user-visible prediction yet (`pitch_outcome_post` is champion-STAGE since 2026-06-20
+but UI-held; `pitch_outcome_pre` stays shadow on a failed primary - [154]/ADR-0011/[165]). Solo
 developer, ~8–10 months calendar at 12–15h/week. Operated through at least one MLB season for a
 real drift postmortem.
 
