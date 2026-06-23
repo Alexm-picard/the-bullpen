@@ -27,7 +27,7 @@ jobs:
       # + parity fixture JSON. Without these the test self-disables on a fresh
       # clone. CI synthesizes them deterministically below; no ClickHouse or
       # pybaseball involvement.
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - name: Sync training deps
