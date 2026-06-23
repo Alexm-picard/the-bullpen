@@ -63,6 +63,7 @@ import {
   RETRAIN_QUEUE,
 } from "../data/ops-fixtures";
 import type { DriftFeatureRow, DriftOutputRow } from "../data/ops-fixtures";
+import { BUILD_DATE, BUILD_SHA } from "../build-info";
 import { colors, layouts, typography } from "../design/broadcast";
 
 import "./ops/ops.css";
@@ -282,7 +283,7 @@ export default function OpsPage() {
         >
           <span>THE BULLPEN · OPS</span>
           <span>
-            build {OPS_META.buildSha} · {OPS_META.buildDate}
+            build {BUILD_SHA} · {BUILD_DATE}
           </span>
         </footer>
       </div>

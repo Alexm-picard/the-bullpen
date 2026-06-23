@@ -32,13 +32,8 @@ import { TickerStrip } from "../components/broadcast/ticker-strip";
 import { BattedBallExplorer } from "../components/games/batted-ball-explorer";
 import { LivePitchBoard } from "../components/games/live-pitch-board";
 import { SHOWCASE_BATTED_BALL } from "../data/batted-ball-fixtures";
+import { BUILD_DATE, BUILD_SHA } from "../build-info";
 import { colors, layouts, typography } from "../design/broadcast";
-
-/** Stable build metadata fallback so the footer always renders. */
-const BUILD_FALLBACK = {
-  sha: "live",
-  date: new Date().toISOString().slice(0, 10),
-};
 
 function todayIssueDate(): string {
   return new Intl.DateTimeFormat("en-US", {
@@ -250,7 +245,7 @@ export function GamePage() {
         >
           <span>THE BULLPEN · LIVE GAME</span>
           <span>
-            build {BUILD_FALLBACK.sha} · {BUILD_FALLBACK.date}
+            build {BUILD_SHA} · {BUILD_DATE}
           </span>
         </footer>
       </div>

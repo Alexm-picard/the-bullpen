@@ -46,6 +46,9 @@ const GamePage = lazy(() =>
 // Unlisted in the public nav — operator routing override (B7), reached by URL.
 const AdminRoutingPage = lazy(() => import("./pages/admin-routing-page"));
 
+// S6 — catch-all 404 for any unmatched URL (otherwise the shell renders blank).
+const NotFoundPage = lazy(() => import("./pages/not-found-page"));
+
 // Broadcast chrome nav ([160] cleanup PR): the global frame is the dark
 // telecast masthead - wordmark in Barlow italic with a gold tick, nav links
 // on chrome. Team color never appears here (the frame is brand, not matchup).
@@ -164,6 +167,7 @@ export default function App() {
           <Route path="ops" element={<OpsPage />} />
           <Route path="admin/routing" element={<AdminRoutingPage />} />
           <Route path="about" element={<AboutPage />} />
+          <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

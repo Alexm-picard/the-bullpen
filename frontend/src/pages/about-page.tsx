@@ -53,6 +53,7 @@ import {
 } from "../data/about-fixtures";
 import type { FleetRow, FleetRowState } from "../data/about-fixtures";
 import type { ModelVersion } from "../api/ops";
+import { BUILD_DATE, BUILD_SHA } from "../build-info";
 import { colors, layouts, typography } from "../design/broadcast";
 
 import "./about/about.css";
@@ -146,6 +147,9 @@ export default function AboutPage() {
         />
 
         <AboutFactsRibbon cells={FACTS_RIBBON} />
+        <p style={noteStyle}>
+          Showcase data -- illustrative project figures, not a live count.
+        </p>
 
         <section aria-labelledby="about-opening-pitch-label">
           <div style={{ marginBottom: 12 }}>
@@ -174,6 +178,13 @@ export default function AboutPage() {
             </p>
           )}
           <AboutModelFleet paragraphs={MODEL_FLEET_PARAS} rows={fleetRows} />
+          <p style={noteStyle}>
+            Honest scope: the live batted-ball champion serves a per-park
+            calibrated physics estimate (retrodiction ~0.30 vs realized
+            outcomes; its linear baseline still wins on aggregate Brier), and no
+            pitch champion is promoted - both pitch heads run in shadow pending
+            an honest gate.
+          </p>
         </section>
 
         <section aria-labelledby="about-discipline-label">
@@ -205,8 +216,8 @@ export default function AboutPage() {
         </section>
 
         <AboutColophonFooter
-          buildSha={ABOUT_META.buildSha}
-          buildDate={ABOUT_META.buildDate}
+          buildSha={BUILD_SHA}
+          buildDate={BUILD_DATE}
           repoPlaceholder={ABOUT_META.repoPlaceholder}
         />
       </div>

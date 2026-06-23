@@ -32,6 +32,19 @@ test("fixture pages render via header nav without crashing", async ({
   expect(errors, "uncaught errors during nav").toEqual([]);
 });
 
+test("an unknown URL renders the 404 page, not a blank shell (S6)", async ({
+  page,
+}) => {
+  const errors = trackPageErrors(page);
+  await page.goto("/this-route-does-not-exist");
+  await expect(page.getByText("404")).toBeVisible();
+  await expect(page.getByText("No play at this base.")).toBeVisible();
+  await expect(page.getByRole("link", { name: /back to home/i })).toBeVisible();
+  // The nav chrome still frames the page (the 404 route lives inside the Layout).
+  await expect(page.locator("header")).toBeVisible();
+  expect(errors, "uncaught errors on a 404 URL").toEqual([]);
+});
+
 test("player lookup renders its search input", async ({ page }) => {
   const errors = trackPageErrors(page);
   await page.goto("/players");

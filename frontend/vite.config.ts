@@ -1,5 +1,33 @@
+import { execSync } from "node:child_process";
+
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
+
+/**
+ * N3 - real build stamp injected at build time, replacing the hand-frozen fixture SHAs and the
+ * "build live" placeholders the footers used to show. Prefers git; on Vercel (which clones the
+ * repo) git is present, but VERCEL_GIT_COMMIT_SHA is the fallback for tarball-only checkouts.
+ */
+function readBuildInfo(): { sha: string; date: string } {
+  try {
+    const sha = execSync("git rev-parse --short HEAD", {
+      stdio: ["ignore", "pipe", "ignore"],
+    })
+      .toString()
+      .trim();
+    const date = execSync("git show -s --format=%cs HEAD", {
+      stdio: ["ignore", "pipe", "ignore"],
+    })
+      .toString()
+      .trim();
+    return { sha, date };
+  } catch {
+    const envSha = process.env.VERCEL_GIT_COMMIT_SHA;
+    return { sha: envSha ? envSha.slice(0, 7) : "dev", date: "" };
+  }
+}
+
+const buildInfo = readBuildInfo();
 
 /**
  * Per-route chunks come from React.lazy in App.tsx. This function-style
@@ -21,6 +49,10 @@ function vendorChunk(id: string): string | undefined {
 
 export default defineConfig({
   plugins: [react()],
+  define: {
+    __BUILD_SHA__: JSON.stringify(buildInfo.sha),
+    __BUILD_DATE__: JSON.stringify(buildInfo.date),
+  },
   build: {
     rollupOptions: {
       output: {
