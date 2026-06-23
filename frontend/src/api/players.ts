@@ -123,6 +123,47 @@ export function usePlayerRoster(
 }
 
 // ---------------------------------------------------------------------------
+// Phase 2.1 — pitcher arsenal (pitch types + velocity range), GET /{id}/arsenal
+// ---------------------------------------------------------------------------
+
+export type ArsenalPitch = {
+  pitchType: string;
+  count: number;
+  /** Share of the pitcher's velocity-known pitches, in [0, 1]. */
+  usagePct: number;
+  veloMinMph: number;
+  veloAvgMph: number;
+  veloMaxMph: number;
+};
+
+export async function fetchArsenal(id: number): Promise<ArsenalPitch[]> {
+  const res = await fetch(`${API_BASE}/v1/players/${id}/arsenal`);
+  if (res.status === 404) {
+    throw new PlayerLookupError(404, "player not found");
+  }
+  if (!res.ok) {
+    throw new PlayerLookupError(
+      res.status,
+      `arsenal failed: HTTP ${res.status}`,
+    );
+  }
+  return (await res.json()) as ArsenalPitch[];
+}
+
+/** A pitcher's arsenal (all seasons), most-thrown first. Disabled until an id is known. */
+export function usePitcherArsenal(id: number | null) {
+  return useQuery<ArsenalPitch[], PlayerLookupError>({
+    queryKey: ["players", "arsenal", id],
+    queryFn: () => {
+      if (id == null) throw new Error("id is required");
+      return fetchArsenal(id);
+    },
+    enabled: id != null,
+    staleTime: 60_000,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // 4b.2 — recent predictions for a player (joined to outcomes lands later)
 // ---------------------------------------------------------------------------
 
