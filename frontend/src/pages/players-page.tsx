@@ -20,7 +20,11 @@
 import { useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
-import { usePlayerCalibration, usePlayerPredictions } from "../api/players";
+import {
+  usePlayer,
+  usePlayerCalibration,
+  usePlayerPredictions,
+} from "../api/players";
 import { ReliabilityDiagram } from "../components/charts/reliability-diagram";
 import { BroadcastPanel } from "../components/broadcast/broadcast-panel";
 import { LowerThird } from "../components/broadcast/lower-third";
@@ -333,7 +337,13 @@ function BatterColumn({ report }: { report: MatchupReport }) {
 
 export function PlayerProfilePage() {
   const { id } = useParams<{ id: string }>();
-  const playerId = id ? Number(id) : null;
+  // Search + roster navigate with a NUMERIC Statcast id; the demo matchups use a string slug (e.g.
+  // "judge_aaron"). A numeric id is a real searched player - render a real header + the live sections
+  // instead of falling back to the Judge->Skubal fixture (the full live scouting card is Phase 2). A
+  // non-numeric slug keeps the showcase matchup demo.
+  const isRealPlayer = id != null && /^\d+$/.test(id);
+  const playerId = isRealPlayer ? Number(id) : null;
+  const realPlayer = usePlayer(playerId);
   const report = getDefaultMatchup(id);
 
   // B2: the Recent Predictions + Calibration sections are LIVE for this player
@@ -364,16 +374,54 @@ export function PlayerProfilePage() {
   return (
     <div style={fieldStyle}>
       <div style={columnStyle}>
-        <MatchupHeader
-          primary={report.primary}
-          opponent={report.opponent}
-          context={report.context}
-        />
+        {isRealPlayer ? (
+          <header>
+            <p
+              style={{
+                margin: "0 0 4px",
+                fontFamily: typography.fonts.mono,
+                fontSize: 12,
+                fontWeight: typography.weights.semibold,
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                color: colors.goldInk,
+              }}
+            >
+              Player Profile
+            </p>
+            <h1 style={h1Style}>
+              {realPlayer.data?.name ??
+                (realPlayer.isError
+                  ? "Player not found"
+                  : realPlayer.isLoading
+                    ? "Loading…"
+                    : `Player #${playerId}`)}
+            </h1>
+            {realPlayer.data ? (
+              <p style={liveLoadingStyle}>
+                {realPlayer.data.primaryPosition.trim() || "—"}
+                {realPlayer.data.team ? ` · ${realPlayer.data.team}` : ""}
+              </p>
+            ) : null}
+            <p style={liveLoadingStyle}>
+              Full scouting card (arsenal with velocity range, splits, spray) is
+              coming. Live model history below.
+            </p>
+          </header>
+        ) : (
+          <>
+            <MatchupHeader
+              primary={report.primary}
+              opponent={report.opponent}
+              context={report.context}
+            />
 
-        <div className="matchup-report__columns">
-          <PitcherColumn report={report} />
-          <BatterColumn report={report} />
-        </div>
+            <div className="matchup-report__columns">
+              <PitcherColumn report={report} />
+              <BatterColumn report={report} />
+            </div>
+          </>
+        )}
 
         <section aria-labelledby="recent-predictions-label">
           <div style={{ marginBottom: 12 }}>
@@ -434,10 +482,12 @@ export function PlayerProfilePage() {
               </NoHistoryNote>
             )}
           </section>
-          <KeyNotes
-            notes={report.keyNotes}
-            palette={broadcastKeyNotesPalette}
-          />
+          {isRealPlayer ? null : (
+            <KeyNotes
+              notes={report.keyNotes}
+              palette={broadcastKeyNotesPalette}
+            />
+          )}
         </div>
       </div>
     </div>
