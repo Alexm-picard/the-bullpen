@@ -11,7 +11,7 @@ jobs:
   lint-and-type:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: lint-and-type
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
@@ -127,7 +127,7 @@ jobs:
     needs: lint-and-type
     name: REQUIRED — physics validation gate (decision [131])
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
@@ -157,7 +157,7 @@ jobs:
     needs: lint-and-type
     name: REQUIRED — temporal leakage tests
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
@@ -208,7 +208,7 @@ jobs:
           CLICKHOUSE_USER: default
           CLICKHOUSE_PASSWORD: thebullpen
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
