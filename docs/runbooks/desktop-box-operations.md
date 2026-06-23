@@ -33,17 +33,17 @@ Per **ADR-0006**, the desktop is a deploy target, never an authoring target:
 **Hardware:** Ryzen 7 7800X3D + RTX 4070 Super, Windows 11 host, WSL2 Ubuntu 24.04 LTS. All
 services run inside WSL2.
 
-| Component                | Manager   | Port(s)     | Notes                                                                      |
-| ------------------------ | --------- | ----------- | -------------------------------------------------------------------------- |
-| `bullpen-api`            | systemd   | 8080        | Spring profile `api`. HTTP predictions, players, ops, `/admin`.            |
-| `bullpen-worker`         | systemd   | 8081        | Spring profile `worker`. Drift jobs, retraining queue, live poller.        |
-| ClickHouse               | Docker    | 8123 / 9000 | `bullpen-clickhouse` container. Pitches, prediction_log, drift_metrics.    |
-| Prometheus               | Docker    | 9090        | Scrapes the api/worker actuator.                                           |
-| Grafana                  | systemd   | 3000        | Application / System / ML-Ops dashboards.                                  |
-| cloudflared              | systemd   | -           | Tunnel: `api.thebullpen.net` -> `localhost:8080`. The only public ingress. |
-| GlitchTip (error track)  | Docker    | (compose)   | Behind the `errortracking` compose profile (ADR-0008).                     |
-| Python training env      | on demand | -           | uv-managed, uses the GPU. Not a service; runs for training only.           |
-| `bullpen-snapshot.timer` | systemd   | -           | Daily 03:00 backup (`clickhouse-snapshot.sh`).                             |
+| Component                | Manager   | Port(s)     | Notes                                                                                                                                    |
+| ------------------------ | --------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `bullpen-api`            | systemd   | 8080        | Spring profile `api`. HTTP predictions, players, ops, `/admin`.                                                                          |
+| `bullpen-worker`         | systemd   | 8081        | Spring profile `worker`. Drift jobs, retraining queue, live poller.                                                                      |
+| ClickHouse               | Docker    | 8123 / 9000 | `bullpen-clickhouse` container. Pitches, prediction_log, drift_metrics.                                                                  |
+| Prometheus               | Docker    | 9090        | Scrapes the api/worker actuator.                                                                                                         |
+| Grafana                  | systemd   | 3000        | Application / System / ML-Ops dashboards.                                                                                                |
+| cloudflared              | systemd   | -           | Tunnel: `api.thebullpen.net` -> `localhost:8080`. The only public ingress. Config template: `infra/cloudflared/config.yml.example` (M2). |
+| GlitchTip (error track)  | Docker    | (compose)   | Behind the `errortracking` compose profile (ADR-0008).                                                                                   |
+| Python training env      | on demand | -           | uv-managed, uses the GPU. Not a service; runs for training only.                                                                         |
+| `bullpen-snapshot.timer` | systemd   | -           | Daily 03:00 backup (`clickhouse-snapshot.sh`).                                                                                           |
 
 **Install layout:**
 
@@ -59,19 +59,32 @@ services run inside WSL2.
 
 Frontend is **not** on the box: it is on Vercel and auto-deploys on push to `main`.
 
+**Stack verification (M3):** the monitoring (Prometheus/Alertmanager) and error-tracking
+(GlitchTip) stacks run behind opt-in compose profiles, so run
+[`infra/check-stack.sh`](../../infra/check-stack.sh) after `docker compose ... up -d` (and on a
+timer) - it fails loud if any expected container is missing or unhealthy, otherwise alerting can be
+silently absent. Every long-lived compose service now has an env-overridable memory cap
+(`BULLPEN_*_MEM`) and a healthcheck.
+
 ---
 
 ## 2. The environment contract (`/etc/default/bullpen`)
 
-Both units load this single `EnvironmentFile`. The **required** values (the app misbehaves or
-won't boot without them) are owned by [`desktop-environment.md`](desktop-environment.md) - read
-it; the summary:
+Both units load this single `EnvironmentFile`. A committed template documenting **every** variable
+lives at [`infra/default-bullpen.env.example`](../../infra/default-bullpen.env.example) (M2) - copy
+it to `/etc/default/bullpen` (chmod 600) and fill in real values. The **required** values (the app
+misbehaves or won't boot without them) are owned by [`desktop-environment.md`](desktop-environment.md)
+
+- read it; the summary:
 
 - `BULLPEN_CLICKHOUSE_ENABLED=true` - without it the worker **crash-loops** and the api
   **silently loses** live data / player search / prediction logging (the 2026-06-04 incident).
   A crash-looping worker is the canary for this being unset.
 - `THEBULLPEN_ADMIN_BASIC_AUTH=<user>:<password>` - the api won't boot without it; `/v1/admin/**`
-  (register, promote, routing) needs it.
+  (register, promote, routing) needs it. M5: this same credential also gates
+  `/actuator/{prometheus,metrics}`, so Prometheus needs `infra/prometheus/secrets/metrics_authz`
+  (base64 of `<user>:<password>`, created from the committed `.example`) or the scrape 401s and
+  metrics go blind.
 - `S3_ENDPOINT_URL=https://<account>.r2.cloudflarestorage.com` + the R2 access key/secret -
   snapshot storage, model-artifact ingest at registration, backups (ADR-0007).
 - `BULLPEN_REGISTRY_DB=/opt/bullpen/data/registry.sqlite` - the live registry path the P1 backup

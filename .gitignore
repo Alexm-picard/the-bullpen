@@ -73,6 +73,14 @@ infra/prometheus-data/
 # --- WS4: Alertmanager Discord webhook secret (the .example is committed; the real URL is not) ---
 infra/alertmanager/secrets/discord_url
 
+# --- M5: Prometheus scrape credentials for the ADMIN-gated /actuator/prometheus (.example committed) ---
+infra/prometheus/secrets/metrics_authz
+
+# --- M2: real box configs reconstructed from the committed .example templates (never committed) ---
+infra/default-bullpen.env
+infra/cloudflared/config.yml
+infra/cloudflared/*.json
+
 # --- Local snapshots (created by the destructive-CH hook gate on dev boxes) ---
 snapshots/
 

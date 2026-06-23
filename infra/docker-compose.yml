@@ -24,10 +24,10 @@ services:
     deploy:
       resources:
         limits:
-          # 8 GiB on dev so the 11-season Phase 2a feature build's
-          # windowed CTEs don't OOM on fold 3-4 (10-11 year encode
-          # windows). Prod WSL2 may want to keep this at 4g.
-          memory: 8g
+          # 8 GiB on dev so the 11-season Phase 2a feature build's windowed CTEs don't OOM on
+          # fold 3-4 (10-11 year encode windows). Prod WSL2 (12 GiB pool shared with the JVM app)
+          # should drop this via BULLPEN_CLICKHOUSE_MEM=4g in /etc/default/bullpen (M3).
+          memory: "${BULLPEN_CLICKHOUSE_MEM:-8g}"
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
       interval: 10s
@@ -48,10 +48,23 @@ services:
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/rules:/etc/prometheus/rules:ro
+      # M5: scrape credential for the ADMIN-gated /actuator/prometheus (gitignored real file,
+      # .example committed). See infra/prometheus/secrets/metrics_authz.example.
+      - ./prometheus/secrets:/etc/prometheus/secrets:ro
       - prometheus-data:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.retention.time=30d"
+    deploy:
+      resources:
+        limits:
+          memory: "${BULLPEN_PROMETHEUS_MEM:-768m}"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
 
   grafana:
     image: grafana/grafana:11.4.0
@@ -68,6 +81,16 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on:
       - prometheus
+    deploy:
+      resources:
+        limits:
+          memory: "${BULLPEN_GRAFANA_MEM:-512m}"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
 
   # --- WS4: watchdog stack (host metrics + alert routing) ---
   # Behind the `monitoring` profile so the default `docker compose up` stays lean (Prometheus
@@ -89,6 +112,17 @@ services:
       - "/var/lib/node_exporter:/var/lib/node_exporter:ro"
     ports:
       - "9100:9100"
+    deploy:
+      resources:
+        limits:
+          memory: "${BULLPEN_NODE_EXPORTER_MEM:-128m}"
+    healthcheck:
+      # node-exporter v1.8.2 ships on busybox, so wget is available.
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9100/metrics"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
 
   alertmanager:
     # v0.28.1: discord_configs.webhook_url_file needs v0.28+ - v0.27.0 crash-loops at server
@@ -107,6 +141,16 @@ services:
     command:
       - "--config.file=/etc/alertmanager/alertmanager.yml"
       - "--storage.path=/alertmanager"
+    deploy:
+      resources:
+        limits:
+          memory: "${BULLPEN_ALERTMANAGER_MEM:-256m}"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9093/-/healthy"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
 
   # --- A6 (ADR-0008): self-hosted error tracking via GlitchTip (Sentry-compatible) ---
   # Behind the `errortracking` profile so the default `docker compose up` stays lean
@@ -125,6 +169,10 @@ services:
       POSTGRES_DB: glitchtip
     volumes:
       - glitchtip-pg-data:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          memory: "${BULLPEN_GLITCHTIP_PG_MEM:-512m}"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -136,6 +184,16 @@ services:
     container_name: bullpen-glitchtip-redis
     profiles: ["errortracking"]
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: "${BULLPEN_GLITCHTIP_REDIS_MEM:-256m}"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
 
   glitchtip-web:
     image: glitchtip/glitchtip:v4.1.1
@@ -159,6 +217,19 @@ services:
         condition: service_healthy
       glitchtip-redis:
         condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: "${BULLPEN_GLITCHTIP_WEB_MEM:-768m}"
+    healthcheck:
+      # The glitchtip image is python-slim (no wget/curl), so probe the port with python.
+      test:
+        - CMD-SHELL
+        - python -c "import socket; s=socket.socket(); s.settimeout(3); s.connect(('127.0.0.1',8000)); s.close()"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
 
   glitchtip-worker:
     image: glitchtip/glitchtip:v4.1.1
@@ -172,6 +243,12 @@ services:
         condition: service_healthy
       glitchtip-redis:
         condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: "${BULLPEN_GLITCHTIP_WORKER_MEM:-768m}"
+    # No container healthcheck: a Celery worker has no HTTP port. Liveness comes from
+    # `restart: unless-stopped` + the boot-check (infra/check-stack.sh) verifying it is running.
 
   glitchtip-migrate:
     image: glitchtip/glitchtip:v4.1.1
@@ -182,6 +259,11 @@ services:
     depends_on:
       glitchtip-postgres:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: "${BULLPEN_GLITCHTIP_MIGRATE_MEM:-256m}"
+    # No healthcheck: one-shot migration job (runs ./manage.py migrate then exits).
 
 volumes:
   clickhouse-data:
