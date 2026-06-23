@@ -238,7 +238,9 @@ export default function ParksPage() {
                 Live: {allParks.data.modelName} {allParks.data.modelVersion} -
                 estimated P(HR) for a {launchSpeedMph} mph / {launchAngleDeg}
                 &deg; / {sprayAngleDeg}&deg; spray batted ball,{" "}
-                {stand === "R" ? "RHB" : "LHB"}, at each park.
+                {stand === "R" ? "RHB" : "LHB"}, at each park. Bar length and
+                color show the absolute P(HR), so near-equal parks read as
+                near-equal.
               </p>
               <ParkHrHeatmap
                 probHrByPark={allParks.data.probHrByPark}

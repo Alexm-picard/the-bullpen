@@ -1,8 +1,8 @@
 /**
  * <ParkHrHeatmap> - the 30-park home-run-probability heatmap (B1), the live face
  * of the parks page. Renders one row per park, sorted by P(HR) descending, with a
- * viridis-intensity bar (normalised across the 30 parks for THIS launch condition)
- * and the probability printed alongside.
+ * viridis-intensity bar keyed to the ABSOLUTE P(HR) (not normalised across the 30
+ * parks) and the probability printed alongside.
  *
  * Presentational only: the page owns the launch-condition inputs + the
  * useAllParksPrediction query and hands the resolved map down. Color is never the
@@ -35,18 +35,16 @@ export function ParkHrHeatmap({ probHrByPark, parkRows }: ParkHrHeatmapProps) {
     );
   }
 
-  // Normalise the viridis intensity + bar width across the spread of THIS response,
-  // so the most and least HR-prone parks anchor the ramp regardless of the absolute
-  // level (a 110/28 scorcher and a 95/12 grounder both read clearly).
-  const probs = entries.map((e) => e.p);
-  const max = Math.max(...probs);
-  const min = Math.min(...probs);
-  const span = max - min || 1;
+  // Bar width + viridis intensity key to the ABSOLUTE P(HR), not the spread across the 30 parks.
+  // Relative normalisation made a ~1-point spread (50.0% vs 51.1%) read as empty-vs-full, which
+  // overstated tiny park differences (and the per-park signal is genuinely weak - decision [163]).
+  // Absolute scaling makes a flat distribution read as flat: each row's bar/color reflects its own
+  // probability, matching the absolute % printed alongside.
 
   return (
     <div role="table" aria-label="Home-run probability by park">
       {entries.map((e, i) => {
-        const norm = (e.p - min) / span; // 0..1 across the 30 parks
+        const norm = Math.min(Math.max(e.p, 0), 1); // absolute P(HR), clamped to 0..1
         return (
           <div
             key={e.id}
@@ -96,7 +94,7 @@ export function ParkHrHeatmap({ probHrByPark, parkRows }: ParkHrHeatmapProps) {
                 aria-hidden="true"
                 style={{
                   height: 12,
-                  width: `${20 + norm * 80}%`,
+                  width: `${Math.max(3, norm * 100).toFixed(1)}%`,
                   backgroundColor: viridis(norm),
                   flexShrink: 0,
                   borderRadius: 1,

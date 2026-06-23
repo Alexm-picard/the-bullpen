@@ -38,4 +38,24 @@ describe("ParkHrHeatmap", () => {
     );
     expect(html).toContain("No per-park probabilities");
   });
+
+  it("scales bar width to the absolute P(HR), not relative to the 30-park spread", () => {
+    // Near-equal parks must read near-equal. The old relative normalisation made the min park a
+    // 20% stub and the max a full bar; absolute scaling renders each park at its own probability.
+    const html = renderToStaticMarkup(
+      <ParkHrHeatmap
+        probHrByPark={{ ATL: 0.511, BOS: 0.5 }}
+        parkRows={PARK_ROWS}
+      />,
+    );
+    expect(html).toContain("width:50.0%"); // BOS at its absolute P(HR), not a 20% stub
+    expect(html).toContain("width:51.1%"); // ATL barely longer, not a full bar
+  });
+
+  it("renders a proportionally small bar for a low absolute P(HR)", () => {
+    const html = renderToStaticMarkup(
+      <ParkHrHeatmap probHrByPark={{ SD: 0.05 }} parkRows={PARK_ROWS} />,
+    );
+    expect(html).toContain("width:5.0%");
+  });
 });
