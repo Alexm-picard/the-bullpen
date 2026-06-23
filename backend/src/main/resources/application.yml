@@ -4,7 +4,17 @@ spring:
   profiles:
     default: api
   datasource:
-    url: jdbc:sqlite:${BULLPEN_REGISTRY_DB:./data/registry.sqlite}
+    # M4 - SQLite per-connection PRAGMAs via the Xerial URL params (applied on every physical
+    # connection the driver opens, which is the only reliable way to set per-connection pragmas):
+    #   foreign_keys=true  - enforce the model_routing / experiment_results / retraining_queue ->
+    #                        model_versions REFERENCES clauses (documentation-only until now, so an
+    #                        orphaned routing/experiment row could be inserted against a missing id).
+    #   busy_timeout=5000  - a concurrent worker write + admin promotion waits up to 5s for the write
+    #                        lock instead of failing immediately with SQLITE_BUSY ("database is locked").
+    # Inherited by Flyway too (spring.flyway.url below points back here). WAL is intentionally NOT set
+    # here: it changes the on-disk journal format and adds -wal/-shm sidecars, so it is a deliberate,
+    # separately-tracked box-side change rather than a quiet rider on this one.
+    url: "jdbc:sqlite:${BULLPEN_REGISTRY_DB:./data/registry.sqlite}?foreign_keys=true&busy_timeout=5000"
     driver-class-name: org.sqlite.JDBC
   flyway:
     enabled: true
