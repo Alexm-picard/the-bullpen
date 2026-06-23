@@ -53,9 +53,12 @@ training/data/eval/promotion/*
 training/data/eval/promotion/*_temperature*.json
 training/data/samples/
 
-# Local fold-export caches: the v2-clean parquet folds (~730MB each) produced on the box / fetched
-# from R2 for off-box training (production.py --folds-dir). Data artifacts, never committed
-# (CLAUDE.md) - these were the only thing forcing the box deploy to pass --allow-dirty.
+# Local fold-export caches: the v2-clean parquet folds + their manifest/mappings json (~730MB each)
+# produced on the box / fetched from R2 for off-box training (production.py --folds-dir). Data
+# artifacts, never committed (CLAUDE.md) - the only thing forcing the box deploy to pass
+# --allow-dirty. Layout differs by machine: training/data/fold_export/ (box), training/data/folds/
+# and data/fold_export/ (Mac fetch) - ignore all of them.
+training/data/fold_export/
 training/data/folds/
 /data/
 
