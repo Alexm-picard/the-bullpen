@@ -35,6 +35,7 @@ import {
 } from "../components/broadcast/palettes";
 import { BrowsePlayers } from "../components/players/browse-players";
 import { FeaturedReports } from "../components/players/featured-reports";
+import { BattedBallsView } from "../components/players/batted-balls-view";
 import { ModelStandouts } from "../components/players/model-standouts";
 import { PitcherArsenalCard } from "../components/players/pitcher-arsenal-card";
 import { PlayerSearch } from "../components/players/player-search";
@@ -434,11 +435,15 @@ export function PlayerProfilePage() {
                   </BroadcastPanel>
                 )}
               </section>
-            ) : realPlayer.data ? (
-              <p style={liveLoadingStyle}>
-                The hitter view (all in-play balls, filterable by hit type and
-                date; HR log) is coming next. Live model history below.
-              </p>
+            ) : realPlayer.data && playerId != null ? (
+              <section aria-labelledby="batted-balls-label">
+                <div style={{ marginBottom: 12 }}>
+                  <LowerThird id="batted-balls-label">
+                    In-Play Batted Balls
+                  </LowerThird>
+                </div>
+                <BattedBallsView playerId={playerId} />
+              </section>
             ) : null}
           </>
         ) : (
