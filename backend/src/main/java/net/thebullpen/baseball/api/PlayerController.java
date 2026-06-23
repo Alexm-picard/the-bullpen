@@ -1,8 +1,14 @@
 package net.thebullpen.baseball.api;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.List;
+import net.thebullpen.baseball.api.dto.ArsenalPitch;
+import net.thebullpen.baseball.api.dto.BattedBallRow;
 import net.thebullpen.baseball.api.dto.PlayerPredictionRow;
 import net.thebullpen.baseball.api.dto.PlayerSearchResult;
+import net.thebullpen.baseball.data.BatterBattedBallsRepository;
+import net.thebullpen.baseball.data.PitcherArsenalRepository;
 import net.thebullpen.baseball.data.PlayerPredictionsRepository;
 import net.thebullpen.baseball.data.PlayerRepository;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -43,13 +49,22 @@ public class PlayerController {
   private static final int LIMIT_MAX = 50;
   private static final int PREDICTIONS_LIMIT_MAX = 200;
   private static final int ROSTER_LIMIT_MAX = 100;
+  private static final int BATTED_BALLS_LIMIT_MAX = 1000;
 
   private final PlayerRepository repo;
   private final PlayerPredictionsRepository predictions;
+  private final PitcherArsenalRepository arsenal;
+  private final BatterBattedBallsRepository battedBalls;
 
-  public PlayerController(PlayerRepository repo, PlayerPredictionsRepository predictions) {
+  public PlayerController(
+      PlayerRepository repo,
+      PlayerPredictionsRepository predictions,
+      PitcherArsenalRepository arsenal,
+      BatterBattedBallsRepository battedBalls) {
     this.repo = repo;
     this.predictions = predictions;
+    this.arsenal = arsenal;
+    this.battedBalls = battedBalls;
   }
 
   @GetMapping("/search")
@@ -108,5 +123,55 @@ public class PlayerController {
       throw new ResponseStatusException(HttpStatus.NOT_FOUND, "player not found: " + id);
     }
     return predictions.findRecentForPlayer(id, limit);
+  }
+
+  /**
+   * A pitcher's arsenal over all seasons (Phase 2.1): per pitch type, usage share + the velocity
+   * range (min / avg / max mph). 404 if the player id is unknown.
+   */
+  @GetMapping("/{id}/arsenal")
+  public List<ArsenalPitch> arsenalFor(@PathVariable("id") long id) {
+    if (repo.findById(id).isEmpty()) {
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "player not found: " + id);
+    }
+    return arsenal.findArsenal(id);
+  }
+
+  /**
+   * A batter's in-play batted balls (Phase 2.2/2.3), newest first. Optional filters: {@code bbType}
+   * (hit type), {@code event} (e.g. {@code home_run} for the all-HRs view), and a {@code [from,
+   * to]} game-date range (ISO YYYY-MM-DD). {@code limit} ∈ [1, 1000], default 200. 404 if the id is
+   * unknown.
+   */
+  @GetMapping("/{id}/batted-balls")
+  public List<BattedBallRow> battedBallsFor(
+      @PathVariable("id") long id,
+      @RequestParam(name = "bbType", required = false) String bbType,
+      @RequestParam(name = "event", required = false) String event,
+      @RequestParam(name = "from", required = false) String from,
+      @RequestParam(name = "to", required = false) String to,
+      @RequestParam(name = "limit", defaultValue = "200") int limit) {
+    if (limit < LIMIT_MIN || limit > BATTED_BALLS_LIMIT_MAX) {
+      throw new ResponseStatusException(
+          HttpStatus.BAD_REQUEST,
+          "limit must be in [" + LIMIT_MIN + ", " + BATTED_BALLS_LIMIT_MAX + "]");
+    }
+    if (repo.findById(id).isEmpty()) {
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "player not found: " + id);
+    }
+    return battedBalls.findBattedBalls(
+        id, bbType, event, parseDate(from, "from"), parseDate(to, "to"), limit);
+  }
+
+  private static LocalDate parseDate(String value, String field) {
+    if (value == null || value.isBlank()) {
+      return null;
+    }
+    try {
+      return LocalDate.parse(value);
+    } catch (DateTimeParseException e) {
+      throw new ResponseStatusException(
+          HttpStatus.BAD_REQUEST, field + " must be an ISO date (YYYY-MM-DD)");
+    }
   }
 }
