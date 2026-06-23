@@ -21,9 +21,17 @@ import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWrite
  * <ul>
  *   <li>{@code /v1/admin/**} — HTTP Basic, role {@code ADMIN}. Backs the registry write paths
  *       (register, promote, archive) and any future operator tooling.
+ *   <li>{@code /actuator/health/**} + {@code /actuator/info} — public. These are the probes
+ *       Cloudflare / Uptime Robot hit; health uses {@code show-details: when-authorized} so no
+ *       internals leak to an anonymous caller.
+ *   <li>{@code /actuator/**} (everything else: {@code prometheus}, {@code metrics}, …) — HTTP
+ *       Basic, role {@code ADMIN} (M5). These leak queue depths, per-model prediction counts, and
+ *       JVM internals, so they must not be reachable unauthenticated from a public-fronted host.
+ *       Prometheus scrapes {@code /actuator/prometheus} with basic auth (see {@code
+ *       infra/prometheus/prometheus.yml}); a Cloudflare edge deny on {@code /actuator/*} is the
+ *       defense-in-depth layer (see {@code infra/cloudflared/config.yml.example}).
  *   <li>everything else — public. Prediction APIs (decision [56] portfolio framing: no per-user
- *       auth), the public Ops read view at {@code /v1/ops/**}, the Actuator probes Cloudflare /
- *       Uptime Robot hit, and the static frontend assets.
+ *       auth), the public Ops read view at {@code /v1/ops/**}, and the static frontend assets.
  * </ul>
  *
  * <p>CSRF is disabled because there are no cookies and no browser-form posts — the only writers are
@@ -50,7 +58,17 @@ public class SecurityConfig {
     return http.csrf(csrf -> csrf.disable())
         .authorizeHttpRequests(
             authz ->
-                authz.requestMatchers("/v1/admin/**").hasRole("ADMIN").anyRequest().permitAll())
+                authz
+                    // Order matters (first match wins): keep the public liveness/readiness probes
+                    // open, then gate every other actuator endpoint, then the admin write surface.
+                    .requestMatchers("/actuator/health/**", "/actuator/info")
+                    .permitAll()
+                    .requestMatchers("/actuator/**")
+                    .hasRole("ADMIN")
+                    .requestMatchers("/v1/admin/**")
+                    .hasRole("ADMIN")
+                    .anyRequest()
+                    .permitAll())
         .httpBasic(Customizer.withDefaults())
         // Security headers. HSTS is emitted only on requests Spring sees as secure; behind the
         // Cloudflare Tunnel that means honoring X-Forwarded-Proto (enabled via
