@@ -25,6 +25,15 @@ jobs:
       - name: Lint
         working-directory: frontend
         run: npm run lint
+      # S3: design-token + a11y discipline gates (previously local-only scripts). Both are clean at
+      # the current baseline, so they are blocking - a hex code in a component or a static a11y
+      # defect now reds CI.
+      - name: Hex-code discipline
+        working-directory: frontend
+        run: npm run lint:hex-codes
+      - name: Static a11y audit
+        working-directory: frontend
+        run: npm run audit:a11y-static
       # A3: non-blocking CVE signal (Dependabot is the gating mechanism). high+ only.
       - name: Audit dependencies (npm, non-blocking)
         if: always()
@@ -54,6 +63,11 @@ jobs:
       - name: Build
         working-directory: frontend
         run: npm run build
+      # S3: bundle-budget reads dist/ after the build (initial JS < 300 kB gz, any chunk < 250 kB
+      # gz). Clean at the current baseline, so it is blocking - a bundle-size regression reds CI.
+      - name: Bundle budget
+        working-directory: frontend
+        run: npm run bundle-budget
 
   # Playwright E2E activates in Phase 4 when playwright.config.ts lands.
   # Guard is on the file existence in the workspace (post-checkout), not job-level.

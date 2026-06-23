@@ -1,0 +1,65 @@
+name: security
+
+# S2 - the security / supply-chain lane the repo was missing: SAST (CodeQL), secret scanning
+# (gitleaks), and dependency + IaC + secret vulnerability scanning (Trivy, HIGH/CRITICAL blocking).
+# Complements the existing non-blocking `npm audit` / `pip-audit` signals + Dependabot.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly re-scan so newly-disclosed CVEs in unchanged code still surface.
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+  security-events: write # CodeQL + Trivy SARIF upload to the Security tab
+
+jobs:
+  codeql:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [java-kotlin, javascript-typescript]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          # build-mode: none analyzes source without compiling - no Gradle/Java setup needed and no
+          # build flakiness (CodeQL supports this for java-kotlin as well as interpreted languages).
+          build-mode: none
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
+
+  gitleaks:
+    name: gitleaks (secret scan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so PRs scan the whole diff range
+      # Free for public repos; a private org would need GITLEAKS_LICENSE.
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  trivy:
+    name: Trivy (deps + IaC + secrets)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Filesystem scan covers npm/pip/gradle lockfiles (vuln), compose/IaC (misconfig), and any
+      # committed secret. HIGH/CRITICAL with a fix are blocking; unfixable ones are reported only.
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
