@@ -122,8 +122,9 @@ export type BackfillPerPark = {
  * their own per-park confusion matrices.
  */
 export type BattedBallBackfillReport = {
-  schema_version: string;
+  schema_version: number;
   artifact_name: string;
+  artifact_version: string;
   model_name: string;
   model_version: string;
   season_from: number;
