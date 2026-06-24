@@ -514,9 +514,9 @@ export function PlayerProfilePage() {
               </BroadcastPanel>
             ) : (
               <NoHistoryNote title="No calibration data yet">
-                Reliability bins appear once enough settled predictions
-                accumulate for this player to estimate predicted-vs-actual
-                frequency.
+                Bins appear once enough predictions accumulate for this player
+                to chart the predicted-probability distribution.
+                Observed-frequency calibration awaits a live truth-join.
               </NoHistoryNote>
             )}
           </section>
