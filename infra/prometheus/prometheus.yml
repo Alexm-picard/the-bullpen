@@ -14,25 +14,28 @@ rule_files:
 
 scrape_configs:
   # M5: /actuator/prometheus is gated behind ADMIN HTTP Basic in the app's SecurityConfig (it leaks
-  # queue depths, per-model prediction counts, JVM internals). The scrape authenticates with the
-  # admin credential read from a mounted, gitignored secret file - no username or password in this
-  # committed config. The file holds base64("<admin-user>:<admin-password>") i.e. the value half of
-  # THEBULLPEN_ADMIN_BASIC_AUTH; create it from infra/prometheus/secrets/metrics_authz.example before
-  # bringing the stack up (it is mounted read-only at /etc/prometheus/secrets, see docker-compose).
+  # queue depths, per-model prediction counts, JVM internals). The scrape authenticates with HTTP
+  # Basic: `username` is the (non-secret) user-half of THEBULLPEN_ADMIN_BASIC_AUTH and MUST match it
+  # (default "admin"); the password is the RAW password (NOT base64), read from a mounted, gitignored
+  # secret file. Create infra/prometheus/secrets/metrics_pw from metrics_pw.example before bringing
+  # the stack up (mounted read-only at /etc/prometheus/secrets, see docker-compose).
+  # NOTE: HTTP Basic MUST use the `basic_auth:` block - Prometheus REJECTS `authorization: {type:
+  # Basic}` ("use basic_auth instead"), which crash-looped the 2026-06-24 cutover. `promtool check
+  # config` (infra.yml CI) now guards this syntax so it cannot recur.
   - job_name: "thebullpen-api"
     metrics_path: /actuator/prometheus
-    authorization:
-      type: Basic
-      credentials_file: /etc/prometheus/secrets/metrics_authz
+    basic_auth:
+      username: admin
+      password_file: /etc/prometheus/secrets/metrics_pw
     static_configs:
       - targets: ["host.docker.internal:8080"]
         labels: { profile: "api" }
 
   - job_name: "thebullpen-worker"
     metrics_path: /actuator/prometheus
-    authorization:
-      type: Basic
-      credentials_file: /etc/prometheus/secrets/metrics_authz
+    basic_auth:
+      username: admin
+      password_file: /etc/prometheus/secrets/metrics_pw
     static_configs:
       - targets: ["host.docker.internal:8081"]
         labels: { profile: "worker" }

@@ -83,7 +83,10 @@ infra/prometheus-data/
 infra/alertmanager/secrets/discord_url
 
 # --- M5: Prometheus scrape credentials for the ADMIN-gated /actuator/prometheus (.example committed) ---
-infra/prometheus/secrets/metrics_authz
+# Ignore every real secret in the dir (metrics_pw, the stale metrics_authz, anything future) but keep
+# the committed *.example templates.
+infra/prometheus/secrets/*
+!infra/prometheus/secrets/*.example
 
 # --- M2: real box configs reconstructed from the committed .example templates (never committed) ---
 infra/default-bullpen.env
