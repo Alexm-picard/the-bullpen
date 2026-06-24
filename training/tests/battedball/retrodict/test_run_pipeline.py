@@ -108,6 +108,7 @@ def test_result_to_tsv_row_observed_outcome_null_on_away_park() -> None:
         prob_hr=0.6,
         observed_outcome=None,
         n_mc=10,
+        carry_ft=430.0,
     )
     tsv = _result_to_tsv_row(r)
     fields = tsv.split("\t")
@@ -143,6 +144,7 @@ def test_result_to_tsv_row_home_park_carries_observed_outcome() -> None:
         prob_hr=1.0,
         observed_outcome="hr",
         n_mc=10,
+        carry_ft=405.0,
     )
     tsv = _result_to_tsv_row(r)
     fields = tsv.split("\t")
