@@ -50,6 +50,18 @@ DEFAULT_BATCH_SIZE: int = 256
 DEFAULT_LR: float = 5e-4
 DEFAULT_WEIGHT_DECAY: float = 1e-4
 
+# Phase 4 carry head. The head emits a STANDARDISED per-park carry; the target
+# (feet) is standardised with the fixed CARRY_MEAN_FT / CARRY_STD_FT below before
+# the loss. Standardising (centre ~0, spread ~1) is what makes the head converge:
+# a head emitting raw feet (~150-450) from a zero-init bias would need thousands
+# of optimiser steps just to crawl its bias up to the mean. Serving un-standardises
+# with the SAME constants - recorded in metadata.json:carry_target as the single
+# source of truth - via ft = raw * CARRY_STD_FT + CARRY_MEAN_FT. DEFAULT_CARRY_WEIGHT
+# balances the (now O(1)) carry term against the ~0.1-scale KL outcome loss.
+CARRY_MEAN_FT: float = 225.0
+CARRY_STD_FT: float = 80.0
+DEFAULT_CARRY_WEIGHT: float = 1.0
+
 
 @dataclass
 class TrainSummary:
@@ -60,6 +72,9 @@ class TrainSummary:
     final_val_loss: float
     elapsed_sec: float
     device: str
+    # Phase 4: last-epoch mean carry term (normalised smooth-L1, pre-weight).
+    # 0.0 when no carry was backfilled (the carry mask was empty all epoch).
+    final_carry_loss: float = math.nan
 
 
 # --- core trainer ---------------------------------------------------------
@@ -85,6 +100,28 @@ def _kl_loss(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
     return F.kl_div(log_probs, smoothed, reduction="batchmean")
 
 
+def _carry_loss(carry_pred: torch.Tensor, carry_target: torch.Tensor) -> torch.Tensor:
+    """Masked smooth-L1 (Huber) on STANDARDISED per-park carry distance.
+
+    ``carry_pred``: (B, n_parks, 1) the model's standardised carry output;
+    ``carry_target``: (B, n_parks) carry in FEET, with NaN where ``carry_ft`` is
+    NULL (un-backfilled). The target is standardised with CARRY_MEAN_FT/STD so the
+    head learns a centred ~unit-scale value (serving un-standardises). NaN targets
+    are masked out; a fully-unbackfilled batch (the pre-relabel state - e.g. every
+    Mac smoke run today) contributes exactly 0 and the carry heads get no gradient,
+    so the outcome head trains identically to pre-Phase-4.
+    """
+    pred = carry_pred.squeeze(-1)  # (B, n_parks)
+    mask = ~torch.isnan(carry_target)
+    if not bool(mask.any()):
+        # Keep the autograd graph connected (so .backward() is well-defined)
+        # while contributing zero - never inject NaN from the masked targets.
+        return pred.sum() * 0.0
+    pred_v = pred[mask]
+    tgt_v = (carry_target[mask] - CARRY_MEAN_FT) / CARRY_STD_FT
+    return F.smooth_l1_loss(pred_v, tgt_v)
+
+
 def _select_device(preferred: str) -> torch.device:
     if preferred == "cpu":
         return torch.device("cpu")
@@ -106,6 +143,7 @@ def train_model(
     batch_size: int = DEFAULT_BATCH_SIZE,
     lr: float = DEFAULT_LR,
     weight_decay: float = DEFAULT_WEIGHT_DECAY,
+    carry_weight: float = DEFAULT_CARRY_WEIGHT,
     seed: int = 42,
     device: str = "auto",
     n_features: int = 15,
@@ -130,10 +168,13 @@ def train_model(
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max(n_epochs, 1))
 
-    def _collate(batch: list[tuple[np.ndarray, np.ndarray]]) -> tuple[torch.Tensor, torch.Tensor]:
+    def _collate(
+        batch: list[tuple[np.ndarray, np.ndarray, np.ndarray]],
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         xs = np.stack([b[0] for b in batch], axis=0)
         ys = np.stack([b[1] for b in batch], axis=0)
-        return torch.from_numpy(xs), torch.from_numpy(ys)
+        cs = np.stack([b[2] for b in batch], axis=0)
+        return torch.from_numpy(xs), torch.from_numpy(ys), torch.from_numpy(cs)
 
     train_loader = DataLoader(
         train_dataset, batch_size=batch_size, shuffle=True, collate_fn=_collate
@@ -147,41 +188,50 @@ def train_model(
     t0 = time.perf_counter()
     final_train_loss = math.nan
     final_val_loss = math.nan
+    final_carry_loss = math.nan
     for epoch in range(n_epochs):
         model.train()
         train_loss_sum = 0.0
+        carry_loss_sum = 0.0
         n_train_batches = 0
-        for x, y in train_loader:
+        for x, y, carry in train_loader:
             x = x.to(dev)
             y = y.to(dev)
-            logits = model(x)
-            loss = _kl_loss(logits, y)
+            carry = carry.to(dev)
+            logits, carry_pred = model(x)
+            carry_term = _carry_loss(carry_pred, carry)
+            loss = _kl_loss(logits, y) + carry_weight * carry_term
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             train_loss_sum += float(loss.detach())
+            carry_loss_sum += float(carry_term.detach())
             n_train_batches += 1
         scheduler.step()
         train_loss = train_loss_sum / max(n_train_batches, 1)
         final_train_loss = train_loss
+        final_carry_loss = carry_loss_sum / max(n_train_batches, 1)
 
         if val_loader is not None:
             model.eval()
             val_loss_sum = 0.0
             n_val_batches = 0
             with torch.no_grad():
-                for x, y in val_loader:
+                for x, y, carry in val_loader:
                     x = x.to(dev)
                     y = y.to(dev)
-                    logits = model(x)
-                    val_loss_sum += float(_kl_loss(logits, y).detach())
+                    carry = carry.to(dev)
+                    logits, carry_pred = model(x)
+                    val_loss = _kl_loss(logits, y) + carry_weight * _carry_loss(carry_pred, carry)
+                    val_loss_sum += float(val_loss.detach())
                     n_val_batches += 1
             final_val_loss = val_loss_sum / max(n_val_batches, 1)
 
         if verbose:
             print(
                 f"epoch {epoch + 1:>3}/{n_epochs}  "
-                f"train_loss={train_loss:.4f}  val_loss={final_val_loss:.4f}",
+                f"train_loss={train_loss:.4f}  val_loss={final_val_loss:.4f}  "
+                f"carry={final_carry_loss:.4f}",
                 flush=True,
             )
 
@@ -198,6 +248,7 @@ def train_model(
         final_val_loss=final_val_loss,
         elapsed_sec=elapsed,
         device=str(dev),
+        final_carry_loss=final_carry_loss,
     )
     return model, summary
 
@@ -220,7 +271,11 @@ class _ProbaExport(torch.nn.Module):
         self.model = model
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.softmax(self.model(x), dim=-1)
+        # model(x) now returns (logits, carry); PR-3 keeps the serving export
+        # probabilities-ONLY - the carry output joins the graph in PR-4 alongside
+        # the contract/schema_hash change. Select the outcome logits here.
+        logits, _carry = self.model(x)
+        return torch.softmax(logits, dim=-1)
 
 
 def export_onnx(
@@ -275,6 +330,15 @@ def write_metadata(
         "feature_names": list(feature_names or FEATURE_NAMES),
         "outcome_names": list(outcome_names or OUTCOME_NAMES),
         "park_order": park_order,
+        # Phase 4: the carry head emits a standardised value; serving recovers
+        # feet via ft = raw * std_ft + mean_ft. Recorded here as the single
+        # source of truth (PR-4's Java serving reads it, like feature_scaler).
+        "carry_target": {
+            "mean_ft": CARRY_MEAN_FT,
+            "std_ft": CARRY_STD_FT,
+            "units": "feet",
+            "note": "Standardised per-park carry head (Phase 4); ft = raw*std_ft + mean_ft.",
+        },
     }
     if scaler is not None:
         payload["feature_scaler"] = scaler.to_dict()
@@ -306,6 +370,12 @@ def main() -> None:
     parser.add_argument("--epochs", type=int, default=DEFAULT_EPOCHS)
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
     parser.add_argument("--lr", type=float, default=DEFAULT_LR)
+    parser.add_argument(
+        "--carry-weight",
+        type=float,
+        default=DEFAULT_CARRY_WEIGHT,
+        help="Weight on the per-park carry (smooth-L1) loss vs the KL outcome loss.",
+    )
     parser.add_argument("--device", default="auto", choices=("auto", "cpu", "cuda"))
     parser.add_argument(
         "--out-dir",
@@ -319,17 +389,27 @@ def main() -> None:
 
     park_order = tuple(sorted(load_all_parks().keys()))
     print(f"loading data from CH (seasons {args.train_season_from}-{args.train_season_to})...")
-    train_feat, train_lab = load_arrays(
+    train_feat, train_lab, train_carry = load_arrays(
         season_from=args.train_season_from,
         season_to=args.train_season_to,
         park_order=park_order,
         limit=args.limit,
     )
-    print(f"  train: {train_feat.shape[0]} BIPs")
+    n_carry = int(np.count_nonzero(~np.isnan(train_carry)))
+    print(
+        f"  train: {train_feat.shape[0]} BIPs "
+        f"({n_carry}/{train_carry.size} (BIP,park) carry targets backfilled)"
+    )
+    if n_carry == 0:
+        print(
+            "  NOTE: no carry_ft is backfilled yet - the carry head will get no "
+            "gradient (outcome-only training). Run the retrodiction relabel first."
+        )
     val_feat: np.ndarray | None = None
     val_lab: np.ndarray | None = None
+    val_carry: np.ndarray | None = None
     if args.val_season is not None:
-        val_feat, val_lab = load_arrays(
+        val_feat, val_lab, val_carry = load_arrays(
             season_from=args.val_season,
             season_to=args.val_season,
             park_order=park_order,
@@ -337,8 +417,12 @@ def main() -> None:
         )
         print(f"  val:   {val_feat.shape[0]} BIPs")
     scaler = FeatureScaler.fit(train_feat)
-    train_ds = BBIPDataset(train_feat, train_lab, scaler=scaler)
-    val_ds = BBIPDataset(val_feat, val_lab, scaler=scaler) if val_feat is not None else None
+    train_ds = BBIPDataset(train_feat, train_lab, carry=train_carry, scaler=scaler)
+    val_ds = (
+        BBIPDataset(val_feat, val_lab, carry=val_carry, scaler=scaler)
+        if val_feat is not None
+        else None
+    )
 
     model, summary = train_model(
         train_ds,
@@ -346,6 +430,7 @@ def main() -> None:
         n_epochs=args.epochs,
         batch_size=args.batch_size,
         lr=args.lr,
+        carry_weight=args.carry_weight,
         seed=args.seed,
         device=args.device,
         n_parks=len(park_order),
@@ -369,6 +454,7 @@ def main() -> None:
     print(f"  n_epochs:         {summary.n_epochs}")
     print(f"  final_train_loss: {summary.final_train_loss:.4f}")
     print(f"  final_val_loss:   {summary.final_val_loss:.4f}")
+    print(f"  final_carry_loss: {summary.final_carry_loss:.4f}")
     print(f"  elapsed_sec:      {summary.elapsed_sec:.1f}")
     print(f"  wrote -> {out_dir}")
 

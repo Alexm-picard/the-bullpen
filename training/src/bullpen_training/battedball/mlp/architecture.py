@@ -1,29 +1,43 @@
-"""Multi-output MLP architecture (Phase 2c.5).
+"""Multi-output MLP architecture (Phase 2c.5; Phase 4 carry head).
 
 Shared 2-layer backbone (Dense(hidden) -> ReLU -> Dense(hidden) -> ReLU)
-followed by N parallel output heads, each Dense(hidden -> n_outcomes).
-The forward pass returns a ``(batch, n_parks, n_outcomes)`` tensor of
-RAW LOGITS - softmax is applied at the loss step (in :mod:`train`) so
-the loss can use ``F.log_softmax`` directly. The SERVING ONNX export
-wraps this module with a per-park softmax (``train._ProbaExport``) so
-the exported graph emits per-park probabilities; the Java serving layer
-calibrates them directly with no Java-side softmax (matching the LGBM/LR
-exports, whose converters already emit probabilities).
+followed by two parallel banks of N per-park heads:
+  - ``heads``: each Dense(hidden -> n_outcomes), the per-park OUTCOME logits.
+  - ``dist_heads``: each Dense(hidden -> 1), the per-park CARRY distance as a
+    STANDARDISED scalar (Phase 4). The training loss standardises the feet
+    target (centre ~0, unit scale) so the head converges from a zero-init bias;
+    serving un-standardises back to feet (ft = raw*std + mean), see :mod:`train`.
+
+The forward pass returns ``(logits, carry)``:
+  - ``logits``: ``(batch, n_parks, n_outcomes)`` RAW outcome logits - softmax
+    is applied at the loss step (in :mod:`train`) so the loss can use
+    ``F.log_softmax`` directly.
+  - ``carry``: ``(batch, n_parks, 1)`` standardised per-park carry (serving
+    un-standardises to feet).
+
+The SERVING ONNX export wraps this module (``train._ProbaExport``): the
+outcome head gets a per-park softmax baked in so the exported graph emits
+per-park probabilities (the Java serving layer calibrates them directly with
+no Java-side softmax, matching the LGBM/LR exports); the carry head passes
+through standardised. (PR-3 keeps the export probabilities-only; the second
+carry output lands in PR-4 alongside the contract change.)
 
 Why 30 separate heads vs one head with park-id as a feature:
   - Decision [50] (park geometry NOT a model feature) — the park
     behaves as the *label space*, not as a covariate. Heads let each
-    park learn its own outcome distribution given the same batted-ball
-    feature vector.
-  - Each head is tiny (Linear(64, 5) = 325 params), so 30 heads add
-    ~10K params vs a 1-head model — the backbone (4096 params) is the
-    dominant cost. Total ~14-20K params at the default hidden=64.
+    park learn its own outcome distribution (and carry) given the same
+    batted-ball feature vector.
+  - Each head is tiny (Linear(64, 5) = 325 params; the carry head adds
+    Linear(64, 1) = 65 params), so the 30+30 heads add ~12K params vs a
+    1-head model — the backbone (4096 params) is the dominant cost.
 
 Topology summary (defaults):
     n_features=15 → Dense(128) → ReLU → Dropout(0.1)
                   → Dense(128) → ReLU → Dropout(0.1)
-                  ↓
-       (30 parallel Dense(5)) → stack → (B, 30, 5)
+                  ↓                               ↓
+       (30 parallel Dense(5)) → stack    (30 parallel Dense(1)) → stack
+                  ↓                               ↓
+            logits (B, 30, 5)               carry  (B, 30, 1)
 """
 
 from __future__ import annotations
@@ -33,11 +47,14 @@ from torch import nn
 
 
 class BattedBallMLP(nn.Module):
-    """Shared-backbone, multi-head MLP for per-park batted-ball outcomes.
+    """Shared-backbone, multi-head MLP for per-park batted-ball outcomes + carry.
 
-    Returns raw logits with shape ``(B, n_parks, n_outcomes)``. Callers
-    apply softmax along the last axis to get per-park outcome
-    probability distributions.
+    ``forward`` returns ``(logits, carry)``:
+      - ``logits``: raw outcome logits, shape ``(B, n_parks, n_outcomes)``.
+        Callers apply softmax along the last axis to get per-park outcome
+        probability distributions.
+      - ``carry``: standardised per-park carry (serving un-standardises to
+        feet), shape ``(B, n_parks, 1)``.
     """
 
     def __init__(
@@ -66,13 +83,20 @@ class BattedBallMLP(nn.Module):
         # nn.ModuleList preserves the head ordering on save/load and on
         # ONNX export; using a Python list would lose the registration.
         self.heads = nn.ModuleList([nn.Linear(hidden, n_outcomes) for _ in range(n_parks)])
+        # Phase 4: a parallel bank of per-park carry-distance heads. One
+        # standardised scalar per park, same shared backbone. Kept as a separate
+        # ModuleList (not a wider outcome head) so the two targets stay
+        # independently interpretable and the outcome export is unaffected when
+        # carry is held.
+        self.dist_heads = nn.ModuleList([nn.Linear(hidden, 1) for _ in range(n_parks)])
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         h = self.backbone(x)
-        # Stack along park axis to get (B, n_parks, n_outcomes). The
-        # loop is fine: 30 small Linears is well under any GPU overhead.
-        per_park = [head(h) for head in self.heads]
-        return torch.stack(per_park, dim=1)
+        # Stack along park axis. The loops are fine: 2 * 30 small Linears is
+        # well under any GPU overhead.
+        logits = torch.stack([head(h) for head in self.heads], dim=1)  # (B, n_parks, n_outcomes)
+        carry = torch.stack([dh(h) for dh in self.dist_heads], dim=1)  # (B, n_parks, 1)
+        return logits, carry
 
 
 def build_model(

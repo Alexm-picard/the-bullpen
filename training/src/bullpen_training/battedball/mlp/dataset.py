@@ -1,14 +1,19 @@
 """Dataset loader for the multi-output MLP (Phase 2c.5).
 
 Joins ``bbip_retrodicted_labels`` (the 2c.4 output) against ``pitches``
-(for the launch-time features) and produces ``(features, labels)`` pairs
-the Torch trainer consumes:
+(for the launch-time features) and produces ``(features, labels, carry)``
+tuples the Torch trainer consumes:
 
   - ``features``: (n_features,) float32 — 15 features described in
     :data:`FEATURE_NAMES`.
   - ``labels``: (n_parks, n_outcomes) float32 — the retrodicted
     probability vectors, in the same park ordering as the model's
     heads.
+  - ``carry``: (n_parks,) float32 — the per-park mean carry distance in
+    FEET (Phase 4 regression target), same park ordering. ``NaN`` where
+    ``bbip_retrodicted_labels.carry_ft`` is still NULL (un-backfilled rows
+    before the relabel runs); the trainer masks those out of the carry
+    loss, so the carry head simply gets no signal until the relabel lands.
 
 The class is intentionally light on Torch coupling — `__getitem__`
 returns NumPy arrays, the trainer wraps with `torch.from_numpy` and
@@ -40,7 +45,20 @@ class _BipRow:
 
     features: np.ndarray  # (n_features,) float32
     labels: np.ndarray  # (n_parks, n_outcomes) float32
+    carry: np.ndarray  # (n_parks,) float32, NaN where carry_ft is NULL
     home_park_id: str
+
+
+def _parse_carry(raw: str) -> float:
+    """Parse a ``carry_ft`` TSV field to float; NULL (``\\N``) / blank -> NaN.
+
+    Un-backfilled rows carry a ClickHouse NULL (rendered ``\\N`` in TSV), which
+    must become NaN so the trainer's carry mask drops them - never 0.0, which
+    would be a silent fake-carry (the placebo trap V025's comment calls out)."""
+    try:
+        return float(raw)
+    except ValueError:
+        return float("nan")
 
 
 @dataclass(frozen=True)
@@ -117,7 +135,8 @@ def _query_joined(
       toString(r.prob_1b) AS prob_1b,
       toString(r.prob_2b) AS prob_2b,
       toString(r.prob_3b) AS prob_3b,
-      toString(r.prob_hr) AS prob_hr
+      toString(r.prob_hr) AS prob_hr,
+      toString(r.carry_ft) AS carry_ft
     FROM pitches AS p FINAL
     JOIN bbip_retrodicted_labels AS r FINAL
       ON r.game_id = p.game_id
@@ -197,7 +216,8 @@ def _query_joined_chunk(
       toString(r.prob_1b) AS prob_1b,
       toString(r.prob_2b) AS prob_2b,
       toString(r.prob_3b) AS prob_3b,
-      toString(r.prob_hr) AS prob_hr
+      toString(r.prob_hr) AS prob_hr,
+      toString(r.carry_ft) AS carry_ft
     FROM pitches AS p FINAL
     JOIN bbip_retrodicted_labels AS r FINAL
       ON r.game_id = p.game_id
@@ -257,6 +277,7 @@ def _parse_chunk_into_arrays(
     park_index: dict[str, int],
     features_out: np.ndarray,
     labels_out: np.ndarray,
+    carry_out: np.ndarray,
     write_offset: int,
 ) -> int:
     """Parse a TSV chunk directly into pre-allocated arrays. Returns the
@@ -289,6 +310,7 @@ def _parse_chunk_into_arrays(
             labels_out[bip_idx, idx, 2] = float(row[15])
             labels_out[bip_idx, idx, 3] = float(row[16])
             labels_out[bip_idx, idx, 4] = float(row[17])
+            carry_out[bip_idx, idx] = _parse_carry(row[18])
     return n_bips
 
 
@@ -341,7 +363,7 @@ def load_rows(
             block[0][11],
         )
         labels = np.zeros((n_parks, n_outcomes), dtype=np.float32)
-        home_park_id = block[0][9]
+        carry = np.full(n_parks, np.nan, dtype=np.float32)
         for row in block:
             pid = row[12]
             idx = park_index[pid]
@@ -350,8 +372,8 @@ def load_rows(
             labels[idx, 2] = float(row[15])  # prob_2b
             labels[idx, 3] = float(row[16])  # prob_3b
             labels[idx, 4] = float(row[17])  # prob_hr
-        home_park_id = ""
-        out.append(_BipRow(features=features, labels=labels, home_park_id=home_park_id))
+            carry[idx] = _parse_carry(row[18])  # carry_ft (NaN where NULL)
+        out.append(_BipRow(features=features, labels=labels, carry=carry, home_park_id=""))
     return out
 
 
@@ -363,13 +385,15 @@ def load_arrays(
     limit: int | None = None,
     container: str = "bullpen-clickhouse",
     chunk_size: int = 5_000,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Memory-efficient loader: pulls one season at a time from ClickHouse
     into pre-allocated dense arrays.
 
-    Returns (features, labels) where:
+    Returns (features, labels, carry) where:
       - features: (N, n_features) float32
       - labels:   (N, n_parks, n_outcomes) float32
+      - carry:    (N, n_parks) float32 — per-park carry in feet, NaN where
+        carry_ft is still NULL (un-backfilled).
 
     Each season is small enough for ClickHouse to handle without the
     OFFSET-based pagination that OOMs at high offsets on the full
@@ -400,6 +424,8 @@ def load_arrays(
 
     features = np.zeros((total_bips, n_features), dtype=np.float32)
     labels = np.zeros((total_bips, n_parks, n_outcomes), dtype=np.float32)
+    # NaN init, not 0.0: unwritten/NULL carry stays NaN so the trainer masks it.
+    carry = np.full((total_bips, n_parks), np.nan, dtype=np.float32)
 
     written = 0
     for year in range(season_from, season_to + 1):
@@ -424,6 +450,7 @@ def load_arrays(
             park_index,
             features,
             labels,
+            carry,
             written,
         )
         written += n
@@ -437,7 +464,8 @@ def load_arrays(
     if written < total_bips:
         features = features[:written]
         labels = labels[:written]
-    return features, labels
+        carry = carry[:written]
+    return features, labels, carry
 
 
 class BBIPDataset(Dataset):
@@ -456,17 +484,20 @@ class BBIPDataset(Dataset):
         self,
         rows_or_features: list[_BipRow] | np.ndarray,
         labels: np.ndarray | None = None,
+        carry: np.ndarray | None = None,
         scaler: FeatureScaler | None = None,
     ) -> None:
         if isinstance(rows_or_features, np.ndarray):
             assert labels is not None
             self._features = rows_or_features
             self._labels = labels
+            self._carry = carry  # (N, n_parks) feet, NaN where NULL; None -> all-NaN
             self._rows = None
         else:
             self._rows = rows_or_features
             self._features = None
             self._labels = None
+            self._carry = None
         self._scaler = scaler
 
     def __len__(self) -> int:
@@ -475,19 +506,26 @@ class BBIPDataset(Dataset):
         assert self._rows is not None
         return len(self._rows)
 
-    def __getitem__(self, idx: int) -> tuple[np.ndarray, np.ndarray]:
+    def __getitem__(self, idx: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         if self._features is not None:
             assert self._labels is not None
             f = self._features[idx]
             lab = self._labels[idx]
+            if self._carry is not None:
+                carry = self._carry[idx]
+            else:
+                # No carry array supplied (legacy / outcome-only callers): emit an
+                # all-NaN row so the trainer's mask drops it from the carry loss.
+                carry = np.full(self._labels.shape[1], np.nan, dtype=np.float32)
         else:
             assert self._rows is not None
             row = self._rows[idx]
             f = row.features
             lab = row.labels
+            carry = row.carry
         if self._scaler is not None:
             f = self._scaler.transform(f)
-        return f, lab
+        return f, lab, carry
 
     def all_features(self) -> np.ndarray:
         """Stack all rows' raw features into one (N, n_features) array.
