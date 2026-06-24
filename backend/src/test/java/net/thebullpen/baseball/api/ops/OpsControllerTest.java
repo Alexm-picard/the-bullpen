@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
 import java.util.List;
 import net.thebullpen.baseball.api.ApiErrorAdvice;
@@ -21,6 +22,8 @@ import net.thebullpen.baseball.drift.MetricType;
 import net.thebullpen.baseball.inference.routing.RoutingConfig;
 import net.thebullpen.baseball.inference.routing.RoutingMode;
 import net.thebullpen.baseball.inference.routing.RoutingRepository;
+import net.thebullpen.baseball.registry.AccuracyEvidenceRepository;
+import net.thebullpen.baseball.registry.AccuracyService;
 import net.thebullpen.baseball.registry.RegistryService;
 import net.thebullpen.baseball.registry.dto.ModelVersion;
 import net.thebullpen.baseball.registry.dto.Stage;
@@ -41,6 +44,7 @@ class OpsControllerTest {
   private RegistryService registry;
   private OpsEventsRepository opsEvents;
   private PredictionLogRepository predictionLog;
+  private AccuracyService accuracyService;
   private MockMvc mvc;
 
   @BeforeEach
@@ -51,10 +55,20 @@ class OpsControllerTest {
     registry = mock(RegistryService.class);
     opsEvents = mock(OpsEventsRepository.class);
     predictionLog = mock(PredictionLogRepository.class);
+    // Real AccuracyService over the bundled classpath evidence (processResources copies the
+    // committed *_full*.json into build/resources/main/accuracy-evidence/), so the scorecard test
+    // asserts on real held-out numbers rather than mocks.
+    accuracyService = new AccuracyService(new AccuracyEvidenceRepository(new ObjectMapper()));
     mvc =
         MockMvcBuilders.standaloneSetup(
                 new OpsController(
-                    driftRepo, routingRepo, retrain, registry, opsEvents, predictionLog))
+                    driftRepo,
+                    routingRepo,
+                    retrain,
+                    registry,
+                    opsEvents,
+                    predictionLog,
+                    accuracyService))
             .setControllerAdvice(new ApiErrorAdvice())
             .build();
   }
@@ -103,7 +117,14 @@ class OpsControllerTest {
   void drift_returns_empty_when_repo_bean_is_absent() throws Exception {
     MockMvc m =
         MockMvcBuilders.standaloneSetup(
-                new OpsController(null, routingRepo, retrain, registry, opsEvents, predictionLog))
+                new OpsController(
+                    null,
+                    routingRepo,
+                    retrain,
+                    registry,
+                    opsEvents,
+                    predictionLog,
+                    accuracyService))
             .setControllerAdvice(new ApiErrorAdvice())
             .build();
     m.perform(get("/v1/ops/drift").param("model", "any")).andExpect(status().isOk());
@@ -236,9 +257,41 @@ class OpsControllerTest {
   void latency_returns_empty_when_prediction_log_bean_is_absent() throws Exception {
     MockMvc m =
         MockMvcBuilders.standaloneSetup(
-                new OpsController(driftRepo, routingRepo, retrain, registry, opsEvents, null))
+                new OpsController(
+                    driftRepo, routingRepo, retrain, registry, opsEvents, null, accuracyService))
             .setControllerAdvice(new ApiErrorAdvice())
             .build();
     m.perform(get("/v1/ops/latency")).andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+  }
+
+  @Test
+  void accuracy_returns_offline_scorecard_from_committed_evidence() throws Exception {
+    mvc.perform(get("/v1/ops/accuracy"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$").isArray())
+        // every row is labeled offline held-out, never live
+        .andExpect(
+            jsonPath("$[0].evaluation").value(org.hamcrest.Matchers.containsString("offline")))
+        .andExpect(
+            jsonPath("$[0].evaluation").value(org.hamcrest.Matchers.containsString("not live")))
+        // the passed post head is present with its gate verdict
+        .andExpect(
+            jsonPath("$[?(@.modelName=='pitch_outcome_post')].gateStatus")
+                .value(org.hamcrest.Matchers.hasItem("passed")))
+        // batted_ball_mlp reconciles to the registry/serving name
+        .andExpect(
+            jsonPath("$[?(@.evidenceModelName=='batted_ball_mlp')].modelName")
+                .value(org.hamcrest.Matchers.hasItem("battedball_outcome")))
+        // the SELF-REFERENTIAL ece_vs_retro calibration note rides through verbatim
+        .andExpect(
+            jsonPath("$[?(@.modelName=='battedball_outcome')].calibrationNote")
+                .value(
+                    org.hamcrest.Matchers.hasItem(org.hamcrest.Matchers.containsString("retro"))));
+  }
+
+  @Test
+  void backfill_accuracy_returns_204_until_box_handoff_commits_it() throws Exception {
+    // The artifact is box/R2-only and not committed yet, so the endpoint reports no-content.
+    mvc.perform(get("/v1/ops/backfill-accuracy")).andExpect(status().isNoContent());
   }
 }

@@ -119,6 +119,22 @@ tasks.matching { it.name == "compileJmhJava" }.configureEach {
 }
 tasks.matching { it.name == "spotbugsJmh" }.configureEach { enabled = false }
 
+// Phase 3 accuracy scorecard: bundle the committed promotion-evidence JSONs (and, once the box
+// hand-off commits it, the batted-ball backfill artifact) into the JAR as classpath resources under
+// accuracy-evidence/, so the public GET /v1/ops/accuracy + /v1/ops/backfill-accuracy read them
+// identically in tests and prod with no deploy.sh staging. Sibling-module artifacts copied from
+// ../training at build time; the backfill include is a no-op until the box produces that file.
+tasks.processResources {
+    from("../training/data/eval/promotion") {
+        include("*_experiment_results_full*.json")
+        into("accuracy-evidence")
+    }
+    from("../training/data/eval") {
+        include("battedball_backfill_accuracy_v1.json")
+        into("accuracy-evidence")
+    }
+}
+
 tasks.named<Test>("test") {
     // @Tag("drill") tests (e.g. the drift-induction drill) are slow, verbose, and
     // run on demand — exclude from normal CI. Run with: ./gradlew test -PrunDrills
