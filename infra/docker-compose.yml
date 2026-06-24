@@ -48,8 +48,8 @@ services:
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/rules:/etc/prometheus/rules:ro
-      # M5: scrape credential (raw password) for the ADMIN-gated /actuator/prometheus (gitignored
-      # real file, .example committed). See infra/prometheus/secrets/metrics_pw.example.
+      # M5: scrape credentials (raw user + raw password) for the ADMIN-gated /actuator/prometheus
+      # (gitignored real files, .example committed). Seed via infra/prometheus/mk-metrics-secrets.sh.
       - ./prometheus/secrets:/etc/prometheus/secrets:ro
       - prometheus-data:/prometheus
     command:

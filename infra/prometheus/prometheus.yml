@@ -15,17 +15,18 @@ rule_files:
 scrape_configs:
   # M5: /actuator/prometheus is gated behind ADMIN HTTP Basic in the app's SecurityConfig (it leaks
   # queue depths, per-model prediction counts, JVM internals). The scrape authenticates with HTTP
-  # Basic: `username` is the (non-secret) user-half of THEBULLPEN_ADMIN_BASIC_AUTH and MUST match it
-  # (default "admin"); the password is the RAW password (NOT base64), read from a mounted, gitignored
-  # secret file. Create infra/prometheus/secrets/metrics_pw from metrics_pw.example before bringing
-  # the stack up (mounted read-only at /etc/prometheus/secrets, see docker-compose).
+  # Basic, reading BOTH halves of THEBULLPEN_ADMIN_BASIC_AUTH from mounted, gitignored secret files
+  # (RAW user + RAW password, NOT base64): metrics_user and metrics_pw. Nothing credentialed - not
+  # even the username - is committed here, and ANY admin username works (no hardcoded value to drift
+  # from the env). Seed both via infra/prometheus/mk-metrics-secrets.sh (or copy the *.example files)
+  # before the stack comes up (secrets dir mounted read-only, see docker-compose).
   # NOTE: HTTP Basic MUST use the `basic_auth:` block - Prometheus REJECTS `authorization: {type:
   # Basic}` ("use basic_auth instead"), which crash-looped the 2026-06-24 cutover. `promtool check
   # config` (infra.yml CI) now guards this syntax so it cannot recur.
   - job_name: "thebullpen-api"
     metrics_path: /actuator/prometheus
     basic_auth:
-      username: admin
+      username_file: /etc/prometheus/secrets/metrics_user
       password_file: /etc/prometheus/secrets/metrics_pw
     static_configs:
       - targets: ["host.docker.internal:8080"]
@@ -34,7 +35,7 @@ scrape_configs:
   - job_name: "thebullpen-worker"
     metrics_path: /actuator/prometheus
     basic_auth:
-      username: admin
+      username_file: /etc/prometheus/secrets/metrics_user
       password_file: /etc/prometheus/secrets/metrics_pw
     static_configs:
       - targets: ["host.docker.internal:8081"]
