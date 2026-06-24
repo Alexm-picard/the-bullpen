@@ -105,6 +105,18 @@ def test_rule_13_refuses_holdout() -> None:
         export_batted_ball_full(Path("/tmp/never"), season_to=2026, runner=_fake_runner)
 
 
+def test_build_year_query_2026_only_via_explicit_accuracy_opt_in() -> None:
+    # The backfill-accuracy carve-out (rule 13's post-training accuracy read): 2026 is QUERYABLE
+    # only with the explicit opt-in, and even then the EXPORT producer keeps refusing it - it feeds
+    # training/validation, never the holdout.
+    q = build_year_query(2026, allow_holdout_eval=True)
+    assert "p.description = 'in_play'" in q
+    assert "r.park_id = p.park_id" in q
+    assert "toYear(p.game_date) = 2026" in q
+    with pytest.raises(ValueError, match="holdout"):
+        export_batted_ball_full(Path("/tmp/never"), season_to=2026, runner=_fake_runner)
+
+
 def test_query_mirrors_production_filters() -> None:
     q = build_year_query(2024)
     # in-play only, the home-park join, the realized label, the non-null physics gates, per-year.

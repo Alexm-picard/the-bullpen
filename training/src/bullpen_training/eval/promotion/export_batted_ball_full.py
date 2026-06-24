@@ -91,11 +91,16 @@ _RAW_COLS: tuple[str, ...] = (
 )
 
 
-def build_year_query(year: int) -> str:
+def build_year_query(year: int, *, allow_holdout_eval: bool = False) -> str:
     """Per-year, all-parks pull. Mirrors ``mlp_per_park.dataset._query_park_bips`` (same in-play
     filter, same non-null gates, same home-park join), but selects every park's BIPs for one season
-    plus the realized ``observed_outcome`` the CV scores against."""
-    if year >= HOLDOUT_YEAR:
+    plus the realized ``observed_outcome`` the CV scores against.
+
+    ``allow_holdout_eval`` is the rule-13 carve-out: the 2026 holdout may be QUERIED only for a
+    post-training accuracy READ (the backfill-accuracy job sets it). The ``export_batted_ball_full``
+    producer and every training/validation caller leave it False, so they keep the hard refusal -
+    2026 never enters a training or validation split."""
+    if year >= HOLDOUT_YEAR and not allow_holdout_eval:
         raise ValueError(
             f"rule 13: refusing to export season {year} (>= {HOLDOUT_YEAR} is holdout)"
         )
