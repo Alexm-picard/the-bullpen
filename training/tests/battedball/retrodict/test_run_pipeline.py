@@ -115,8 +115,9 @@ def test_result_to_tsv_row_observed_outcome_null_on_away_park() -> None:
     assert fields[0] == "2024-07-15"
     assert fields[4] == "COL"
     assert fields[5] == "0"  # is_home_park
-    assert fields[-2] == "\\N"  # observed_outcome NULL marker for ClickHouse
-    assert fields[-1] == "10"
+    assert fields[-3] == "\\N"  # observed_outcome NULL marker for ClickHouse
+    assert fields[-2] == "10"  # n_mc
+    assert fields[-1] == "430.00"  # carry_ft (Phase 4)
 
 
 def test_result_to_tsv_row_home_park_carries_observed_outcome() -> None:
@@ -149,4 +150,5 @@ def test_result_to_tsv_row_home_park_carries_observed_outcome() -> None:
     tsv = _result_to_tsv_row(r)
     fields = tsv.split("\t")
     assert fields[5] == "1"  # is_home_park
-    assert fields[-2] == "hr"
+    assert fields[-3] == "hr"  # observed_outcome
+    assert fields[-1] == "405.00"  # carry_ft (Phase 4)
