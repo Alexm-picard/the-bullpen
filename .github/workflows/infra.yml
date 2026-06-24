@@ -1,0 +1,44 @@
+name: infra
+
+# Validate the monitoring stack's static configs so a syntax error cannot crash-loop a service on
+# deploy. The 2026-06-24 cutover crash-looped because prometheus.yml used `authorization: {type:
+# Basic}` (invalid for HTTP Basic - Prometheus wants `basic_auth:`), and `docker compose config`
+# only validates the COMPOSE YAML, not Prometheus's own config. This runs `promtool check` against
+# the pinned image so the parser that runs in prod is the parser that gates the PR.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infra/prometheus/**"
+      - ".github/workflows/infra.yml"
+  pull_request:
+    paths:
+      - "infra/prometheus/**"
+      - ".github/workflows/infra.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  prometheus-config:
+    name: promtool check (config + rules)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Pin to the deployed Prometheus version (infra/docker-compose.yml) so the check uses prod's
+      # exact parser - a config that passes here cannot fail to load on the box.
+      - name: promtool check config (validates prometheus.yml + the referenced rule files)
+        run: |
+          set -euo pipefail
+          # `check config` requires basic_auth.password_file to exist; stub it (value irrelevant -
+          # this validates the config SYNTAX, not the live credential). username is inline, no file.
+          # `check config` also loads + parses every rule_files target, so it covers the alert rules
+          # too (no separate `check rules` needed - and that form is glob-expansion-fragile).
+          mkdir -p "$RUNNER_TEMP/secrets"
+          printf 'ci-stub' > "$RUNNER_TEMP/secrets/metrics_pw"
+          docker run --rm \
+            -v "$PWD/infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro" \
+            -v "$PWD/infra/prometheus/rules:/etc/prometheus/rules:ro" \
+            -v "$RUNNER_TEMP/secrets:/etc/prometheus/secrets:ro" \
+            --entrypoint promtool prom/prometheus:v3.0.1 \
+            check config /etc/prometheus/prometheus.yml
