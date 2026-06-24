@@ -88,6 +88,7 @@ _RAW_COLS: tuple[str, ...] = (
     "prob_2b",
     "prob_3b",
     "prob_hr",
+    "carry_ft",
 )
 
 
@@ -120,7 +121,8 @@ def build_year_query(year: int, *, allow_holdout_eval: bool = False) -> str:
       toString(r.prob_1b)          AS prob_1b,
       toString(r.prob_2b)          AS prob_2b,
       toString(r.prob_3b)          AS prob_3b,
-      toString(r.prob_hr)          AS prob_hr
+      toString(r.prob_hr)          AS prob_hr,
+      toString(r.carry_ft)         AS carry_ft
     FROM pitches AS p FINAL
     JOIN bbip_retrodicted_labels AS r FINAL
       ON r.game_id = p.game_id
@@ -185,8 +187,14 @@ def rows_to_frame(tsv: str) -> pd.DataFrame:
     base_state = raw["base_state"].to_numpy(dtype="int64")
     for b in range(8):
         out[f"base_state_{b}"] = (base_state == b).astype("float32")
-    # Column order = FEATURE_NAMES features, label, park, then retro (matches the generator).
-    return cast(pd.DataFrame, out[[*BATTED_BALL_FEATURES, "label", "park", *RETRO_COLS]])
+    # Phase 4: the home-park mean carry (ft), an eval/reference column (NOT the per-park training
+    # target - that comes from the 30-park query in mlp/dataset). NULL ("\N") on unbackfilled rows
+    # coerces to NaN; consumers gate on notna().
+    out["carry_ft"] = np.asarray(pd.to_numeric(raw["carry_ft"], errors="coerce"), dtype="float32")
+    # Column order: FEATURE_NAMES, label, park, carry_ft, retro (matches the generator).
+    return cast(
+        pd.DataFrame, out[[*BATTED_BALL_FEATURES, "label", "park", "carry_ft", *RETRO_COLS]]
+    )
 
 
 def _empty_frame() -> pd.DataFrame:
@@ -194,10 +202,12 @@ def _empty_frame() -> pd.DataFrame:
     cols["outs"] = pd.Series([], dtype="int16")
     cols["label"] = pd.Series([], dtype="int64")
     cols["park"] = pd.Series([], dtype="string")
+    cols["carry_ft"] = pd.Series([], dtype="float32")
     for c in RETRO_COLS:
         cols[c] = pd.Series([], dtype="float32")
     return cast(
-        pd.DataFrame, pd.DataFrame(cols)[[*BATTED_BALL_FEATURES, "label", "park", *RETRO_COLS]]
+        pd.DataFrame,
+        pd.DataFrame(cols)[[*BATTED_BALL_FEATURES, "label", "park", "carry_ft", *RETRO_COLS]],
     )
 
 

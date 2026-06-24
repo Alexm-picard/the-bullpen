@@ -27,13 +27,14 @@ from bullpen_training.eval.promotion.sample_loader import (
 )
 
 # Three synthetic home-park BIPs. Columns match build_year_query's SELECT order: launch_speed,
-# launch_angle, hc_x, hc_y, hit_distance, stand, outs, base_state, park, label, prob_out..prob_hr.
+# launch_angle, hc_x, hc_y, hit_distance, stand, outs, base_state, park, label, prob_out..prob_hr,
+# carry_ft (Phase 4). Row 1's carry is "\N" to exercise the NULL -> NaN coerce on unbackfilled rows.
 # Row 0: a barrel -> hr (label 4, base_state 0); row 1: a grounder out (label 0, base_state 3);
 # row 2: a single (label 1, base_state 7).
 _TSV = (
-    "104.2\t27.5\t100.0\t80.0\t418.0\tR\t1\t0\tNYY\t4\t0.02\t0.03\t0.05\t0.05\t0.85\n"
-    "88.1\t-5.0\t150.0\t150.0\t40.0\tL\t2\t3\tBOS\t0\t0.93\t0.04\t0.02\t0.01\t0.00\n"
-    "95.0\t12.0\t90.0\t170.0\t180.0\tR\t0\t7\tLAD\t1\t0.40\t0.45\t0.10\t0.04\t0.01\n"
+    "104.2\t27.5\t100.0\t80.0\t418.0\tR\t1\t0\tNYY\t4\t0.02\t0.03\t0.05\t0.05\t0.85\t415.0\n"
+    "88.1\t-5.0\t150.0\t150.0\t40.0\tL\t2\t3\tBOS\t0\t0.93\t0.04\t0.02\t0.01\t0.00\t\\N\n"
+    "95.0\t12.0\t90.0\t170.0\t180.0\tR\t0\t7\tLAD\t1\t0.40\t0.45\t0.10\t0.04\t0.01\t175.0\n"
 )
 
 
@@ -44,11 +45,16 @@ def _fake_runner(_query: str) -> str:
 def test_rows_to_frame_matches_loader_schema() -> None:
     df = rows_to_frame(_TSV)
     # Exactly the columns ParquetSampleLoader surfaces for batted_ball_mlp.
-    assert list(df.columns) == [*BATTED_BALL_FEATURES, "label", "park", *RETRO_COLS]
+    assert list(df.columns) == [*BATTED_BALL_FEATURES, "label", "park", "carry_ft", *RETRO_COLS]
     assert len(df) == 3
     # label is the integer realized outcome (0..4), not a float/distribution.
     assert df["label"].tolist() == [4, 0, 1]
     assert str(df["label"].dtype) == "int64"
+    # Phase 4: carry_ft is the home-park mean carry (eval/reference, ft); row 1's "\N" -> NaN.
+    assert str(df["carry_ft"].dtype) == "float32"
+    assert df["carry_ft"].iloc[0] == pytest.approx(415.0)
+    assert bool(df["carry_ft"].isna().iloc[1])  # unbackfilled row coerces to NaN
+    assert df["carry_ft"].iloc[2] == pytest.approx(175.0)
     # retro is a distribution that sums to ~1 per row.
     retro = df[list(RETRO_COLS)].to_numpy()
     assert retro.shape == (3, 5)
