@@ -1,8 +1,10 @@
 package net.thebullpen.baseball.api.ops;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import java.util.List;
 import java.util.Map;
 import net.thebullpen.baseball.api.dto.LatencyStat;
+import net.thebullpen.baseball.api.dto.ModelAccuracyScorecard;
 import net.thebullpen.baseball.api.dto.OpsEvent;
 import net.thebullpen.baseball.data.OpsEventsRepository;
 import net.thebullpen.baseball.data.PredictionLogRepository;
@@ -10,11 +12,13 @@ import net.thebullpen.baseball.drift.DriftMetric;
 import net.thebullpen.baseball.drift.DriftMetricsRepository;
 import net.thebullpen.baseball.inference.routing.RoutingConfig;
 import net.thebullpen.baseball.inference.routing.RoutingRepository;
+import net.thebullpen.baseball.registry.AccuracyService;
 import net.thebullpen.baseball.registry.RegistryService;
 import net.thebullpen.baseball.retraining.RetrainingQueueService;
 import net.thebullpen.baseball.retraining.dto.RetrainingTrigger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -51,6 +55,7 @@ public class OpsController {
   private final RegistryService registry;
   private final OpsEventsRepository opsEvents;
   private final PredictionLogRepository predictionLog;
+  private final AccuracyService accuracyService;
 
   public OpsController(
       @Autowired(required = false) DriftMetricsRepository driftRepo,
@@ -58,13 +63,15 @@ public class OpsController {
       RetrainingQueueService retrain,
       RegistryService registry,
       OpsEventsRepository opsEvents,
-      @Autowired(required = false) PredictionLogRepository predictionLog) {
+      @Autowired(required = false) PredictionLogRepository predictionLog,
+      AccuracyService accuracyService) {
     this.driftRepo = driftRepo;
     this.routingRepo = routingRepo;
     this.retrain = retrain;
     this.registry = registry;
     this.opsEvents = opsEvents;
     this.predictionLog = predictionLog;
+    this.accuracyService = accuracyService;
   }
 
   /**
@@ -146,5 +153,29 @@ public class OpsController {
                         .orElse(""),
                 (a, b) -> a,
                 java.util.LinkedHashMap::new));
+  }
+
+  /**
+   * Phase 3 model-accuracy scorecard: per-model OFFLINE held-out eval (Brier / ECE / vs-baseline /
+   * sample size / gate verdict) from the committed promotion-evidence. Every row is labeled offline
+   * - NOT live production accuracy - and carries the gate status + calibration note so a failed
+   * model is never implied to be serving. Empty list when no evidence is bundled.
+   */
+  @GetMapping("/accuracy")
+  public List<ModelAccuracyScorecard> accuracy() {
+    return accuracyService.scorecards();
+  }
+
+  /**
+   * Phase 3 batted-ball backfill: the offline real-vs-predicted scoring of the battedball_outcome
+   * champion over historical in-play balls, served verbatim. 204 No Content until the box hand-off
+   * commits the artifact (it is box/R2-only, ADR-0006), which the UI renders as its empty state.
+   */
+  @GetMapping("/backfill-accuracy")
+  public ResponseEntity<JsonNode> backfillAccuracy() {
+    return accuracyService
+        .backfill()
+        .map(ResponseEntity::ok)
+        .orElseGet(() -> ResponseEntity.noContent().build());
   }
 }
