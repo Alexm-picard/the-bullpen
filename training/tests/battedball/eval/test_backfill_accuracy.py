@@ -21,7 +21,8 @@ import pytest
 
 from bullpen_training.battedball.eval.backfill_accuracy import (
     DATA_SOURCE,
-    EVAL_KIND,
+    EVAL_KIND_HOLDOUT,
+    EVAL_KIND_IN_SAMPLE,
     BackfillAccuracyReport,
     report_from_dict,
     report_to_dict,
@@ -253,8 +254,9 @@ def test_report_to_from_dict_round_trip_and_metadata() -> None:
     )
     payload = report_to_dict(report)
     # Honesty metadata is present and correct.
-    assert payload["data_source"] == DATA_SOURCE == "historical_pitches_offline_holdout"
-    assert payload["eval_kind"] == EVAL_KIND == "offline_held_out"
+    assert payload["data_source"] == DATA_SOURCE == "historical_pitches_offline"
+    # 2015-2025 span -> the model trained on these years, so this is an IN-SAMPLE read.
+    assert payload["eval_kind"] == EVAL_KIND_IN_SAMPLE == "offline_in_sample"
     assert payload["disclaimer"] == _DISCLAIMER
     assert payload["schema_version"] == 1
     assert payload["artifact_name"] == "battedball_backfill_accuracy"
@@ -331,6 +333,24 @@ def test_score_backfill_refuses_holdout_season() -> None:
         )
 
 
+def test_score_backfill_allows_2026_holdout_with_opt_in() -> None:
+    # Rule-13 carve-out: 2026 IS scoreable for a post-training ACCURACY read when explicitly opted
+    # in, and the artifact is honestly stamped as the unseen out-of-sample holdout read.
+    df = _frame([0, 1, 2], ["BOS", "NYY", "LAD"])
+    report = score_backfill(
+        predictor=_OneHotPredictor(),
+        df=df,
+        park_order=_PARKS,
+        model_name="battedball_outcome",
+        model_version="v1",
+        season_from=2026,
+        season_to=2026,
+        disclaimer=_DISCLAIMER,
+        allow_holdout_eval=True,
+    )
+    assert report.eval_kind == EVAL_KIND_HOLDOUT == "offline_holdout_unseen"
+
+
 def _load_cli_module():
     """Load the CLI script by file path (scripts/ is not an importable package)."""
     import importlib.util
@@ -353,6 +373,8 @@ def test_cli_refuse_holdout_exits() -> None:
         cli._refuse_holdout(2026, 2026)
     # A legal training-years span does not raise.
     cli._refuse_holdout(2015, 2025)
+    # The explicit rule-13 carve-out opt-in permits the 2026 holdout for the accuracy read.
+    cli._refuse_holdout(2026, 2026, allow_holdout_eval=True)
 
 
 # --- guards ----------------------------------------------------------------

@@ -15,15 +15,17 @@ THE HONESTY CONTRACT (load-bearing - this whole module exists to avoid a placebo
     distribution, so it would look beautifully calibrated against it. The point of
     this eval is the gap between the physics-trained distribution and what actually
     happened on the field.
-  - The report carries ``data_source="historical_pitches_offline_holdout"``,
-    ``eval_kind="offline_held_out"``, and a ``disclaimer`` string the caller fills
-    in. The disclaimer MUST document the leakage posture: the per-park MLP trained
-    on the retro distribution of these SAME home-park BIPs, so scoring on training
-    years (2015-2025) is an IN-SAMPLE read unless the run restricts to a held-out
-    window. The caller states which the run used (see the CLI's
-    ``--disclaimer`` default).
-  - Rule 13: a span touching season >= ``HOLDOUT_YEAR`` (2026) is refused, exactly
-    like ``export_batted_ball_full``. 2026 Statcast is post-training holdout only.
+  - The report carries ``data_source="historical_pitches_offline"``, an ``eval_kind``
+    computed from the span (``offline_in_sample`` for 2015-2025 - the years the MLP
+    trained on - vs ``offline_holdout_unseen`` for the 2026 holdout), and a
+    ``disclaimer`` string. The per-park MLP trained on the retro distribution of these
+    SAME home-park BIPs, so scoring on 2015-2025 is an IN-SAMPLE read; the 2026 holdout
+    is the only genuinely UNSEEN out-of-sample read.
+  - Rule 13: a span touching season >= ``HOLDOUT_YEAR`` (2026) is refused, exactly like
+    ``export_batted_ball_full`` - EXCEPT the narrow ``allow_holdout_eval`` opt-in (the
+    CLI's ``--holdout-accuracy-2026``), which permits 2026 for a post-training accuracy
+    READ only (never train/val/export). Per rule 13, "the 2026 Statcast pull exists
+    exclusively for post-training, post-validation accuracy testing against unseen data".
 
 ONNX vs torch for the box predictor (:class:`OnnxMlpPredictor`):
 
@@ -77,8 +79,14 @@ DEFAULT_N_BINS: Final[int] = 15
 N_OUTCOMES: Final[int] = len(OUTCOME_NAMES)  # 5
 HR_OUTCOME: Final[str] = "hr"
 
-DATA_SOURCE: Final[str] = "historical_pitches_offline_holdout"
-EVAL_KIND: Final[str] = "offline_held_out"
+DATA_SOURCE: Final[str] = "historical_pitches_offline"
+# eval_kind is computed per run from the season span (see _eval_kind). The MLP trained on
+# 2015-2025, so those years are IN-SAMPLE; 2026 (the rule-13 holdout) is the only UNSEEN
+# out-of-sample read. (The old single "offline_held_out" constant mislabeled an in-sample
+# 2015-2025 run as held-out - the exact honesty trap this phase removes.)
+EVAL_KIND_IN_SAMPLE: Final[str] = "offline_in_sample"
+EVAL_KIND_HOLDOUT: Final[str] = "offline_holdout_unseen"
+EVAL_KIND_MIXED: Final[str] = "offline_mixed_in_and_out_of_sample"
 ARTIFACT_NAME: Final[str] = "battedball_backfill_accuracy"
 SCHEMA_VERSION: Final[int] = 1
 
@@ -97,7 +105,8 @@ class Predictor(Protocol):
     by the predictor.
     """
 
-    def predict_proba(self, df: pd.DataFrame) -> np.ndarray: ...
+    def predict_proba(self, df: pd.DataFrame) -> np.ndarray:
+        ...
 
 
 # --- report dataclass -----------------------------------------------------
@@ -140,6 +149,7 @@ def score_backfill(
     season_to: int,
     disclaimer: str,
     n_bins: int = DEFAULT_N_BINS,
+    allow_holdout_eval: bool = False,
 ) -> BackfillAccuracyReport:
     """Score ``df`` through ``predictor`` and build the offline accuracy report.
 
@@ -160,7 +170,7 @@ def score_backfill(
       6. ``per_class`` via ``comparison.class_precision_recall`` on the confusion;
          HR precision / recall pulled from the "hr" row.
     """
-    _refuse_holdout(season_from, season_to)
+    _refuse_holdout(season_from, season_to, allow_holdout_eval=allow_holdout_eval)
     park_order_t = tuple(str(p) for p in park_order)
     outcome_order_t = tuple(OUTCOME_NAMES)
 
@@ -223,17 +233,38 @@ def score_backfill(
         per_park=per_park,
         confusion=confusion,
         data_source=DATA_SOURCE,
-        eval_kind=EVAL_KIND,
+        eval_kind=_eval_kind(season_from, season_to),
         disclaimer=disclaimer,
     )
 
 
-def _refuse_holdout(season_from: int, season_to: int) -> None:
-    """Rule 13: 2026+ is holdout-only; refuse any span that touches it."""
+def _eval_kind(season_from: int, season_to: int) -> str:
+    """Honest in-sample vs holdout posture from the season span. The per-park MLP trained on
+    2015-2025, so any span within those years is an IN-SAMPLE read; 2026 (the rule-13 holdout,
+    excluded from every training/validation split) is the only genuinely UNSEEN out-of-sample
+    read - the post-training accuracy test the holdout exists for."""
+    if season_from >= HOLDOUT_YEAR:
+        return EVAL_KIND_HOLDOUT
+    if season_to < HOLDOUT_YEAR:
+        return EVAL_KIND_IN_SAMPLE
+    return EVAL_KIND_MIXED
+
+
+def _refuse_holdout(season_from: int, season_to: int, *, allow_holdout_eval: bool = False) -> None:
+    """Rule 13: 2026+ is holdout-only; refuse any span that touches it.
+
+    ``allow_holdout_eval`` is the narrow, explicit opt-in for the rule-13 carve-out: 2026 may be
+    scored for a POST-TRAINING, POST-VALIDATION accuracy test ("the 2026 Statcast pull exists
+    exclusively for accuracy testing against unseen data"). It is set ONLY by the backfill-accuracy
+    read path; training, validation, and the ``export_batted_ball_full`` producer never set it and
+    keep the hard refusal."""
+    if allow_holdout_eval:
+        return
     if season_from >= HOLDOUT_YEAR or season_to >= HOLDOUT_YEAR:
         raise ValueError(
             f"rule 13: {HOLDOUT_YEAR}+ is holdout-only; backfill accuracy refuses a span "
-            f"touching it (got {season_from}-{season_to})"
+            f"touching it (got {season_from}-{season_to}). Pass allow_holdout_eval=True ONLY "
+            f"for the rule-13 post-training accuracy read."
         )
 
 
@@ -491,7 +522,9 @@ __all__ = (
     "ARTIFACT_NAME",
     "DATA_SOURCE",
     "DEFAULT_N_BINS",
-    "EVAL_KIND",
+    "EVAL_KIND_HOLDOUT",
+    "EVAL_KIND_IN_SAMPLE",
+    "EVAL_KIND_MIXED",
     "BackfillAccuracyReport",
     "OnnxMlpPredictor",
     "Predictor",

@@ -11,8 +11,10 @@ would violate the honesty discipline).
 
 HONESTY (see ``backfill_accuracy`` module docstring): scored against the REAL
 realized integer ``label``, NEVER ``retro_*``; the report carries
-``data_source="historical_pitches_offline_holdout"`` + ``eval_kind="offline_held_out"``
-+ a ``disclaimer`` documenting the leakage posture. Rule 13: 2026+ is refused.
+``data_source="historical_pitches_offline"`` + an ``eval_kind`` computed from the span
+(``offline_in_sample`` for 2015-2025, ``offline_holdout_unseen`` for the 2026 holdout)
++ an auto-picked ``disclaimer``. Rule 13: 2026+ is refused UNLESS the explicit
+``--holdout-accuracy-2026`` carve-out (the post-training accuracy read).
 
 Two data sources (pick one):
 
@@ -39,7 +41,6 @@ import logging
 from pathlib import Path
 
 import pandas as pd
-
 from bullpen_training.battedball.eval.backfill_accuracy import (
     OnnxMlpPredictor,
     save_report,
@@ -59,26 +60,46 @@ log = logging.getLogger(__name__)
 
 DATASET = "batted_ball_mlp"
 
-# Default disclaimer. The honesty contract REQUIRES the run to state its leakage
-# posture; this default documents the IN-SAMPLE caveat for a training-years span.
-# A held-out run should override it via --disclaimer.
-DEFAULT_DISCLAIMER = (
-    "Offline held-out eval scored against the REALIZED home-park outcome (the integer "
-    "label), never the retrodicted physics distribution the MLP trained on. The per-park "
-    "MLP trained on the retro distribution of these same home-park BIPs, so scoring on "
-    "training years (2015-2025) is an IN-SAMPLE read; treat the numbers as an upper bound "
-    "and use a held-out window (or the 2026 holdout, once permitted) for an out-of-sample "
-    "estimate. Per-park isotonic calibration is applied outside the ONNX graph, matching "
-    "the served path."
+# The honesty contract REQUIRES the run to state its leakage posture. Two defaults, auto-picked
+# from the span by _default_disclaimer (overridable via --disclaimer): the IN-SAMPLE caveat for a
+# training-years (<=2025) run, and the genuine OUT-OF-SAMPLE statement for the 2026 holdout.
+IN_SAMPLE_DISCLAIMER = (
+    "Offline accuracy scored against the REALIZED home-park outcome (the integer label), never "
+    "the retrodicted physics distribution the MLP trained on. The per-park MLP trained on the "
+    "retro distribution of these same home-park BIPs, so scoring on training years (2015-2025) is "
+    "an IN-SAMPLE read; treat the numbers as an upper bound and use the 2026 holdout "
+    "(--holdout-accuracy-2026) for an out-of-sample estimate. Per-park isotonic calibration is "
+    "applied outside the ONNX graph, matching the served path."
+)
+HOLDOUT_2026_DISCLAIMER = (
+    "2026 rule-13 holdout accuracy (UNSEEN): scored against REALIZED home-park outcomes from the "
+    "2026 season, which rule 13 excludes from every training and validation split. This is the "
+    "genuine out-of-sample generalization read - the post-training accuracy test the holdout "
+    "exists for. Scored against the realized integer label, never the retrodicted physics "
+    "distribution; per-park isotonic calibration applied outside the ONNX graph, matching the "
+    "served path. Note: 2026 is a partial, in-progress season, so n is smaller than a full year."
 )
 
 
-def _refuse_holdout(season_from: int, season_to: int) -> None:
-    """Rule 13: refuse any span touching 2026 before any data is read."""
+def _default_disclaimer(season_from: int, season_to: int) -> str:
+    """Pick the honest default disclaimer from the span: the 2026-holdout statement when the span
+    touches the holdout, else the in-sample caveat."""
+    if season_to >= HOLDOUT_YEAR:
+        return HOLDOUT_2026_DISCLAIMER
+    return IN_SAMPLE_DISCLAIMER
+
+
+def _refuse_holdout(season_from: int, season_to: int, *, allow_holdout_eval: bool = False) -> None:
+    """Rule 13: refuse any span touching 2026 before any data is read - UNLESS this is the
+    explicit rule-13 post-training accuracy carve-out (--holdout-accuracy-2026), which permits the
+    2026 holdout for an accuracy READ only (never train/val/export)."""
+    if allow_holdout_eval:
+        return
     if season_from >= HOLDOUT_YEAR or season_to >= HOLDOUT_YEAR:
         raise SystemExit(
             f"rule 13: {HOLDOUT_YEAR}+ is holdout-only; refusing season span "
-            f"{season_from}-{season_to}."
+            f"{season_from}-{season_to}. Pass --holdout-accuracy-2026 ONLY for the rule-13 "
+            f"post-training accuracy read."
         )
 
 
@@ -90,11 +111,17 @@ def _load_from_sample_root(root: Path, season_from: int, season_to: int) -> pd.D
     return df
 
 
-def _load_from_clickhouse(season_from: int, season_to: int, container: str) -> pd.DataFrame:
-    """Query the live ClickHouse container per season, concatenating the years."""
+def _load_from_clickhouse(
+    season_from: int, season_to: int, container: str, *, allow_holdout_eval: bool = False
+) -> pd.DataFrame:
+    """Query the live ClickHouse container per season, concatenating the years. The 2026 holdout is
+    queryable only via the explicit ``allow_holdout_eval`` carve-out (build_year_query refuses it
+    otherwise, exactly as the training export does)."""
     frames: list[pd.DataFrame] = []
     for year in range(season_from, season_to + 1):
-        tsv = docker_clickhouse(build_year_query(year), container=container)
+        tsv = docker_clickhouse(
+            build_year_query(year, allow_holdout_eval=allow_holdout_eval), container=container
+        )
         frame = rows_to_frame(tsv)
         log.info("loaded %d BIPs for %d from ClickHouse", len(frame), year)
         frames.append(frame)
@@ -120,7 +147,14 @@ def main() -> None:
         "--season-to",
         type=int,
         default=HOLDOUT_YEAR - 1,
-        help="Inclusive; must be <= 2025 (rule 13: 2026 is holdout).",
+        help="Inclusive; <= 2025 unless --holdout-accuracy-2026 (rule 13: 2026 is holdout).",
+    )
+    parser.add_argument(
+        "--holdout-accuracy-2026",
+        action="store_true",
+        help="Rule-13 carve-out: permit the 2026 holdout for THIS post-training accuracy READ "
+        "only (never train/val/export). Stamps eval_kind=offline_holdout_unseen + the holdout "
+        "disclaimer. Use --container (ClickHouse) - the parquet mirror has no 2026.",
     )
     parser.add_argument(
         "--sample-root",
@@ -138,15 +172,21 @@ def main() -> None:
     )
     parser.add_argument(
         "--disclaimer",
-        default=DEFAULT_DISCLAIMER,
-        help="Honesty disclaimer documenting the leakage posture of THIS run.",
+        default=None,
+        help="Honesty disclaimer documenting the leakage posture of THIS run. Default auto-picks "
+        "the in-sample caveat (<=2025) or the 2026-holdout statement from the span.",
     )
     parser.add_argument("--n-bins", type=int, default=15, help="ECE / per-park ECE bin count.")
     parser.add_argument("--no-html", action="store_true", help="Skip the HTML artifact.")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-    _refuse_holdout(args.season_from, args.season_to)
+    _refuse_holdout(args.season_from, args.season_to, allow_holdout_eval=args.holdout_accuracy_2026)
+    disclaimer = (
+        args.disclaimer
+        if args.disclaimer is not None
+        else _default_disclaimer(args.season_from, args.season_to)
+    )
 
     predictor = OnnxMlpPredictor(args.model_dir)
     log.info(
@@ -160,7 +200,12 @@ def main() -> None:
     if args.sample_root is not None:
         df = _load_from_sample_root(args.sample_root, args.season_from, args.season_to)
     else:
-        df = _load_from_clickhouse(args.season_from, args.season_to, args.container)
+        df = _load_from_clickhouse(
+            args.season_from,
+            args.season_to,
+            args.container,
+            allow_holdout_eval=args.holdout_accuracy_2026,
+        )
 
     if len(df) == 0:
         raise SystemExit(
@@ -175,8 +220,9 @@ def main() -> None:
         model_version=predictor.model_version,
         season_from=args.season_from,
         season_to=args.season_to,
-        disclaimer=args.disclaimer,
+        disclaimer=disclaimer,
         n_bins=args.n_bins,
+        allow_holdout_eval=args.holdout_accuracy_2026,
     )
 
     json_path = args.out_dir / "battedball_backfill_accuracy_v1.json"
