@@ -30,6 +30,7 @@ import { colors, typography } from "./design/broadcast";
 const AboutPage = lazy(() => import("./pages/about-page"));
 const ParksPage = lazy(() => import("./pages/parks-page"));
 const OpsPage = lazy(() => import("./pages/ops-page"));
+const AccuracyPage = lazy(() => import("./pages/accuracy-page"));
 
 const PlayersPage = lazy(() => import("./pages/players-page"));
 const PlayerProfilePage = lazy(() =>
@@ -114,6 +115,9 @@ function Layout() {
               <Anchor component={NavLink} to="/ops" style={navLinkStyle}>
                 ops
               </Anchor>
+              <Anchor component={NavLink} to="/accuracy" style={navLinkStyle}>
+                accuracy
+              </Anchor>
               <Anchor component={NavLink} to="/about" style={navLinkStyle}>
                 about
               </Anchor>
@@ -165,6 +169,7 @@ export default function App() {
           <Route path="games" element={<GamesPage />} />
           <Route path="games/:id" element={<GamePage />} />
           <Route path="ops" element={<OpsPage />} />
+          <Route path="accuracy" element={<AccuracyPage />} />
           <Route path="admin/routing" element={<AdminRoutingPage />} />
           <Route path="about" element={<AboutPage />} />
           <Route path="*" element={<NotFoundPage />} />
