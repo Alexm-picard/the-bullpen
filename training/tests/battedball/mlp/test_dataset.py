@@ -125,15 +125,19 @@ def _toy_row(seed: int = 0) -> _BipRow:
     rng = np.random.default_rng(seed)
     features = _fake_features(1)[0]
     labels = rng.dirichlet(np.ones(5), size=30).astype(np.float32)
-    return _BipRow(features=features, labels=labels, home_park_id="NYY")
+    carry = rng.uniform(150.0, 420.0, size=30).astype(np.float32)
+    return _BipRow(features=features, labels=labels, carry=carry, home_park_id="NYY")
 
 
 def test_dataset_returns_raw_features_when_no_scaler() -> None:
     rows = [_toy_row(i) for i in range(3)]
     ds = BBIPDataset(rows)
-    x, y = ds[0]
+    x, y, carry = ds[0]
     np.testing.assert_array_equal(x, rows[0].features)
     assert y.shape == (30, 5)
+    # The _BipRow path surfaces the row's per-park carry verbatim.
+    assert carry.shape == (30,)
+    np.testing.assert_array_equal(carry, rows[0].carry)
 
 
 def test_dataset_applies_scaler_when_provided() -> None:
@@ -141,10 +145,29 @@ def test_dataset_applies_scaler_when_provided() -> None:
     ds_raw = BBIPDataset(rows)
     scaler = FeatureScaler.fit(ds_raw.all_features())
     ds = BBIPDataset(rows, scaler=scaler)
-    x, _y = ds[0]
+    x, _y, _carry = ds[0]
     raw = rows[0].features
     expected = (raw - scaler.means) / scaler.stds
     np.testing.assert_allclose(x, expected, atol=1e-6)
+
+
+def test_dataset_array_path_surfaces_carry_and_nans_where_absent() -> None:
+    """The dense-array path returns the carry row when given one, and an
+    all-NaN row when carry is omitted (outcome-only / legacy callers)."""
+    feats = _fake_features(4)
+    labels = np.random.default_rng(1).dirichlet(np.ones(5), size=(4, 30)).astype(np.float32)
+    carry = np.full((4, 30), np.nan, dtype=np.float32)
+    carry[0, 0] = 410.0  # one backfilled (BIP, park); the rest still NULL -> NaN
+    ds = BBIPDataset(feats, labels, carry=carry)
+    _x, _y, c = ds[0]
+    assert c.shape == (30,)
+    assert c[0] == pytest.approx(410.0)
+    assert np.isnan(c[1])
+
+    ds_nocarry = BBIPDataset(feats, labels)
+    _x2, _y2, c2 = ds_nocarry[0]
+    assert c2.shape == (30,)
+    assert bool(np.isnan(c2).all())
 
 
 def test_all_features_stacks_rows() -> None:

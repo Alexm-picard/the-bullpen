@@ -10,11 +10,12 @@ from bullpen_training.battedball.mlp.architecture import BattedBallMLP, build_mo
 
 
 def test_forward_shape_matches_spec() -> None:
-    """Forward pass on (B=8, 15) -> (8, 30, 5) per leaf spec."""
+    """Forward pass on (B=8, 15) -> logits (8, 30, 5) + carry (8, 30, 1)."""
     model = build_model()
     x = torch.zeros((8, 15), dtype=torch.float32)
-    out = model(x)
-    assert out.shape == (8, 30, 5)
+    logits, carry = model(x)
+    assert logits.shape == (8, 30, 5)
+    assert carry.shape == (8, 30, 1)
 
 
 def test_forward_returns_raw_logits_not_probabilities() -> None:
@@ -23,16 +24,27 @@ def test_forward_returns_raw_logits_not_probabilities() -> None:
     softmax. Sanity: logits should NOT already sum to 1 per park."""
     model = build_model()
     x = torch.randn((4, 15), dtype=torch.float32)
-    logits = model(x)
+    logits, _carry = model(x)
     sums = logits.sum(dim=-1)
     assert (sums.abs() > 0.01).any(), "logits should not be already-softmaxed"
+
+
+def test_carry_head_is_unconstrained_real_valued() -> None:
+    """The carry head emits one raw scalar (feet) per park — no softmax, no
+    activation. Just pin the shape and that it is finite real-valued."""
+    model = build_model()
+    x = torch.randn((4, 15), dtype=torch.float32)
+    _logits, carry = model(x)
+    assert carry.shape == (4, 30, 1)
+    assert torch.isfinite(carry).all()
 
 
 def test_softmax_per_park_sums_to_one() -> None:
     """After softmax along last axis, each (sample, park) row sums to 1."""
     model = build_model()
     x = torch.randn((4, 15), dtype=torch.float32)
-    probs = F.softmax(model(x), dim=-1)
+    logits, _carry = model(x)
+    probs = F.softmax(logits, dim=-1)
     sums = probs.sum(dim=-1)
     assert torch.allclose(sums, torch.ones_like(sums), atol=1e-6)
 
@@ -66,11 +78,13 @@ def test_param_count_is_in_expected_range() -> None:
 @pytest.mark.parametrize("n_parks", [1, 5, 30])
 def test_forward_scales_with_n_parks(n_parks: int) -> None:
     model = build_model(n_parks=n_parks)
-    out = model(torch.zeros((2, 15)))
-    assert out.shape == (2, n_parks, 5)
+    logits, carry = model(torch.zeros((2, 15)))
+    assert logits.shape == (2, n_parks, 5)
+    assert carry.shape == (2, n_parks, 1)
 
 
 def test_n_features_dim_change_propagates() -> None:
     model = BattedBallMLP(n_features=8, n_parks=4, n_outcomes=3, hidden=16)
-    out = model(torch.zeros((3, 8)))
-    assert out.shape == (3, 4, 3)
+    logits, carry = model(torch.zeros((3, 8)))
+    assert logits.shape == (3, 4, 3)
+    assert carry.shape == (3, 4, 1)

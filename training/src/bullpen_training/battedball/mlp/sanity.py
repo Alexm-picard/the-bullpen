@@ -339,7 +339,7 @@ def cross_park_p_hr(
     feats = scaler.transform(all_feats)
     model.eval()
     with torch.no_grad():
-        logits = model(torch.from_numpy(feats))  # (K, n_parks, 5)
+        logits, _carry = model(torch.from_numpy(feats))  # (K, n_parks, 5), (K, n_parks, 1)
         probs = F.softmax(logits, dim=-1).numpy()
     if calibrators is not None:
         probs = transform(calibrators, probs)
