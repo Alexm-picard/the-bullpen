@@ -41,6 +41,7 @@ import logging
 from pathlib import Path
 
 import pandas as pd
+
 from bullpen_training.battedball.eval.backfill_accuracy import (
     OnnxMlpPredictor,
     save_report,
