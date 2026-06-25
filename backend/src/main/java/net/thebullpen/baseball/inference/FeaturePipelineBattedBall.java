@@ -49,6 +49,21 @@ public final class FeaturePipelineBattedBall {
       String schemaHash) {}
 
   /**
+   * Phase 4 carry-target standardisation, read from {@code metadata.json:carry_target} (nullable -
+   * absent on a probabilities-only model). The model's carry output is standardised; serving
+   * recovers feet via {@code ft = raw * stdFt + meanFt}. Lives in per-model metadata (like {@code
+   * feature_scaler}), NOT the hashed contract, so carry is an additive capability that doesn't
+   * change the feature schema hash.
+   */
+  public record CarryTarget(double meanFt, double stdFt) {
+
+    /** Recover carry distance in feet from a standardised model output. */
+    public double toFeet(double standardised) {
+      return standardised * stdFt + meanFt;
+    }
+  }
+
+  /**
    * Batted-ball request body. The park axis is an output dimension, so no {@code parkId} here.
    * Spray angle is supplied directly (the Statcast {@code hc_x/hc_y -> spray} derivation is a
    * training-time concern); {@code stand} is "L" or "R" (unknown -> R, matching Python's {@code
@@ -66,15 +81,23 @@ public final class FeaturePipelineBattedBall {
   private final Spec spec;
   private final double[] means;
   private final double[] stds;
+  private final CarryTarget carryTarget; // nullable: absent on a probabilities-only model
 
-  private FeaturePipelineBattedBall(Spec spec, double[] means, double[] stds) {
+  private FeaturePipelineBattedBall(
+      Spec spec, double[] means, double[] stds, CarryTarget carryTarget) {
     this.spec = spec;
     this.means = means;
     this.stds = stds;
+    this.carryTarget = carryTarget;
   }
 
   public Spec spec() {
     return spec;
+  }
+
+  /** The carry-target standardisation, or {@code null} when the model has no carry head. */
+  public CarryTarget carryTarget() {
+    return carryTarget;
   }
 
   /**
@@ -125,7 +148,31 @@ public final class FeaturePipelineBattedBall {
               + " stds="
               + stds.length);
     }
-    return new FeaturePipelineBattedBall(parsed, means, stds);
+    CarryTarget carryTarget = readCarryTarget(meta.get("carry_target"));
+    return new FeaturePipelineBattedBall(parsed, means, stds, carryTarget);
+  }
+
+  /**
+   * Parse the optional {@code carry_target} block. Absent (or null) -> a probabilities-only model,
+   * returns {@code null}. Present but malformed (missing mean/std, non-positive std) is a snapshot
+   * defect and fails loud rather than serving a silently-wrong carry.
+   */
+  private static CarryTarget readCarryTarget(JsonNode node) {
+    if (node == null || node.isNull()) {
+      return null;
+    }
+    JsonNode mean = node.get("mean_ft");
+    JsonNode std = node.get("std_ft");
+    if (mean == null || std == null) {
+      throw new IllegalStateException(
+          "metadata.json carry_target must carry mean_ft + std_ft, got " + node);
+    }
+    double stdFt = std.asDouble();
+    if (!(stdFt > 0.0)) {
+      throw new IllegalStateException(
+          "metadata.json carry_target std_ft must be > 0, got " + stdFt);
+    }
+    return new CarryTarget(mean.asDouble(), stdFt);
   }
 
   private static double[] readDoubleArray(JsonNode node) {

@@ -1,6 +1,8 @@
 package net.thebullpen.baseball.inference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.nio.file.Files;
@@ -24,9 +26,18 @@ class FeaturePipelineBattedBallTest {
       REPO_ROOT.resolve("contracts/feature_pipeline_battedball.json");
 
   private static Path writeMetadata(Path dir, String scalerJson) throws Exception {
+    return writeMetadata(dir, scalerJson, "");
+  }
+
+  private static Path writeMetadata(Path dir, String scalerJson, String extraJson)
+      throws Exception {
     Path p = dir.resolve("metadata.json");
     Files.writeString(
-        p, "{\"model_name\":\"battedball_outcome\",\"feature_scaler\":" + scalerJson + "}");
+        p,
+        "{\"model_name\":\"battedball_outcome\",\"feature_scaler\":"
+            + scalerJson
+            + extraJson
+            + "}");
     return p;
   }
 
@@ -105,6 +116,35 @@ class FeaturePipelineBattedBallTest {
   void scalerLengthMismatchFailsLoud(@TempDir Path dir) throws Exception {
     String bad = "{\"means\":[0.0,0.0],\"stds\":[1.0,1.0],\"is_continuous\":[]}";
     Path md = writeMetadata(dir, bad);
+    assertThrows(IllegalStateException.class, () -> FeaturePipelineBattedBall.load(CONTRACT, md));
+  }
+
+  @Test
+  void carryTargetParsedWhenPresent(@TempDir Path dir) throws Exception {
+    Path md =
+        writeMetadata(
+            dir, identityScaler(), ",\"carry_target\":{\"mean_ft\":225.0,\"std_ft\":80.0}");
+    FeaturePipelineBattedBall pipeline = FeaturePipelineBattedBall.load(CONTRACT, md);
+    FeaturePipelineBattedBall.CarryTarget ct = pipeline.carryTarget();
+    assertNotNull(ct, "carry_target present -> parsed");
+    assertEquals(225.0, ct.meanFt(), 1e-9);
+    assertEquals(80.0, ct.stdFt(), 1e-9);
+    assertEquals(305.0, ct.toFeet(1.0), 1e-9); // ft = 1*std + mean = 80 + 225
+  }
+
+  @Test
+  void carryTargetNullWhenAbsent(@TempDir Path dir) throws Exception {
+    // A probabilities-only model's metadata has no carry_target -> carryTarget() is null.
+    FeaturePipelineBattedBall pipeline =
+        FeaturePipelineBattedBall.load(CONTRACT, writeMetadata(dir, identityScaler()));
+    assertNull(pipeline.carryTarget());
+  }
+
+  @Test
+  void carryTargetWithNonPositiveStdFailsLoud(@TempDir Path dir) throws Exception {
+    Path md =
+        writeMetadata(
+            dir, identityScaler(), ",\"carry_target\":{\"mean_ft\":225.0,\"std_ft\":0.0}");
     assertThrows(IllegalStateException.class, () -> FeaturePipelineBattedBall.load(CONTRACT, md));
   }
 }

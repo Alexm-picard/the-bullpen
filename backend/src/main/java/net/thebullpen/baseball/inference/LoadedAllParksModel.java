@@ -83,8 +83,50 @@ public final class LoadedAllParksModel implements AutoCloseable {
    * share the exporter's sorted park ordering; a size mismatch is a snapshot defect and fails loud.
    */
   public Map<String, float[]> predict(FeaturePipelineBattedBall.Request req) throws OrtException {
-    float[] features = pipeline.transform(req);
-    float[][] raw = onnx.predict(features); // [nParks][nOutcomes]
+    return calibrateByPark(onnx.predict(pipeline.transform(req)));
+  }
+
+  /**
+   * Calibrated per-park distribution AND, when this model {@link #servesCarry() serves carry}, the
+   * per-park carry distance in FEET - in ONE inference (Phase 4). {@code carryFtByPark} is {@code
+   * null} for a probabilities-only champion (the additive carry output is absent, or the snapshot
+   * carries no {@code carry_target}); the standardised carry is recovered to feet via {@code
+   * metadata.carry_target} ({@code ft = raw*std + mean}).
+   */
+  public AllParksPrediction predictWithCarry(FeaturePipelineBattedBall.Request req)
+      throws OrtException {
+    BattedBallOnnxModel.Prediction pred = onnx.predictWithCarry(pipeline.transform(req));
+    Map<String, float[]> byPark = calibrateByPark(pred.distribution());
+    Map<String, Double> carryFtByPark = null;
+    FeaturePipelineBattedBall.CarryTarget ct = pipeline.carryTarget();
+    float[] carry = pred.carry();
+    if (carry != null && ct != null) {
+      List<String> parks = calibrators.parkOrder();
+      if (carry.length != parks.size()) {
+        throw new IllegalStateException(
+            "ONNX carry axis ("
+                + carry.length
+                + ") != park_order ("
+                + parks.size()
+                + ") for "
+                + modelName
+                + "/"
+                + version);
+      }
+      carryFtByPark = new LinkedHashMap<>(parks.size() * 2);
+      for (int p = 0; p < parks.size(); p++) {
+        carryFtByPark.put(parks.get(p), ct.toFeet(carry[p]));
+      }
+    }
+    return new AllParksPrediction(byPark, carryFtByPark);
+  }
+
+  /** True when the loaded graph emits the carry output AND the snapshot carries a carry_target. */
+  public boolean servesCarry() {
+    return onnx.hasCarry() && pipeline.carryTarget() != null;
+  }
+
+  private Map<String, float[]> calibrateByPark(float[][] raw) {
     List<String> parks = calibrators.parkOrder();
     if (raw.length != parks.size()) {
       throw new IllegalStateException(
@@ -103,6 +145,14 @@ public final class LoadedAllParksModel implements AutoCloseable {
     }
     return byPark;
   }
+
+  /**
+   * One batted ball's calibrated per-park distribution plus the per-park carry distance in feet.
+   * {@code carryFtByPark} is {@code null} when the model does not serve carry (a probabilities-only
+   * champion); otherwise it is insertion-ordered over the same park order as {@code distribution}.
+   */
+  public record AllParksPrediction(
+      Map<String, float[]> distribution, Map<String, Double> carryFtByPark) {}
 
   public long versionId() {
     return versionId;
