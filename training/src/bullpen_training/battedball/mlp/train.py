@@ -257,25 +257,27 @@ def train_model(
 
 
 class _ProbaExport(torch.nn.Module):
-    """Export wrapper that applies a per-park softmax to the MLP's raw logits so the exported ONNX
-    emits per-park outcome PROBABILITIES.
+    """Export wrapper producing the TWO-output serving graph (Phase 4 PR-4).
 
-    Decision: every batted-ball ONNX outputs per-park softmax (the LGBM/LR converters already do),
-    so the Java serving layer calibrates the model output directly with NO Java-side softmax. The
-    MLP's forward stays logits (the KL loss needs log_softmax); only the serving export bakes the
-    softmax in.
+    Output 0 ``probabilities``: a per-park softmax of the outcome logits, shape ``(N, n_parks, 5)``.
+    Every batted-ball ONNX outputs per-park softmax (the LGBM/LR converters already do), so the Java
+    serving layer calibrates the model output directly with NO Java-side softmax. The MLP's forward
+    stays logits (the KL loss needs log_softmax); only the serving export bakes the softmax in.
+
+    Output 1 ``carry``: the per-park STANDARDISED carry, squeezed to ``(N, n_parks)``. The Java
+    serving layer un-standardises it to feet via ``metadata.carry_target`` (ft = raw*std + mean).
+    Serving reads it defensively (only when the loaded graph exposes the second output), so an
+    older probabilities-only champion still serves; carry is an additive output, NOT part of the
+    hashed feature contract (the input pipeline + the primary output are unchanged).
     """
 
     def __init__(self, model: BattedBallMLP) -> None:
         super().__init__()
         self.model = model
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # model(x) now returns (logits, carry); PR-3 keeps the serving export
-        # probabilities-ONLY - the carry output joins the graph in PR-4 alongside
-        # the contract/schema_hash change. Select the outcome logits here.
-        logits, _carry = self.model(x)
-        return torch.softmax(logits, dim=-1)
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        logits, carry = self.model(x)
+        return torch.softmax(logits, dim=-1), carry.squeeze(-1)
 
 
 def export_onnx(
@@ -285,12 +287,15 @@ def export_onnx(
     n_features: int | None = None,
     opset_version: int = 17,
 ) -> None:
-    """Export a trained model to ONNX (per-park softmax baked in) and validate with onnx.checker.
+    """Export a trained model to the two-output serving ONNX and validate with onnx.checker.
 
-    The export wraps the logits-producing model with a per-park softmax (:class:`_ProbaExport`) so
-    the ONNX emits per-park outcome PROBABILITIES, matching the LGBM/LR converters - the Java
-    serving layer calibrates the output directly, no Java-side softmax. Uses a dynamic batch axis so
-    the Java side can call with any batch size. Final shape: ``(N, n_parks, n_outcomes)``.
+    Wraps the model with :class:`_ProbaExport` so the graph emits TWO outputs on a dynamic batch
+    axis (the Java side can call with any batch size):
+      - ``probabilities`` ``(N, n_parks, n_outcomes)`` - per-park softmax (calibrated downstream,
+        no Java-side softmax), matching the LGBM/LR converters.
+      - ``carry`` ``(N, n_parks)`` - standardised per-park carry; un-standardised to feet by the
+        Java serving layer via ``metadata.carry_target``. Read defensively, so a probabilities-only
+        champion still serves.
     """
     feat_count = n_features if n_features is not None else model.n_features
     model.cpu().eval()
@@ -302,13 +307,26 @@ def export_onnx(
         (dummy,),
         out_path,
         input_names=["features"],
-        output_names=["probabilities"],
-        dynamic_axes={"features": {0: "batch"}, "probabilities": {0: "batch"}},
+        output_names=["probabilities", "carry"],
+        dynamic_axes={
+            "features": {0: "batch"},
+            "probabilities": {0: "batch"},
+            "carry": {0: "batch"},
+        },
         opset_version=opset_version,
         # Explicit (already the torch default) - pins constant-folding so a future default flip
         # can't silently change the exported graph and break Java parity (DEF-M6).
         do_constant_folding=True,
     )
+    # The torch.onnx dynamo path externalises initializers to a sibling ``<name>.data`` sidecar.
+    # The registry serves a SINGLE ``model.onnx`` (SnapshotStorage.ARTIFACT_FILE) - a sidecar would
+    # not be copied into the snapshot and the model would fail to load on the box. Re-save inline
+    # (lossless: same tensors, inline storage) into one self-contained file and drop the sidecar.
+    inlined = onnx.load(str(out_path))  # default load_external_data=True pulls the sidecar in
+    onnx.save_model(inlined, str(out_path), save_as_external_data=False)
+    sidecar = Path(str(out_path) + ".data")
+    if sidecar.exists():
+        sidecar.unlink()
     onnx.checker.check_model(onnx.load(str(out_path)))
 
 

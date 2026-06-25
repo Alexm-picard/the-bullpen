@@ -92,7 +92,7 @@ public class PredictAllParksController {
     FeaturePipelineBattedBall.Request pipeReq = toPipelineRequest(req);
 
     try {
-      RoutedPrediction<Map<String, float[]>> routed =
+      RoutedPrediction<LoadedAllParksModel.AllParksPrediction> routed =
           router.route(
               MODEL_NAME,
               gameId,
@@ -109,7 +109,8 @@ public class PredictAllParksController {
           routed.servingVersionId() == -1L ? requireChampionId() : routed.servingVersionId();
       LoadedAllParksModel servingModel = modelLoader.loadAllParks(servingVersionId);
 
-      Map<String, float[]> dist = routed.servingResponse();
+      LoadedAllParksModel.AllParksPrediction serving = routed.servingResponse();
+      Map<String, float[]> dist = serving.distribution();
       Map<String, Double> probHrByPark = extractHr(dist, servingModel.outcomeOrder());
 
       logger.enqueue(
@@ -139,13 +140,14 @@ public class PredictAllParksController {
                 PredictionLogEvent.Role.SHADOW,
                 shadowModel.schemaHash(),
                 serializeFeatures(req),
-                serializeDistribution(routed.shadowResponse().orElseThrow()),
+                serializeDistribution(routed.shadowResponse().orElseThrow().distribution()),
                 elapsedMs,
                 correlationId));
       }
 
       return new AllParksPredictionResponse(
           probHrByPark,
+          serving.carryFtByPark(), // null for a probabilities-only champion -> omitted from JSON
           MODEL_NAME,
           servingModel.version(),
           elapsedNanos / 1_000L,
@@ -175,10 +177,12 @@ public class PredictAllParksController {
                         + " model first"));
   }
 
-  private static Map<String, float[]> predict(
+  private static LoadedAllParksModel.AllParksPrediction predict(
       LoadedAllParksModel model, FeaturePipelineBattedBall.Request req) {
     try {
-      return model.predict(req);
+      // One inference yields the per-park distribution plus the per-park carry feet when the
+      // champion has a carry head; carryFtByPark is null for a probabilities-only champion.
+      return model.predictWithCarry(req);
     } catch (Exception e) {
       throw new RuntimeException(e);
     }

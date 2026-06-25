@@ -13,6 +13,8 @@ import onnx
 import pytest
 import torch
 import torch.nn.functional as F
+from torch.utils.data import Dataset
+
 from bullpen_training.battedball.mlp.architecture import build_model
 from bullpen_training.battedball.mlp.train import (
     CARRY_MEAN_FT,
@@ -25,7 +27,6 @@ from bullpen_training.battedball.mlp.train import (
     train_model,
     write_metadata,
 )
-from torch.utils.data import Dataset
 
 
 class _SyntheticBBIPDataset(Dataset):
@@ -158,8 +159,9 @@ def test_onnx_export_validates_with_checker(tmp_path: Path) -> None:
 
 def test_onnx_export_matches_pytorch_within_1e5(tmp_path: Path) -> None:
     """Round-trip parity: the exported ONNX, when reloaded and run via
-    onnxruntime, should match the Torch model to ~1e-5. Critical for the
-    Risk Register G1 (Python<->Java parity) closure on the 2c head."""
+    onnxruntime, should match the Torch model to ~1e-5 on BOTH outputs
+    (probabilities + carry). Critical for the Risk Register G1 (Python<->Java
+    parity) closure on the 2c head + the Phase-4 carry output."""
     onnxruntime = pytest.importorskip("onnxruntime")
 
     torch.manual_seed(0)
@@ -170,20 +172,37 @@ def test_onnx_export_matches_pytorch_within_1e5(tmp_path: Path) -> None:
 
     x = torch.randn((3, 15), dtype=torch.float32)
     with torch.no_grad():
-        # The export bakes a per-park softmax, so the ONNX emits probabilities, not raw logits.
-        logits, _carry = model(x)
-        torch_out = torch.softmax(logits, dim=-1).numpy()
+        # The export bakes a per-park softmax (output 0) + squeezes carry (output 1).
+        logits, carry = model(x)
+        torch_probs = torch.softmax(logits, dim=-1).numpy()
+        torch_carry = carry.squeeze(-1).numpy()
     session = onnxruntime.InferenceSession(str(out), providers=["CPUExecutionProvider"])
-    onnx_out = session.run(["probabilities"], {"features": x.numpy()})[0]
-    np.testing.assert_allclose(torch_out, onnx_out, atol=1e-5, rtol=1e-5)
-    # Probabilities: every park's outcome distribution sums to 1.
-    np.testing.assert_allclose(onnx_out.sum(axis=-1), np.ones((3, 30)), atol=1e-5)
+    onnx_probs, onnx_carry = session.run(["probabilities", "carry"], {"features": x.numpy()})
+    np.testing.assert_allclose(torch_probs, onnx_probs, atol=1e-5, rtol=1e-5)
+    np.testing.assert_allclose(torch_carry, onnx_carry, atol=1e-5, rtol=1e-5)
+    # Probabilities: every park's outcome distribution sums to 1; carry is (N, n_parks).
+    np.testing.assert_allclose(onnx_probs.sum(axis=-1), np.ones((3, 30)), atol=1e-5)
+    assert onnx_carry.shape == (3, 30)
+
+
+def test_onnx_export_emits_two_named_outputs(tmp_path: Path) -> None:
+    """The serving graph exposes exactly two outputs, named probabilities + carry,
+    so the Java reader can pick the carry tensor defensively by index/presence."""
+    onnxruntime = pytest.importorskip("onnxruntime")
+    model = build_model()
+    out = tmp_path / "model.onnx"
+    export_onnx(model, out)
+    session = onnxruntime.InferenceSession(str(out), providers=["CPUExecutionProvider"])
+    assert [o.name for o in session.get_outputs()] == ["probabilities", "carry"]
+    probs, carry = session.run(None, {"features": np.zeros((4, 15), dtype=np.float32)})
+    assert probs.shape == (4, 30, 5)
+    assert carry.shape == (4, 30)
 
 
 def test_onnx_export_dynamic_batch_axis(tmp_path: Path) -> None:
     """Export with dynamic batch dimension; runtime should accept any
-    batch size (1, 4, 32, ...). The 2c.7 Java preview test relies on
-    this."""
+    batch size (1, 4, 32, ...) on BOTH outputs. The 2c.7 Java preview test
+    relies on this."""
     onnxruntime = pytest.importorskip("onnxruntime")
     model = build_model()
     out = tmp_path / "model.onnx"
@@ -191,8 +210,9 @@ def test_onnx_export_dynamic_batch_axis(tmp_path: Path) -> None:
     session = onnxruntime.InferenceSession(str(out), providers=["CPUExecutionProvider"])
     for batch in (1, 4, 32):
         x = np.zeros((batch, 15), dtype=np.float32)
-        result = session.run(["probabilities"], {"features": x})[0]
-        assert result.shape == (batch, 30, 5)
+        probs, carry = session.run(["probabilities", "carry"], {"features": x})
+        assert probs.shape == (batch, 30, 5)
+        assert carry.shape == (batch, 30)
 
 
 def test_write_metadata_records_park_order(tmp_path: Path) -> None:

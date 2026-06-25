@@ -1,6 +1,10 @@
 package net.thebullpen.baseball.inference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
 import java.util.Objects;
@@ -101,6 +105,59 @@ class BattedBallOnnxModelTest {
       assertEquals(5, out[0][0].length);
       assertEquals(0f, out[0][0][0], 1e-6f); // row 0: all features 0
       assertEquals(9f, out[1][0][0], 1e-6f); // row 1: feature[0]=9 -> outcome 0
+    }
+  }
+
+  /**
+   * The two-output carry fixture ({@code probabilities} + {@code carry}, Phase 4). dist tiles the
+   * first 5 features across 30 parks (as above); carry is {@code feature[5] + park_index} per park.
+   */
+  private static Path carryFixture() throws Exception {
+    return resource("/onnx/battedball_park_outcome_carry_fixture.onnx");
+  }
+
+  @Test
+  void predictWithCarry_reads_both_outputs_on_a_carry_model() throws Exception {
+    try (BattedBallOnnxModel model = new BattedBallOnnxModel(carryFixture())) {
+      assertTrue(model.hasCarry(), "two-output graph must report hasCarry()");
+      float[] features = new float[15];
+      for (int i = 0; i < features.length; i++) {
+        features[i] = i; // [0, 1, ..., 14] -> feature[5] = 5
+      }
+
+      BattedBallOnnxModel.Prediction pred = model.predictWithCarry(features);
+
+      // dist unchanged: every park row is [0,1,2,3,4].
+      assertEquals(30, pred.distribution().length, "park axis");
+      for (int park = 0; park < 30; park++) {
+        for (int outcome = 0; outcome < 5; outcome++) {
+          assertEquals((float) outcome, pred.distribution()[park][outcome], 1e-6f);
+        }
+      }
+      // carry[park] = feature[5] + park = 5 + park.
+      assertNotNull(pred.carry(), "carry model must return a carry vector");
+      assertEquals(30, pred.carry().length, "carry axis (nParks)");
+      for (int park = 0; park < 30; park++) {
+        assertEquals(5f + park, pred.carry()[park], 1e-6f, "carry park " + park);
+      }
+    }
+  }
+
+  @Test
+  void predictWithCarry_returns_null_carry_on_a_probabilities_only_model() throws Exception {
+    // The one-output fixture (the current champion's shape) has no carry: serving must degrade to
+    // carry-free, never throw.
+    try (BattedBallOnnxModel model = new BattedBallOnnxModel(featuresFixture())) {
+      assertFalse(model.hasCarry(), "one-output graph must report !hasCarry()");
+      float[] features = new float[15];
+      for (int i = 0; i < features.length; i++) {
+        features[i] = i;
+      }
+
+      BattedBallOnnxModel.Prediction pred = model.predictWithCarry(features);
+
+      assertEquals(30, pred.distribution().length, "distribution still read");
+      assertNull(pred.carry(), "probabilities-only model returns null carry");
     }
   }
 }

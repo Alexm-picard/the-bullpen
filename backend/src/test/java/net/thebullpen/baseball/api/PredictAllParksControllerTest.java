@@ -96,6 +96,10 @@ class PredictAllParksControllerTest {
         .andExpect(jsonPath("$.modelVersion").value("v1"))
         .andExpect(jsonPath("$.probHrByPark.length()").value(equalTo(N_PARKS)))
         .andExpect(jsonPath("$.probHrByPark.PARK00").isNumber())
+        // The fixture champion is probabilities-only (one ONNX output, no carry_target), so the
+        // carry map is null and JsonInclude.NON_NULL omits it - the response shape is unchanged
+        // for a carry-less champion (Phase 4 PR-4).
+        .andExpect(jsonPath("$.carryFtByPark").doesNotExist())
         .andExpect(jsonPath("$.latencyMicros").isNumber());
   }
 
