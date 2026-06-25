@@ -290,8 +290,13 @@ class OpsControllerTest {
   }
 
   @Test
-  void backfill_accuracy_returns_204_until_box_handoff_commits_it() throws Exception {
-    // The artifact is box/R2-only and not committed yet, so the endpoint reports no-content.
-    mvc.perform(get("/v1/ops/backfill-accuracy")).andExpect(status().isNoContent());
+  void backfill_accuracy_returns_the_committed_box_artifact() throws Exception {
+    // The artifact is committed (#157) + bundled onto the classpath, so the endpoint returns 200
+    // with the held-out backfill doc (was 204 before #157; this test is updated to that state).
+    mvc.perform(get("/v1/ops/backfill-accuracy"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.model_name").value("battedball_outcome"))
+        .andExpect(jsonPath("$.season_from").value(2026))
+        .andExpect(jsonPath("$.eval_kind").value("offline_holdout_unseen"));
   }
 }

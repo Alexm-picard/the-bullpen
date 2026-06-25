@@ -3,8 +3,10 @@ package net.thebullpen.baseball.registry;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import net.thebullpen.baseball.api.dto.ModelAccuracyScorecard;
@@ -82,9 +84,20 @@ class AccuracyServiceTest {
   }
 
   @Test
-  void backfill_is_empty_until_the_box_handoff_commits_it() {
+  void backfill_carries_the_committed_box_artifact() {
+    // The box-produced 2026 holdout backfill artifact is committed (#157) and bundled onto the test
+    // classpath, so backfill() is present and carries the real held-out aggregate (was empty before
+    // #157; this test asserted that empty pre-commit state and is now updated to the committed
+    // one).
     AccuracyService service =
         new AccuracyService(new AccuracyEvidenceRepository(new ObjectMapper()));
-    assertThat(service.backfill()).isEmpty();
+    Optional<JsonNode> backfill = service.backfill();
+    assertThat(backfill).isPresent();
+    JsonNode doc = backfill.orElseThrow();
+    assertThat(doc.get("model_name").asText()).isEqualTo("battedball_outcome");
+    assertThat(doc.get("season_from").asInt()).isEqualTo(2026);
+    assertThat(doc.get("eval_kind").asText()).isEqualTo("offline_holdout_unseen");
+    assertThat(doc.get("aggregate").get("brier").asDouble())
+        .isCloseTo(0.10322678124538412, within(1e-9));
   }
 }
