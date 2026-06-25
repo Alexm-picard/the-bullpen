@@ -27,6 +27,13 @@ export type AllParksRequest = {
 
 export type AllParksResponse = {
   probHrByPark: Record<string, number>;
+  /**
+   * Phase 4: park id -> the model's predicted carry distance in FEET for the chosen launch
+   * condition at that park. Present only when the serving champion has a carry head; OMITTED
+   * (undefined) for a probabilities-only champion - the backend leaves the field off the JSON via
+   * @JsonInclude(NON_NULL), so callers must treat it as optional and fall back accordingly.
+   */
+  carryFtByPark?: Record<string, number>;
   modelName: string;
   modelVersion: string;
   latencyMicros: number;

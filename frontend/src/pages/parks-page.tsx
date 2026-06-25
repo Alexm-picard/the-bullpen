@@ -241,9 +241,13 @@ export default function ParksPage() {
                 {stand === "R" ? "RHB" : "LHB"}, at each park. Bar length and
                 color show the absolute P(HR), so near-equal parks read as
                 near-equal.
+                {allParks.data.carryFtByPark
+                  ? " The carry column is the model's predicted carry distance (ft) at each park."
+                  : ""}
               </p>
               <ParkHrHeatmap
                 probHrByPark={allParks.data.probHrByPark}
+                carryFtByPark={allParks.data.carryFtByPark}
                 parkRows={PARK_ROWS}
               />
             </>
