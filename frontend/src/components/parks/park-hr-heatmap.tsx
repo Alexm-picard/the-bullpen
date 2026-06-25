@@ -17,14 +17,32 @@ import { viridis } from "./_viridis";
 export type ParkHrHeatmapProps = {
   /** Park id (3-letter abbrev) -> model P(HR) in [0, 1] for the chosen launch condition. */
   probHrByPark: Record<string, number>;
+  /**
+   * Phase 4 (optional): park id -> the model's predicted carry distance in feet. Present only when
+   * the serving champion has a carry head; when undefined the carry column is hidden and the layout
+   * is exactly as before (the current probabilities-only champion).
+   */
+  carryFtByPark?: Record<string, number>;
   /** Park metadata for the human-readable name; falls back to the id when absent. */
   parkRows: ParkRow[];
 };
 
-export function ParkHrHeatmap({ probHrByPark, parkRows }: ParkHrHeatmapProps) {
+export function ParkHrHeatmap({
+  probHrByPark,
+  carryFtByPark,
+  parkRows,
+}: ParkHrHeatmapProps) {
   const nameById = new Map(parkRows.map((p) => [p.id, p.parkName]));
+  const hasCarry = carryFtByPark != null;
+  // Carry column added only when the champion serves carry; otherwise the grid is unchanged.
+  const gridCols = hasCarry ? "28px 52px 1fr 64px 72px" : "28px 52px 1fr 64px";
   const entries = Object.entries(probHrByPark)
-    .map(([id, p]) => ({ id, p, name: nameById.get(id) ?? id }))
+    .map(([id, p]) => ({
+      id,
+      p,
+      name: nameById.get(id) ?? id,
+      carry: carryFtByPark?.[id],
+    }))
     .sort((a, b) => b.p - a.p);
 
   if (entries.length === 0) {
@@ -52,7 +70,7 @@ export function ParkHrHeatmap({ probHrByPark, parkRows }: ParkHrHeatmapProps) {
             id={`park-hr-row-${e.id}`}
             style={{
               display: "grid",
-              gridTemplateColumns: "28px 52px 1fr 64px",
+              gridTemplateColumns: gridCols,
               alignItems: "center",
               gap: 10,
               padding: "5px 8px",
@@ -125,6 +143,20 @@ export function ParkHrHeatmap({ probHrByPark, parkRows }: ParkHrHeatmapProps) {
             >
               {(e.p * 100).toFixed(1)}%
             </span>
+            {hasCarry && (
+              <span
+                style={{
+                  fontFamily: typography.fonts.mono,
+                  fontFeatureSettings: '"tnum" 1',
+                  fontSize: 12,
+                  color: colors.textMuted,
+                  textAlign: "right",
+                }}
+                title="Model-predicted carry distance at this park"
+              >
+                {e.carry != null ? `${Math.round(e.carry)} ft` : "-"}
+              </span>
+            )}
           </div>
         );
       })}
