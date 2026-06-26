@@ -50,6 +50,7 @@ from bullpen_training.battedball.mlp.train import CARRY_MEAN_FT, CARRY_STD_FT
 from bullpen_training.eval.cv_harness import FOLDS, CVResult, FoldResult, FoldSpec
 from bullpen_training.eval.metrics import multiclass_brier
 from bullpen_training.eval.promotion.criteria import (
+    PromotionCriteria,
     criteria_for,
     evaluate_challenger_vs_baseline,
 )
@@ -181,12 +182,22 @@ def run_faithful_cv(
     carry_gate_result: CarryGateResult,
     folds: Sequence[FoldSpec] = FOLDS,
     rows_per_year: int = 0,
+    criteria: PromotionCriteria | None = None,
+    model_name: str = CRITERIA_MODEL_NAME,
+    baseline_name: str = BASELINE_NAME,
+    challenger_name: str = FAITHFUL_CHALLENGER_NAME,
 ) -> tuple[EvidenceRun, CarryGateResult]:
     """Run the faithful rolling-origin CV and build the ``experiment_results``-shaped EvidenceRun.
 
     The verdict is computed on the FINAL fold's home-park test (challenger vs baseline), exactly as
     the driver does; the per-fold Brier feeds the CV summary. ``carry_gate_result`` is the served
     architecture's carry sanity (built by the caller from the final-fold model). No promotion.
+
+    Defaults reproduce the faithful eval (challenger=served MLP vs the LR ``baseline``, criteria
+    ``batted_ball_mlp``). The carry-PROMOTION eval (``carry_promotion_eval``) reuses this
+    orchestration with ``criteria`` = the NON-INFERIORITY criteria + a ``baseline`` that is the
+    no-carry MLP recipe (v1's method) and the names relabelled accordingly - so the FoldRunner there
+    returns (carry-MLP challenger, no-carry-MLP baseline) instead of (MLP, LR).
     """
     if not folds:
         raise ValueError("no folds")
@@ -210,7 +221,7 @@ def run_faithful_cv(
         final = pred
 
     assert final is not None
-    criteria = criteria_for(CRITERIA_MODEL_NAME)
+    criteria = criteria if criteria is not None else criteria_for(CRITERIA_MODEL_NAME)
     verdict = evaluate_challenger_vs_baseline(
         criteria=criteria,
         y_true_int=final.y_true_int,
@@ -226,13 +237,13 @@ def run_faithful_cv(
         challenger_retro_ece = _aggregate_retro_ece(final.challenger_proba, final.retro)
         baseline_retro_ece = _aggregate_retro_ece(final.baseline_proba, final.retro)
     run = EvidenceRun(
-        model_name=CRITERIA_MODEL_NAME,
+        model_name=model_name,
         criteria=criteria,
         baseline_cv=_cv_result(base_fold),
         challenger_cv=_cv_result(chal_fold),
         verdict=verdict,
-        baseline_name=BASELINE_NAME,
-        challenger_name=FAITHFUL_CHALLENGER_NAME,
+        baseline_name=baseline_name,
+        challenger_name=challenger_name,
         final_fold_id=final.fold_id,
         final_test_year=final.test_year,
         sample_root=Path("clickhouse://bbip_retrodicted_labels"),
