@@ -1,0 +1,179 @@
+{
+  "schema_version": 1,
+  "artifact_name": "promotion_evidence",
+  "data_source": "full",
+  "data_source_note": "FULL-box data evidence for the LIVE/CHAMPION promotion gate (operator hand-off H2) - this is the row the promote-model skill reads. No promotion is performed here (rule 6); promotion stays human-gated.",
+  "model_name": "batted_ball_mlp",
+  "champion_model_name": "batted_ball_lr_baseline",
+  "challenger_model_name": "battedball_outcome",
+  "primary_metric": "brier",
+  "primary_threshold": 0.003,
+  "guardrails": {
+    "log-loss": 0.01,
+    "ece": 0.015
+  },
+  "sample_size_target": 2000,
+  "sample_size_observed": 123345,
+  "champion_metric": 0.08602912239750941,
+  "challenger_metric": 0.11655708503297392,
+  "guardrails_observed": {
+    "log-loss": 0.8387543224882437,
+    "ece": 0.2563900163719373
+  },
+  "guardrails_violated": {
+    "log-loss": 0.8387543224882437,
+    "ece": 0.2563900163719373
+  },
+  "status": "failed",
+  "verdict": {
+    "outcome": "would_fail_guardrail",
+    "passed": false,
+    "sample_size_met": true,
+    "supplementary_checks_passed": true,
+    "primary_margin_required": 0.003,
+    "primary_margin_observed": -0.030527962635464506
+  },
+  "supplementary_checks": [
+    {
+      "name": "absolute_ece_phase2_bar",
+      "metric": "ece_vs_retro",
+      "max_allowed": 0.02,
+      "observed": 0.012683203757957739,
+      "passed": true,
+      "rationale": "Phase-2 exit bar ([141]/[51]). batted-ball uses ece_vs_retro (per-class ECE vs the retro distribution) - but the champion is calibrated TO that retrodiction, so this is a SELF-REFERENTIAL physics-calibration check, NOT reality. See calibration_note + the reality label-ECE in *_full_metrics.ece."
+    }
+  ],
+  "pre_declared_criteria": {
+    "primary_metric": "brier",
+    "primary_threshold": 0.003,
+    "sample_size_target": 2000,
+    "guardrails": [
+      {
+        "metric": "log-loss",
+        "max_delta": 0.01,
+        "rationale": "per-park MLP log-loss may not regress > 0.01 vs the LR baseline (guards a Brier win that masks confident-wrong blowups on rare extra-base outcomes)."
+      },
+      {
+        "metric": "ece",
+        "max_delta": 0.015,
+        "rationale": "per-park MLP ECE may not regress > 0.015 vs the LR baseline (sample-stage allowance: the per-model ECE estimate is noisy at sample scale, so the RELATIVE bar is loose; absolute calibration is gated by absolute_ece_bar below)."
+      }
+    ],
+    "absolute_ece_bar": 0.02,
+    "rationale": "per-park batted-ball MLP champion (one model per park, trained on the retrodicted outcome distribution via KL) vs the rule-9 co-registered LR baseline. Calibration gated by a loose relative ECE guardrail (sample noise) + the absolute Phase-2 ECE bar."
+  },
+  "champion_full_metrics": {
+    "brier": 0.08602912239750941,
+    "log_loss": 0.7471531413931936,
+    "ece": 0.01647799200853652,
+    "ece_vs_retro": 0.06177700071330096
+  },
+  "challenger_full_metrics": {
+    "brier": 0.11655708503297392,
+    "log_loss": 1.5859074638814372,
+    "ece": 0.2728680083804738,
+    "ece_vs_retro": 0.012683203757957739
+  },
+  "calibration_note": "ece_vs_retro is the [141]/[51] gate metric (per-class ECE vs the retro distribution) - SELF-REFERENTIAL: the champion is calibrated TO the retrodiction, so a low value proves agreement with the physics sim, NOT reality. `ece` (vs the realized label) is the reality measure and is mediocre, bounded by the weak retrodiction (rho~0.30 vs reality, [141]'s documented future work). This model is a calibrated PHYSICS ESTIMATE, not a reality-validated predictor.",
+  "rolling_origin_cv": {
+    "folds": [
+      {
+        "fold_id": 1,
+        "train_start_year": 2015,
+        "train_end_year": 2020,
+        "val_year": 2021,
+        "test_year": 2022
+      },
+      {
+        "fold_id": 2,
+        "train_start_year": 2015,
+        "train_end_year": 2021,
+        "val_year": 2022,
+        "test_year": 2023
+      },
+      {
+        "fold_id": 3,
+        "train_start_year": 2015,
+        "train_end_year": 2022,
+        "val_year": 2023,
+        "test_year": 2024
+      },
+      {
+        "fold_id": 4,
+        "train_start_year": 2015,
+        "train_end_year": 2023,
+        "val_year": 2024,
+        "test_year": 2025
+      }
+    ],
+    "champion_summary": {
+      "brier": {
+        "mean": 0.08610322522173236,
+        "std": 0.0002481545771362786
+      }
+    },
+    "challenger_summary": {
+      "brier": {
+        "mean": 0.11649619079222781,
+        "std": 0.00041296044220462814
+      }
+    }
+  },
+  "verdict_fold": {
+    "fold_id": 4,
+    "test_year": 2025
+  },
+  "provenance": {
+    "git_commit": "c0ed14ee6e07d9b3a3f5d09b2ed189d915e81afb",
+    "generated_at": "2026-06-26T15:05:17+00:00",
+    "sample_root": "clickhouse:/bbip_retrodicted_labels",
+    "loader": "per_year_mirror",
+    "rows_per_year": 0,
+    "segment_cols": [
+      "park"
+    ],
+    "rule_13_holdout": "2026 excluded from every split (sample mirror is 2015-2025 only)",
+    "split_discipline": "rolling-origin temporal CV; no random_state on any split",
+    "mlp_calibration": "isotonic"
+  },
+  "faithful_eval": {
+    "challenger_arch": "battedball_outcome (shared-backbone BattedBallMLP, the served graph)",
+    "note": "Faithful rolling-origin CV of the ACTUAL served architecture (not the driver's PerParkMLP proxy): trained on 30-park retro labels, scored on home-park realized outcome. Carry head sanity-gated.",
+    "calibration": "raw_softmax_uncalibrated (served path adds per-park isotonic; the absolute ECE bar here reflects the UNCALIBRATED model)",
+    "loader": "clickhouse + gpu (load_arrays 30-park train, home-park realized scoring)",
+    "carry_gate_passed": true,
+    "carry_gate_reasons": [],
+    "carry_per_park_ft": {
+      "ATH": 413.35046768188477,
+      "ATL": 425.7475471496582,
+      "AZ": 422.0162582397461,
+      "BAL": 417.1402359008789,
+      "BOS": 413.48623275756836,
+      "CHC": 418.85467529296875,
+      "CIN": 420.59072494506836,
+      "CLE": 419.3760108947754,
+      "COL": 439.55589294433594,
+      "CWS": 418.80884170532227,
+      "DET": 418.84559631347656,
+      "HOU": 416.34693145751953,
+      "KC": 423.15258026123047,
+      "LAA": 417.54446029663086,
+      "LAD": 419.1322326660156,
+      "MIA": 417.0907974243164,
+      "MIL": 419.7723197937012,
+      "MIN": 419.8223686218262,
+      "NYM": 414.47132110595703,
+      "NYY": 414.5448684692383,
+      "PHI": 415.18117904663086,
+      "PIT": 420.0316047668457,
+      "SD": 414.5553207397461,
+      "SEA": 413.18408966064453,
+      "SF": 412.1761894226074,
+      "STL": 420.41311264038086,
+      "TB": 415.60842514038086,
+      "TEX": 418.5365104675293,
+      "TOR": 416.6581726074219,
+      "WSH": 416.9464302062988
+    }
+  }
+}
