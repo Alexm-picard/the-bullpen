@@ -192,13 +192,22 @@ def test_all_registered_models_have_criteria() -> None:
         "pitch_outcome_post",
         "batted_ball_lr_baseline",
         "batted_ball_mlp",
+        # carry champion promotion (decision [166]) - a NON-INFERIORITY criteria vs the current
+        # champion v1, distinct from the beats-LR "batted_ball_mlp" criteria.
+        "battedball_outcome",
     }
 
 
 def test_criteria_are_pre_declared_with_required_rule5_fields() -> None:
     for name, c in CRITERIA_BY_MODEL.items():
         assert c.model_name == name
-        assert c.primary_threshold >= 0.0  # margin in metric units
+        if name == "battedball_outcome":
+            # NON-INFERIORITY criteria (decision [166]): a NEGATIVE threshold is the non-inferiority
+            # margin (the challenger may be up to |threshold| WORSE than the champion). Bounded so
+            # it can never silently admit a large outcome regression.
+            assert -0.01 <= c.primary_threshold < 0.0
+        else:
+            assert c.primary_threshold >= 0.0  # superiority margin in metric units
         assert c.sample_size_target > 0
         assert c.guardrails, f"{name} declares no guardrails"
         # guardrails map uses Java db metric names.

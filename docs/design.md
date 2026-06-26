@@ -265,7 +265,10 @@ Before any experiment, write down:
 
 - Primary metric (e.g., Brier score on shadow predictions)
 - Sample size (e.g., 50,000 paired predictions)
-- Threshold (e.g., challenger must beat champion by ≥ 0.005 Brier)
+- Threshold (e.g., challenger must beat champion by ≥ 0.005 Brier). The threshold can also be a
+  NON-INFERIORITY margin (a negative threshold: "may not regress by more than X") for an
+  additive-capability upgrade of an already-serving model - i.e. a model whose honest claim over the
+  champion is a new capability, not a metric win (see ADR-0012 / decision [166], the carry champion).
 - Guardrails (no regression on calibration error, per-class log loss, p99 latency)
 
 Promotion requires a row in `experiment_results` showing criteria were

@@ -95,6 +95,10 @@ N_CLASSES: Final[dict[str, int]] = {
     "pitch_outcome_post": 5,
     "batted_ball_lr_baseline": 5,
     "batted_ball_mlp": 5,
+    # The served-champion REGISTRY name (decision [166]). Defensive/consistency only: the carry
+    # promotion path bypasses run_evidence (the sole N_CLASSES consumer), so SEGMENT_COLS below is
+    # the load-bearing add (read by experiment_results_artifact). Same per-park 5-outcome family.
+    "battedball_outcome": 5,
 }
 
 # segment columns used by the per-segment breakdown in the artifact - chosen
@@ -104,6 +108,8 @@ SEGMENT_COLS: Final[dict[str, tuple[str, ...]]] = {
     "pitch_outcome_post": ("count_strikes", "batter_stand_int"),
     "batted_ball_lr_baseline": ("stand_R",),
     "batted_ball_mlp": ("park",),
+    # carry-promotion eval evidences the served champion under its registry name (decision [166]).
+    "battedball_outcome": ("park",),
 }
 
 

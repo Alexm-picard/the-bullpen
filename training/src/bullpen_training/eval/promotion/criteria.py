@@ -424,11 +424,70 @@ _BATTED_BALL_MLP = PromotionCriteria(
 )
 
 
+# ---------------------------------------------------------------------------
+# Carry champion (battedball_outcome v2) promotion criteria - NON-INFERIORITY, not
+# beats-a-baseline. See decision [166] (+ [141]/[163]/[154]/ADR-0011/[150]/[72]).
+#
+# WHY THIS IS DIFFERENT from _BATTED_BALL_MLP above: that criteria evidences the MLP vs the
+# rule-9 LR baseline. The served batted-ball champion does NOT beat the LR baseline on REALIZED
+# outcomes (v1 Brier ~0.107 / v2 ~0.117 vs LR ~0.086) - by design: it is a calibrated per-park
+# PHYSICS ESTIMATE ([141]/[163]), and v1 itself serves only via the first-champion bootstrap (it
+# never produced a passing beats-LR row). So a beats-LR gate is the WRONG primary for promoting
+# v2 over v1; that realized-vs-LR gap is carried as a documented, NON-GATING fact, not the gate.
+#
+# v2 = v1's exact outcome model + an ADDITIVE per-park carry head (PR-3/4, schema_hash unchanged).
+# The only honest promotion question is: does adding the carry objective REGRESS the served
+# outcome? -> a NON-INFERIORITY test of v2 (carry recipe) vs v1 (no-carry recipe = v1's method),
+# paired on identical rolling-origin folds. The negative ``primary_threshold`` is the
+# non-inferiority margin: WOULD_PASS iff ``chal_brier + threshold <= base_brier`` i.e.
+# ``v2_brier <= v1_brier + 0.002`` - "v2's outcome Brier may not be WORSE than v1's by more than
+# 0.002". The carry head's physical plausibility is a SEPARATE hard gate (carry_gate, applied by
+# the carry-promotion eval), not expressible in this challenger-vs-baseline shape.
+# ---------------------------------------------------------------------------
+
+
+_BATTED_BALL_CARRY = PromotionCriteria(
+    model_name="battedball_outcome",
+    primary_metric=PrimaryMetric.BRIER,
+    # NON-INFERIORITY margin (negative threshold): v2 (carry) may be at most 0.002 multiclass-Brier
+    # WORSE than v1 (no-carry) on the home-park realized outcome. ~2% of the ~0.11 realized Brier
+    # and ~5x the rolling-origin fold std (~0.0004), so it tolerates run-to-run + carry noise
+    # without admitting a real outcome regression. NOT a beats-baseline margin (see header).
+    primary_threshold=-0.002,
+    sample_size_target=2_000,
+    guardrails=(
+        GuardrailSpec(
+            metric=PrimaryMetric.LOG_LOSS,
+            max_delta=0.01,
+            rationale="v2 (carry) log-loss may not regress > 0.01 vs v1 (no-carry) "
+            "(guards a Brier non-inferiority that hides confident-wrong outcome blowups).",
+        ),
+        GuardrailSpec(
+            metric=PrimaryMetric.ECE,
+            max_delta=0.015,
+            rationale="v2 (carry) raw-softmax ECE may not regress > 0.015 vs v1 (no-carry); the "
+            "served per-park isotonic calibration is applied equally downstream, so this guards "
+            "the underlying outcome head, not the served calibration.",
+        ),
+    ),
+    # No absolute ECE bar: this is an outcome NON-INFERIORITY of two raw-softmax heads (the absolute
+    # calibration gate is the served per-park isotonic, fit + verified at registration). An absolute
+    # raw-ECE bar would fail by construction (uncalibrated) and is not the question here.
+    absolute_ece_bar=None,
+    rationale="carry champion v2 vs the current champion v1 (battedball_outcome): outcome "
+    "NON-INFERIORITY (Brier within 0.002, log-loss/ECE non-regression) + a SEPARATE hard carry "
+    "sanity gate. The realized-Brier-vs-LR gap is the documented [141]/[163] reality gap, NOT this "
+    "gate (this model is a calibrated per-park physics ESTIMATE; v1 serves on the bootstrap). "
+    "See decision [166].",
+)
+
+
 CRITERIA_BY_MODEL: Final[dict[str, PromotionCriteria]] = {
     _PITCH_PRE.model_name: _PITCH_PRE,
     _PITCH_POST.model_name: _PITCH_POST,
     _BATTED_BALL_LR.model_name: _BATTED_BALL_LR,
     _BATTED_BALL_MLP.model_name: _BATTED_BALL_MLP,
+    _BATTED_BALL_CARRY.model_name: _BATTED_BALL_CARRY,
 }
 
 
