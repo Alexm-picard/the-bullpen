@@ -49,6 +49,19 @@ export type LivePitchRow = {
   /** Per-pitch model prediction at release (leaf 4d.2). Null if no prediction logged. */
   predictedClasses: Record<string, number> | null;
   predictedWinner: string | null;
+  /**
+   * Batted-ball physics (Phase 1.2). Populated ONLY on in-play rows, null
+   * otherwise: the live game page builds the per-park batted-ball card from the
+   * most recent in-play pitch that carries launchSpeedMph + launchAngleDeg.
+   * Field names mirror the BattedBallRow contract (players.ts) so a single
+   * launch-data shape flows across surfaces.
+   */
+  launchSpeedMph: number | null;
+  launchAngleDeg: number | null;
+  hitDistanceFt: number | null;
+  bbType: string | null;
+  /** Realized outcome / events for the in-play ball (e.g. "home_run", "field_out"). */
+  event: string | null;
 };
 
 export class GameApiError extends Error {

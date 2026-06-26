@@ -120,12 +120,22 @@ class GameControllerTest {
                     0,
                     0,
                     null,
-                    null)));
+                    null,
+                    102.5,
+                    28.0,
+                    412.0,
+                    "fly_ball",
+                    "home_run")));
 
     mvc.perform(get("/v1/games/777001/pitches"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$[0].description").value("called_strike"))
-        .andExpect(jsonPath("$[0].cursor").value(101));
+        .andExpect(jsonPath("$[0].cursor").value(101))
+        .andExpect(jsonPath("$[0].launchSpeedMph").value(102.5))
+        .andExpect(jsonPath("$[0].launchAngleDeg").value(28.0))
+        .andExpect(jsonPath("$[0].hitDistanceFt").value(412.0))
+        .andExpect(jsonPath("$[0].bbType").value("fly_ball"))
+        .andExpect(jsonPath("$[0].event").value("home_run"));
     verify(repo).findPitchesSince(777001L, 0L);
   }
 

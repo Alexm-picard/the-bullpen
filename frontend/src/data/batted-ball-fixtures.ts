@@ -42,6 +42,19 @@ export type BattedBall = {
   parks: ParkOutcome[];
   /** Park names shown by default; the rest are addable via the dropdown. */
   defaultShown: string[];
+  /**
+   * Served model identity for the masthead (the project rule: a displayed prediction names its
+   * calibration source). The showcase pins its editorial value; the live path fills the real
+   * served champion from the all-parks response.
+   */
+  modelName?: string;
+  modelVersion?: string;
+  /**
+   * One-line editorial under the per-park grid. The showcase pins its prose; the live path OMITS
+   * it (a hardcoded "caught at the track" would contradict a real result) - the real outcome is
+   * the headline `result` + the per-park chips.
+   */
+  narrative?: string;
 };
 
 export const SHOWCASE_BATTED_BALL: BattedBall = {
@@ -54,6 +67,9 @@ export const SHOWCASE_BATTED_BALL: BattedBall = {
   xba: ".540",
   hrParkCount: 17,
   parkCount: 30,
+  modelName: "batted_ball",
+  modelVersion: "v1.4",
+  narrative: "Here it was caught at the track - the model’s whole point.",
   defaultShown: [
     "Comerica (here)",
     "Yankee Stadium",

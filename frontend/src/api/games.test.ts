@@ -44,6 +44,11 @@ const PITCH: LivePitchRow = {
   awayScore: 0,
   predictedClasses: null,
   predictedWinner: null,
+  launchSpeedMph: null,
+  launchAngleDeg: null,
+  hitDistanceFt: null,
+  bbType: null,
+  event: null,
 };
 
 describe("statusPollIntervalMs", () => {

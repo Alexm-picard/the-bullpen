@@ -16,6 +16,15 @@ import java.util.Map;
  * has a row keyed to {@code (game_id, at_bat_index, pitch_number)}, and null otherwise (the model
  * may have missed the live cutoff, or {@code prediction_log} isn't carrying traffic yet). The
  * frontend renders an "n/a" placeholder per the leaf's known-edge-case.
+ *
+ * <p>{@code launchSpeedMph}, {@code launchAngleDeg}, {@code hitDistanceFt}, {@code bbType}, and
+ * {@code event} (Phase 1.2) come from the canonical {@code pitches} table (V003) via a LEFT JOIN on
+ * the natural pitch key, populated only once the overnight handoff job has moved the row out of
+ * {@code pitches_live}. The four batted-ball MEASUREMENTS (launch speed/angle, distance, bb_type)
+ * are in-play-only - null on non-in-play pitches. {@code event} is the plate-appearance-terminal
+ * Statcast outcome, so it is non-null for ANY backfilled terminal pitch (a strikeout/walk has a
+ * non-null {@code event} but null measurements); the game page only reads it for the in-play BIP it
+ * selects. All are null on any pitch not yet backfilled into {@code pitches} (the LEFT JOIN miss).
  */
 public record LivePitchRow(
     long gameId,
@@ -37,4 +46,9 @@ public record LivePitchRow(
     int homeScore,
     int awayScore,
     Map<String, Double> predictedClasses,
-    String predictedWinner) {}
+    String predictedWinner,
+    Double launchSpeedMph,
+    Double launchAngleDeg,
+    Double hitDistanceFt,
+    String bbType,
+    String event) {}

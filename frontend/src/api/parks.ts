@@ -79,10 +79,18 @@ export const CANONICAL_BBE_INPUT: AllParksRequest = {
   outs: 0,
 };
 
-export function useAllParksPrediction(req: AllParksRequest) {
+export function useAllParksPrediction(
+  req: AllParksRequest,
+  opts: { enabled?: boolean } = {},
+) {
   return useQuery<AllParksResponse, ParksApiError>({
     queryKey: ["parks", "all-parks", req],
     queryFn: () => predictAllParks(req),
     staleTime: 30_000,
+    // POST /v1/predict/batted-ball/all-parks logs EVERY request to prediction_log (the drift
+    // baseline source). /parks shows the prediction, so it always fetches; callers that would
+    // otherwise fire a throwaway prediction (e.g. the game page with no live BIP) must pass
+    // enabled:false so they don't pollute the drift baselines with never-shown predictions.
+    enabled: opts.enabled ?? true,
   });
 }

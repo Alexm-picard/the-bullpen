@@ -61,6 +61,13 @@ public class LivePitchesRepository {
           + " pl.plate_x_in AS plate_x_in, pl.plate_z_in AS plate_z_in,"
           + " pl.balls AS balls, pl.strikes AS strikes, pl.outs AS outs,"
           + " pl.inning AS inning, pl.home_score AS home_score, pl.away_score AS away_score,"
+          // Realized batted-ball outcome (Phase 1.2). pitches_live carries no such columns (the
+          // live feed is pre-Statcast), so LEFT JOIN the canonical pitches table (V003) on the
+          // natural pitch key. Null on non-in-play pitches and on any pitch the overnight handoff
+          // job has not yet moved into pitches (the LEFT JOIN miss); the mapper maps '' -> null for
+          // the LowCardinality(String) columns.
+          + " ph.launch_speed_mph AS launch_speed_mph, ph.launch_angle_deg AS launch_angle_deg,"
+          + " ph.hit_distance_ft AS hit_distance_ft, ph.bb_type AS bb_type, ph.events AS events,"
           + " pred.prediction AS prediction_json"
           + " FROM pitches_live AS pl FINAL"
           // One champion prediction per pitch: predict-next re-logs the same upcoming pitch on
@@ -76,6 +83,23 @@ public class LivePitchesRepository {
           + " ) AS pred"
           + " ON pred.game_id = pl.game_id AND pred.at_bat_index = pl.at_bat_index"
           + "    AND pred.pitch_number = pl.pitch_number"
+          // Batted-ball outcome join (Phase 1.2): pitches is a ReplacingMergeTree(ingested_at) on
+          // the same natural key, so dedup to the latest version per pitch via argMax(col,
+          // ingested_at) - mirrors the prediction_log idiom above and avoids FINAL on the large
+          // historical table. game_id is pruned in the subquery (the 2nd outer bind).
+          + " LEFT JOIN ("
+          + "   SELECT game_id, at_bat_index, pitch_number,"
+          + "          argMax(launch_speed_mph, ingested_at) AS launch_speed_mph,"
+          + "          argMax(launch_angle_deg, ingested_at) AS launch_angle_deg,"
+          + "          argMax(hit_distance_ft, ingested_at) AS hit_distance_ft,"
+          + "          argMax(bb_type, ingested_at) AS bb_type,"
+          + "          argMax(events, ingested_at) AS events"
+          + "   FROM pitches"
+          + "   WHERE game_id = ?"
+          + "   GROUP BY game_id, at_bat_index, pitch_number"
+          + " ) AS ph"
+          + " ON ph.game_id = pl.game_id AND ph.at_bat_index = pl.at_bat_index"
+          + "    AND ph.pitch_number = pl.pitch_number"
           + " WHERE pl.game_id = ? AND (pl.at_bat_index * 100 + pl.pitch_number) > ?"
           + " ORDER BY cursor ASC LIMIT 500";
 
@@ -251,8 +275,9 @@ public class LivePitchesRepository {
   }
 
   public List<LivePitchRow> findPitchesSince(long gameId, long sinceCursor) {
-    // Params: subquery game_id (prunes prediction_log to this game), outer game_id, cursor.
-    return jdbc.query(FIND_PITCHES_SINCE, PITCH_MAPPER, gameId, gameId, sinceCursor);
+    // Params, in SQL order: prediction_log subquery game_id, pitches subquery game_id (batted-ball
+    // join), outer pl.game_id, cursor.
+    return jdbc.query(FIND_PITCHES_SINCE, PITCH_MAPPER, gameId, gameId, gameId, sinceCursor);
   }
 
   /**
@@ -437,12 +462,26 @@ public class LivePitchesRepository {
             // Truth-join (step 5): the latest champion prediction keyed to this pitch, or null when
             // none was logged (LEFT JOIN miss -> empty string -> the frontend's "n/a" path).
             pred.classes(),
-            pred.winner());
+            pred.winner(),
+            // Realized batted-ball outcome from the pitches LEFT JOIN (Phase 1.2): null on
+            // non-in-play pitches and on rows not yet moved over by the overnight handoff.
+            // emptyToNull collapses the LowCardinality '' default (LEFT JOIN miss / non-in-play) to
+            // null per the pinned contract.
+            nullable(rs, "launch_speed_mph"),
+            nullable(rs, "launch_angle_deg"),
+            nullable(rs, "hit_distance_ft"),
+            emptyToNull(rs.getString("bb_type")),
+            emptyToNull(rs.getString("events")));
       };
 
   private static Double nullable(ResultSet rs, String col) throws java.sql.SQLException {
     double v = rs.getDouble(col);
     return rs.wasNull() ? null : v;
+  }
+
+  /** Collapse the LowCardinality(String) '' default (LEFT JOIN miss / non-in-play) to null. */
+  private static String emptyToNull(String s) {
+    return s == null || s.isEmpty() ? null : s;
   }
 
   /**

@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Locale;
 import java.util.TimeZone;
 import java.util.UUID;
 import net.thebullpen.baseball.api.dto.GameSummary;
@@ -89,6 +90,7 @@ class LivePitchesRepositoryIT {
     try (var conn = clickhouseDs.getConnection();
         var stmt = conn.createStatement()) {
       stmt.execute("TRUNCATE TABLE IF EXISTS pitches_live");
+      stmt.execute("TRUNCATE TABLE IF EXISTS pitches");
       stmt.execute("TRUNCATE TABLE IF EXISTS prediction_log");
       stmt.execute("TRUNCATE TABLE IF EXISTS live_game_status");
       stmt.execute("TRUNCATE TABLE IF EXISTS scheduled_games");
@@ -128,6 +130,43 @@ class LivePitchesRepositoryIT {
                   + " home_score, away_score, home_team, away_team) VALUES"
                   + " (%d, %d, %d, '%s', 1, 1, 'ball', 0, 0, 0, %d, 2, 3, '%s', '%s')",
               gameId, atBat, pitch, date, inning, home, away));
+    }
+  }
+
+  /**
+   * Insert a row into the canonical {@code pitches} table (V003), mimicking the overnight handoff
+   * job that moves an in-play pitch over with its realized batted-ball metrics. Same natural key as
+   * {@code pitches_live}, so the FIND_PITCHES_SINCE LEFT JOIN matches on (game_id, at_bat_index,
+   * pitch_number).
+   */
+  private void insertCanonicalPitch(
+      long gameId,
+      LocalDate date,
+      int atBat,
+      int pitch,
+      double launchSpeed,
+      double launchAngle,
+      double hitDistance,
+      String bbType,
+      String event)
+      throws Exception {
+    try (var conn = clickhouseDs.getConnection();
+        var stmt = conn.createStatement()) {
+      stmt.execute(
+          String.format(
+              Locale.ROOT,
+              "INSERT INTO pitches (game_id, game_date, at_bat_index, pitch_number, description,"
+                  + " events, launch_speed_mph, launch_angle_deg, hit_distance_ft, bb_type)"
+                  + " VALUES (%d, '%s', %d, %d, 'in_play', '%s', %f, %f, %f, '%s')",
+              gameId,
+              date,
+              atBat,
+              pitch,
+              event,
+              launchSpeed,
+              launchAngle,
+              hitDistance,
+              bbType));
     }
   }
 
@@ -248,6 +287,9 @@ class LivePitchesRepositoryIT {
     assertEquals("hit_by_pitch", hbp.description());
     assertEquals(2, hbp.balls());
     assertEquals(2, hbp.strikes());
+    // No canonical pitches backfill in this test -> the batted-ball LEFT JOIN misses -> null.
+    assertNull(hbp.launchSpeedMph());
+    assertNull(hbp.bbType());
 
     // And the game surfaces on its real date through the same read path the /v1/games API uses
     // (this also re-exercises the toDate(?) String binding from the Code 43 fix, now on real data).
@@ -300,6 +342,35 @@ class LivePitchesRepositoryIT {
         "in_play",
         pitch(repo.findPitchesSince(824753L, 0L), 1, 1).predictedWinner(),
         "argMax(request_at) keeps the latest prediction");
+  }
+
+  @Test
+  void findPitchesSince_left_joins_the_batted_ball_outcome_from_pitches() throws Exception {
+    LocalDate date = LocalDate.of(2026, 6, 4);
+    // Two live pitches on the same game. The overnight handoff has moved only pitch (1,2) into the
+    // canonical pitches table with its realized batted-ball metrics; (1,1) has no pitches row yet.
+    insertPitch(900L, date, 1, 1, "BOS", "NYY", 1);
+    insertPitch(900L, date, 1, 2, "BOS", "NYY", 1);
+    insertCanonicalPitch(900L, date, 1, 2, 102.5, 28.0, 412.0, "fly_ball", "home_run");
+
+    List<LivePitchRow> rows = repo.findPitchesSince(900L, 0L);
+    LivePitchRow inPlay = pitch(rows, 1, 2);
+    LivePitchRow notBackfilled = pitch(rows, 1, 1);
+
+    // The backfilled in-play pitch carries the batted-ball outcome via the pitches LEFT JOIN.
+    assertEquals(102.5, inPlay.launchSpeedMph(), 1e-4);
+    assertEquals(28.0, inPlay.launchAngleDeg(), 1e-4);
+    assertEquals(412.0, inPlay.hitDistanceFt(), 1e-4);
+    assertEquals("fly_ball", inPlay.bbType());
+    assertEquals("home_run", inPlay.event());
+
+    // No canonical pitches row -> LEFT JOIN miss -> all five batted-ball fields null (Nullable
+    // columns null directly; the LowCardinality '' default collapses to null in the mapper).
+    assertNull(notBackfilled.launchSpeedMph(), "no canonical pitches row -> null launch speed");
+    assertNull(notBackfilled.launchAngleDeg());
+    assertNull(notBackfilled.hitDistanceFt());
+    assertNull(notBackfilled.bbType(), "LEFT JOIN miss -> '' -> null");
+    assertNull(notBackfilled.event());
   }
 
   @Test
