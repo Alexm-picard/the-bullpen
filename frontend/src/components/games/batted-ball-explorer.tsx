@@ -282,7 +282,8 @@ export function BattedBallExplorer({ data }: { data: BattedBall }) {
                 color: colors.ink,
               }}
             >
-              batted_ball v1.4 · per-park heads
+              {data.modelName ?? "batted_ball"} {data.modelVersion ?? "v1.4"} ·
+              per-park heads
             </span>
             <span
               style={{
@@ -313,7 +314,7 @@ export function BattedBallExplorer({ data }: { data: BattedBall }) {
             <strong>
               home run in {data.hrParkCount} of {data.parkCount}
             </strong>
-            . Here it was caught at the track - the model&rsquo;s whole point.
+            .{data.narrative ? ` ${data.narrative}` : ""}
           </p>
 
           <div

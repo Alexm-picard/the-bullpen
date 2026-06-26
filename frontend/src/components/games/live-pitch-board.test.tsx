@@ -32,6 +32,11 @@ function pitch(over: Partial<LivePitchRow> = {}): LivePitchRow {
     awayScore: 1,
     predictedClasses: null,
     predictedWinner: null,
+    launchSpeedMph: null,
+    launchAngleDeg: null,
+    hitDistanceFt: null,
+    bbType: null,
+    event: null,
     ...over,
   };
 }

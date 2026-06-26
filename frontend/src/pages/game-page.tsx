@@ -16,6 +16,7 @@
  * only. This page imports ONLY the broadcast token namespace ([160] migration
  * rule: one namespace per screen).
  */
+import { useMemo } from "react";
 import { useParams } from "react-router-dom";
 
 import {
@@ -24,6 +25,12 @@ import {
   type GameSummary,
   type LivePitchRow,
 } from "../api/games";
+import {
+  CANONICAL_BBE_INPUT,
+  useAllParksPrediction,
+  type AllParksRequest,
+  type AllParksResponse,
+} from "../api/parks";
 import { usePlayer } from "../api/players";
 import { BigStat } from "../components/broadcast/big-stat";
 import { BroadcastPanel } from "../components/broadcast/broadcast-panel";
@@ -32,7 +39,14 @@ import { Scorebug } from "../components/broadcast/scorebug";
 import { TickerStrip } from "../components/broadcast/ticker-strip";
 import { BattedBallExplorer } from "../components/games/batted-ball-explorer";
 import { LivePitchBoard } from "../components/games/live-pitch-board";
-import { SHOWCASE_BATTED_BALL } from "../data/batted-ball-fixtures";
+import { estimateLandingDistanceFt } from "../components/parks/estimate-landing";
+import {
+  SHOWCASE_BATTED_BALL,
+  type BattedBall,
+  type ParkOutcome,
+  type ParkOutcomeTone,
+} from "../data/batted-ball-fixtures";
+import { PARK_ROWS } from "../data/parks-fixtures";
 import { BUILD_DATE, BUILD_SHA } from "../build-info";
 import { colors, layouts, typography } from "../design/broadcast";
 
@@ -84,6 +98,118 @@ function tickerItems(pitches: LivePitchRow[]): string[] {
     );
 }
 
+// ── Phase 1.2: live batted-ball -> BattedBall mapping ────────────────────────
+//
+// The all-parks endpoint exposes P(HR) per park ONLY - not a full fielded-outcome
+// distribution. So the per-park chip is honestly HR-likelihood, NOT a fabricated
+// 1B/2B/3B/OUT: a park reads HR at/above HR_THRESHOLD, else "In play" (the ball
+// stays in the yard; the model makes no claim whether it's a hit or an out). The
+// actual realized result is the card's top-line `result` (from the live event).
+// hrParkCount uses the same HR_THRESHOLD so the headline and chips agree. err is a
+// fixed placeholder band because AllParksResponse carries no per-park uncertainty.
+const HR_THRESHOLD = 0.5;
+const CARRY_ERR_FT = 9;
+
+function titleCaseFromSnake(value: string): string {
+  return value
+    .split("_")
+    .map((w) => (w ? w[0]!.toUpperCase() + w.slice(1) : w))
+    .join(" ");
+}
+
+// Contact descriptor when bb_type is absent: derive a coarse hit class from the
+// launch angle so the sub-line still reads (mirrors the showcase "Fly ball ...").
+function bandFromLaunchAngle(deg: number): string {
+  if (deg < 10) return "Ground ball";
+  if (deg < 25) return "Line drive";
+  if (deg < 50) return "Fly ball";
+  return "Pop up";
+}
+
+function outcomeForProb(p: number): { outcome: string; tone: ParkOutcomeTone } {
+  // P(HR)-only model -> honest binary: likely-HR vs stays-in-play. No invented 2B.
+  if (p >= HR_THRESHOLD) return { outcome: "HR", tone: "hr" };
+  return { outcome: "In play", tone: "out" };
+}
+
+/**
+ * Map the most-recent in-play pitch + the all-parks prediction into the
+ * BattedBall the explorer consumes. The launch fields are guaranteed non-null by
+ * the caller's predicate; the park id -> name/team join mirrors <ParkHrHeatmap>.
+ * Per-park dist uses the model's carry when the champion serves one, else the
+ * BIP's own (estimated) distance; xBA is a placeholder (the endpoint has none).
+ */
+function buildLiveBattedBall(
+  inPlay: LivePitchRow,
+  pred: AllParksResponse,
+  batterName: string | undefined,
+  homeTeam: string | undefined,
+): BattedBall {
+  const exitVeloMph = inPlay.launchSpeedMph ?? 0;
+  const launchAngleDeg = inPlay.launchAngleDeg ?? 0;
+  const distanceFt = Math.round(
+    inPlay.hitDistanceFt ??
+      estimateLandingDistanceFt(exitVeloMph, launchAngleDeg),
+  );
+
+  const rowById = new Map(PARK_ROWS.map((row) => [row.id, row]));
+  const carry = pred.carryFtByPark;
+  const probEntries = Object.entries(pred.probHrByPark);
+
+  const parks: ParkOutcome[] = probEntries.map(([id, p]) => {
+    const row = rowById.get(id);
+    const { outcome, tone } = outcomeForProb(p);
+    const parkCarry = carry?.[id];
+    return {
+      park: row?.parkName ?? id,
+      team: row?.team ?? id,
+      outcome,
+      tone,
+      dist: parkCarry != null ? Math.round(parkCarry) : distanceFt,
+      err: CARRY_ERR_FT,
+      here: id === homeTeam,
+    };
+  });
+
+  const parkCount = probEntries.length;
+  const hrParkCount = probEntries.filter(([, p]) => p >= HR_THRESHOLD).length;
+
+  // Default-shown: the home park (pinned) first, then the most interesting parks
+  // by P(HR), capped at six (matching the showcase's six-row default).
+  const byProbDesc = [...probEntries]
+    .sort((a, b) => b[1] - a[1])
+    .map(([id]) => rowById.get(id)?.parkName ?? id);
+  const homeParkName = parks.find((pk) => pk.here)?.park;
+  const defaultShown: string[] = [];
+  if (homeParkName) defaultShown.push(homeParkName);
+  for (const name of byProbDesc) {
+    if (defaultShown.length >= 6) break;
+    if (!defaultShown.includes(name)) defaultShown.push(name);
+  }
+
+  const descriptor = inPlay.bbType
+    ? titleCaseFromSnake(inPlay.bbType)
+    : bandFromLaunchAngle(launchAngleDeg);
+
+  return {
+    batter: batterName ?? `#${inPlay.batterId}`,
+    description: `${descriptor} · ${inPlay.outs} out`,
+    result: inPlay.event ? titleCaseFromSnake(inPlay.event) : "In play",
+    exitVeloMph,
+    launchDeg: Math.round(launchAngleDeg),
+    distanceFt,
+    xba: "—", // AllParksResponse carries no xBA; do not fabricate one.
+    hrParkCount,
+    parkCount,
+    parks,
+    defaultShown,
+    // Name the real served champion (calibration source); omit the editorial narrative on the
+    // live path so no hardcoded "caught at the track" line contradicts the actual result.
+    modelName: pred.modelName,
+    modelVersion: pred.modelVersion,
+  };
+}
+
 const fieldStyle: React.CSSProperties = {
   backgroundColor: colors.field,
   minHeight: "100%",
@@ -116,6 +242,56 @@ export function GamePage() {
   const currentPitcher = usePlayer(mostRecent?.pitcherId ?? null);
   const currentBatter = usePlayer(mostRecent?.batterId ?? null);
 
+  // Phase 1.2: the most recent in-play batted ball carrying launch physics. The
+  // pitch store is newest-first, so .find() yields the LATEST qualifying BIP.
+  const inPlay = pitches.pitches.find(
+    (p) =>
+      p.description === "in_play" &&
+      p.launchSpeedMph != null &&
+      p.launchAngleDeg != null,
+  );
+  // The BIP's batter, keyed to the in-play pitch (NOT mostRecent, which may be a
+  // later non-BIP pitch in the same at-bat or a new one).
+  const inPlayBatter = usePlayer(inPlay?.batterId ?? null);
+
+  // All-parks prediction for the live BIP. The query is GATED on a live BIP
+  // (enabled below): POST /v1/predict/batted-ball/all-parks logs every request to
+  // prediction_log (the drift-baseline source), so a throwaway prediction on a
+  // pregame / between-BIP mount would pollute the drift baselines the Phase-6
+  // postmortem reads. When there is no BIP the req is a stable placeholder that is
+  // NEVER fetched (the gate is off); it only keeps the hook's arg typed.
+  const allParksReq = useMemo<AllParksRequest>(() => {
+    if (inPlay?.launchSpeedMph == null || inPlay.launchAngleDeg == null) {
+      return CANONICAL_BBE_INPUT;
+    }
+    return {
+      launchSpeedMph: inPlay.launchSpeedMph,
+      launchAngleDeg: inPlay.launchAngleDeg,
+      sprayAngleDeg: 0,
+      hitDistanceFt:
+        inPlay.hitDistanceFt ??
+        estimateLandingDistanceFt(inPlay.launchSpeedMph, inPlay.launchAngleDeg),
+      stand: "R",
+      baseState: 0,
+      outs: inPlay.outs,
+    };
+  }, [inPlay]);
+  const allParks = useAllParksPrediction(allParksReq, {
+    enabled: inPlay != null,
+  });
+
+  // The live BattedBall, or null until BOTH the BIP and its prediction exist (->
+  // the showcase fallback below). Memoised so polls with no new data are cheap.
+  const liveBattedBall = useMemo<BattedBall | null>(() => {
+    if (!inPlay || !allParks.data) return null;
+    return buildLiveBattedBall(
+      inPlay,
+      allParks.data,
+      inPlayBatter.data?.name,
+      game.data?.homeTeam,
+    );
+  }, [inPlay, allParks.data, inPlayBatter.data?.name, game.data?.homeTeam]);
+
   if (!valid) {
     return (
       <div style={fieldStyle}>
@@ -136,6 +312,10 @@ export function GamePage() {
   const pitcherPitchCount = mostRecent
     ? pitches.pitches.filter((p) => p.pitcherId === mostRecent.pitcherId).length
     : 0;
+
+  // Live batted ball when this game has one; otherwise the showcase empty-state.
+  const battedBall = liveBattedBall ?? SHOWCASE_BATTED_BALL;
+  const battedBallLive = liveBattedBall != null;
 
   return (
     <div style={fieldStyle}>
@@ -222,7 +402,10 @@ export function GamePage() {
 
         <section aria-labelledby="batted-ball-label">
           <div style={{ marginBottom: 12 }}>
-            <LowerThird id="batted-ball-label" meta="MODEL EXAMPLE">
+            <LowerThird
+              id="batted-ball-label"
+              meta={battedBallLive ? "LIVE BIP" : "MODEL EXAMPLE"}
+            >
               Batted-Ball Model
             </LowerThird>
           </div>
@@ -234,12 +417,22 @@ export function GamePage() {
               color: colors.textMuted,
             }}
           >
-            A static example of the per-park HR model - not this game&rsquo;s
-            batted ball. Live batted-ball capture (exit velo / launch /
-            distance) is pending: the live feed doesn&rsquo;t carry batted-ball
-            physics yet.
+            {battedBallLive ? (
+              <>
+                The most recent in-play batted ball this game, scored through
+                the per-park batted-ball champion: the same contact at all 30
+                parks, carry and outcome shifting with each park.
+              </>
+            ) : (
+              <>
+                A static example of the per-park HR model - not this
+                game&rsquo;s batted ball. Live batted-ball capture (exit velo /
+                launch / distance) is pending: the live feed doesn&rsquo;t carry
+                batted-ball physics yet.
+              </>
+            )}
           </p>
-          <BattedBallExplorer data={SHOWCASE_BATTED_BALL} />
+          <BattedBallExplorer data={battedBall} />
         </section>
 
         <section aria-labelledby="game-pitch-log-label">
