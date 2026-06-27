@@ -45,6 +45,12 @@ training/*.egg-info/
 # CONTENTS (not the dir) so the negation can re-include the full-data file.
 training/data/eval/promotion/*
 !training/data/eval/promotion/*_experiment_results_full*.json
+# The carry-promotion NON-INFERIORITY gate row ([166]/ADR-0012) is ALSO a durable audit record read
+# by promote-model, but it deliberately does NOT match the *_experiment_results_full*.json glob above:
+# that same glob is what backend/build.gradle.kts bundles into the public /accuracy scorecard, where
+# this raw-softmax v2-vs-v1 row (model_name=battedball_outcome) would collide with the served
+# champion's calibrated row. So it gets its own explicit negation here instead of the glob.
+!training/data/eval/promotion/battedball_outcome_carry_promotion_gate.json
 # ...but keep the exploratory temperature calibrations box-local (superseded
 # side-quests). The versioned record is isotonic (the standing best) +
 # per_park_isotonic (the gate-gaming negative); the *_temperature* runs were
