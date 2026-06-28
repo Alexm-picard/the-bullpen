@@ -6,7 +6,9 @@ import net.thebullpen.baseball.api.admin.dto.AbortExperimentRequest;
 import net.thebullpen.baseball.registry.dto.ExperimentResult;
 import net.thebullpen.baseball.registry.experiment.ExperimentException;
 import net.thebullpen.baseball.registry.experiment.ExperimentService;
+import net.thebullpen.baseball.registry.experiment.OfflineGateImportService;
 import net.thebullpen.baseball.registry.experiment.dto.ExperimentVerdict;
+import net.thebullpen.baseball.registry.experiment.dto.ImportOfflineGateRequest;
 import net.thebullpen.baseball.registry.experiment.dto.StartExperimentRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,9 +55,12 @@ public class ExperimentAdminController {
   private static final Logger log = LoggerFactory.getLogger(ExperimentAdminController.class);
 
   private final ExperimentService experiments;
+  private final OfflineGateImportService offlineImport;
 
-  public ExperimentAdminController(ExperimentService experiments) {
+  public ExperimentAdminController(
+      ExperimentService experiments, OfflineGateImportService offlineImport) {
     this.experiments = experiments;
+    this.offlineImport = offlineImport;
   }
 
   @GetMapping
@@ -123,6 +128,38 @@ public class ExperimentAdminController {
       throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage(), e);
     } catch (ExperimentException.InvalidStateTransition e) {
       throw new ResponseStatusException(HttpStatus.CONFLICT, e.getMessage(), e);
+    }
+  }
+
+  /**
+   * Import a committed OFFLINE promotion-gate artifact (decision [166] / ADR-0012) as a terminal
+   * {@code passed} experiment_results row - the OFFLINE-evidence path the online
+   * start/evaluate/complete lifecycle cannot serve (a negative non-inferiority threshold, and a
+   * challenger that has no shadow predictions because it is not serving). No promotion is performed
+   * (rule 6); this only creates the row the separate, human-gated promote then reads. {@link
+   * ExperimentException.OfflineGateInvalid} maps to 422.
+   */
+  @PostMapping("/import-offline")
+  public ExperimentResult importOffline(@Valid @RequestBody ImportOfflineGateRequest req) {
+    try {
+      ExperimentResult row =
+          offlineImport.importGate(
+              req.modelName(),
+              req.championVersionId(),
+              req.challengerVersionId(),
+              req.artifactName(),
+              req.reason());
+      log.info(
+          "admin: imported offline-gate evidence as experiment {} for {} (champ={}, chall={},"
+              + " artifact={})",
+          row.id(),
+          req.modelName(),
+          req.championVersionId(),
+          req.challengerVersionId(),
+          req.artifactName());
+      return row;
+    } catch (ExperimentException.OfflineGateInvalid e) {
+      throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, e.getMessage(), e);
     }
   }
 }

@@ -9,7 +9,8 @@ public sealed class ExperimentException extends RuntimeException
     permits ExperimentException.UnknownExperiment,
         ExperimentException.AlreadyRunning,
         ExperimentException.InvalidStateTransition,
-        ExperimentException.InsufficientSampleSize {
+        ExperimentException.InsufficientSampleSize,
+        ExperimentException.OfflineGateInvalid {
 
   protected ExperimentException(String message) {
     super(message);
@@ -68,6 +69,18 @@ public sealed class ExperimentException extends RuntimeException
               + " < target "
               + target
               + " (wait for more data or call abort)");
+    }
+  }
+
+  /**
+   * The committed offline-gate artifact failed validation at {@code import-offline}: not bundled,
+   * not a self-consistent PASS, sample-size short, or the champion/challenger binding is wrong.
+   * Maps to 422 - the evidence cannot become a passing experiment_results row. See ADR-0012 /
+   * decision [166].
+   */
+  public static final class OfflineGateInvalid extends ExperimentException {
+    public OfflineGateInvalid(String message) {
+      super("offline-gate import: " + message);
     }
   }
 }
