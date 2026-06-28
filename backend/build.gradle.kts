@@ -56,7 +56,7 @@ dependencies {
     implementation("software.amazon.awssdk:s3")
     implementation("software.amazon.awssdk:apache-client")
 
-    implementation("com.microsoft.onnxruntime:onnxruntime:1.20.0")
+    implementation("com.microsoft.onnxruntime:onnxruntime:1.26.0")
     // EJML for the 15x15 fundamental-matrix inversion in the forward simulator (2a.9).
     // Leaner than Commons Math, actively maintained, simpler API for this use case.
     implementation("org.ejml:ejml-simple:0.43.1")
