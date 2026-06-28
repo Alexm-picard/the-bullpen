@@ -224,4 +224,27 @@ discipline.
 
 ## Revision History
 
-(none)
+- **2026-06-28** - Backend integration that makes this gate ENFORCEABLE (decision [167]).
+  The criteria + the offline ablation were training-side ([166]), but the backend
+  `experiment_results` machinery only supported ONLINE shadow comparisons (start ->
+  evaluate-from-`prediction_log` -> complete; `StartExperimentRequest` rejects a negative
+  threshold), so the offline non-inferiority gate had no path into the table the promote gate
+  (`assertPromotionCriteriaMet` -> `findLatestPassing`) reads. The box correctly ABORTED the
+  promotion at the evidence step rather than hand-edit SQLite. Added an OFFLINE-evidence import path:
+  `POST /v1/admin/experiments/import-offline` -> `OfflineGateImportService` turns a committed,
+  BUNDLED `*_promotion_gate.json` (read by `OfflineGateEvidenceRepository` from
+  `classpath:offline-gate-evidence/`, a separate dir from `accuracy-evidence/` so it never reaches
+  the `/accuracy` scorecard) into a terminal `passed` row binding the CURRENT champion to the
+  challenger. Anti-bypass (registry-guard PASS): imports only a bundled+reviewed artifact (no
+  operator-posted JSON); RE-DERIVES the pass from the raw numerics (challenger + threshold <=
+  champion, observed guardrail deltas vs declared maxes, carry hard gate) instead of trusting the
+  declared `status`; asserts the challenger's `model_name`; binds the current champion; performs NO
+  promotion (rule 6). Does not touch the online lifecycle. A full register -> promote(bootstrap) ->
+  register -> import -> promote IT proves the imported row clears the real gate end-to-end. Status
+  stays Accepted.
+- **2026-06-28 FOLLOW-UP (open, registry-guard NOTE 1)**: the gate artifact carries no challenger
+  identity (no version id / `feature_schema_hash` / `training_data_hash`), so the
+  evidence-to-challenger binding is operator-asserted - the offline path cannot bind by served
+  predictions the way the online path does. Harden by embedding the challenger `feature_schema_hash`
+  in the gate JSON and asserting it against the registered version at import. Mitigated today by
+  admin-only + current-champion binding + recorded `git_commit` provenance.

@@ -133,6 +133,14 @@ tasks.processResources {
         include("battedball_backfill_accuracy_v1.json")
         into("accuracy-evidence")
     }
+    // OFFLINE promotion-gate artifacts (e.g. the carry champion non-inferiority ablation,
+    // ADR-0012/[166]) into a SEPARATE classpath dir so AccuracyEvidenceRepository's
+    // *_experiment_results_full*.json glob never sees them (they are raw-softmax gate evidence read
+    // by the import-offline admin path, NOT public /accuracy scorecard rows).
+    from("../training/data/eval/promotion") {
+        include("*_promotion_gate.json")
+        into("offline-gate-evidence")
+    }
 }
 
 tasks.named<Test>("test") {
