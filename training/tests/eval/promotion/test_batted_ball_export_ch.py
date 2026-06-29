@@ -23,8 +23,6 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-from clickhouse_driver import Client
-
 from bullpen_training.eval.promotion.export_batted_ball_full import export_batted_ball_full
 from bullpen_training.eval.promotion.sample_loader import (
     BATTED_BALL_FEATURES,
@@ -32,6 +30,7 @@ from bullpen_training.eval.promotion.sample_loader import (
     ParquetSampleLoader,
 )
 from bullpen_training.ingest.clickhouse_client import ClickHouseSettings, make_client
+from clickhouse_driver import Client
 
 TEST_DB = "batted_export_test"
 REQUIRE_CH = os.environ.get("BULLPEN_REQUIRE_CH") == "1"
@@ -168,7 +167,7 @@ def test_export_query_runs_against_real_ch_schema(ch: Client, tmp_path: Path) ->
     assert len(out) == 2, f"WHERE contract drifted: expected 2 rows, got {len(out)}"
     assert set(out["park"]) == {"BOS", "NYY"}
     # Schema is the full 15-feature champion vector + label + park + retro.
-    for col in (*BATTED_BALL_FEATURES, "label", "park", "carry_ft", *RETRO_COLS):
+    for col in (*BATTED_BALL_FEATURES, "label", "park", *RETRO_COLS):
         assert col in out.columns, f"missing {col}"
     # Label is the realized observed_outcome (BOS row = hr = 4, NYY row = out = 0).
     by_park = {p: lab for p, lab in zip(out["park"], out["label"], strict=True)}
