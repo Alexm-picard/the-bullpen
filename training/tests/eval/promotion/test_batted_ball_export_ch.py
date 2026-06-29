@@ -23,8 +23,6 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-from clickhouse_driver import Client
-
 from bullpen_training.eval.promotion.export_batted_ball_full import export_batted_ball_full
 from bullpen_training.eval.promotion.sample_loader import (
     BATTED_BALL_FEATURES,
@@ -32,6 +30,7 @@ from bullpen_training.eval.promotion.sample_loader import (
     ParquetSampleLoader,
 )
 from bullpen_training.ingest.clickhouse_client import ClickHouseSettings, make_client
+from clickhouse_driver import Client
 
 TEST_DB = "batted_export_test"
 REQUIRE_CH = os.environ.get("BULLPEN_REQUIRE_CH") == "1"
@@ -96,6 +95,7 @@ def _recreate(ch: Client) -> None:
             prob_2b Float32,
             prob_3b Float32,
             prob_hr Float32,
+            carry_ft Nullable(Float32),
             observed_outcome Nullable(Enum8('out'=0,'1b'=1,'2b'=2,'3b'=3,'hr'=4)),
             ingested_at DateTime DEFAULT now()
         )
@@ -123,11 +123,11 @@ _PITCHES = [
 ]
 # Retro rows keyed to each pitch's home park. E carries NULL observed_outcome.
 _RETRO = [
-    (_GD, 900001, 1, 1, "BOS", 0.02, 0.03, 0.05, 0.05, 0.85, "hr"),
-    (_GD, 900002, 1, 1, "NYY", 0.93, 0.04, 0.02, 0.01, 0.00, "out"),
-    (_GD, 900003, 1, 1, "BOS", 0.90, 0.05, 0.03, 0.01, 0.01, "out"),
-    (_GD, 900004, 1, 1, "LAD", 0.50, 0.30, 0.10, 0.05, 0.05, "1b"),
-    (_GD, 900005, 1, 1, "LAD", 0.40, 0.45, 0.10, 0.04, 0.01, None),
+    (_GD, 900001, 1, 1, "BOS", 0.02, 0.03, 0.05, 0.05, 0.85, "hr", 405.0),
+    (_GD, 900002, 1, 1, "NYY", 0.93, 0.04, 0.02, 0.01, 0.00, "out", 120.0),
+    (_GD, 900003, 1, 1, "BOS", 0.90, 0.05, 0.03, 0.01, 0.01, "out", 60.0),
+    (_GD, 900004, 1, 1, "LAD", 0.50, 0.30, 0.10, 0.05, 0.05, "1b", 150.0),
+    (_GD, 900005, 1, 1, "LAD", 0.40, 0.45, 0.10, 0.04, 0.01, None, 180.0),
 ]
 
 _PITCH_COLS = (
@@ -136,7 +136,7 @@ _PITCH_COLS = (
 )
 _RETRO_COLS_SQL = (
     "game_date, game_id, at_bat_index, pitch_number, park_id, "
-    "prob_out, prob_1b, prob_2b, prob_3b, prob_hr, observed_outcome"
+    "prob_out, prob_1b, prob_2b, prob_3b, prob_hr, observed_outcome, carry_ft"
 )
 
 
@@ -167,7 +167,7 @@ def test_export_query_runs_against_real_ch_schema(ch: Client, tmp_path: Path) ->
     assert len(out) == 2, f"WHERE contract drifted: expected 2 rows, got {len(out)}"
     assert set(out["park"]) == {"BOS", "NYY"}
     # Schema is the full 15-feature champion vector + label + park + retro.
-    for col in (*BATTED_BALL_FEATURES, "label", "park", *RETRO_COLS):
+    for col in (*BATTED_BALL_FEATURES, "label", "park", "carry_ft", *RETRO_COLS):
         assert col in out.columns, f"missing {col}"
     # Label is the realized observed_outcome (BOS row = hr = 4, NYY row = out = 0).
     by_park = {p: lab for p, lab in zip(out["park"], out["label"], strict=True)}

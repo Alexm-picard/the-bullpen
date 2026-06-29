@@ -2,7 +2,6 @@ package net.thebullpen.baseball.data;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.time.Duration;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -19,7 +18,6 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.clickhouse.ClickHouseContainer;
-import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
@@ -45,12 +43,7 @@ class BatterBattedBallsRepositoryIT {
       new ClickHouseContainer("clickhouse/clickhouse-server:24.12-alpine")
           .withUsername("default")
           .withPassword("test")
-          .withEnv("TZ", "UTC")
-          // Wait until BOTH the HTTP (8123) and native (9000) ports accept connections before the
-          // container counts as started. Without this the shared container's @BeforeEach TRUNCATE
-          // can
-          // race a not-yet-listening server and flake with "Connection refused" in CI.
-          .waitingFor(Wait.forListeningPorts(8123, 9000).withStartupTimeout(Duration.ofMinutes(2)));
+          .withEnv("TZ", "UTC");
 
   @DynamicPropertySource
   static void props(DynamicPropertyRegistry registry) {
