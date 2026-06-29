@@ -23,6 +23,8 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
+from clickhouse_driver import Client
+
 from bullpen_training.eval.promotion.export_batted_ball_full import export_batted_ball_full
 from bullpen_training.eval.promotion.sample_loader import (
     BATTED_BALL_FEATURES,
@@ -30,7 +32,6 @@ from bullpen_training.eval.promotion.sample_loader import (
     ParquetSampleLoader,
 )
 from bullpen_training.ingest.clickhouse_client import ClickHouseSettings, make_client
-from clickhouse_driver import Client
 
 TEST_DB = "batted_export_test"
 REQUIRE_CH = os.environ.get("BULLPEN_REQUIRE_CH") == "1"
