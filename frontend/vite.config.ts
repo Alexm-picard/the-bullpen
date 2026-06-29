@@ -60,8 +60,8 @@ export default defineConfig({
       },
     },
   },
-  // A2 — coverage measurement (audit remediation). v8 provider; non-gating baseline
-  // for now (no `thresholds` block yet) so we publish an honest number before ratcheting.
+  // A2 - coverage measurement (audit remediation). v8 provider, gated on a regression floor
+  // (see the `thresholds` block below: 65/65/55/60) so coverage can't silently backslide.
   // Excludes design-system showcase fixtures + generated/config files from the denominator
   // so the percentage reflects logic, not hand-authored data tables.
   test: {

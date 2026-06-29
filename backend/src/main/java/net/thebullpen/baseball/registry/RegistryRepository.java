@@ -267,8 +267,9 @@ public class RegistryRepository {
 
   private Optional<ModelVersion> findByNameAndStage(String modelName, Stage stage) {
     // The (model_name, stage) composite index from V010's idx_mv_model_stage carries this query;
-    // there should be at most one row per (model_name, stage) for SHADOW + CHAMPION (enforced by
-    // RegistryService.transitionStage, not by a DB constraint).
+    // there should be at most one row per (model_name, stage) for SHADOW + CHAMPION. The CHAMPION
+    // case is enforced at the DB level by V016's partial-unique idx_mv_one_champion_per_model; the
+    // SHADOW case remains a RegistryService.transitionStage invariant.
     List<ModelVersion> hits =
         jdbc.query(
             SELECT_ALL_COLUMNS + " WHERE model_name = ? AND stage = ?",

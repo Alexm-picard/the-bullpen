@@ -792,9 +792,11 @@ net.thebullpen.baseball/
 └── config/      # Spring configuration
 ```
 
-Domain models in `domain/` are pure data (records). JPA entities (if
-any) live in `data/` and map to/from domain types. Hexagonal-lite — lets
-inference and simulation reason about `Pitch` without coupling to SQL.
+Domain models in `domain/` are pure data (records). Today `domain/` holds only
+`GameMatchup`; most value types still live alongside their use in `api/dto`, `data/`,
+and `inference/`. The hexagonal-lite end state - a shared pure core (e.g. a `Pitch`
+record) that inference and simulation reason about without SQL coupling - is the
+intended direction, not yet fully extracted.
 
 ### Python ↔ Java contract
 

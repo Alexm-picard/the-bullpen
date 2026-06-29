@@ -59,10 +59,10 @@ jobs:
       - name: Static analysis (SpotBugs)
         working-directory: backend
         run: ./gradlew spotbugsMain --no-daemon
-      # A2: publish an honest coverage baseline. Non-gating for now (mirrors the
-      # training.yml posture) — surfaces line/branch coverage in the run summary and
-      # uploads the full HTML/XML report. Ratchet a floor in once the baseline settles.
-      - name: Coverage summary (JaCoCo, non-gating)
+      # A2: publish a human-readable coverage summary in the run log. This STEP is report-only;
+      # the actual floor (LINE >= 72% / BRANCH >= 58%) is enforced by gradle's
+      # jacocoTestCoverageVerification during `build` above (it runs under -Dbullpen.it.docker=true).
+      - name: Coverage summary (JaCoCo, report-only)
         if: always()
         working-directory: backend
         env:

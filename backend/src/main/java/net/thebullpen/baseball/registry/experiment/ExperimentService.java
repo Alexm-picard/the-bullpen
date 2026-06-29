@@ -218,11 +218,11 @@ public class ExperimentService {
   }
 
   private List<PairedPrediction> fetchPairs(ExperimentResult exp) {
-    // Resolve version strings from the registry — the fetcher works in (modelName, version)
+    // Resolve version strings from the registry - the fetcher works in (modelName, version)
     // because that's the prediction_log schema (V004 columns are strings, not numeric FKs).
-    // For now we use the version_ids directly as strings — the registry-driven resolution
-    // lands in the ClickHouse-real-impl in 3c. This is fine for tests because the fetcher
-    // is stubbed and the version strings aren't actually queried.
+    // version_ids are passed as strings; the @Primary ClickHouse fetcher
+    // (ClickHousePairedPredictionFetcher) parses and queries them in prod. A stub fetcher stands
+    // in only when ClickHouse is disabled (e.g. unit tests).
     Instant until = Instant.now().minusSeconds(24L * 3600L); // settled-truth window per leaf
     return fetcher.fetch(
         exp.modelName(),
