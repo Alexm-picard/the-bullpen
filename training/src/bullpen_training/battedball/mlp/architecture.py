@@ -42,6 +42,7 @@ Topology summary (defaults):
 
 from __future__ import annotations
 
+import numpy as np
 import torch
 from torch import nn
 
@@ -124,4 +125,29 @@ def build_model(
     )
 
 
-__all__ = ("BattedBallMLP", "build_model")
+def predict_park_probs(model: BattedBallMLP, xs: np.ndarray) -> np.ndarray:
+    """Per-park OUTCOME probabilities from the 2-output (carry) model.
+
+    Centralises the Phase-4 carry-aware forward: the model returns
+    ``(logits, carry)``, so a caller that softmaxes the raw forward output
+    crashes - exactly the bug that blocked the 2c.6 calibrator re-fit on the
+    carry model. This unpacks the outcome logits and applies a per-park softmax
+    over the outcome axis. The same idiom is used inline by ``sanity``,
+    ``rolling_cv_eval``, and ``carry_promotion_eval``; routing the calibrator
+    re-fit through here keeps all four consistent and regression-tested.
+
+    Args:
+        model: a :class:`BattedBallMLP`. The caller is responsible for putting
+            it in ``eval()`` mode (dropout off) before calling.
+        xs: the SCALED feature matrix, shape ``(B, n_features)`` float32.
+
+    Returns:
+        ``(B, n_parks, n_outcomes)`` float32 probabilities; each park's outcome
+        distribution sums to 1.
+    """
+    with torch.no_grad():
+        logits, _carry = model(torch.from_numpy(xs))
+        return torch.softmax(logits, dim=-1).numpy()
+
+
+__all__ = ("BattedBallMLP", "build_model", "predict_park_probs")
