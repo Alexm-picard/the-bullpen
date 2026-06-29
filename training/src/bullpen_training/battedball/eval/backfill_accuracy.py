@@ -105,8 +105,7 @@ class Predictor(Protocol):
     by the predictor.
     """
 
-    def predict_proba(self, df: pd.DataFrame) -> np.ndarray:
-        ...
+    def predict_proba(self, df: pd.DataFrame) -> np.ndarray: ...
 
 
 # --- report dataclass -----------------------------------------------------

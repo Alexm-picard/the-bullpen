@@ -6,9 +6,12 @@ name: ci-gate
 # that never reports). This gate runs on EVERY PR (no path filter) and aggregates: it waits for all
 # OTHER check-runs on the PR head to finish, then passes iff each that ran concluded success (or
 # skipped/neutral). A workflow the path filter skipped simply never appears, so unrelated PRs pass
-# with no stall. Require ONLY "ci-gate" in branch protection.
+# with no stall. Require ONLY "ci-gate" in branch protection. It also runs on push to main so the
+# merged tip is gated (and a direct push to main can't land red unnoticed), not just the PR head.
 on:
   pull_request:
+    branches: [main]
+  push:
     branches: [main]
 
 permissions:
@@ -23,7 +26,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           echo "ci-gate: aggregating the check-runs for $HEAD_SHA"
