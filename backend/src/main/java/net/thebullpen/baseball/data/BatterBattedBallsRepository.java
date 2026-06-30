@@ -75,13 +75,17 @@ public class BatterBattedBallsRepository {
       sql.append(" AND events = ?");
       args.add(event);
     }
+    // A bound java.sql.Date trips clickhouse-jdbc here (DB::Exception Code 386 NO_COMMON_TYPE:
+    // String vs Int64 against the Date column) - the same bound-temporal gotcha the drift fetcher
+    // dodges via fromUnixTimestamp64Milli(?). Bind the ISO date as a String through toDate(?),
+    // matching the working String-param filters above; the date stays a real placeholder.
     if (from != null) {
-      sql.append(" AND game_date >= ?");
-      args.add(java.sql.Date.valueOf(from));
+      sql.append(" AND game_date >= toDate(?)");
+      args.add(from.toString());
     }
     if (to != null) {
-      sql.append(" AND game_date <= ?");
-      args.add(java.sql.Date.valueOf(to));
+      sql.append(" AND game_date <= toDate(?)");
+      args.add(to.toString());
     }
     sql.append(
             " ORDER BY game_date DESC, game_id DESC, at_bat_index DESC, pitch_number DESC LIMIT ")
