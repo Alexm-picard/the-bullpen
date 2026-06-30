@@ -30,10 +30,7 @@ import org.springframework.stereotype.Repository;
  */
 @Repository
 @Profile("api")
-// final: the constructor reads a bundled classpath resource and can throw (fail-fast), so SpotBugs
-// flags CT_CONSTRUCTOR_THROW (finalizer-attack via a malicious subclass). This is a leaf bean,
-// never subclassed; final closes that vector without restructuring the fail-fast load.
-public final class OfflineGateEvidenceRepository {
+public class OfflineGateEvidenceRepository {
 
   private static final Logger log = LoggerFactory.getLogger(OfflineGateEvidenceRepository.class);
   private static final String GLOB = "classpath*:offline-gate-evidence/*.json";
