@@ -75,17 +75,19 @@ public class BatterBattedBallsRepository {
       sql.append(" AND events = ?");
       args.add(event);
     }
-    // A bound java.sql.Date trips clickhouse-jdbc here (DB::Exception Code 386 NO_COMMON_TYPE:
-    // String vs Int64 against the Date column) - the same bound-temporal gotcha the drift fetcher
-    // dodges via fromUnixTimestamp64Milli(?). Bind the ISO date as a String through toDate(?),
-    // matching the working String-param filters above; the date stays a real placeholder.
+    // Date filters are INLINED as toDate('yyyy-MM-dd') literals, not bound placeholders: a date
+    // PARAMETER trips clickhouse-jdbc with DB::Exception 386 NO_COMMON_TYPE against the Date column
+    // however it is typed (observed: java.sql.Date -> "String, Int64"; a String/Long via toDate(?)
+    // -> "String, Date"). Inlining is the same clickhouse-jdbc workaround already used for LIMIT
+    // below, and is injection-safe: a java.time.LocalDate renders only as ISO [0-9-] via
+    // toString(),
+    // so the literal can never carry a quote or SQL. With no date placeholder the bound-param
+    // profile matches the (passing) no-filter call.
     if (from != null) {
-      sql.append(" AND game_date >= toDate(?)");
-      args.add(from.toString());
+      sql.append(" AND game_date >= toDate('").append(from).append("')");
     }
     if (to != null) {
-      sql.append(" AND game_date <= toDate(?)");
-      args.add(to.toString());
+      sql.append(" AND game_date <= toDate('").append(to).append("')");
     }
     sql.append(
             " ORDER BY game_date DESC, game_id DESC, at_bat_index DESC, pitch_number DESC LIMIT ")
