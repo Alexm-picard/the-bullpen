@@ -13,6 +13,7 @@ import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.web.firewall.RequestRejectedException;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -161,6 +162,24 @@ public class ApiErrorAdvice {
       }
     }
     return handleAnyOther(ex);
+  }
+
+  /**
+   * Spring Security's {@code StrictHttpFirewall} rejects malformed requests (control chars / a
+   * non-ASCII header value, an illegal path, etc.). The {@code RequestRejectedHandler} bean in
+   * {@code SecurityConfig} catches rejections at the {@code FilterChainProxy} entry point, but a
+   * header VALUE is validated lazily - when a component first reads it, here during MVC
+   * handler-mapping - so that rejection surfaces INSIDE MVC dispatch and would otherwise fall
+   * through to {@link #handleAnyOther} as a 500. A rejected request is a client error, so map it to
+   * 400. This is the deterministic fix for the recurring Schemathesis rare-500 on {@code POST
+   * /v1/predict/batted-ball} (a fuzzed non-ASCII header value); the message is generic (no echo of
+   * the offending header) to avoid reflecting attacker-controlled bytes.
+   */
+  @ExceptionHandler(RequestRejectedException.class)
+  public ResponseEntity<ApiError> handleRequestRejected(RequestRejectedException ex) {
+    ApiError body =
+        ApiError.of("bad_request", "the request was rejected as malformed", correlationId());
+    return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
   }
 
   @ExceptionHandler(Exception.class)
