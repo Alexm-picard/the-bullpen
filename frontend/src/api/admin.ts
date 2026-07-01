@@ -8,17 +8,11 @@
  */
 import type { RoutingConfig } from "./ops";
 
-import { API_BASE } from "./base";
+import { API_BASE, ApiError } from "./base";
 
 export type AdminCreds = { user: string; password: string };
 
-export class AdminApiError extends Error {
-  readonly status: number;
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
+export class AdminApiError extends ApiError {}
 
 function basicHeader(creds: AdminCreds): string {
   return "Basic " + btoa(`${creds.user}:${creds.password}`);

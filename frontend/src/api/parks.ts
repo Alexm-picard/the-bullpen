@@ -7,7 +7,7 @@
  */
 import { useQuery } from "@tanstack/react-query";
 
-import { API_BASE } from "./base";
+import { API_BASE, ApiError } from "./base";
 
 /**
  * Mirrors the backend `AllParksOutcomeRequest` (decision [146], the post-contact
@@ -40,13 +40,7 @@ export type AllParksResponse = {
   correlationId: string;
 };
 
-export class ParksApiError extends Error {
-  readonly status: number;
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
+export class ParksApiError extends ApiError {}
 
 export async function predictAllParks(
   req: AllParksRequest,

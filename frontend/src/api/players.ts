@@ -8,7 +8,7 @@
  */
 import { useQuery } from "@tanstack/react-query";
 
-import { API_BASE } from "./base";
+import { API_BASE, ApiError } from "./base";
 
 export type PlayerSearchResult = {
   id: number;
@@ -19,13 +19,7 @@ export type PlayerSearchResult = {
   team: string;
 };
 
-export class PlayerLookupError extends Error {
-  readonly status: number;
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
+export class PlayerLookupError extends ApiError {}
 
 export async function searchPlayers(
   q: string,
