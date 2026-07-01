@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.util.concurrent.CompletionException;
 import net.thebullpen.baseball.inference.ModelUnavailableException;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.web.firewall.RequestRejectedException;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -61,11 +62,26 @@ class ApiErrorAdviceTest {
         .andExpect(jsonPath("$.error.code").value("internal_error"));
   }
 
+  @Test
+  void firewall_rejected_request_maps_to_400_not_500() throws Exception {
+    // A StrictHttpFirewall rejection (e.g. a non-ASCII header value) surfaces as a
+    // RequestRejectedException during MVC dispatch; it is a client error, so 400 - not the generic
+    // 500 that was the recurring Schemathesis rare-500 on POST /v1/predict/batted-ball.
+    mvc.perform(get("/test/request-rejected"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("bad_request"));
+  }
+
   @RestController
   static class ThrowingController {
     @GetMapping("/test/model-unavailable")
     String modelUnavailable() {
       throw new ModelUnavailableException("snapshot won't load");
+    }
+
+    @GetMapping("/test/request-rejected")
+    String requestRejected() {
+      throw new RequestRejectedException("header value not allowed");
     }
 
     @GetMapping("/test/illegal-state")
