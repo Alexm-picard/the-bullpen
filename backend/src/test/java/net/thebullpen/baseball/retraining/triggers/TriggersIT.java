@@ -196,6 +196,24 @@ class TriggersIT {
     assertThat(queue.findByModel("model_a")).hasSize(1);
   }
 
+  @Test
+  void drift_trigger_same_day_reruns_do_not_false_fire() throws Exception {
+    // 9 raw calibration rows all over threshold, but spanning only 3 distinct days (3 reruns/day).
+    // The old row-counting logic (recent.size() >= 7) would clear the gate and enqueue a false
+    // retrain; the per-day collapse (DEF-M3) sees only 3 sustained days and correctly does NOT
+    // fire.
+    registerAndPromote("model_a");
+    DriftMetricsRepository driftRepo = mock(DriftMetricsRepository.class);
+    DiscordNotifier discord = mock(DiscordNotifier.class);
+    when(driftRepo.findRecent(
+            eq("model_a"), eq(MetricType.CALIBRATION_ERROR), eq("all"), any(Duration.class)))
+        .thenReturn(buildDriftReruns(3, 3, 0.15));
+
+    DriftTrigger trigger = new DriftTrigger(registryRepo, driftRepo, queue, discord, 0.10);
+    assertThat(trigger.runOnce(Instant.now())).isEqualTo(0);
+    verify(discord, never()).send(any(), any(), any());
+  }
+
   // --- ManualTrigger ----------------------------------------------------
 
   @Test
@@ -220,6 +238,33 @@ class TriggersIT {
   }
 
   // --- helpers ----------------------------------------------------------
+
+  /**
+   * {@code distinctDays * rerunsPerDay} calibration rows spanning {@code distinctDays} calendar
+   * days (each day re-run {@code rerunsPerDay} times, seconds apart). Raw row count is the product;
+   * distinct-day count is {@code distinctDays} - exercises the same-day-rerun collapse.
+   */
+  private List<DriftMetric> buildDriftReruns(int distinctDays, int rerunsPerDay, double value) {
+    Instant now = Instant.now();
+    List<DriftMetric> rows = new ArrayList<>();
+    for (int d = 0; d < distinctDays; d++) {
+      for (int r = 0; r < rerunsPerDay; r++) {
+        Instant at = now.minus(d, ChronoUnit.DAYS).minusSeconds(r);
+        rows.add(
+            new DriftMetric(
+                at,
+                "model_a",
+                1L,
+                MetricType.CALIBRATION_ERROR,
+                "all",
+                value,
+                5000L,
+                at.minus(24, ChronoUnit.HOURS),
+                at));
+      }
+    }
+    return rows;
+  }
 
   private List<DriftMetric> buildDriftSeries(int days, double value) {
     Instant now = Instant.now();

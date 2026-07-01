@@ -14,7 +14,6 @@ import net.thebullpen.baseball.drift.TruthJoinedPredictionFetcher.TruthJoinedRow
 import net.thebullpen.baseball.drift.algorithms.Calibration;
 import net.thebullpen.baseball.registry.RegistryRepository;
 import net.thebullpen.baseball.registry.dto.ModelVersion;
-import net.thebullpen.baseball.registry.dto.Stage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Profile;
@@ -75,7 +74,7 @@ public class WeeklySegmentJob {
 
   /** Visible-for-tests entry point. Returns the number of drift_metric rows written. */
   public int runOnce(Instant computedAt) {
-    List<ModelVersion> champions = activeChampions();
+    List<ModelVersion> champions = registryRepo.findActiveChampions();
     if (champions.isEmpty()) {
       log.info("WeeklySegmentJob: no active champions registered");
       return 0;
@@ -143,25 +142,6 @@ public class WeeklySegmentJob {
               rows.size(),
               windowStart,
               windowEnd));
-    }
-    return out;
-  }
-
-  private List<ModelVersion> activeChampions() {
-    List<String> seenNames = new ArrayList<>();
-    List<ModelVersion> out = new ArrayList<>();
-    for (String[] pair : registryRepo.findAllNameVersionPairs()) {
-      if (!seenNames.contains(pair[0])) {
-        seenNames.add(pair[0]);
-      }
-    }
-    for (String name : seenNames) {
-      for (ModelVersion v : registryRepo.findByName(name)) {
-        if (v.stage() == Stage.CHAMPION) {
-          out.add(v);
-          break;
-        }
-      }
     }
     return out;
   }

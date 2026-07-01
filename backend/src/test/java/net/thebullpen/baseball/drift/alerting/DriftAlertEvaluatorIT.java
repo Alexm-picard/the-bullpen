@@ -85,9 +85,7 @@ class DriftAlertEvaluatorIT {
   @Test
   void calibration_above_threshold_for_3_days_fires_page_and_records_history() {
     ModelVersion champ = champion("pitch_outcome_pre", 1L);
-    when(registryRepo.findAllNameVersionPairs())
-        .thenReturn(List.<String[]>of(new String[] {"pitch_outcome_pre", "v1"}));
-    when(registryRepo.findByName("pitch_outcome_pre")).thenReturn(List.of(champ));
+    when(registryRepo.findActiveChampions()).thenReturn(List.of(champ));
     when(driftRepo.findRecent(
             eq("pitch_outcome_pre"),
             eq(MetricType.CALIBRATION_ERROR),
@@ -110,9 +108,7 @@ class DriftAlertEvaluatorIT {
   @Test
   void calibration_below_threshold_does_not_fire() {
     ModelVersion champ = champion("model_a", 1L);
-    when(registryRepo.findAllNameVersionPairs())
-        .thenReturn(List.<String[]>of(new String[] {"model_a", "v1"}));
-    when(registryRepo.findByName("model_a")).thenReturn(List.of(champ));
+    when(registryRepo.findActiveChampions()).thenReturn(List.of(champ));
     when(driftRepo.findRecent(
             eq("model_a"), eq(MetricType.CALIBRATION_ERROR), eq("all"), any(Duration.class)))
         .thenReturn(threeDailyMetrics("model_a", MetricType.CALIBRATION_ERROR, "all", 0.05));
@@ -125,9 +121,7 @@ class DriftAlertEvaluatorIT {
   @Test
   void calibration_with_mixed_days_not_all_over_does_not_fire() {
     ModelVersion champ = champion("model_a", 1L);
-    when(registryRepo.findAllNameVersionPairs())
-        .thenReturn(List.<String[]>of(new String[] {"model_a", "v1"}));
-    when(registryRepo.findByName("model_a")).thenReturn(List.of(champ));
+    when(registryRepo.findActiveChampions()).thenReturn(List.of(champ));
     Instant now = Instant.now();
     List<DriftMetric> mixed = new ArrayList<>();
     mixed.add(
@@ -151,9 +145,7 @@ class DriftAlertEvaluatorIT {
   @Test
   void calibration_with_fewer_than_3_samples_does_not_fire() {
     ModelVersion champ = champion("model_a", 1L);
-    when(registryRepo.findAllNameVersionPairs())
-        .thenReturn(List.<String[]>of(new String[] {"model_a", "v1"}));
-    when(registryRepo.findByName("model_a")).thenReturn(List.of(champ));
+    when(registryRepo.findActiveChampions()).thenReturn(List.of(champ));
     when(driftRepo.findRecent(
             eq("model_a"), eq(MetricType.CALIBRATION_ERROR), eq("all"), any(Duration.class)))
         .thenReturn(
@@ -169,9 +161,7 @@ class DriftAlertEvaluatorIT {
     // threshold. Counting rows would fire a false "3 consecutive days" PAGE; counting calendar
     // days must not. Fixed midday-NY instants so the same-day grouping can't straddle midnight.
     ModelVersion champ = champion("model_a", 1L);
-    when(registryRepo.findAllNameVersionPairs())
-        .thenReturn(List.<String[]>of(new String[] {"model_a", "v1"}));
-    when(registryRepo.findByName("model_a")).thenReturn(List.of(champ));
+    when(registryRepo.findActiveChampions()).thenReturn(List.of(champ));
     Instant noonEt = Instant.parse("2026-06-06T16:00:00Z"); // 12:00 EDT
     List<DriftMetric> sameDay =
         List.of(
@@ -203,9 +193,7 @@ class DriftAlertEvaluatorIT {
     // correction; days 1 and 2 are over. The corrected (latest) value for day 0 should win, so all
     // 3 distinct days are over and the PAGE fires.
     ModelVersion champ = champion("model_a", 1L);
-    when(registryRepo.findAllNameVersionPairs())
-        .thenReturn(List.<String[]>of(new String[] {"model_a", "v1"}));
-    when(registryRepo.findByName("model_a")).thenReturn(List.of(champ));
+    when(registryRepo.findActiveChampions()).thenReturn(List.of(champ));
     Instant day0Noon = Instant.parse("2026-06-06T16:00:00Z");
     List<DriftMetric> rows =
         List.of(
@@ -241,9 +229,7 @@ class DriftAlertEvaluatorIT {
   @Test
   void second_run_within_24h_is_suppressed_by_dedup() {
     ModelVersion champ = champion("model_a", 1L);
-    when(registryRepo.findAllNameVersionPairs())
-        .thenReturn(List.<String[]>of(new String[] {"model_a", "v1"}));
-    when(registryRepo.findByName("model_a")).thenReturn(List.of(champ));
+    when(registryRepo.findActiveChampions()).thenReturn(List.of(champ));
     when(driftRepo.findRecent(
             eq("model_a"), eq(MetricType.CALIBRATION_ERROR), eq("all"), any(Duration.class)))
         .thenReturn(threeDailyMetrics("model_a", MetricType.CALIBRATION_ERROR, "all", 0.15));
@@ -263,9 +249,7 @@ class DriftAlertEvaluatorIT {
   @Test
   void feature_psi_above_threshold_for_7_days_fires_notice() {
     ModelVersion champ = champion("model_a", 1L);
-    when(registryRepo.findAllNameVersionPairs())
-        .thenReturn(List.<String[]>of(new String[] {"model_a", "v1"}));
-    when(registryRepo.findByName("model_a")).thenReturn(List.of(champ));
+    when(registryRepo.findActiveChampions()).thenReturn(List.of(champ));
     when(driftRepo.findRecent(
             eq("model_a"), eq(MetricType.CALIBRATION_ERROR), eq("all"), any(Duration.class)))
         .thenReturn(List.of());
@@ -294,9 +278,7 @@ class DriftAlertEvaluatorIT {
   @Test
   void feature_psi_below_threshold_does_not_fire_notice() {
     ModelVersion champ = champion("model_a", 1L);
-    when(registryRepo.findAllNameVersionPairs())
-        .thenReturn(List.<String[]>of(new String[] {"model_a", "v1"}));
-    when(registryRepo.findByName("model_a")).thenReturn(List.of(champ));
+    when(registryRepo.findActiveChampions()).thenReturn(List.of(champ));
     when(driftRepo.findRecent(
             eq("model_a"), eq(MetricType.CALIBRATION_ERROR), eq("all"), any(Duration.class)))
         .thenReturn(List.of());
@@ -319,9 +301,7 @@ class DriftAlertEvaluatorIT {
   @Test
   void feature_psi_only_4_of_7_days_above_threshold_does_not_fire() {
     ModelVersion champ = champion("model_a", 1L);
-    when(registryRepo.findAllNameVersionPairs())
-        .thenReturn(List.<String[]>of(new String[] {"model_a", "v1"}));
-    when(registryRepo.findByName("model_a")).thenReturn(List.of(champ));
+    when(registryRepo.findActiveChampions()).thenReturn(List.of(champ));
     when(driftRepo.findRecent(
             eq("model_a"), eq(MetricType.CALIBRATION_ERROR), eq("all"), any(Duration.class)))
         .thenReturn(List.of());

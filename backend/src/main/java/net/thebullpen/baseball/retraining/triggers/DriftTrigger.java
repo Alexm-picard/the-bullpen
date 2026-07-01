@@ -3,16 +3,15 @@ package net.thebullpen.baseball.retraining.triggers;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import net.thebullpen.baseball.drift.DriftMetric;
 import net.thebullpen.baseball.drift.DriftMetricsRepository;
+import net.thebullpen.baseball.drift.DriftWindows;
 import net.thebullpen.baseball.drift.MetricType;
 import net.thebullpen.baseball.registry.DiscordNotifier;
 import net.thebullpen.baseball.registry.RegistryRepository;
 import net.thebullpen.baseball.registry.dto.ModelVersion;
-import net.thebullpen.baseball.registry.dto.Stage;
 import net.thebullpen.baseball.retraining.RetrainingException;
 import net.thebullpen.baseball.retraining.RetrainingQueueService;
 import net.thebullpen.baseball.retraining.dto.TriggerType;
@@ -81,7 +80,7 @@ public class DriftTrigger {
   public int runOnce(Instant now) {
     int enqueued = 0;
     String dayKey = now.atZone(ZoneId.of("America/New_York")).toLocalDate().toString();
-    for (ModelVersion champ : activeChampions()) {
+    for (ModelVersion champ : registryRepo.findActiveChampions()) {
       if (!sustainedDrift(champ)) {
         continue;
       }
@@ -126,28 +125,15 @@ public class DriftTrigger {
   private boolean sustainedDrift(ModelVersion champ) {
     List<DriftMetric> recent =
         driftRepo.findRecent(champ.modelName(), MetricType.CALIBRATION_ERROR, "all", LOOKBACK);
-    if (recent.size() < 7) {
+    // Collapse to one canonical value per calendar day before counting "7 days": a same-day rerun
+    // of the 2:30 calibration batch writes multiple rows, and counting raw rows would let K reruns
+    // on one day masquerade as K sustained days and fire a false retrain (DEF-M3 - the same
+    // collapse the 3 AM DriftAlertEvaluator already applies for its PAGE). 7 distinct days over
+    // threshold => retrain.
+    List<Double> daily = DriftWindows.dailyCanonical(recent, ZoneId.of("America/New_York"));
+    if (daily.size() < 7) {
       return false;
     }
-    return recent.stream().allMatch(m -> m.metricValue() > calibrationDriftThreshold);
-  }
-
-  private List<ModelVersion> activeChampions() {
-    List<String> seen = new ArrayList<>();
-    List<ModelVersion> out = new ArrayList<>();
-    for (String[] pair : registryRepo.findAllNameVersionPairs()) {
-      if (!seen.contains(pair[0])) {
-        seen.add(pair[0]);
-      }
-    }
-    for (String name : seen) {
-      for (ModelVersion v : registryRepo.findByName(name)) {
-        if (v.stage() == Stage.CHAMPION) {
-          out.add(v);
-          break;
-        }
-      }
-    }
-    return out;
+    return daily.stream().allMatch(v -> v > calibrationDriftThreshold);
   }
 }

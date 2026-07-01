@@ -144,6 +144,23 @@ class RegistryServiceIT {
     assertThat(serving).extracting(ModelVersion::stage).containsOnly(Stage.CHAMPION, Stage.SHADOW);
   }
 
+  @Test
+  void findActiveChampions_returns_champions_only() {
+    // The scheduled + drift retrain triggers act on the CHAMPION set only (not SHADOW challengers).
+    // V016 enforces at most one champion per model, so distinct models carry distinct champion
+    // rows.
+    long champA = insertAt("model_a", "v2", Stage.CHAMPION);
+    long champD = insertAt("model_d", "v1", Stage.CHAMPION);
+    insertAt("model_a", "v3", Stage.SHADOW); // same model, shadow challenger - excluded
+    insertAt("model_b", "v1", Stage.CANDIDATE); // not yet serving - excluded
+    insertAt("model_c", "v1", Stage.ARCHIVED); // terminal - excluded
+
+    List<ModelVersion> champions = registryRepo.findActiveChampions();
+
+    assertThat(champions).extracting(ModelVersion::id).containsExactlyInAnyOrder(champA, champD);
+    assertThat(champions).extracting(ModelVersion::stage).containsOnly(Stage.CHAMPION);
+  }
+
   private long insertAt(String name, String version, Stage stage) {
     return registryRepo
         .insert(
