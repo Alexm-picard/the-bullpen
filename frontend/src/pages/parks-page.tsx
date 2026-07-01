@@ -170,7 +170,10 @@ export default function ParksPage() {
             realized outcomes (its linear baseline still wins on aggregate
             Brier). Read them as relative comparisons between parks, not
             absolute HR rates - see{" "}
-            <Link to="/about" style={{ color: colors.goldInk }}>
+            <Link
+              to="/about"
+              style={{ color: colors.goldInk, textDecoration: "underline" }}
+            >
               About
             </Link>{" "}
             for the methodology and roadmap.
