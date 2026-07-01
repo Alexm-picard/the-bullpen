@@ -26,7 +26,7 @@ import org.springframework.stereotype.Repository;
  * pitcher ({@code pitcherId}) or batter ({@code batterId}). The JSON path uses ClickHouse's {@code
  * JSONExtractInt} against camelCase keys because the Jackson-serialized Java record components
  * ({@code PitchRequest.pitcherId} / {@code batterId}) use those names — confirmed by {@code
- * PredictPitchController.serializeFeatures()}.
+ * PitchPredictionService.serializeFeatures()}.
  *
  * <p>The {@code prediction} column is also JSON: parsed in Java (cheap, runs at most {@code limit}
  * times) so the wire format stays small ({@code winnerClass} + {@code winnerProb}) and the UI
