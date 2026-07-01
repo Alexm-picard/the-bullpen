@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 import net.thebullpen.baseball.registry.RegistryException;
 import net.thebullpen.baseball.registry.dto.ModelVersion;
 import org.slf4j.Logger;
@@ -72,8 +73,18 @@ public class ModelLoadValidator {
     try {
       JsonNode md = MAPPER.readTree(Files.readAllBytes(Path.of(mv.metadataPath())));
       if (md.has("park_order")) {
-        // per-park [None,15]->[None,30,5] all-parks model
-        modelLoader.loadAllParks(mv.id()).predict(ALL_PARKS_DUMMY);
+        // per-park [None,15]->[None,30,5] all-parks model. When it serves carry (Phase 4),
+        // exercise BOTH outputs and sanity-check the per-park carry head ([166] carry sanity),
+        // not just output[0] - a mis-exported / garbage carry head then 422s at promote-time
+        // instead of serving absurd feet on /parks.
+        LoadedAllParksModel allParks = modelLoader.loadAllParks(mv.id());
+        if (allParks.servesCarry()) {
+          assertCarrySane(
+              allParks.predictWithCarry(ALL_PARKS_DUMMY).carryFtByPark(),
+              mv.modelName() + "/" + mv.version());
+        } else {
+          allParks.predict(ALL_PARKS_DUMMY);
+        }
       } else if (md.has("head")) {
         // pitch head or its LR baseline: register_snapshot writes head=pre|post (rule 9)
         if ("post".equals(md.path("head").asText())) {
@@ -92,6 +103,52 @@ public class ModelLoadValidator {
           mv.id());
     } catch (Exception e) {
       throw new RegistryException.ModelLoadFailed(mv.modelName(), mv.version(), mv.id(), e);
+    }
+  }
+
+  /**
+   * Carry-sanity bounds in feet ([166]: every per-park carry finite and in [50, 550] ft).
+   *
+   * <p>These MUST stay in lock-step with the Python promotion gate's band - {@code
+   * training/src/bullpen_training/battedball/mlp/rolling_cv_eval.py} {@code CARRY_MIN_FT} / {@code
+   * CARRY_MAX_FT} (the ADR-0012 {@code carry_gate}). The offline gate rejects a challenger whose
+   * per-park carry falls outside this range at promote-eval time; this load gate is the
+   * serving-side twin that rejects the same at model-load time. If you widen or tighten one, change
+   * the other in the same PR (there is no shared source for the constant across the Java/Python
+   * boundary - registry-guard Note-1).
+   */
+  static final double CARRY_MIN_FT = 50.0;
+
+  static final double CARRY_MAX_FT = 550.0;
+
+  /**
+   * Carry-head sanity for a carry-serving all-parks model ([166]): the per-park carry map must be
+   * present, non-empty, and every value finite and within [{@value #CARRY_MIN_FT}, {@value
+   * #CARRY_MAX_FT}] ft. Catches a mis-exported carry head (NaN / zero / absurd feet) at
+   * promote-time; complements {@link LoadedAllParksModel#predictWithCarry}, which already rejects a
+   * carry-axis length mismatch. Throws {@link IllegalStateException}, which {@link #validate} wraps
+   * into {@link RegistryException.ModelLoadFailed}.
+   */
+  static void assertCarrySane(Map<String, Double> carryFtByPark, String modelLabel) {
+    if (carryFtByPark == null || carryFtByPark.isEmpty()) {
+      throw new IllegalStateException(
+          "carry-serving model " + modelLabel + " produced no carry output");
+    }
+    for (Map.Entry<String, Double> e : carryFtByPark.entrySet()) {
+      Double ft = e.getValue();
+      if (ft == null || !Double.isFinite(ft) || ft < CARRY_MIN_FT || ft > CARRY_MAX_FT) {
+        throw new IllegalStateException(
+            "carry head output out of sane range ["
+                + CARRY_MIN_FT
+                + ", "
+                + CARRY_MAX_FT
+                + "] ft: park "
+                + e.getKey()
+                + " = "
+                + ft
+                + " for "
+                + modelLabel);
+      }
     }
   }
 }
