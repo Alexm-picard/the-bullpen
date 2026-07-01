@@ -13,7 +13,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useRef } from "react";
 
-import { API_BASE } from "./base";
+import { API_BASE, ApiError } from "./base";
 
 export type GameSummary = {
   gameId: number;
@@ -64,13 +64,7 @@ export type LivePitchRow = {
   event: string | null;
 };
 
-export class GameApiError extends Error {
-  readonly status: number;
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
+export class GameApiError extends ApiError {}
 
 /** Map the backend GameStatus enum into the polling interval the leaf body specifies. */
 export function statusPollIntervalMs(

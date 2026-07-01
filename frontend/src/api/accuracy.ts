@@ -19,28 +19,14 @@
  */
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 
-import { API_BASE } from "./base";
+import { API_BASE, ApiError, apiGet } from "./base";
 
 // --- Error type (clones OpsApiError) -------------------------------------
 
-export class AccuracyApiError extends Error {
-  readonly status: number;
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
+export class AccuracyApiError extends ApiError {}
 
-async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`);
-  if (!res.ok) {
-    throw new AccuracyApiError(
-      res.status,
-      `${path} failed: HTTP ${res.status}`,
-    );
-  }
-  return (await res.json()) as T;
-}
+const get = <T>(path: string): Promise<T> =>
+  apiGet<T>(path, (s, m) => new AccuracyApiError(s, m));
 
 // --- GET /v1/ops/accuracy ------------------------------------------------
 

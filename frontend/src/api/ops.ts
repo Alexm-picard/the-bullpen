@@ -9,7 +9,7 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 
 import type { OpsLogEntry, OpsLogType } from "../data/ops-fixtures";
 
-import { API_BASE } from "./base";
+import { ApiError, apiGet } from "./base";
 
 export type ModelVersion = {
   id: number;
@@ -66,21 +66,10 @@ export type RetrainingTrigger = {
   errorMessage: string | null;
 };
 
-export class OpsApiError extends Error {
-  readonly status: number;
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
+export class OpsApiError extends ApiError {}
 
-async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`);
-  if (!res.ok) {
-    throw new OpsApiError(res.status, `${path} failed: HTTP ${res.status}`);
-  }
-  return (await res.json()) as T;
-}
+const get = <T>(path: string): Promise<T> =>
+  apiGet<T>(path, (s, m) => new OpsApiError(s, m));
 
 // --- 4e.1 ----------------------------------------------------------------
 
