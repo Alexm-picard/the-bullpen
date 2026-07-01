@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 import torch
 import torch.nn.functional as F
 
-from bullpen_training.battedball.mlp.architecture import BattedBallMLP, build_model
+from bullpen_training.battedball.mlp.architecture import (
+    BattedBallMLP,
+    build_model,
+    predict_park_probs,
+)
 
 
 def test_forward_shape_matches_spec() -> None:
@@ -88,3 +93,18 @@ def test_n_features_dim_change_propagates() -> None:
     logits, carry = model(torch.zeros((3, 8)))
     assert logits.shape == (3, 4, 3)
     assert carry.shape == (3, 4, 1)
+
+
+def test_predict_park_probs_unpacks_the_two_output_carry_model() -> None:
+    """Regression for the 2c.6 calibrator-refit crash: the model returns
+    ``(logits, carry)``, so ``predict_park_probs`` must unpack the outcome logits
+    before softmax (a bare ``softmax(model(x))`` raises / mis-shapes). Drives the
+    REAL 2-output model so a revert to tuple-softmax fails here instead of only on
+    the box during the promotion ceremony."""
+    model = build_model(n_parks=30)
+    model.eval()
+    xs = np.zeros((8, 15), dtype=np.float32)
+    probs = predict_park_probs(model, xs)
+    assert probs.shape == (8, 30, 5)
+    # Each (sample, park) outcome distribution sums to 1.
+    np.testing.assert_allclose(probs.sum(axis=-1), np.ones((8, 30), dtype=np.float32), atol=1e-5)
