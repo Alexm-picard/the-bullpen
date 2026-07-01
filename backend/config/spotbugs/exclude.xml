@@ -80,14 +80,15 @@
     </Match>
 
     <!--
-      DB (same code for two conditional branches): PredictPitchController selects
-      modelVersion = head==PRE ? MODEL_VERSION : POST_MODEL_VERSION. The two version
-      constants currently share a value ("v1"), so SpotBugs sees identical branches.
-      They are semantically distinct (the pre/post heads version independently) and
-      will diverge; keeping the ternary documents that intent.
+      DB (same code for two conditional branches): PitchPredictionService selects
+      servingVersion = head==PRE ? MODEL_VERSION : POST_MODEL_VERSION (moved here when the
+      orchestration was extracted out of PredictPitchController). The two version constants
+      currently share a value ("v1"), so SpotBugs sees identical branches. They are
+      semantically distinct (the pre/post heads version independently) and will diverge;
+      keeping the ternary documents that intent.
     -->
     <Match>
         <Bug code="DB"/>
-        <Class name="net.thebullpen.baseball.api.PredictPitchController"/>
+        <Class name="net.thebullpen.baseball.inference.PitchPredictionService"/>
     </Match>
 </FindBugsFilter>
