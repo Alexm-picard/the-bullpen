@@ -60,8 +60,8 @@ dependencies {
     // EJML for the 15x15 fundamental-matrix inversion in the forward simulator (2a.9).
     // Leaner than Commons Math, actively maintained, simpler API for this use case.
     implementation("org.ejml:ejml-simple:0.43.1")
-    implementation("com.clickhouse:clickhouse-jdbc:0.7.2")
-    implementation("com.clickhouse:clickhouse-http-client:0.7.2")
+    implementation("com.clickhouse:clickhouse-jdbc:0.9.8")
+    implementation("com.clickhouse:clickhouse-http-client:0.9.8")
     implementation("org.apache.httpcomponents.client5:httpclient5:5.4.1")
 
     // springdoc: auto-generate the OpenAPI 3 spec from the @RestController surface,
