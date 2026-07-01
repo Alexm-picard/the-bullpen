@@ -41,7 +41,7 @@ class WeeklySegmentJobTest {
 
   @Test
   void no_champions_writes_zero_rows() throws Exception {
-    when(registryRepo.findAllNameVersionPairs()).thenReturn(List.of());
+    when(registryRepo.findActiveChampions()).thenReturn(List.of());
     assertThat(job.runOnce(Instant.now())).isEqualTo(0);
     verify(driftRepo, never()).insertBatch(any());
   }
@@ -49,9 +49,7 @@ class WeeklySegmentJobTest {
   @Test
   void empty_segment_fetcher_writes_zero_rows() throws Exception {
     ModelVersion champ = champion("model_a", 1L);
-    when(registryRepo.findAllNameVersionPairs())
-        .thenReturn(List.<String[]>of(new String[] {"model_a", "v1"}));
-    when(registryRepo.findByName("model_a")).thenReturn(List.of(champ));
+    when(registryRepo.findActiveChampions()).thenReturn(List.of(champ));
     when(fetcher.fetchBySegment(any(), anyLong(), any(), any(Instant.class), any(Instant.class)))
         .thenReturn(Map.of());
 
@@ -62,9 +60,7 @@ class WeeklySegmentJobTest {
   @Test
   void segment_brier_rows_carry_dim_value_and_window_in_key() throws Exception {
     ModelVersion champ = champion("model_a", 1L);
-    when(registryRepo.findAllNameVersionPairs())
-        .thenReturn(List.<String[]>of(new String[] {"model_a", "v1"}));
-    when(registryRepo.findByName("model_a")).thenReturn(List.of(champ));
+    when(registryRepo.findActiveChampions()).thenReturn(List.of(champ));
     // 200 well-calibrated rows per park, 3 parks → 3 segment buckets per (dim=park_id, window).
     Map<String, List<TruthJoinedRow>> byPark = new HashMap<>();
     for (String park : List.of("NYY", "BOS", "LAD")) {
@@ -93,9 +89,7 @@ class WeeklySegmentJobTest {
   @Test
   void low_sample_size_segments_get_lowsamp_suffix() throws Exception {
     ModelVersion champ = champion("model_a", 1L);
-    when(registryRepo.findAllNameVersionPairs())
-        .thenReturn(List.<String[]>of(new String[] {"model_a", "v1"}));
-    when(registryRepo.findByName("model_a")).thenReturn(List.of(champ));
+    when(registryRepo.findActiveChampions()).thenReturn(List.of(champ));
     // 50 rows < 100 threshold → :lowsamp suffix.
     when(fetcher.fetchBySegment(
             eq("model_a"), eq(1L), eq("stand"), any(Instant.class), any(Instant.class)))

@@ -1,19 +1,17 @@
 package net.thebullpen.baseball.drift.alerting;
 
 import java.time.Duration;
-import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import net.thebullpen.baseball.drift.DriftMetric;
 import net.thebullpen.baseball.drift.DriftMetricsRepository;
+import net.thebullpen.baseball.drift.DriftWindows;
 import net.thebullpen.baseball.drift.MetricType;
 import net.thebullpen.baseball.registry.DiscordNotifier;
 import net.thebullpen.baseball.registry.RegistryRepository;
 import net.thebullpen.baseball.registry.dto.ModelVersion;
-import net.thebullpen.baseball.registry.dto.Stage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -93,7 +91,7 @@ public class DriftAlertEvaluator {
   /** Visible-for-tests entry point. Returns number of alerts fired (excluding dedup-suppressed). */
   public int runOnce() {
     int fired = 0;
-    for (ModelVersion champ : activeChampions()) {
+    for (ModelVersion champ : registryRepo.findActiveChampions()) {
       fired += evaluateCalibration(champ);
       fired += evaluateFeaturePsi(champ);
     }
@@ -110,7 +108,7 @@ public class DriftAlertEvaluator {
     // the 2:30 calibration batch writes multiple rows, and counting rows would let 3 reruns on one
     // day masquerade as 3 consecutive days and fire a false PAGE (DEF-M3). Latest sample wins per
     // day (reruns supersede). 3 distinct days within the 3-day lookback ARE consecutive.
-    List<Double> daily = dailyCanonical(recent);
+    List<Double> daily = DriftWindows.dailyCanonical(recent, ALERT_ZONE);
     if (daily.size() < 3) {
       return 0;
     }
@@ -173,7 +171,7 @@ public class DriftAlertEvaluator {
       String feature = entry.getKey();
       // Same calendar-day collapse as calibration: 7 distinct days over threshold, not 7 rows
       // (a same-day PSI rerun must not count twice toward the 7-day sustain) (DEF-M3).
-      List<Double> daily = dailyCanonical(entry.getValue());
+      List<Double> daily = DriftWindows.dailyCanonical(entry.getValue(), ALERT_ZONE);
       if (daily.size() < 7) {
         continue;
       }
@@ -217,45 +215,5 @@ public class DriftAlertEvaluator {
           recent.size());
     }
     return fired;
-  }
-
-  /**
-   * Collapse drift rows to one canonical value per calendar day (in {@link #ALERT_ZONE}), the
-   * latest sample winning so a same-day rerun supersedes rather than double-counts. Ordered
-   * ascending by day, so "N values within an N-day lookback" correctly means N consecutive days
-   * (DEF-M3).
-   */
-  private static List<Double> dailyCanonical(List<DriftMetric> rows) {
-    Map<LocalDate, DriftMetric> latestPerDay = new HashMap<>();
-    for (DriftMetric m : rows) {
-      LocalDate day = m.computedAt().atZone(ALERT_ZONE).toLocalDate();
-      DriftMetric cur = latestPerDay.get(day);
-      if (cur == null || m.computedAt().isAfter(cur.computedAt())) {
-        latestPerDay.put(day, m);
-      }
-    }
-    return latestPerDay.entrySet().stream()
-        .sorted(Map.Entry.comparingByKey())
-        .map(e -> e.getValue().metricValue())
-        .toList();
-  }
-
-  private List<ModelVersion> activeChampions() {
-    List<String> seen = new ArrayList<>();
-    List<ModelVersion> out = new ArrayList<>();
-    for (String[] pair : registryRepo.findAllNameVersionPairs()) {
-      if (!seen.contains(pair[0])) {
-        seen.add(pair[0]);
-      }
-    }
-    for (String name : seen) {
-      for (ModelVersion v : registryRepo.findByName(name)) {
-        if (v.stage() == Stage.CHAMPION) {
-          out.add(v);
-          break;
-        }
-      }
-    }
-    return out;
   }
 }

@@ -265,6 +265,21 @@ public class RegistryRepository {
         MODEL_VERSION_MAPPER);
   }
 
+  /**
+   * Every active CHAMPION version across all registered models - the served set the scheduled /
+   * drift retrain triggers act on. Excludes SHADOW (a challenger is not the served model),
+   * CANDIDATE (not yet serving), and ARCHIVED (terminal). One query per V016's partial-unique
+   * one-champion-per-model index; replaces the copy-pasted "for each name, first CHAMPION" scan
+   * DriftTrigger / ScheduledTrigger / DriftAlertEvaluator each carried.
+   */
+  public List<ModelVersion> findActiveChampions() {
+    return jdbc.query(
+        SELECT_ALL_COLUMNS
+            + " WHERE stage = 'champion'"
+            + " ORDER BY model_name ASC, created_at DESC, id DESC",
+        MODEL_VERSION_MAPPER);
+  }
+
   private Optional<ModelVersion> findByNameAndStage(String modelName, Stage stage) {
     // The (model_name, stage) composite index from V010's idx_mv_model_stage carries this query;
     // there should be at most one row per (model_name, stage) for SHADOW + CHAMPION. The CHAMPION

@@ -101,9 +101,7 @@ class DriftInductionDrillIT {
     driftRepo = mock(DriftMetricsRepository.class);
     discord = mock(DiscordNotifier.class);
     ModelVersion champ = champion(MODEL, VERSION_ID);
-    when(registryRepo.findAllNameVersionPairs())
-        .thenReturn(List.<String[]>of(new String[] {MODEL, "v1"}));
-    when(registryRepo.findByName(MODEL)).thenReturn(List.of(champ));
+    when(registryRepo.findActiveChampions()).thenReturn(List.of(champ));
   }
 
   @Test
