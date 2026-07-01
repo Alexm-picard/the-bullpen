@@ -49,6 +49,25 @@ jobs:
             --out-dir artifacts/battedball_outcome/v1
           uv run python -m bullpen_training.battedball.mlp.parity_fixture_allparks \
             --artifact-dir artifacts/battedball_outcome/v1
+      # The pitch PRE + POST parity tests (PitchPreParityTest / PitchPostParityTest) need registered
+      # pitch_outcome_pre/v2 + pitch_outcome_post/v1 bundles (model.onnx + calibrator + park/te/
+      # pitch_type lookups) + the fixtures. The real heads are box-only + git-ignored, so we
+      # synthesize a DETERMINISTIC MINIATURE LightGBM booster with the exact serving contract
+      # (31 features -> 5 classes for pre, 41 -> 5 for post) via the real onnxmltools exporter, and
+      # emit each head's fixtures from fixed synthetic request rows. Java-vs-Python parity is
+      # meaningful for any graph, trained or not. (cwd=training, so --out-dir is relative to it; the
+      # artifacts land at <repo>/training/artifacts/... where the Java tests look.)
+      - name: Generate pitch pre + post parity artifacts + fixtures
+        working-directory: training
+        run: |
+          uv run python -m bullpen_training.pitch.generate_ci_artifacts \
+            --head pre --out-dir artifacts/pitch_outcome_pre/v2
+          uv run python -m bullpen_training.pitch.parity_fixture --synthetic \
+            --model-dir artifacts/pitch_outcome_pre/v2
+          uv run python -m bullpen_training.pitch.generate_ci_artifacts \
+            --head post --out-dir artifacts/pitch_outcome_post/v1
+          uv run python -m bullpen_training.pitch.parity_fixture_post --synthetic \
+            --model-dir artifacts/pitch_outcome_post/v1
 
       - name: Build + unit tests
         working-directory: backend
