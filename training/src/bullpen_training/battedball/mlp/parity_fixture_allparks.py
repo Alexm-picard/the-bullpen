@@ -33,7 +33,11 @@ import onnxruntime as ort
 
 from bullpen_training.battedball.mlp.calibration import load_calibrator, transform
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
+# parents[5] = repo root: this module is at training/src/bullpen_training/battedball/mlp/, one
+# level deeper than the pitch/ generators (whose parents[4] is the repo root); the extra mlp/
+# nesting means parents[4] here is training/, not the repo. (Latent bug: training/contracts/ does
+# not exist, so the copied parents[4] idiom pointed at a missing contract.)
+REPO_ROOT = Path(__file__).resolve().parents[5]
 FIXTURES_DIR = REPO_ROOT / "training" / "tests" / "fixtures"
 CONTRACT = REPO_ROOT / "contracts" / "feature_pipeline_battedball.json"
 INPUT_FILE = FIXTURES_DIR / "parity_battedball_allparks_001.json"

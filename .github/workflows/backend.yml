@@ -36,6 +36,19 @@ jobs:
       - name: Generate CI parity artifacts
         working-directory: training
         run: uv run python -m bullpen_training.battedball.generate_ci_artifacts --write-fixture
+      # The all-parks OUTCOME parity test (BattedBallAllParksParityTest) needs a registered
+      # battedball_outcome/v1 model.onnx + metadata + calibrator + the fixtures. The real champion is
+      # box-only + git-ignored, so we synthesize a DETERMINISTIC MINIATURE with the exact serving
+      # contract ([None,15] -> [None,30,5] softmax) and emit its fixtures - Java-vs-Python parity is
+      # meaningful for any graph, trained or not. (cwd=training, so --out-dir is relative to it; the
+      # artifacts land at <repo>/training/artifacts/... where the Java test looks.)
+      - name: Generate all-parks parity artifacts + fixtures
+        working-directory: training
+        run: |
+          uv run python -m bullpen_training.battedball.mlp.generate_ci_artifacts_allparks \
+            --out-dir artifacts/battedball_outcome/v1
+          uv run python -m bullpen_training.battedball.mlp.parity_fixture_allparks \
+            --artifact-dir artifacts/battedball_outcome/v1
 
       - name: Build + unit tests
         working-directory: backend
