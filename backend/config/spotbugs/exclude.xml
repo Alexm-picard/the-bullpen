@@ -66,14 +66,17 @@
 
     <!--
       CT (constructor throws → partially-initialized object / finalizer attack):
-      R2ArchiveClient validates its @Value-injected config in the constructor and
-      throws on a blank endpoint. Finalizer attacks require a malicious subclass +
-      a finalize() override; this Spring-constructed client has neither and finalizers
-      are deprecated since Java 9. Benign.
+      R2ArchiveClient validates its @Value-injected config in the constructor and throws on a blank
+      endpoint; OfflineGateEvidenceRepository + AccuracyEvidenceRepository read a bundled classpath
+      evidence resource in their constructor (fail-fast at startup). Finalizer attacks require a
+      malicious subclass + a finalize() override; these Spring-constructed @Repository beans have
+      neither - and because @Repository beans are CGLIB-proxied for exception translation they
+      cannot be made final (doing so breaks context load) - and finalizers are deprecated since
+      Java 9. Benign.
     -->
     <Match>
         <Bug code="CT"/>
-        <Class name="net.thebullpen.baseball.registry.R2ArchiveClient"/>
+        <Class name="~net\.thebullpen\.baseball\.registry\.(R2ArchiveClient|OfflineGateEvidenceRepository|AccuracyEvidenceRepository)"/>
     </Match>
 
     <!--

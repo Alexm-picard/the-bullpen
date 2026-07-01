@@ -96,6 +96,7 @@ def _recreate(ch: Client) -> None:
             prob_2b Float32,
             prob_3b Float32,
             prob_hr Float32,
+            carry_ft Nullable(Float32),
             observed_outcome Nullable(Enum8('out'=0,'1b'=1,'2b'=2,'3b'=3,'hr'=4)),
             ingested_at DateTime DEFAULT now()
         )
@@ -123,11 +124,11 @@ _PITCHES = [
 ]
 # Retro rows keyed to each pitch's home park. E carries NULL observed_outcome.
 _RETRO = [
-    (_GD, 900001, 1, 1, "BOS", 0.02, 0.03, 0.05, 0.05, 0.85, "hr"),
-    (_GD, 900002, 1, 1, "NYY", 0.93, 0.04, 0.02, 0.01, 0.00, "out"),
-    (_GD, 900003, 1, 1, "BOS", 0.90, 0.05, 0.03, 0.01, 0.01, "out"),
-    (_GD, 900004, 1, 1, "LAD", 0.50, 0.30, 0.10, 0.05, 0.05, "1b"),
-    (_GD, 900005, 1, 1, "LAD", 0.40, 0.45, 0.10, 0.04, 0.01, None),
+    (_GD, 900001, 1, 1, "BOS", 0.02, 0.03, 0.05, 0.05, 0.85, "hr", 405.0),
+    (_GD, 900002, 1, 1, "NYY", 0.93, 0.04, 0.02, 0.01, 0.00, "out", 120.0),
+    (_GD, 900003, 1, 1, "BOS", 0.90, 0.05, 0.03, 0.01, 0.01, "out", 60.0),
+    (_GD, 900004, 1, 1, "LAD", 0.50, 0.30, 0.10, 0.05, 0.05, "1b", 150.0),
+    (_GD, 900005, 1, 1, "LAD", 0.40, 0.45, 0.10, 0.04, 0.01, None, 180.0),
 ]
 
 _PITCH_COLS = (
@@ -136,7 +137,7 @@ _PITCH_COLS = (
 )
 _RETRO_COLS_SQL = (
     "game_date, game_id, at_bat_index, pitch_number, park_id, "
-    "prob_out, prob_1b, prob_2b, prob_3b, prob_hr, observed_outcome"
+    "prob_out, prob_1b, prob_2b, prob_3b, prob_hr, observed_outcome, carry_ft"
 )
 
 

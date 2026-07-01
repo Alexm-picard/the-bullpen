@@ -32,7 +32,7 @@ public class BatterBattedBallsRepository {
   private static final RowMapper<BattedBallRow> MAPPER =
       (rs, i) ->
           new BattedBallRow(
-              rs.getString("game_date"),
+              rs.getString("game_date_str"),
               rs.getString("events"),
               rs.getString("bb_type"),
               nullableDouble(rs, "launch_speed_mph"),
@@ -59,7 +59,7 @@ public class BatterBattedBallsRepository {
       long batterId, String bbType, String event, LocalDate from, LocalDate to, int limit) {
     StringBuilder sql =
         new StringBuilder(
-            "SELECT toString(game_date) AS game_date, events AS events, bb_type AS bb_type,"
+            "SELECT toString(game_date) AS game_date_str, events AS events, bb_type AS bb_type,"
                 + " launch_speed_mph AS launch_speed_mph, launch_angle_deg AS launch_angle_deg,"
                 + " hit_distance_ft AS hit_distance_ft, park_id AS park_id,"
                 + " toString(stand) AS stand"
@@ -75,13 +75,18 @@ public class BatterBattedBallsRepository {
       sql.append(" AND events = ?");
       args.add(event);
     }
+    // game_date here must resolve to the Date COLUMN, not the toString(...) projection - which is
+    // why that projection aliases AS game_date_str above. (When it aliased AS game_date, ClickHouse
+    // (prefer_column_name_to_alias=0) resolved game_date in this WHERE to the String alias, so
+    // game_date >= <date> was a String-vs-Date / String-vs-Int64 compare -> DB::Exception 386
+    // NO_COMMON_TYPE - the bug that kept the date-range path red.) The bound is an inlined
+    // toDate('yyyy-MM-dd') literal: the same clickhouse-jdbc workaround used for LIMIT, and
+    // injection-safe since a java.time.LocalDate renders only as ISO [0-9-] via toString().
     if (from != null) {
-      sql.append(" AND game_date >= ?");
-      args.add(java.sql.Date.valueOf(from));
+      sql.append(" AND game_date >= toDate('").append(from).append("')");
     }
     if (to != null) {
-      sql.append(" AND game_date <= ?");
-      args.add(java.sql.Date.valueOf(to));
+      sql.append(" AND game_date <= toDate('").append(to).append("')");
     }
     sql.append(
             " ORDER BY game_date DESC, game_id DESC, at_bat_index DESC, pitch_number DESC LIMIT ")

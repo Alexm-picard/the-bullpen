@@ -128,9 +128,9 @@ def test_loss_decreases_over_epochs_on_synthetic_data() -> None:
     # Train.
     _trained, summary = train_model(ds, n_epochs=5, batch_size=64, lr=1e-2, device="cpu")
     final_loss = summary.final_train_loss
-    assert (
-        final_loss < init_loss * 0.9
-    ), f"loss should drop noticeably; init {init_loss:.4f} -> final {final_loss:.4f}"
+    assert final_loss < init_loss * 0.9, (
+        f"loss should drop noticeably; init {init_loss:.4f} -> final {final_loss:.4f}"
+    )
     assert summary.final_carry_loss == 0.0  # no carry backfilled -> exactly zero
     assert summary.device == "cpu"
     assert summary.n_epochs == 5

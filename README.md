@@ -1,12 +1,13 @@
 # The Bullpen
 
 A self-hosted baseball-analytics platform built primarily as an ML-systems +
-serving wrapper (registry, A/B routing, drift, retraining) around three calibrated
-models: a batted-ball champion serving live (a per-park calibrated physics estimate,
-honest about its reality gap - see the cross-park limitation below), with two pitch-outcome
-heads not yet serving any user-visible prediction (post is champion-stage but UI-held, pre stays
-shadow on a failed primary - decisions [154]/[165]). Operates through at least one MLB season for a real
-drift postmortem.
+serving wrapper (registry, shadow-mode A/B routing, drift jobs, retraining queue) around three
+calibrated models, of which one reaches a browser today: a batted-ball champion serving live (a
+per-park calibrated physics estimate, honest about its reality gap - see the cross-park limitation
+below), with two pitch-outcome heads not yet serving any user-visible prediction (post is
+champion-stage but UI-held, pre stays shadow on a failed primary - decisions [154]/[165]). Built to
+operate through at least one MLB season for a real drift postmortem (the in-season postmortem is
+pending; a synthetic induced-drift drill stands in for now).
 
 - **Live site**: https://thebullpen.net/
 - **Ops dashboard**: https://thebullpen.net/ops
@@ -23,26 +24,29 @@ drift postmortem.
 
 ## What's interesting about it
 
-- A **custom ML systems wrapper** — model registry, A/B router, drift
-  detection, retraining triggers — written from scratch in Java rather
-  than pulled in via MLflow. The wrapper is the project; the models are
-  the excuse.
+- A **custom ML systems wrapper** - model registry, A/B router (shadow-mode),
+  drift detection, retraining queue + triggers (per-model dispatch wiring still
+  pending) - written from scratch in Java rather than pulled in via MLflow. The
+  wrapper is the project; the models are the excuse.
 - **ONNX Runtime in-process** in Java + Spring Boot 3 — no Python
   sidecar, no live RPC. Training is Python; serving is JVM.
-- **Scouting-report design system** (Saira Condensed / IBM Plex Sans /
-  IBM Plex Mono on a warm cream substrate, navy + scarlet team-graphics
-  chrome). The product is advance-scouting analytics, so it presents as a
-  scouting packet, not yet-another-SaaS chrome (decision [133]).
+- **Broadcast-graphics design system** (Barlow Condensed / Inter /
+  JetBrains Mono, scorebug + lower-third telecast chrome). The product is
+  advance-scouting analytics, so it presents as a live-broadcast package,
+  not yet-another-SaaS chrome (decision [160], superseding the earlier
+  scouting-report identity [133]).
 - **Per-model eval artifact** with rolling-origin cross-validation,
   reliability diagrams, calibration metrics — always co-registered with
   a logistic-regression baseline to bound the neural model's lift.
-- Mid-season **drift postmortems** when a model degrades — automated
-  trigger, human promotion gate (decision [44] / rule 6).
+- A **drift -> postmortem** chain (automated trigger, human promotion gate -
+  decision [44] / rule 6), validated end-to-end by a synthetic induced-drift
+  drill; the first real in-season postmortem is pending.
 - **Measured test coverage**, not a vibe: 551 backend test methods, 492 Python
   tests (including the four required temporal-leakage tests, mutation-checked),
-  and 368 frontend tests. Line/branch coverage is published every CI run
-  (backend JaCoCo, frontend vitest v8) as a non-gating baseline - read it from
-  the latest run's artifacts rather than a number pasted here, which drifts.
+  and 368 frontend tests. Line/branch coverage is published every CI run and
+  gated on a regression floor (backend JaCoCo under the Docker ITs; frontend
+  vitest v8 at 65/65/55/60) - read the current number from the latest run's
+  artifacts rather than a figure pasted here, which drifts.
   Every commit also gates on lint, hex-codes, bundle-budget, static a11y, and a
   Schemathesis API-contract check.
 

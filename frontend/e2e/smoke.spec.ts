@@ -67,19 +67,22 @@ const SLATE_GAME = {
   detailedState: "In Progress",
 };
 
-test("games slate renders the live empty state when the API returns []", async ({
+test("games slate degrades to the showcase slate when the live API is empty", async ({
   page,
 }) => {
   const errors = trackPageErrors(page);
+  // Both live sources settled-empty -> the page falls back to the committed showcase slate
+  // (decision [160]), so a card still renders rather than a blank/empty view.
   await page.route("**/v1/games/today", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: "[]",
-    }),
+    route.fulfill({ status: 200, contentType: "application/json", body: "[]" }),
+  );
+  await page.route("**/v1/matchups/today", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: "[]" }),
   );
   await page.goto("/games");
-  await expect(page.getByText("No games yet today")).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: /open game for/i }).first(),
+  ).toBeVisible();
   expect(errors, "uncaught errors on empty /games").toEqual([]);
 });
 
@@ -93,6 +96,9 @@ test("games slate renders a row and its numeric link opens the live game page", 
       contentType: "application/json",
       body: JSON.stringify([SLATE_GAME]),
     }),
+  );
+  await page.route("**/v1/matchups/today", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: "[]" }),
   );
   // The per-game page's own queries are stubbed too, so the click asserts
   // routing (numeric id accepted), not backend availability.
@@ -114,7 +120,7 @@ test("games slate renders a row and its numeric link opens the live game page", 
   await page.goto("/games");
   await expect(page.getByText("BAL")).toBeVisible();
   const open = page.getByRole("link", {
-    name: /open live view for BAL at BOS/i,
+    name: /open game for BAL at BOS/i,
   });
   await expect(open).toHaveAttribute("href", "/games/745804");
 
