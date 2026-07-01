@@ -114,3 +114,6 @@ logs/
 docs/deploys/*.md
 !docs/deploys/.gitkeep
 nohup.out
+
+# Schemathesis run cache (contract fuzzing)
+.schemathesis/

@@ -6,3 +6,12 @@ spring:
   threads:
     virtual:
       enabled: true
+  mvc:
+    servlet:
+      # Eagerly initialise the DispatcherServlet at context startup instead of on the first
+      # request. WarmupReadiness warms the MODEL (an internal predict() call) before flipping the
+      # readiness probe UP, but the servlet + filter chain still init lazily on the first HTTP
+      # request - a ~1ms window a burst of traffic can race the instant readiness flips (the most
+      # plausible source of the rare first-request 500 the Schemathesis contract job saw). Eager
+      # init removes that window: by the time Tomcat accepts a connection, the request path is warm.
+      load-on-startup: 1
