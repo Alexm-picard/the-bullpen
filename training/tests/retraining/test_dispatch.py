@@ -5,7 +5,10 @@ from __future__ import annotations
 import pytest
 
 from bullpen_training.retraining._dispatch import (
+    CANONICAL_REGISTRY_MODEL_NAMES,
     DISPATCH,
+    EXPERIMENT_KEY_PREFIX,
+    EXPERIMENT_MLP_PER_PARK_KEY,
     RetrainOutput,
     UnsupportedModel,
     dispatch_for,
@@ -13,15 +16,29 @@ from bullpen_training.retraining._dispatch import (
 )
 
 
-def test_default_dispatch_table_contains_all_models_from_leaf() -> None:
-    expected = {
-        "pitch_outcome_pre",
-        "pitch_outcome_post",
-        "pitch_outcome_lr_baseline",
-        "batted_ball",
-        "batted_ball_lgbm_baseline",
-    }
-    assert expected <= set(DISPATCH.keys())
+def test_dispatch_keys_equal_registry_model_names_exactly() -> None:
+    """M2 ruling C1: registry model_name values are the single source of truth. A renamed or
+    added key that does not match the registry (experiment keys excluded by design) must fail
+    here loudly, because a mismatched key is unreachable by real queue rows."""
+    registry_keys = {k for k in DISPATCH if not k.startswith(EXPERIMENT_KEY_PREFIX)}
+    assert registry_keys == CANONICAL_REGISTRY_MODEL_NAMES
+
+
+def test_experiment_keys_are_prefixed_and_not_registry_names() -> None:
+    experiment_keys = {k for k in DISPATCH if k.startswith(EXPERIMENT_KEY_PREFIX)}
+    assert EXPERIMENT_MLP_PER_PARK_KEY in experiment_keys
+    assert experiment_keys.isdisjoint(CANONICAL_REGISTRY_MODEL_NAMES)
+
+
+def test_battedball_outcome_is_an_honest_sentinel_pointing_at_the_servable_adapter() -> None:
+    """M2 ruling C2: the served family must not dispatch to the per-park experiment adapter."""
+    fn = dispatch_for("battedball_outcome")
+    with pytest.raises(UnsupportedModel) as exc:
+        fn("trig-xyz", "v3", {})
+    message = str(exc.value)
+    assert "DELIBERATELY unwired" in message
+    assert "M2-A3" in message
+    assert EXPERIMENT_MLP_PER_PARK_KEY in message
 
 
 def test_default_dispatch_fns_raise_unsupported_until_wired() -> None:

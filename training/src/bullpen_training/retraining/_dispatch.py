@@ -55,7 +55,9 @@ def _not_yet_wired(model_name: str) -> RetrainFn:
     return _stub
 
 
-def _batted_ball(trigger_id: str, version: str, trigger_metadata: dict) -> RetrainOutput:
+def _experiment_mlp_per_park(
+    trigger_id: str, version: str, trigger_metadata: dict
+) -> RetrainOutput:
     # Lazy import: keeps torch/onnx out of the import path of every OTHER dispatch, and out
     # of run.py's queue-empty fast path.
     from bullpen_training.retraining.batted_ball import retrain_batted_ball
@@ -63,16 +65,53 @@ def _batted_ball(trigger_id: str, version: str, trigger_metadata: dict) -> Retra
     return retrain_batted_ball(trigger_id, version, trigger_metadata)
 
 
-# The batted_ball entry is REAL (M1 task 3): it drives the mlp_per_park trainer end-to-end
-# (see retraining/batted_ball.py, including the naming caveat that real triggers enqueue the
-# registry model name). The remaining four stay honest sentinels until each Phase-2 trainer
-# is wired to accept trigger_id + return RetrainOutput.
+def _servable_family_pending(
+    trigger_id: str, version: str, trigger_metadata: dict
+) -> RetrainOutput:
+    raise UnsupportedModel(
+        "retrain dispatch for 'battedball_outcome' is DELIBERATELY unwired (M2 ruling C2): "
+        "the served family is the single-graph battedball/mlp (shared backbone + carry head "
+        "+ per-park calibrators), and a real drift trigger must not burn GPU-hours on the "
+        "wrong architecture - rule-7's schema hash would reject the candidate at registration "
+        "anyway, after the compute was spent. The servable-family adapter is M2-A3; the proven "
+        "per-park EXPERIMENT seam stays at '_experiment_battedball_mlp_per_park' "
+        f"(test/manual-only). trigger_id={trigger_id!r}"
+    )
+
+
+# M2 ruling C1: the registry's model_name values are the SINGLE SOURCE OF TRUTH for this
+# list - real retraining_queue rows carry champ.modelName(), so any other spelling is
+# unreachable by construction. If a name here drifts from the registry, the pinned-list
+# test (test_dispatch.py) fails loudly. Verified against model_versions on the box
+# 2026-07-02.
+CANONICAL_REGISTRY_MODEL_NAMES: frozenset[str] = frozenset(
+    {
+        "battedball_outcome",
+        "pitch_outcome_pre",
+        "pitch_outcome_post",
+        "pitch_outcome_lr_baseline",
+        "battedball_lgbm_per_park",
+        "lr_baseline_batted_ball",
+    }
+)
+
+# Keys with this prefix are deliberately NON-registry (excluded from the pinned-list
+# equality by design): reachable only by a hand-built trigger, never by a real queue row.
+EXPERIMENT_KEY_PREFIX = "_experiment_"
+EXPERIMENT_MLP_PER_PARK_KEY = "_experiment_battedball_mlp_per_park"
+
+# battedball_outcome: honest sentinel until the servable-family adapter (M2-A3) ships.
+# The per-park adapter (M1 task 3) remains the proven claim->train->register->complete
+# seam under its experiment key. The remaining registry entries stay honest sentinels
+# until each family's trainer is wired to accept trigger_id + return RetrainOutput.
 DISPATCH: dict[str, RetrainFn] = {
+    "battedball_outcome": _servable_family_pending,
     "pitch_outcome_pre": _not_yet_wired("pitch_outcome_pre"),
     "pitch_outcome_post": _not_yet_wired("pitch_outcome_post"),
     "pitch_outcome_lr_baseline": _not_yet_wired("pitch_outcome_lr_baseline"),
-    "batted_ball": _batted_ball,
-    "batted_ball_lgbm_baseline": _not_yet_wired("batted_ball_lgbm_baseline"),
+    "battedball_lgbm_per_park": _not_yet_wired("battedball_lgbm_per_park"),
+    "lr_baseline_batted_ball": _not_yet_wired("lr_baseline_batted_ball"),
+    EXPERIMENT_MLP_PER_PARK_KEY: _experiment_mlp_per_park,
 }
 
 
