@@ -126,6 +126,22 @@ for u in "${UNITS[@]}"; do
   log "  installed ${dst}"
 done
 
+# M1-R3: the INSTALL path must also retire the LEGACY plain snapshot/offsite timers when
+# present, not just uninstall. The 2026-07-02 box finding: installing the @-templates left
+# the pre-templating plain units live alongside them, and both sets would have double-fired
+# at 03:0x/03:3x. A fresh bootstrap or restore drill re-running this script must converge on
+# exactly one timer of each - so retire the plain names here, idempotently.
+for stem in bullpen-snapshot bullpen-offsite; do
+  if systemctl list-unit-files 2>/dev/null | grep -q "^${stem}\.timer"; then
+    log "retiring legacy plain ${stem}.timer (replaced by the ${stem}@<user>.timer template)"
+    sudo systemctl disable --now "${stem}.timer" 2>/dev/null || true
+  fi
+  if [[ -f "${TARGET_DIR}/${stem}.timer" ]]; then
+    sudo rm "${TARGET_DIR}/${stem}.timer"
+    log "  removed ${TARGET_DIR}/${stem}.timer"
+  fi
+done
+
 # WS6 / D1: also install the daily snapshot units (rule 8 forcing function). BOTH units are
 # TEMPLATES - %i is the operator user (ExecStart=/home/%i/... in the .service; the .timer's
 # Unit= names bullpen-snapshot@%i.service), so no username is hardcoded in a committed unit.
@@ -156,6 +172,22 @@ if [[ -f "$OFFSITE_SVC_SRC" && -f "$OFFSITE_TIMER_SRC" ]]; then
   INSTALL_OFFSITE=true
 else
   log "  WARN: offsite units not found under infra/backup; skipping the offsite timer"
+fi
+
+# M1 task 7: the GPU thermal textfile collector - a 30s sample of nvidia-smi into
+# /var/lib/node_exporter/gpu_temp.prom, feeding the GpuTempHigh/GpuTempCritical rules. Same
+# template shape as the snapshot pair (script path is /home/%i/code/the-bullpen/...). The
+# script self-skips (exit 0) on hosts without nvidia-smi, so enabling is safe everywhere.
+GPU_SVC_SRC="${UNIT_DIR}/bullpen-gpu-temp@.service"
+GPU_TIMER_SRC="${UNIT_DIR}/bullpen-gpu-temp@.timer"
+INSTALL_GPU_TEMP=false
+if [[ -f "$GPU_SVC_SRC" && -f "$GPU_TIMER_SRC" ]]; then
+  sudo install -o root -g root -m 0644 "$GPU_SVC_SRC" "${TARGET_DIR}/bullpen-gpu-temp@.service"
+  sudo install -o root -g root -m 0644 "$GPU_TIMER_SRC" "${TARGET_DIR}/bullpen-gpu-temp@.timer"
+  log "  installed ${TARGET_DIR}/bullpen-gpu-temp@.service + bullpen-gpu-temp@.timer"
+  INSTALL_GPU_TEMP=true
+else
+  log "  WARN: gpu-temp units not found under infra/systemd; skipping the GPU thermal timer"
 fi
 
 # WS3 (decision [19]): the worker-profile JOB timers - the nightly retrain (02-06 ET, drives the
@@ -200,6 +232,16 @@ if [[ "$INSTALL_OFFSITE" == "true" ]]; then
   else
     sudo systemctl enable --now "bullpen-offsite@${INSTANCE_USER}.timer"
     log "enabled + started: bullpen-offsite@${INSTANCE_USER}.timer (fires daily at 03:30 local; no-ops until BULLPEN_OFFSITE_REMOTE is set)"
+  fi
+fi
+
+if [[ "$INSTALL_GPU_TEMP" == "true" ]]; then
+  if [[ "$NO_START" == "true" ]]; then
+    sudo systemctl enable "bullpen-gpu-temp@${INSTANCE_USER}.timer"
+    log "enabled (not started): bullpen-gpu-temp@${INSTANCE_USER}.timer"
+  else
+    sudo systemctl enable --now "bullpen-gpu-temp@${INSTANCE_USER}.timer"
+    log "enabled + started: bullpen-gpu-temp@${INSTANCE_USER}.timer (30s GPU thermal sample)"
   fi
 fi
 

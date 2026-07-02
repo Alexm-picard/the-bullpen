@@ -48,6 +48,16 @@ import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWrite
  * storage — fine here because the value lives in an env-var-backed secret store, never on disk, and
  * rotates via systemd EnvironmentFile reload. Switching to bcrypt would add a hashing step every
  * request for zero security benefit at this scale.
+ *
+ * <p>DELIBERATELY PUBLIC (M1 task 10): {@code /v3/api-docs} and {@code /swagger-ui} fall through to
+ * the {@code anyRequest().permitAll()} rule ON PURPOSE - the OpenAPI spec and its explorer are part
+ * of the portfolio's public API surface, not an oversight. The exposure is safe by construction:
+ * every write path ({@code /v1/admin/**}) is ADMIN Basic-auth'd above, the non-health actuator
+ * endpoints are ADMIN-gated, and the public predict/read endpoints the spec documents are
+ * rate-limited per IP ({@code RateLimitFilter}). Reading the contract of an already public API
+ * discloses nothing an attacker could not enumerate; hiding it would only cost the
+ * reviewer/API-consumer experience. Batched for a decisions.md one-liner at the next /decide
+ * sitting.
  */
 @Configuration
 @EnableWebSecurity
