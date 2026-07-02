@@ -9,12 +9,13 @@ The contract for a dispatched function:
 * Persists ``trigger_id`` into the produced ``metadata.json`` so post-hoc correlation of
   the model row to its retrain trigger is one ``trigger_id`` lookup.
 
-The actual wiring of each model_name to its existing Phase-2 trainer (``train_pre.py``,
-``train_post.py``, ``train_toy.py``, etc.) is intentionally left as a follow-up — the Phase-2
-trainers don't currently accept ``trigger_id``, and weaving it through each one is invasive.
-For 3d.3 the dispatch table holds a sentinel raises so the run.py orchestration can be
-exercised end-to-end with tests that mock the callable. The wiring lands in a follow-up
-commit per model.
+Wiring status (M1 task 3): ``batted_ball`` dispatches to the REAL per-park trainer via
+:mod:`bullpen_training.retraining.batted_ball` (claim -> train_all_parks -> ONNX export ->
+RetrainOutput, integration-tested on a synthetic miniature). The other four entries stay
+honest sentinels until each Phase-2 trainer is wired to accept ``trigger_id`` and return
+``RetrainOutput`` - and note the open naming question recorded in ``batted_ball.py``: real
+triggers enqueue the registry model name (``champ.modelName()``), which these dispatch keys
+do not all match yet.
 """
 
 from __future__ import annotations
@@ -54,13 +55,23 @@ def _not_yet_wired(model_name: str) -> RetrainFn:
     return _stub
 
 
-# Sentinel stubs per the leaf body's dispatch table. Each one raises until the matching
-# Phase-2 trainer is updated to accept trigger_id + return RetrainOutput.
+def _batted_ball(trigger_id: str, version: str, trigger_metadata: dict) -> RetrainOutput:
+    # Lazy import: keeps torch/onnx out of the import path of every OTHER dispatch, and out
+    # of run.py's queue-empty fast path.
+    from bullpen_training.retraining.batted_ball import retrain_batted_ball
+
+    return retrain_batted_ball(trigger_id, version, trigger_metadata)
+
+
+# The batted_ball entry is REAL (M1 task 3): it drives the mlp_per_park trainer end-to-end
+# (see retraining/batted_ball.py, including the naming caveat that real triggers enqueue the
+# registry model name). The remaining four stay honest sentinels until each Phase-2 trainer
+# is wired to accept trigger_id + return RetrainOutput.
 DISPATCH: dict[str, RetrainFn] = {
     "pitch_outcome_pre": _not_yet_wired("pitch_outcome_pre"),
     "pitch_outcome_post": _not_yet_wired("pitch_outcome_post"),
     "pitch_outcome_lr_baseline": _not_yet_wired("pitch_outcome_lr_baseline"),
-    "batted_ball": _not_yet_wired("batted_ball"),
+    "batted_ball": _batted_ball,
     "batted_ball_lgbm_baseline": _not_yet_wired("batted_ball_lgbm_baseline"),
 }
 

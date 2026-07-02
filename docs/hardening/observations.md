@@ -41,4 +41,6 @@ the first sweep has signal even before the season starts.
 
 ## Season — append below
 
-(empty — fill during operation)
+| Date       | Area | Observation                                                                                                                                                                                                                                                                                                                                                                                           |
+| ---------- | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-07-02 | ci   | `LivePitchesRepositoryIT > upsertGameStatus_keeps_the_latest_status_under_replacing_merge_tree` failed once on PR #189's first backend-test run (assertion at line 403), then passed on an untouched rerun - a ReplacingMergeTree dedup-timing flake shape, unrelated to the PR's diff (which never touched ingest/data). Watch for recurrence; file an issue on the second occurrence (M1 rider R5). |
