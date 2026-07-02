@@ -9,6 +9,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.time.Duration;
+import java.util.List;
 import net.thebullpen.baseball.api.dto.ApiError;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
@@ -18,6 +19,7 @@ import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.security.web.util.matcher.IpAddressMatcher;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -58,6 +60,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
   private final int predictPerMinute;
   private final int searchPerMinute;
   private final int adminPerMinute;
+  private final List<IpAddressMatcher> trustedProxies;
   private final ObjectMapper objectMapper;
   private final Cache<String, TokenBucket> buckets =
       Caffeine.newBuilder().maximumSize(50_000).expireAfterAccess(Duration.ofMinutes(10)).build();
@@ -67,11 +70,13 @@ public class RateLimitFilter extends OncePerRequestFilter {
       @Value("${bullpen.ratelimit.predict-per-minute:60}") int predictPerMinute,
       @Value("${bullpen.ratelimit.search-per-minute:120}") int searchPerMinute,
       @Value("${bullpen.ratelimit.admin-per-minute:20}") int adminPerMinute,
+      @Value("${bullpen.ratelimit.trusted-proxies:127.0.0.0/8,::1}") List<String> trustedProxies,
       ObjectMapper objectMapper) {
     this.enabled = enabled;
     this.predictPerMinute = predictPerMinute;
     this.searchPerMinute = searchPerMinute;
     this.adminPerMinute = adminPerMinute;
+    this.trustedProxies = trustedProxies.stream().map(IpAddressMatcher::new).toList();
     this.objectMapper = objectMapper;
   }
 
@@ -125,8 +130,18 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
   /**
    * Real client IP behind Cloudflare Tunnel: CF-Connecting-IP, then X-Forwarded-For, then remote.
+   *
+   * <p>The forwarded headers are honored only when the request actually arrived from a trusted
+   * proxy hop ({@code bullpen.ratelimit.trusted-proxies}; default loopback, where the on-box
+   * cloudflared connects from). Anything hitting the port directly could otherwise rotate
+   * CF-Connecting-IP per request and mint itself a fresh bucket every time, defeating the per-IP
+   * limit entirely - for an off-tunnel caller the peer address is the only trustworthy identity.
    */
-  private static String clientIp(HttpServletRequest request) {
+  private String clientIp(HttpServletRequest request) {
+    String remote = request.getRemoteAddr();
+    if (!isTrustedProxy(remote)) {
+      return remote;
+    }
     String cf = request.getHeader("CF-Connecting-IP");
     if (cf != null && !cf.isBlank()) {
       return cf.trim();
@@ -136,7 +151,19 @@ public class RateLimitFilter extends OncePerRequestFilter {
       int comma = xff.indexOf(',');
       return (comma > 0 ? xff.substring(0, comma) : xff).trim();
     }
-    return request.getRemoteAddr();
+    return remote;
+  }
+
+  private boolean isTrustedProxy(String remoteAddr) {
+    if (remoteAddr == null) {
+      return false;
+    }
+    for (IpAddressMatcher matcher : trustedProxies) {
+      if (matcher.matches(remoteAddr)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**

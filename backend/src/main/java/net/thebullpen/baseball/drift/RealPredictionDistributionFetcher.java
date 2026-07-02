@@ -44,7 +44,6 @@ public class RealPredictionDistributionFetcher implements PredictionDistribution
 
   private static final Logger log =
       LoggerFactory.getLogger(RealPredictionDistributionFetcher.class);
-  private static final ObjectMapper MAPPER = new ObjectMapper();
 
   // Window bounds are bound as epoch-millis longs and reconstructed server-side with
   // fromUnixTimestamp64Milli, NOT as bound java.sql.Timestamps. clickhouse-jdbc mishandles a
@@ -58,10 +57,12 @@ public class RealPredictionDistributionFetcher implements PredictionDistribution
           + "   AND request_at <= fromUnixTimestamp64Milli(?, 'UTC')";
 
   private final JdbcTemplate jdbc;
+  private final ObjectMapper objectMapper;
 
   public RealPredictionDistributionFetcher(
-      @Qualifier("clickhouseDataSource") DataSource clickhouse) {
+      @Qualifier("clickhouseDataSource") DataSource clickhouse, ObjectMapper objectMapper) {
     this.jdbc = new JdbcTemplate(clickhouse);
+    this.objectMapper = objectMapper;
   }
 
   @Override
@@ -106,14 +107,14 @@ public class RealPredictionDistributionFetcher implements PredictionDistribution
 
   /**
    * The {@code probabilities} object node, or null if the payload is unparseable / a non-pitch
-   * shape.
+   * shape. Instance rather than static so it parses with the injected Spring {@link ObjectMapper}.
    */
-  static JsonNode probabilitiesOf(String predictionJson) {
+  JsonNode probabilitiesOf(String predictionJson) {
     if (predictionJson == null || predictionJson.isBlank()) {
       return null;
     }
     try {
-      JsonNode probs = MAPPER.readTree(predictionJson).get("probabilities");
+      JsonNode probs = objectMapper.readTree(predictionJson).get("probabilities");
       return (probs != null && probs.isObject()) ? probs : null;
     } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
       return null;

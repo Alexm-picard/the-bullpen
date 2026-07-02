@@ -59,8 +59,8 @@ public class PredictAllParksController {
 
   static final String MODEL_NAME = "battedball_outcome";
   private static final String HR_OUTCOME = "hr";
-  private static final ObjectMapper MAPPER = new ObjectMapper();
 
+  private final ObjectMapper objectMapper;
   private final ModelLoader modelLoader;
   private final InferenceRouter router;
   private final RegistryService registry;
@@ -72,12 +72,14 @@ public class PredictAllParksController {
       InferenceRouter router,
       RegistryService registry,
       AsyncPredictionLogger logger,
-      InferenceMetrics metrics) {
+      InferenceMetrics metrics,
+      ObjectMapper objectMapper) {
     this.modelLoader = modelLoader;
     this.router = router;
     this.registry = registry;
     this.logger = logger;
     this.metrics = metrics;
+    this.objectMapper = objectMapper;
   }
 
   @PostMapping("/batted-ball/all-parks")
@@ -221,13 +223,11 @@ public class PredictAllParksController {
     };
   }
 
-  private static String serializeFeatures(AllParksOutcomeRequest req)
-      throws JsonProcessingException {
-    return MAPPER.writeValueAsString(req);
+  private String serializeFeatures(AllParksOutcomeRequest req) throws JsonProcessingException {
+    return objectMapper.writeValueAsString(req);
   }
 
-  private static String serializeDistribution(Map<String, float[]> dist)
-      throws JsonProcessingException {
-    return MAPPER.writeValueAsString(dist);
+  private String serializeDistribution(Map<String, float[]> dist) throws JsonProcessingException {
+    return objectMapper.writeValueAsString(dist);
   }
 }
