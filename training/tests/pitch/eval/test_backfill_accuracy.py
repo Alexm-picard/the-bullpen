@@ -17,6 +17,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
+
 from bullpen_training.features import LABEL_CLASSES
 from bullpen_training.pitch.eval._shared import (
     LABEL_TO_INT,
