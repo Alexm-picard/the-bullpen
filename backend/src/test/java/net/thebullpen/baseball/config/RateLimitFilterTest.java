@@ -139,6 +139,23 @@ class RateLimitFilterTest {
   }
 
   @Test
+  void ipv6LoopbackIsATrustedProxyHop() throws Exception {
+    // cloudflared may connect over ::1; the default trusted list covers it, so the forwarded
+    // header is still the bucket key.
+    MockMvc mvc = mvcWith(filter(true, 1, 120, 20));
+    mvc.perform(
+            post("/v1/predict/ping")
+                .with(remoteAddr("::1"))
+                .header("CF-Connecting-IP", "198.51.100.7"))
+        .andExpect(status().isOk());
+    mvc.perform(
+            post("/v1/predict/ping")
+                .with(remoteAddr("::1"))
+                .header("CF-Connecting-IP", "198.51.100.7"))
+        .andExpect(status().isTooManyRequests());
+  }
+
+  @Test
   void spoofedForwardedHeadersIgnoredFromUntrustedRemote() throws Exception {
     // Off-tunnel caller rotating CF-Connecting-IP per request: the forged header must NOT mint a
     // fresh bucket each time — the bucket keys on the peer address, so the 1/min budget exhausts.

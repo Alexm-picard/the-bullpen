@@ -76,7 +76,13 @@ public class RateLimitFilter extends OncePerRequestFilter {
     this.predictPerMinute = predictPerMinute;
     this.searchPerMinute = searchPerMinute;
     this.adminPerMinute = adminPerMinute;
-    this.trustedProxies = trustedProxies.stream().map(IpAddressMatcher::new).toList();
+    // trim so an override like "127.0.0.0/8, ::1" (space after comma) cannot throw at startup.
+    this.trustedProxies =
+        trustedProxies.stream()
+            .map(String::trim)
+            .filter(s -> !s.isEmpty())
+            .map(IpAddressMatcher::new)
+            .toList();
     this.objectMapper = objectMapper;
   }
 
