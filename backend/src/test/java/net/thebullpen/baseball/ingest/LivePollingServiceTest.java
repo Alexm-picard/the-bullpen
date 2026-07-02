@@ -1,5 +1,6 @@
 package net.thebullpen.baseball.ingest;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -10,6 +11,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -89,7 +91,14 @@ class LivePollingServiceTest {
 
   private static LivePollingService service(
       MlbStatsApiClient client, LivePitchesRepository repo, LivePitchPredictor predictor) {
-    return new LivePollingService(client, repo, Optional.of(predictor), Optional.empty(), 0L, 15L);
+    return new LivePollingService(
+        client,
+        repo,
+        Optional.of(predictor),
+        Optional.empty(),
+        new IngestMetrics(new SimpleMeterRegistry()),
+        0L,
+        15L);
   }
 
   @Test
@@ -172,10 +181,66 @@ class LivePollingServiceTest {
     when(client.fetchLiveFeed(822810L)).thenReturn(feed(List.of(pitch(1, 1)), nextPitch(1, 2)));
 
     // No predictor bean (no model artifact) -> Optional.empty(). No form repo either.
-    new LivePollingService(client, repo, Optional.empty(), Optional.empty(), 0L, 15L)
+    new LivePollingService(
+            client,
+            repo,
+            Optional.empty(),
+            Optional.empty(),
+            new IngestMetrics(new SimpleMeterRegistry()),
+            0L,
+            15L)
         .pollGame(822810L);
 
     verify(repo, times(1)).insertPitches(any());
+  }
+
+  @Test
+  void pollGame_updates_last_poll_gauge_and_pitch_counter() throws Exception {
+    MlbStatsApiClient client = mock(MlbStatsApiClient.class);
+    LivePitchesRepository repo = mock(LivePitchesRepository.class);
+    SimpleMeterRegistry registry = new SimpleMeterRegistry();
+    when(client.fetchLiveFeed(822810L))
+        .thenReturn(feed(List.of(pitch(1, 1), pitch(1, 2)), nextPitch(1, 3)));
+
+    new LivePollingService(
+            client, repo, Optional.empty(), Optional.empty(), new IngestMetrics(registry), 0L, 15L)
+        .pollGame(822810L);
+
+    assertThat(registry.get("bullpen_ingest_pitches_total").counter().count()).isEqualTo(2.0);
+    assertThat(registry.get("bullpen_ingest_last_poll_timestamp_seconds").gauge().value())
+        .isGreaterThan(0.0);
+  }
+
+  @Test
+  void pollGame_counts_an_unknown_game_status_as_a_parse_anomaly() throws Exception {
+    MlbStatsApiClient client = mock(MlbStatsApiClient.class);
+    LivePitchesRepository repo = mock(LivePitchesRepository.class);
+    SimpleMeterRegistry registry = new SimpleMeterRegistry();
+    // A detailedState the parser has never seen collapses to UNKNOWN - the schema-drift signal.
+    LiveGameFeed unknownStatusFeed =
+        new LiveGameFeed(
+            822810L,
+            GameStatus.UNKNOWN,
+            LocalDate.of(2026, 6, 5),
+            1,
+            2,
+            "TOR",
+            "BAL",
+            List.of(),
+            null);
+    when(client.fetchLiveFeed(822810L)).thenReturn(unknownStatusFeed);
+
+    new LivePollingService(
+            client, repo, Optional.empty(), Optional.empty(), new IngestMetrics(registry), 0L, 15L)
+        .pollGame(822810L);
+
+    assertThat(
+            registry
+                .get("bullpen_ingest_parse_anomalies_total")
+                .tag("reason", "unknown_game_status")
+                .counter()
+                .count())
+        .isEqualTo(1.0);
   }
 
   // --- WS1 robustness (C1 / C2 / C5) ------------------------------------
