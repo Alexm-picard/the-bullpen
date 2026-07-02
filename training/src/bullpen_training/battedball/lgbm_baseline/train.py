@@ -46,6 +46,7 @@ from bullpen_training.battedball.lgbm_baseline.dataset import (
     PARK_FEATURE,
     load_lgbm_dataset,
 )
+from bullpen_training.eval.leakage_guards import refuse_holdout
 
 # Defaults from the leaf body.
 DEFAULT_LR: Final[float] = 0.05
@@ -319,6 +320,11 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--verbose-eval", type=int, default=50)
     args = parser.parse_args()
+    refuse_holdout(
+        season_from=args.train_season_from,
+        season_to=args.train_season_to,
+        val_season=args.val_season,
+    )
 
     print(f"loading train data ({args.train_season_from}-{args.train_season_to})...")
     train_df = load_lgbm_dataset(

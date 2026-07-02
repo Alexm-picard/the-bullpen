@@ -47,6 +47,7 @@ from bullpen_training.battedball.mlp_per_park.dataset import (
     load_park_arrays,
 )
 from bullpen_training.battedball.parks.loader import load_all_parks
+from bullpen_training.eval.leakage_guards import refuse_holdout
 
 
 @dataclass
@@ -221,6 +222,7 @@ def train_all_parks(
     verbose: bool = False,
 ) -> list[ParkTrainSummary]:
     """Train one model per park and save artifacts."""
+    refuse_holdout(season_from=season_from, season_to=season_to, val_season=val_season)
     summaries: list[ParkTrainSummary] = []
     t0_all = time.perf_counter()
 
@@ -340,6 +342,11 @@ def main() -> None:
         help="Subset of park IDs to train (default: all 30).",
     )
     args = parser.parse_args()
+    refuse_holdout(
+        season_from=args.train_season_from,
+        season_to=args.train_season_to,
+        val_season=args.val_season,
+    )
 
     park_ids = tuple(sorted(args.parks)) if args.parks else tuple(sorted(load_all_parks().keys()))
 
