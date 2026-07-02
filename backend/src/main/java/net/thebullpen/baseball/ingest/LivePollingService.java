@@ -47,6 +47,7 @@ public class LivePollingService {
   // Intra-day form upsert (A3.2). Empty when ClickHouse is disabled (no bean) - then form stays at
   // the nightly snapshot and the predictor degrades to NaN, same as before A3.
   private final Optional<PitcherFormRepository> formRepo;
+  private final IngestMetrics metrics;
   private final GameStateMachine stateMachine = new GameStateMachine();
   private final long minApiGapMs;
   private final long scheduleRefreshMin;
@@ -71,12 +72,14 @@ public class LivePollingService {
       LivePitchesRepository repo,
       Optional<LivePitchPredictor> predictor,
       Optional<PitcherFormRepository> formRepo,
+      IngestMetrics metrics,
       @Value("${bullpen.ingest.live.api-min-gap-ms:500}") long minApiGapMs,
       @Value("${bullpen.ingest.live.schedule-refresh-min:15}") long scheduleRefreshMin) {
     this.client = client;
     this.repo = repo;
     this.predictor = predictor;
     this.formRepo = formRepo;
+    this.metrics = metrics;
     this.minApiGapMs = minApiGapMs;
     this.scheduleRefreshMin = scheduleRefreshMin;
   }
@@ -117,7 +120,13 @@ public class LivePollingService {
     GameStatus current =
         stateMachine.transition(gamePk, prev == null ? GameStatus.SCHEDULED : prev, feed.status());
     statusByGame.put(gamePk, current);
-    lastPollAt.put(gamePk, Instant.now());
+    Instant polledAt = Instant.now();
+    lastPollAt.put(gamePk, polledAt);
+    metrics.markPollCompleted(polledAt);
+    if (feed.status() == GameStatus.UNKNOWN) {
+      // Schema-drift tripwire: the feed's detailedState matched nothing we know.
+      metrics.incrementParseAnomaly("unknown_game_status");
+    }
     // Persist status on a transition (step 7b) OR on this process's first poll of the game (L1:
     // restart-robustness - the schedule prime makes prev == current after a mid-game restart, so
     // transition-only persistence left the game invisible to /v1/games/today until its next
@@ -129,6 +138,7 @@ public class LivePollingService {
       } else {
         // No parseable gameData.datetime in the feed: the row cannot key into live_game_status,
         // so /v1/games/today will not surface this game (C-3 replay finding, 2026-06-11).
+        metrics.incrementParseAnomaly("missing_game_date");
         log.debug(
             "game {} status transition {} -> {} not persisted: feed carried no gameDate",
             gamePk,
@@ -147,6 +157,12 @@ public class LivePollingService {
       return;
     }
     repo.insertPitches(withPitches(feed, fresh));
+    metrics.incrementPitchesIngested(fresh.size());
+    // Schema-drift tripwire: a pitch whose result vocabulary collapsed to "unknown" means the
+    // feed is using words the parser's mapping table has never seen.
+    metrics.incrementParseAnomalies(
+        "unknown_pitch_description",
+        fresh.stream().filter(p -> "unknown".equals(p.description())).count());
     lastCursorByGame.put(
         gamePk, fresh.stream().mapToLong(LivePollingService::cursor).max().orElse(since));
     refreshIntraDayForm(gamePk, fresh);
