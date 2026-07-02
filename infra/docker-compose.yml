@@ -74,7 +74,9 @@ services:
       - "3000:3000"
     environment:
       GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER:-admin}"
-      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:-admin}"
+      # Fail-closed like ClickHouse above: no admin/admin default on the dashboard that owns
+      # every ops panel. The value lives in infra/.env on the box (see infra/.env.example).
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD (no default; admin/admin was the old fallback)}"
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - grafana-data:/var/lib/grafana
@@ -164,8 +166,11 @@ services:
     profiles: ["errortracking"]
     restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      # Parameterized because the repo is public; the defaults preserve the already-initialized
+      # volume's credentials (POSTGRES_PASSWORD only applies on FIRST init of glitchtip-pg-data,
+      # so changing the env on an existing DB does nothing - rotate inside postgres first).
+      POSTGRES_USER: "${GLITCHTIP_DB_USER:-postgres}"
+      POSTGRES_PASSWORD: "${GLITCHTIP_DB_PASSWORD:-postgres}"
       POSTGRES_DB: glitchtip
     volumes:
       - glitchtip-pg-data:/var/lib/postgresql/data
@@ -174,7 +179,7 @@ services:
         limits:
           memory: "${BULLPEN_GLITCHTIP_PG_MEM:-512m}"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${GLITCHTIP_DB_USER:-postgres}"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -203,7 +208,7 @@ services:
     ports:
       - "8000:8000"
     environment: &glitchtip-env
-      DATABASE_URL: postgres://postgres:postgres@glitchtip-postgres:5432/glitchtip
+      DATABASE_URL: "postgres://${GLITCHTIP_DB_USER:-postgres}:${GLITCHTIP_DB_PASSWORD:-postgres}@glitchtip-postgres:5432/glitchtip"
       REDIS_URL: redis://glitchtip-redis:6379/0
       SECRET_KEY: "${GLITCHTIP_SECRET_KEY:?set GLITCHTIP_SECRET_KEY to a random hex string, e.g. openssl rand -hex 32}"
       PORT: "8000"
