@@ -45,6 +45,14 @@ scrape_configs:
     static_configs:
       - targets: ["localhost:9090"]
 
+  # M1 task 6: ClickHouse's NATIVE prometheus endpoint (infra/clickhouse/config.d/prometheus.xml,
+  # port 9363 in docker-compose). Needed because the api deliberately survives a dead ClickHouse
+  # (Hikari initializationFailTimeout(-1)), so ApiDown never fires for it - ClickHouseDown keys on
+  # up{job="clickhouse"} from this scrape. Same-network service name, no host.docker.internal hop.
+  - job_name: "clickhouse"
+    static_configs:
+      - targets: ["clickhouse:9363"]
+
   # WS4: host metrics (RAM/CPU/disk) + the snapshot-freshness textfile metric written by
   # clickhouse-snapshot.sh. The 12 GiB WSL2 cap is shared by everything, so host-RAM visibility
   # is the precondition for the MemAvailable alert.
