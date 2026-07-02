@@ -1,0 +1,15 @@
+[Unit]
+Description=The Bullpen — daily snapshot timer for %i (03:00 local)
+
+[Timer]
+# Daily at 03:00 local time (off-peak; outside any live-game window).
+# Persistent=true catches up if the host was off when the timer should have fired.
+# Template timer: the operator username is the instance (%i), so nothing user-specific is
+# hardcoded in a committed unit. Enable as: systemctl enable --now bullpen-snapshot@<user>.timer
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+RandomizedDelaySec=15min
+Unit=bullpen-snapshot@%i.service
+
+[Install]
+WantedBy=timers.target

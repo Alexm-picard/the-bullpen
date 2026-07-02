@@ -148,11 +148,11 @@ check: ## Run all formatters / linters / tests
 
 .PHONY: services-up
 services-up: ## docker compose up stateful services (ClickHouse, Prometheus, Grafana)
-	docker compose -f infra/docker-compose.yml up -d
+	docker compose -f infra/docker-compose.yml --env-file infra/.env up -d
 
 .PHONY: services-down
 services-down: ## docker compose down stateful services
-	docker compose -f infra/docker-compose.yml down
+	docker compose -f infra/docker-compose.yml --env-file infra/.env down
 
 ##@ Ops (WSL2 prod host only)
 
