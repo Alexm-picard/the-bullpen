@@ -10,10 +10,14 @@ on:
     branches: [main]
     paths:
       - "infra/prometheus/**"
+      - "infra/alertmanager/**"
+      - "infra/docker-compose.yml"
       - ".github/workflows/infra.yml"
   pull_request:
     paths:
       - "infra/prometheus/**"
+      - "infra/alertmanager/**"
+      - "infra/docker-compose.yml"
       - ".github/workflows/infra.yml"
 
 permissions:
@@ -42,3 +46,48 @@ jobs:
             -v "$RUNNER_TEMP/secrets:/etc/prometheus/secrets:ro" \
             --entrypoint promtool prom/prometheus:v3.0.1 \
             check config /etc/prometheus/prometheus.yml
+
+  compose-config:
+    name: docker compose config (fail-closed env contract)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Two assertions: (1) with a dummy env supplying the fail-closed secrets, the compose file
+      # (ALL profiles) parses; (2) WITHOUT the env, compose refuses to render - proving the
+      # ClickHouse/Grafana :? guards actually fail closed rather than defaulting.
+      - name: compose renders with required env
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/ci.env" << 'ENV'
+          BULLPEN_CLICKHOUSE_PASSWORD=ci-dummy
+          GRAFANA_ADMIN_PASSWORD=ci-dummy
+          GLITCHTIP_SECRET_KEY=ci-dummy
+          ENV
+          docker compose -f infra/docker-compose.yml --env-file "$RUNNER_TEMP/ci.env" \
+            --profile monitoring --profile errortracking config -q
+      - name: compose fails closed without secrets
+        run: |
+          set -euo pipefail
+          if docker compose -f infra/docker-compose.yml config -q 2>/dev/null; then
+            echo "::error::compose rendered without the fail-closed secrets - a :? guard was lost"
+            exit 1
+          fi
+          echo "fail-closed guards intact"
+
+  alertmanager-config:
+    name: amtool check-config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Same principle as promtool above: validate with the pinned prod image's own parser. The
+      # discord_url secret file is stubbed - this checks SYNTAX, not the live credential.
+      - name: amtool check-config (pinned prod image)
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/am-secrets"
+          printf 'https://example.invalid/ci-stub' > "$RUNNER_TEMP/am-secrets/discord_url"
+          docker run --rm \
+            -v "$PWD/infra/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro" \
+            -v "$RUNNER_TEMP/am-secrets:/etc/alertmanager/secrets:ro" \
+            --entrypoint amtool prom/alertmanager:v0.28.1 \
+            check-config /etc/alertmanager/alertmanager.yml
