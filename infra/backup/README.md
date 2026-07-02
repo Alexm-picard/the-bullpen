@@ -10,7 +10,7 @@ local snapshot (Layer 1, fast restores), air-gapped USB (Layer 2, host-loss), of
 
 **Lives on**: the WSL2 host itself, at `$SNAPSHOT_DIR` (default `/var/lib/clickhouse-backup`).
 
-**Runs**: daily at 03:00 local via `bullpen-snapshot.timer`.
+**Runs**: daily at 03:00 local via `bullpen-snapshot@<user>.timer` (template timer; the instance is the operator user).
 
 **Captures**:
 
@@ -30,8 +30,8 @@ wget https://github.com/Altinity/clickhouse-backup/releases/latest/download/clic
 sudo dpkg -i clickhouse-backup_amd64.deb
 
 # 2. Drop the systemd units (note: %i template variable — use your username)
-sudo cp infra/backup/bullpen-snapshot.service /etc/systemd/system/bullpen-snapshot@.service
-sudo cp infra/backup/bullpen-snapshot.timer   /etc/systemd/system/bullpen-snapshot.timer
+sudo cp "infra/backup/bullpen-snapshot.service" /etc/systemd/system/bullpen-snapshot@.service
+sudo cp "infra/backup/bullpen-snapshot@.timer" /etc/systemd/system/bullpen-snapshot@.timer
 
 # 3. Create the env file (KEEP THIS chmod 600 — contains the Discord webhook URL)
 sudo tee /etc/default/bullpen >/dev/null <<EOF
@@ -43,7 +43,7 @@ sudo chmod 600 /etc/default/bullpen
 
 # 4. Enable + start the timer
 sudo systemctl daemon-reload
-sudo systemctl enable --now bullpen-snapshot.timer
+sudo systemctl enable --now "bullpen-snapshot@$(whoami).timer"
 
 # 5. Test it once manually
 sudo systemctl start "bullpen-snapshot@$(whoami).service"
@@ -172,7 +172,7 @@ ops/scripts/restore-drill.sh --from-r2
 ## Layer 3 — Offsite to Cloudflare R2 (`offsite-push.sh`, the P2 leg of [153])
 
 A SEPARATE decoupled step from the local snapshot: `bullpen-offsite@<user>.service` +
-`bullpen-offsite.timer` fire at **03:30 local** (after the 03:00 local snapshot). An R2
+`bullpen-offsite@<user>.timer` fire at **03:30 local** (after the 03:00 local snapshot). An R2
 failure alerts Discord and fails the offsite unit; it can never fail or block the local
 snapshot - local-first is the prime directive. The script pushes, per `auto_*` snapshot:
 
