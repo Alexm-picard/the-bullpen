@@ -68,6 +68,17 @@ training/data/fold_export/
 training/data/folds/
 /data/
 
+# Top-level training/data JSONs are box-emitted run products (pf_* factor dumps, retrodict /
+# physics diagnostic reports) - ignored by default so they stop forcing --allow-dirty deploys
+# on the box. Two committed exceptions, both load-bearing per docs/decisions:
+#   - observed_norm_factors.json: the frozen [140] gate anchor (sanity.py FAILS LOUD without it)
+#   - weather_backfill_2015_2025.json: the [138] backfill evidence (runbooks/weather-backfill.md)
+training/data/*.json
+!training/data/observed_norm_factors.json
+!training/data/weather_backfill_2015_2025.json
+# Box-local eval render products (e.g. battedball_backfill_accuracy_v1.html).
+training/data/eval/*.html
+
 # Model artifacts NEVER go in git (CLAUDE.md hard never-rule)
 training/artifacts/**
 !training/artifacts/.gitkeep
