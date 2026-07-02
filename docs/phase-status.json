@@ -209,8 +209,8 @@
         },
         {
           "label": "Contract tests on the API via Schemathesis (against Spring's /v3/api-docs)",
-          "done": false,
-          "details": "Schemathesis is Python; it just needs the OpenAPI schema URL. Catches drift between the documented contract and the implementation. Runs as a separate CI job, required-to-merge."
+          "done": true,
+          "details": "DONE - .github/workflows/contract.yml: schemathesis vs /v3/api-docs, in the ci-gate required aggregation; its header records two real 500-bugs it caught. Honest scope note: --checks not_a_server_error, --max-examples 30, /v1/admin + /v1/predict/pitch + all-parks currently excluded (expansion tracked in the Road-to-9s backlog)."
         },
         {
           "label": "Rolling-origin temporal CV harness (4 folds 2015\u20132025)",
@@ -343,8 +343,8 @@
         },
         {
           "label": "JMH benchmark suite for the inference path + perf-regression CI gate (25% threshold)",
-          "done": false,
-          "details": "Benchmarks: ONNX session prediction p50/p99, A/B router decision time, calibrator apply time. ./gradlew benchmark in CI, scripts/check_benchmarks.py compares against the previous commit's numbers, fails on >25% regression."
+          "done": true,
+          "details": "DONE - .github/workflows/benchmark.yml + backend/src/jmh/ (onnxBattedBallPredict, routerBucketDecision, routerAbRouteDecision) + scripts/check_benchmarks.py vs backend/benchmarks/baseline.json at the 25% threshold; informational Discord ping (baseline is dev-hardware-specific, so the gate is advisory rather than merge-blocking)."
         },
         {
           "label": "Repository pattern formalized in data/ \u2014 5 explicit aggregates",
@@ -418,13 +418,13 @@
       "exit_criteria_additions": [
         {
           "label": "TS strict flags enabled: noUnusedLocals + noUnusedParameters + noImplicitReturns + noUncheckedIndexedAccess",
-          "done": false,
-          "details": "Matches StudyForesight's tsconfig.app.json. Adds compile-time safety without runtime cost. Pay the migration cost early when the codebase is small."
+          "done": true,
+          "details": "DONE - all four enabled (plus strict) in frontend/tsconfig.app.json; the real gate is tsc -b in frontend.yml."
         },
         {
           "label": "Security headers on Vercel deployment: COOP, CORP, CSP frame-ancestors 'none'",
-          "done": false,
-          "details": "Configured in vercel.json. Trivial 1-hour addition that matches StudyForesight's API security_headers.py posture for the frontend side."
+          "done": true,
+          "details": "DONE - frontend/vercel.json: COOP/CORP/nosniff/Referrer-Policy plus a full CSP (script-src 'self', no unsafe-eval; frame-ancestors 'none') since PR #186 - exceeds the original COOP/CORP/frame-ancestors scope."
         }
       ],
       "mvp_cuts": [
@@ -483,12 +483,12 @@
         },
         {
           "label": "Nightly k6 load test gating on SLA (p99 prediction latency < 50ms, error rate < 0.1%)",
-          "done": false,
-          "details": "k6 against the deployed API, runs nightly via GitHub Actions cron, posts annotations to Grafana on each run. SLA matches design.md's stated latency target. Failure pings Discord."
+          "done": true,
+          "details": "DONE - .github/workflows/k6-nightly.yml + infra/k6/predict-load.js: nightly cron, thresholds p99<50ms + error<0.1% on /v1/predict/batted-ball (CI-local boot, toy model), Discord ping on 2 consecutive breaches; last recorded p99 24.82ms. Delta vs the original wording: runs against a CI-booted api, not the deployed box, and no Grafana annotations."
         },
         {
           "label": "docs/runbooks/ROLLBACK.md \u2014 top-level runbook covering deploy / migration / model promotion / drift retrain rollbacks",
-          "done": false,
+          "done": true,
           "details": "Pulls together per-skill rollback procedures (deploy-safely, promote-model, schema-migration-author) into one document an on-call you reads at 2am. Each scenario: detection signal \u2192 decision criteria \u2192 exact commands \u2192 verification steps."
         }
       ],
