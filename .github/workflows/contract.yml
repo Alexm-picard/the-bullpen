@@ -26,7 +26,7 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
       - uses: gradle/actions/setup-gradle@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
 
