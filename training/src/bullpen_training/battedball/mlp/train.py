@@ -38,6 +38,7 @@ from bullpen_training.battedball.mlp.dataset import (
     load_arrays,
 )
 from bullpen_training.battedball.parks.loader import load_all_parks
+from bullpen_training.eval.leakage_guards import refuse_holdout
 
 # KL on a hard label vector (one-hot from a low-MC retrodiction) is
 # infinite if the model assigns 0 to the observed class — apply a tiny
@@ -404,6 +405,11 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
+    refuse_holdout(
+        season_from=args.train_season_from,
+        season_to=args.train_season_to,
+        val_season=args.val_season,
+    )
 
     park_order = tuple(sorted(load_all_parks().keys()))
     print(f"loading data from CH (seasons {args.train_season_from}-{args.train_season_to})...")
