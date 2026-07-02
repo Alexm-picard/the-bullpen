@@ -61,3 +61,87 @@ groups:
         annotations:
           summary: "ClickHouse/registry snapshot is stale (> 26h)"
           description: "No successful snapshot in over 26h (last success {{ $value | humanizeDuration }} ago). The daily 03:00 timer has missed a cycle - backups are not current. Check `systemctl status bullpen-snapshot.timer` and the last clickhouse-snapshot.sh run."
+
+      # --- M1 task 6 additions ------------------------------------------------
+
+      # Disk: the WSL2 virtual disk filling is a slow-motion outage (ClickHouse parts, docker
+      # logs, releases). Warn at <15%, page at <5%.
+      - alert: DiskLow
+        expr: |
+          node_filesystem_avail_bytes{mountpoint="/"}
+            / node_filesystem_size_bytes{mountpoint="/"} < 0.15
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Root filesystem below 15% free"
+          description: "Root fs is {{ $value | humanizePercentage }} free. Prune docker logs/images, old releases, and ClickHouse parts before DiskFull pages."
+
+      - alert: DiskFull
+        expr: |
+          node_filesystem_avail_bytes{mountpoint="/"}
+            / node_filesystem_size_bytes{mountpoint="/"} < 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Root filesystem below 5% free"
+          description: "Root fs is {{ $value | humanizePercentage }} free. ClickHouse inserts and journal writes are about to start failing."
+
+      # ClickHouse's own liveness. The api deliberately stays UP when CH dies (Hikari
+      # initializationFailTimeout(-1)), so ApiDown never covers this - only a scrape of
+      # ClickHouse's native :9363 prometheus endpoint does.
+      - alert: ClickHouseDown
+        expr: up{job="clickhouse"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ClickHouse is down"
+          description: "The clickhouse:9363 native prometheus endpoint has not been scrapeable for 2m. Predictions still serve (payload features) but prediction_log/drift/live ingest are all failing. Check `docker ps` + container logs."
+
+      # The live poller stopped mid-window: a poll completed within the last 2h (so games WERE
+      # being watched - the self-gate that stands in for an explicit active-games gauge) but none
+      # in the last 5m. Quiet days never fire: the gauge goes stale past 2h and the gate closes.
+      - alert: LivePollerStuck
+        expr: |
+          (time() - bullpen_ingest_last_poll_timestamp_seconds > 300)
+            and (time() - bullpen_ingest_last_poll_timestamp_seconds < 7200)
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Live poller has stopped mid-window"
+          description: "Last successful game poll was {{ $value | humanizeDuration }} ago after recent activity - the poller is likely stuck while games are live. Check `journalctl -u bullpen-worker` and the MLB API."
+
+      # The feed schema moved under the parser: sustained nonzero anomaly rate (unknown status /
+      # missing gameDate / unknown pitch vocabulary). Rate only moves while games poll, so this is
+      # inherently live-game-gated.
+      - alert: ParserAnomalyRate
+        expr: sum(rate(bullpen_ingest_parse_anomalies_total[15m])) > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "MLB feed parse anomalies are sustained"
+          description: "Nonzero parse-anomaly rate for 30m ({{ $value }}/s). The GUMBO feed is handing back vocabulary/fields the parser degrades on - inspect the reason label breakdown before the drift dataset silently thins."
+
+      # GPU thermals during the 2-6 AM retrains (M1 task 7's textfile collector). CPU temperature
+      # is unreadable under WSL2; the box's shutdown risk IS the GPU under training load.
+      - alert: GpuTempHigh
+        expr: nvidia_gpu_temperature_celsius > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "GPU above 80C"
+          description: "GPU at {{ $value }}C for 5m. If a retrain is running, expect throttling; check case airflow."
+
+      - alert: GpuTempCritical
+        expr: nvidia_gpu_temperature_celsius > 90
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "GPU above 90C"
+          description: "GPU at {{ $value }}C for 1m - shutdown territory. Kill the running retrain (`systemctl stop bullpen-retrain`) and investigate cooling before the box hard-stops."
