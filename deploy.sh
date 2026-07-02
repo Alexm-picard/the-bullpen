@@ -15,8 +15,9 @@
 #   2. Build the backend bootJar (no tests — CI is the test gate per [20]).
 #   3. Stage the JAR into /opt/bullpen/releases/<TAG>/app.jar.
 #   4. Atomic symlink swap: /opt/bullpen/app.jar -> releases/<TAG>/app.jar
-#   5. systemctl restart bullpen-api bullpen-worker.
-#   6. Smoke: poll /actuator/health for up to 30s; both units must be active.
+#   5. Pre-restart registry backup, then systemctl restart bullpen-api bullpen-worker.
+#   6. Smoke: poll /actuator/health/readiness (waits for champion warmup via
+#      WarmupReadiness, not just liveness) for up to ${BULLPEN_SMOKE_TIMEOUT:-60}s per unit.
 #   7. On smoke failure: swap symlink back to previous release, restart, exit 1.
 #   8. Record the deploy at docs/deploys/<TAG>.md.
 #   9. Prune releases beyond the last 5.
@@ -51,14 +52,20 @@ done
 log() { printf '[deploy %s] %s\n' "$TAG" "$*"; }
 die() { printf '[deploy %s] ERROR: %s\n' "$TAG" "$*" >&2; exit 1; }
 
-# Poll one profile's /actuator/health for up to 30s; 0 = went UP, 1 = did not.
+# Poll one profile's readiness probe; 0 = went UP, 1 = did not. Readiness (not plain
+# /actuator/health) so the smoke waits for WARM serving: WarmupReadiness holds
+# REFUSING_TRAFFIC until the champion model is loaded, which liveness never saw - a deploy
+# used to go "green" while the first real prediction still paid the model-load stall.
+# Warmup is included in the wait, so the budget is 60s (was 30s of liveness-only polling);
+# override with BULLPEN_SMOKE_TIMEOUT if a model ever loads slower.
+SMOKE_TIMEOUT="${BULLPEN_SMOKE_TIMEOUT:-60}"
 smoke_health() {
   local port="$1" name="$2"
-  for i in $(seq 1 30); do
+  for i in $(seq 1 "$SMOKE_TIMEOUT"); do
     sleep 1
-    if curl -fsS "http://localhost:${port}/actuator/health" 2>/dev/null \
+    if curl -fsS "http://localhost:${port}/actuator/health/readiness" 2>/dev/null \
         | grep -q '"status":"UP"'; then
-      log "smoke OK: ${name} (:${port}) up after ${i}s"
+      log "smoke OK: ${name} (:${port}) ready after ${i}s"
       return 0
     fi
   done
@@ -174,6 +181,26 @@ log "symlink swapped: $APP_SYMLINK -> ${RELEASE_DIR}/app.jar"
 
 # --- 5. Restart units --------------------------------------------------------
 
+# D2: point-in-time registry backup into the release dir BEFORE the restart, so a bad deploy
+# (or a Flyway migration in the new build) has a same-instant registry to restore next to the
+# previous jar. WAL-safe .backup API. A failed capture warns LOUDLY but does not block the
+# deploy: the nightly snapshot remains the durable layer; this is the cheap restore aid.
+REGISTRY_PATH="${BULLPEN_REGISTRY_DB:-/opt/bullpen/data/registry.sqlite}"
+REGISTRY_BACKUP="none"
+if ! command -v sqlite3 >/dev/null 2>&1; then
+  log "WARN: sqlite3 not found in PATH - SKIPPING the pre-restart registry backup"
+elif [[ ! -f "$REGISTRY_PATH" ]]; then
+  log "WARN: registry not found at $REGISTRY_PATH - SKIPPING the pre-restart registry backup"
+else
+  if sudo sqlite3 "$REGISTRY_PATH" ".backup '${RELEASE_DIR}/registry.backup'"; then
+    sudo chown bullpen:bullpen "${RELEASE_DIR}/registry.backup" 2>/dev/null || true
+    REGISTRY_BACKUP="${RELEASE_DIR}/registry.backup"
+    log "pre-restart registry backup: $REGISTRY_BACKUP"
+  else
+    log "WARN: pre-restart registry backup FAILED - continuing (nightly snapshot is the durable layer)"
+  fi
+fi
+
 log "restarting bullpen-api + bullpen-worker"
 sudo systemctl restart bullpen-api bullpen-worker
 
@@ -209,6 +236,8 @@ mkdir -p docs/deploys
   echo "- jar: $(readlink "$APP_SYMLINK")"
   echo "- previous: ${PREVIOUS_TARGET:-none}"
   echo "- smoke: $([[ "$SKIP_SMOKE" == "true" ]] && echo skipped || echo passed)"
+  echo "- flags: allow_dirty=${ALLOW_DIRTY} skip_smoke=${SKIP_SMOKE} allow_game_window=${ALLOW_GAME_WINDOW}"
+  echo "- registry_backup: ${REGISTRY_BACKUP}"
   if command -v systemctl >/dev/null; then
     echo
     echo "## Unit status (post-restart)"
