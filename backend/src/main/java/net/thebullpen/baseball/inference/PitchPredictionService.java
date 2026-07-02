@@ -37,8 +37,8 @@ public class PitchPredictionService {
 
   public static final String PRE_MODEL_NAME = "pitch_outcome_pre";
   public static final String POST_MODEL_NAME = "pitch_outcome_post";
-  private static final ObjectMapper MAPPER = new ObjectMapper();
 
+  private final ObjectMapper objectMapper;
   private final ModelLoader modelLoader;
   private final InferenceRouter router;
   private final RegistryService registry;
@@ -54,7 +54,8 @@ public class PitchPredictionService {
       AsyncPredictionLogger logger,
       InferenceMetrics metrics,
       Optional<PitchInferenceService> devInference,
-      @Value("${bullpen.inference.pitch.dev-direct-serving:false}") boolean devDirectServing) {
+      @Value("${bullpen.inference.pitch.dev-direct-serving:false}") boolean devDirectServing,
+      ObjectMapper objectMapper) {
     this.modelLoader = modelLoader;
     this.router = router;
     this.registry = registry;
@@ -62,6 +63,7 @@ public class PitchPredictionService {
     this.metrics = metrics;
     this.devInference = devInference;
     this.devDirectServing = devDirectServing;
+    this.objectMapper = objectMapper;
   }
 
   /** The served pitch prediction plus the identity the controller needs to build its response. */
@@ -325,12 +327,12 @@ public class PitchPredictionService {
     return best == null ? "unknown" : best;
   }
 
-  private static String serializeFeatures(PitchRequest req) throws JsonProcessingException {
-    return MAPPER.writeValueAsString(req);
+  private String serializeFeatures(PitchRequest req) throws JsonProcessingException {
+    return objectMapper.writeValueAsString(req);
   }
 
-  private static String serializePrediction(Map<String, Double> probs, String winner)
+  private String serializePrediction(Map<String, Double> probs, String winner)
       throws JsonProcessingException {
-    return MAPPER.writeValueAsString(Map.of("probabilities", probs, "winner", winner));
+    return objectMapper.writeValueAsString(Map.of("probabilities", probs, "winner", winner));
   }
 }

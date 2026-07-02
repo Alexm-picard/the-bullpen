@@ -1,0 +1,87 @@
+package net.thebullpen.baseball.config;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
+import org.junit.jupiter.api.Test;
+import org.slf4j.MDC;
+import org.springframework.mock.web.MockFilterChain;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
+
+/**
+ * The client-supplied X-Correlation-Id is reflected into MDC (and from there into plaintext log
+ * lines) and the response header, so it must be bounded and sanitized: a valid id passes through
+ * untouched, anything forged/overlong/non-ASCII is replaced with a fresh UUID rather than salvaged.
+ */
+class CorrelationIdFilterTest {
+
+  private static final String HEADER = "X-Correlation-Id";
+
+  private final CorrelationIdFilter filter = new CorrelationIdFilter();
+
+  private MockHttpServletResponse run(String headerValue) throws Exception {
+    MockHttpServletRequest request = new MockHttpServletRequest();
+    if (headerValue != null) {
+      request.addHeader(HEADER, headerValue);
+    }
+    MockHttpServletResponse response = new MockHttpServletResponse();
+    filter.doFilter(request, response, new MockFilterChain());
+    return response;
+  }
+
+  private static void assertRegenerated(MockHttpServletResponse response) {
+    String reflected = response.getHeader(HEADER);
+    assertThat(reflected).isNotNull();
+    // A regenerated id is a well-formed UUID - round-trips through UUID.fromString.
+    assertThat(UUID.fromString(reflected)).hasToString(reflected);
+  }
+
+  @Test
+  void echoesAValidClientId() throws Exception {
+    assertThat(run("abc-123_DEF.456").getHeader(HEADER)).isEqualTo("abc-123_DEF.456");
+  }
+
+  @Test
+  void generatesWhenAbsentOrBlank() throws Exception {
+    assertRegenerated(run(null));
+    assertRegenerated(run("   "));
+  }
+
+  @Test
+  void regeneratesForForgedMultiLineHeader() throws Exception {
+    // The log-forging shape: a newline followed by a fabricated log line.
+    MockHttpServletResponse response = run("abc\n2026-07-02 ERROR fake line");
+    assertRegenerated(response);
+    assertThat(response.getHeader(HEADER)).doesNotContain("\n");
+  }
+
+  @Test
+  void regeneratesForOverlongAndNonAsciiIds() throws Exception {
+    assertRegenerated(run("x".repeat(65)));
+    assertRegenerated(run("abc\0def"));
+    assertRegenerated(run("caf\u00e9-1234"));
+    // 64 visible-ASCII chars is the boundary and passes.
+    String atLimit = "x".repeat(64);
+    assertThat(run(atLimit).getHeader(HEADER)).isEqualTo(atLimit);
+  }
+
+  @Test
+  void idIsInMdcDuringTheChainAndClearedAfter() throws Exception {
+    MockHttpServletRequest request = new MockHttpServletRequest();
+    request.addHeader(HEADER, "trace-42");
+    AtomicReference<String> seenInChain = new AtomicReference<>();
+    MockFilterChain chain =
+        new MockFilterChain() {
+          @Override
+          public void doFilter(
+              jakarta.servlet.ServletRequest req, jakarta.servlet.ServletResponse res) {
+            seenInChain.set(MDC.get("correlation_id"));
+          }
+        };
+    filter.doFilter(request, new MockHttpServletResponse(), chain);
+    assertThat(seenInChain.get()).isEqualTo("trace-42");
+    assertThat(MDC.get("correlation_id")).isNull();
+  }
+}

@@ -38,8 +38,7 @@ import org.springframework.web.bind.annotation.RestController;
 @Profile("api")
 public class PredictBattedBallController {
 
-  private static final ObjectMapper MAPPER = new ObjectMapper();
-
+  private final ObjectMapper objectMapper;
   private final ToyBattedBallInference inference;
   private final InferenceMetrics metrics;
   private final AsyncPredictionLogger logger;
@@ -52,12 +51,14 @@ public class PredictBattedBallController {
       InferenceMetrics metrics,
       AsyncPredictionLogger logger,
       InferenceRouter router,
-      ModelLoader modelLoader) {
+      ModelLoader modelLoader,
+      ObjectMapper objectMapper) {
     this.inference = inference;
     this.metrics = metrics;
     this.logger = logger;
     this.router = router;
     this.modelLoader = modelLoader;
+    this.objectMapper = objectMapper;
     this.legacyFeatureSchemaHash = inference.pipelineSpec().schemaHash();
   }
 
@@ -191,19 +192,20 @@ public class PredictBattedBallController {
     };
   }
 
-  private static String serializeFeatures(BattedBallRequest req) throws JsonProcessingException {
-    return MAPPER.writeValueAsString(req);
+  private String serializeFeatures(BattedBallRequest req) throws JsonProcessingException {
+    return objectMapper.writeValueAsString(req);
   }
 
-  private static String serializePrediction(float prob) throws JsonProcessingException {
-    return MAPPER.writeValueAsString(java.util.Map.of("prob_hr", prob));
+  private String serializePrediction(float prob) throws JsonProcessingException {
+    return objectMapper.writeValueAsString(java.util.Map.of("prob_hr", prob));
   }
 
   /** Visible for tests — stable hash of the request as a coarse de-dup key. */
-  static String stableFeatureHash(BattedBallRequest req) {
+  String stableFeatureHash(BattedBallRequest req) {
     try {
       MessageDigest md = MessageDigest.getInstance("SHA-256");
-      byte[] digest = md.digest(MAPPER.writeValueAsString(req).getBytes(StandardCharsets.UTF_8));
+      byte[] digest =
+          md.digest(objectMapper.writeValueAsString(req).getBytes(StandardCharsets.UTF_8));
       StringBuilder hex = new StringBuilder(digest.length * 2);
       for (byte b : digest) hex.append(String.format("%02x", b));
       return hex.toString();
