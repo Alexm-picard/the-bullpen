@@ -24,7 +24,7 @@
 > 1. **Part A treats the R2 offsite push as an unimplemented gap.** It is now
 >    IMPLEMENTED - not by appending `rclone` to `clickhouse-snapshot.sh`, but as
 >    a decoupled leg: `infra/backup/offsite-push.sh` driven by
->    `bullpen-offsite.timer` (03:30), pushing to `bullpen-r2:bullpen-prod/backups/<NAME>/`
+>    `bullpen-offsite@<user>.timer` (03:30), pushing to `bullpen-r2:bullpen-prod/backups/<NAME>/`
 >    plus `<NAME>_sqlite/registry.sqlite` (ADR-0007 revision history, decision [153]).
 >    So A1/A2 are done; treat Part A as "verify the offsite leg ran," not "add it."
 > 2. **The restore drill is redesigned as restore-FROM-R2** (the canonical
@@ -242,7 +242,7 @@ Before shutting down, capture the running state:
 ```bash
 # On the box
 echo "=== systemd units ==="
-systemctl is-active bullpen-api bullpen-worker cloudflared docker bullpen-snapshot.timer
+systemctl is-active bullpen-api bullpen-worker cloudflared docker "bullpen-snapshot@$(whoami).timer"
 
 echo "=== listening ports ==="
 ss -tlnp | grep -E "8080|8081|8123|9000|9090|3000"
@@ -281,7 +281,7 @@ ps -o pid,comm -p 1
 # Expect: 1 systemd
 
 # 2. All bullpen units active
-systemctl is-active bullpen-api bullpen-worker cloudflared docker bullpen-snapshot.timer
+systemctl is-active bullpen-api bullpen-worker cloudflared docker "bullpen-snapshot@$(whoami).timer"
 # All must print 'active'
 
 # 3. Docker containers up
@@ -306,7 +306,7 @@ rclone lsd bullpen-r2:bullpen-prod --config ~/.config/rclone/rclone.conf
 # Expect: raw/  samples/  snapshots/
 
 # 8. Snapshot timer catch-up (Persistent=true)
-systemctl list-timers bullpen-snapshot.timer
+systemctl list-timers "bullpen-snapshot@*.timer"
 # Expect a NEXT time; if LAST was missed, Persistent=true queues a catch-up
 
 # 9. Worker not crash-looping

@@ -34,7 +34,7 @@ set -euo pipefail
 # for this exact script path. Without the rule, you'll be prompted for sudo password once.
 # We pass through SUDO_USER and the original env so we can find the right home dir.
 if [[ $EUID -ne 0 ]]; then
-  exec sudo --preserve-env=REPO_ROOT,SNAPSHOT_DIR,USB_LABEL,MOUNT_POINT,SQLITE_REGISTRY,BULLPEN_REGISTRY_DB,ALLOW_NO_REGISTRY "$0" "$@"
+  exec sudo --preserve-env=REPO_ROOT,SNAPSHOT_DIR,USB_LABEL,MOUNT_POINT,SQLITE_REGISTRY,BULLPEN_REGISTRY_DB,ALLOW_NO_REGISTRY,NODE_TEXTFILE_DIR "$0" "$@"
 fi
 
 # From here on, we're root. SUDO_USER tells us who invoked us (for the default REPO_ROOT path).
@@ -138,6 +138,23 @@ fi
 # Hand ownership of the backup directory back to the invoker so they can inspect/restore
 # without further sudo. The mount itself stays root-owned (Linux convention).
 chown -R "${INVOKER}:${INVOKER}" "$DEST" 2>/dev/null || true
+
+# Freshness metric on success (same pattern as clickhouse-snapshot.sh): the Layer-2 backup is
+# manual, so a silently-lapsed one is invisible until a restore fails. The textfile gauge lets a
+# Prometheus rule alert when the last successful USB backup is older than the intended cadence.
+# Atomic write (tmp + mv) so the textfile collector never reads a half-written file.
+NODE_TEXTFILE_DIR="${NODE_TEXTFILE_DIR:-/var/lib/node_exporter}"
+if mkdir -p "$NODE_TEXTFILE_DIR" 2>/dev/null; then
+  TEXTFILE="${NODE_TEXTFILE_DIR}/bullpen_usb_backup.prom"
+  TMP_TEXTFILE="${TEXTFILE}.$$"
+  {
+    echo "# HELP bullpen_usb_backup_last_success_timestamp_seconds Unix time of the last successful USB (Layer-2) backup."
+    echo "# TYPE bullpen_usb_backup_last_success_timestamp_seconds gauge"
+    echo "bullpen_usb_backup_last_success_timestamp_seconds $(date +%s)"
+  } > "$TMP_TEXTFILE" && mv -f "$TMP_TEXTFILE" "$TEXTFILE" || log "WARN: could not write $TEXTFILE"
+else
+  log "WARN: NODE_TEXTFILE_DIR ${NODE_TEXTFILE_DIR} not writable; skipping USB freshness metric"
+fi
 
 log "Sync complete. Total size: $(du -sh "$DEST" | cut -f1)"
 log "Drive will unmount automatically on script exit. Unplug after the next line prints."
