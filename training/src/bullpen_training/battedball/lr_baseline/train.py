@@ -34,6 +34,7 @@ from sklearn.preprocessing import StandardScaler
 from bullpen_training.battedball.features_shared import FEATURE_NAMES, OUTCOME_NAMES
 from bullpen_training.battedball.lgbm_per_park.dataset import LABEL_COLUMN, load_park_lgbm_dataset
 from bullpen_training.battedball.parks.loader import load_all_parks
+from bullpen_training.eval.leakage_guards import refuse_holdout
 
 DEFAULT_PER_PARK_LIMIT = 50_000
 
@@ -105,8 +106,9 @@ def train_lr_baseline(
     max_iter: int = 1000,
     container: str = "bullpen-clickhouse",
 ) -> LrBaselineBundle:
-    if season_to >= 2026 or val_season >= 2026:
-        raise ValueError("rule 13: 2026 is holdout-only; train/val must be 2015-2025")
+    # Unified onto the shared [170] guard (#188): one HOLDOUT_YEAR source of truth, one
+    # LeakageError shape, instead of this trainer's former inline 2026 literal + ValueError.
+    refuse_holdout(season_from=season_from, season_to=season_to, val_season=val_season)
 
     train_df = _load_pooled_sample(
         season_from=season_from,
