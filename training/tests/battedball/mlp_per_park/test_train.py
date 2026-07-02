@@ -58,7 +58,9 @@ def test_export_matches_torch_forward(tmp_path: Path) -> None:
     with torch.no_grad():
         torch_logits = model(torch.from_numpy(probe)).numpy()
     sess = ort.InferenceSession(str(out_path), providers=["CPUExecutionProvider"])
-    (ort_logits,) = sess.run(["logits"], {"features": probe})
+    # np.asarray: ORT types run() results as a union (ndarray | SparseTensor | ...); the
+    # logits output is always a dense ndarray at runtime.
+    ort_logits = np.asarray(sess.run(["logits"], {"features": probe})[0])
 
     assert ort_logits.shape == (8, N_OUTCOMES)
     np.testing.assert_allclose(ort_logits, torch_logits, rtol=1e-4, atol=1e-5)
@@ -103,7 +105,9 @@ def test_train_all_parks_writes_full_artifact_set(
         sess = ort.InferenceSession(
             str(park_dir / "model.onnx"), providers=["CPUExecutionProvider"]
         )
-        (logits,) = sess.run(["logits"], {"features": np.zeros((1, N_FEATURES), dtype=np.float32)})
+        logits = np.asarray(
+            sess.run(["logits"], {"features": np.zeros((1, N_FEATURES), dtype=np.float32)})[0]
+        )
         assert logits.shape == (1, N_OUTCOMES)
         assert np.isfinite(logits).all()
     top_meta = (tmp_path / "metadata.json").read_text()
