@@ -98,11 +98,17 @@ def test_real_batted_ball_dispatch_end_to_end(
     ]
 
 
+@pytest.mark.parametrize(
+    "override",
+    [{"season_to": 2026}, {"season_from": 2026}, {"val_season": 2026}],
+    ids=("season_to", "season_from", "val_season"),
+)
 def test_dispatch_holdout_override_is_fenced_and_fails_the_trigger(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    override: dict, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A trigger_metadata season override cannot smuggle 2026 past the [170] fence: the
-    LeakageError propagates as a training failure, the row is marked FAILED, exit code 1."""
+    """A trigger_metadata season override cannot smuggle 2026 past the [170] fence on ANY of
+    the three fenced params: the LeakageError propagates as a training failure, the row is
+    marked FAILED, exit code 1."""
     monkeypatch.setattr(
         "bullpen_training.battedball.mlp_per_park.train.load_park_arrays", _fake_loader
     )
@@ -110,7 +116,7 @@ def test_dispatch_holdout_override_is_fenced_and_fails_the_trigger(
     client = FakeAdminClient(
         next_claim=_claim(
             "drift-2026-07-02-batted_ball",
-            {"park_ids": ["BOS"], "n_epochs": 1, "season_to": 2026},
+            {"park_ids": ["BOS"], "n_epochs": 1, **override},
         ),
         next_version_value="v9",
     )
