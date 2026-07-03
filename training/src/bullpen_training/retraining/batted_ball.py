@@ -1,23 +1,21 @@
-"""Real retrain adapter for the batted-ball per-park family (M1 task 3).
+"""EXPERIMENT retrain adapter for the batted-ball per-park family (M1 task 3).
 
-Wired per the M1 work order to the ``mlp_per_park`` trainer: ``train_all_parks`` runs the
-real loop (scaler fit -> train -> ``export_per_park_onnx`` with ``onnx.checker`` -> per-park
-+ top-level metadata), and this adapter packs the result into the :class:`RetrainOutput`
-shape the register endpoint consumes. The [170] holdout fence is live inside
-``train_all_parks``; this adapter passes explicit 2015-2025 seasons by default and any
-override in ``trigger_metadata`` still hits the fence.
+Wired to the ``mlp_per_park`` trainer: ``train_all_parks`` runs the real loop (scaler fit
+-> train -> ``export_per_park_onnx`` with ``onnx.checker`` -> per-park + top-level
+metadata), and this adapter packs the result into the :class:`RetrainOutput` shape the
+register endpoint consumes. The [170] holdout fence is live inside ``train_all_parks``;
+this adapter passes explicit 2015-2025 seasons by default and any override in
+``trigger_metadata`` still hits the fence.
 
-Two honest caveats, surfaced for TD adjudication (see the wiring PR):
+STATUS after the M2 rulings (both original caveats adjudicated):
 
-* Queue rows produced by the real triggers carry ``champ.modelName()`` (the registry name,
-  e.g. ``battedball_outcome``); the dispatch key here is ``batted_ball`` per the original
-  dispatch table, so a real drift/scheduled trigger for the serving champion does NOT reach
-  this adapter until the key question is settled.
-* The serving ``battedball_outcome`` champion is the single-graph multi-output MLP
-  (``battedball/mlp``), not this per-park experiment family; a servable retrain of the
-  champion family (including calibrator fitting) is the box-side follow-up. What this
-  adapter proves is the full control-plane seam: claim -> dispatch -> REAL training ->
-  ONNX export -> register payload -> complete.
+* C1: dispatch keys now equal registry model names exactly; this adapter is deliberately
+  keyed as ``_experiment_battedball_mlp_per_park`` (non-registry by construction), so it is
+  reachable only by a hand-built trigger - never by a real queue row.
+* C2: the SERVED ``battedball_outcome`` family (single-graph ``battedball/mlp`` with the
+  carry head + per-park calibrators) retrains via ``retraining/battedball_outcome.py``
+  (M2-A3), not this module. This module's preserved value is the proven
+  claim -> dispatch -> REAL training -> ONNX export -> register -> complete seam.
 
 Artifact layout note: the per-park family's artifact is a DIRECTORY (one ``model.onnx``
 per park + a top-level ``metadata.json``), so ``artifact_path`` is the run directory.
