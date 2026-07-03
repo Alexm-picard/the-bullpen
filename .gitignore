@@ -106,6 +106,10 @@ infra/alertmanager/secrets/discord_url
 infra/prometheus/secrets/*
 !infra/prometheus/secrets/*.example
 
+# --- M2-A1: the RENDERED ClickHouse app user (carries a sha256 of the real secret - offline
+# brute-forceable, so never committed; the .example template is). render-users.sh recreates it.
+infra/clickhouse/users.d/bullpen.xml
+
 # --- M2: real box configs reconstructed from the committed .example templates (never committed) ---
 infra/default-bullpen.env
 infra/cloudflared/config.yml

@@ -1,0 +1,26 @@
+<!-- M2-A1: declarative least-privilege `bullpen` app user (plan 0.4's users.d approach,
+     executed at the M2 window). COMMITTED TEMPLATE - the real users.d/bullpen.xml is
+     RENDERED (gitignored) by infra/clickhouse/render-users.sh, which substitutes the
+     sha256 hex of BULLPEN_CLICKHOUSE_PASSWORD. No plaintext and no crackable hash in git.
+
+     access_management=0: the bullpen user cannot GRANT/CREATE USER/etc - its privileges
+     are exactly what infra/clickhouse/grants/bullpen-grants.sql gives it (SELECT+INSERT
+     on the app database). The `default` user keeps access_management=1 (compose env) and
+     remains the admin/migration/grants identity.
+
+     Rollback: revert BULLPEN_CLICKHOUSE_USER to `default` in /etc/default/bullpen (+ the
+     backup env) and restart api+worker - the default user stays fully functional until a
+     later cleanup pass removes it from the app path. -->
+<clickhouse>
+    <users>
+        <bullpen>
+            <password_sha256_hex>__BULLPEN_CLICKHOUSE_PASSWORD_SHA256__</password_sha256_hex>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+            <access_management>0</access_management>
+        </bullpen>
+    </users>
+</clickhouse>
