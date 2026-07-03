@@ -9,13 +9,14 @@ The contract for a dispatched function:
 * Persists ``trigger_id`` into the produced ``metadata.json`` so post-hoc correlation of
   the model row to its retrain trigger is one ``trigger_id`` lookup.
 
-Wiring status (M1 task 3): ``batted_ball`` dispatches to the REAL per-park trainer via
-:mod:`bullpen_training.retraining.batted_ball` (claim -> train_all_parks -> ONNX export ->
-RetrainOutput, integration-tested on a synthetic miniature). The other four entries stay
-honest sentinels until each Phase-2 trainer is wired to accept ``trigger_id`` and return
-``RetrainOutput`` - and note the open naming question recorded in ``batted_ball.py``: real
-triggers enqueue the registry model name (``champ.modelName()``), which these dispatch keys
-do not all match yet.
+Wiring status: ``battedball_outcome`` (the SERVED family) dispatches to the real
+single-graph ``battedball/mlp`` adapter via
+:mod:`bullpen_training.retraining.battedball_outcome` (M2-A3; closes ruling C2). The
+per-park EXPERIMENT adapter from M1 task 3 stays reachable only under its explicit
+experiment key via :mod:`bullpen_training.retraining.batted_ball`. The remaining registry
+entries stay honest sentinels until each Phase-2 trainer is wired to accept ``trigger_id``
+and return ``RetrainOutput``. Naming is settled by ruling C1: dispatch keys equal the
+registry model names (``champ.modelName()``) exactly.
 """
 
 from __future__ import annotations
@@ -65,18 +66,18 @@ def _experiment_mlp_per_park(
     return retrain_batted_ball(trigger_id, version, trigger_metadata)
 
 
-def _servable_family_pending(
+def _servable_battedball_outcome(
     trigger_id: str, version: str, trigger_metadata: dict
 ) -> RetrainOutput:
-    raise UnsupportedModel(
-        "retrain dispatch for 'battedball_outcome' is DELIBERATELY unwired (M2 ruling C2): "
-        "the served family is the single-graph battedball/mlp (shared backbone + carry head "
-        "+ per-park calibrators), and a real drift trigger must not burn GPU-hours on the "
-        "wrong architecture - rule-7's schema hash would reject the candidate at registration "
-        "anyway, after the compute was spent. The servable-family adapter is M2-A3; the proven "
-        "per-park EXPERIMENT seam stays at '_experiment_battedball_mlp_per_park' "
-        f"(test/manual-only). trigger_id={trigger_id!r}"
-    )
+    # M2 ruling C2 is CLOSED by this wiring (M2-A3): the served single-graph battedball/mlp
+    # family (shared backbone + carry head + per-park calibrators) retrains via the
+    # servable-family adapter, in the SERVED artifact format. The per-park EXPERIMENT seam
+    # stays at '_experiment_battedball_mlp_per_park' (test/manual-only).
+    # Lazy import: keeps torch/onnx/sklearn out of the import path of every OTHER dispatch,
+    # and out of run.py's queue-empty fast path.
+    from bullpen_training.retraining.battedball_outcome import retrain_battedball_outcome
+
+    return retrain_battedball_outcome(trigger_id, version, trigger_metadata)
 
 
 # M2 ruling C1: the registry's model_name values are the SINGLE SOURCE OF TRUTH for this
@@ -100,12 +101,12 @@ CANONICAL_REGISTRY_MODEL_NAMES: frozenset[str] = frozenset(
 EXPERIMENT_KEY_PREFIX = "_experiment_"
 EXPERIMENT_MLP_PER_PARK_KEY = "_experiment_battedball_mlp_per_park"
 
-# battedball_outcome: honest sentinel until the servable-family adapter (M2-A3) ships.
+# battedball_outcome: wired to the SERVABLE-family adapter (M2-A3, closes ruling C2).
 # The per-park adapter (M1 task 3) remains the proven claim->train->register->complete
 # seam under its experiment key. The remaining registry entries stay honest sentinels
 # until each family's trainer is wired to accept trigger_id + return RetrainOutput.
 DISPATCH: dict[str, RetrainFn] = {
-    "battedball_outcome": _servable_family_pending,
+    "battedball_outcome": _servable_battedball_outcome,
     "pitch_outcome_pre": _not_yet_wired("pitch_outcome_pre"),
     "pitch_outcome_post": _not_yet_wired("pitch_outcome_post"),
     "pitch_outcome_lr_baseline": _not_yet_wired("pitch_outcome_lr_baseline"),
