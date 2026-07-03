@@ -16,6 +16,7 @@ import numpy as np
 import pytest
 
 from bullpen_training.retraining._api_client import ClaimedTrigger
+from bullpen_training.retraining._dispatch import EXPERIMENT_MLP_PER_PARK_KEY
 from bullpen_training.retraining.run import run_once
 from tests.retraining.test_run import FakeAdminClient
 
@@ -35,10 +36,12 @@ def _fake_loader(
 
 
 def _claim(trigger_id: str, metadata: dict) -> ClaimedTrigger:
+    # M2 ruling C1/C2: the per-park adapter lives under the explicit experiment key - only a
+    # hand-built trigger (like this one) can reach it; real queue rows carry registry names.
     return ClaimedTrigger(
         id=1,
         trigger_id=trigger_id,
-        model_name="batted_ball",
+        model_name=EXPERIMENT_MLP_PER_PARK_KEY,
         trigger_type="DRIFT",
         trigger_metadata=metadata,
         status="RUNNING",
@@ -64,9 +67,10 @@ def test_real_batted_ball_dispatch_end_to_end(
     exit_code = run_once(client)
 
     assert exit_code == 0
-    # Register got the REAL adapter's output, not a mock.
+    # Register got the REAL adapter's output, not a mock. run_once registers under the
+    # claimed model_name - here the experiment key, by C1/C2 design.
     reg = client.register_calls[0]
-    assert reg["model_name"] == "batted_ball"
+    assert reg["model_name"] == EXPERIMENT_MLP_PER_PARK_KEY
     assert reg["version"] == "v9"
     assert reg["training_data_window"] == "[2015,2025]"
     assert len(reg["training_data_hash"]) == 64  # sha256 provenance token
