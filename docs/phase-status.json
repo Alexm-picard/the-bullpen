@@ -3,7 +3,7 @@
   "_doc": "Single source of truth for phase progress. Hand-edited as work completes. /status reads this. Bump fields honestly \u2014 surgical cuts come from honest tracking.",
   "current_phase": "5",
   "weekly_hours_target": 13,
-  "last_updated": "2026-06-30",
+  "last_updated": "2026-07-03",
   "phases": [
     {
       "id": "0",
@@ -479,7 +479,8 @@
         },
         {
           "label": "Mid-season drift postmortem WRITTEN (the centerpiece artifact)",
-          "done": false
+          "done": false,
+          "details": "Protected by rule 4 (no-cut). Decision [169] (2026-07-02) sets a dated fallback tripwire: if no natural drift alert has fired AND been confirmed real by EOD 2026-08-15 ET (checked against the alert_history table), run the controlled induced-drift path off-window the week of 2026-08-17..2026-08-23 on the proven 2026-05-30 drill machinery and commit a draft postmortem, honestly labeled synthetic, by 2026-08-31. FLOOR not ceiling: a natural drift event confirmed later supersedes the induced write-up, which then reclassifies as a drill report."
         },
         {
           "label": "Nightly k6 load test gating on SLA (p99 prediction latency < 50ms, error rate < 0.1%)",
