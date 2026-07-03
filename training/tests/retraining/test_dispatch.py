@@ -30,15 +30,36 @@ def test_experiment_keys_are_prefixed_and_not_registry_names() -> None:
     assert experiment_keys.isdisjoint(CANONICAL_REGISTRY_MODEL_NAMES)
 
 
-def test_battedball_outcome_is_an_honest_sentinel_pointing_at_the_servable_adapter() -> None:
-    """M2 ruling C2: the served family must not dispatch to the per-park experiment adapter."""
-    fn = dispatch_for("battedball_outcome")
-    with pytest.raises(UnsupportedModel) as exc:
-        fn("trig-xyz", "v3", {})
-    message = str(exc.value)
-    assert "DELIBERATELY unwired" in message
-    assert "M2-A3" in message
-    assert EXPERIMENT_MLP_PER_PARK_KEY in message
+def test_battedball_outcome_dispatches_to_the_servable_family_adapter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """M2 ruling C2 is CLOSED by the M2-A3 wiring: the served family dispatches to the real
+    single-graph battedball/mlp adapter (lazy-imported at call time), never to the per-park
+    experiment seam. The lazy import re-reads the module attribute per call, so patching the
+    adapter function proves the wiring without running a training loop."""
+    calls: list[tuple[str, str, dict]] = []
+    sentinel = RetrainOutput(
+        artifact_path="/tmp/battedball_outcome/v3/model.onnx",
+        metadata_path="/tmp/battedball_outcome/v3/metadata.json",
+        feature_pipeline_path="/tmp/p.json",
+        eval_metrics_json='{"kind":"training_diagnostics"}',
+        training_data_hash="h" * 64,
+        training_data_window="[2015,2025]",
+        trained_at_iso="2026-07-02T00:00:00Z",
+    )
+
+    def fake(trigger_id: str, version: str, trigger_metadata: dict) -> RetrainOutput:
+        calls.append((trigger_id, version, trigger_metadata))
+        return sentinel
+
+    monkeypatch.setattr(
+        "bullpen_training.retraining.battedball_outcome.retrain_battedball_outcome", fake
+    )
+
+    out = dispatch_for("battedball_outcome")("trig-xyz", "v3", {"n_epochs": 1})
+
+    assert calls == [("trig-xyz", "v3", {"n_epochs": 1})]
+    assert out is sentinel
 
 
 def test_default_dispatch_fns_raise_unsupported_until_wired() -> None:
