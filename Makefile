@@ -148,6 +148,7 @@ check: ## Run all formatters / linters / tests
 
 .PHONY: services-up
 services-up: ## docker compose up stateful services (ClickHouse, Prometheus, Grafana)
+	./infra/clickhouse/render-users.sh --env-file infra/.env
 	docker compose -f infra/docker-compose.yml --env-file infra/.env up -d
 
 .PHONY: services-down

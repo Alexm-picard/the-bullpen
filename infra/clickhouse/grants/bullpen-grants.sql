@@ -1,0 +1,30 @@
+-- M2-A1: least-privilege grants for the declarative `bullpen` app user (users.d/bullpen.xml).
+-- Applied ONCE at the M2 ceremony (Part B step 6), as the admin `default` user:
+--
+--   docker exec -i bullpen-clickhouse clickhouse-client \
+--     --user "${CLICKHOUSE_USER:-default}" --password "$BULLPEN_CLICKHOUSE_PASSWORD" \
+--     --multiquery < infra/clickhouse/grants/bullpen-grants.sql
+--
+-- Scope: the app's tables all live in the `default` database (recurring trap: NOT in a
+-- `bullpen` database - see docs/runbooks/restore notes). SELECT + INSERT is the app's whole
+-- runtime surface: reads (serving, drift jobs, truth join) and appends (prediction_log,
+-- pitches_live, drift_metrics, ...). Deliberately ABSENT: DROP, TRUNCATE, ALTER, CREATE -
+-- the destructive operations the least-priv cutover exists to make impossible from the app
+-- credential (defense-in-depth behind the block-destructive-ch session hook, which a plain
+-- clickhouse-client bypasses).
+--
+-- Known caveat (documented, accepted at the window): the app's boot-time ClickHouse
+-- migrations CREATE TABLE IF NOT EXISTS. All current tables exist in prod, so boot under
+-- `bullpen` succeeds; a FUTURE deploy that ships a NEW ClickHouse migration must either be
+-- applied once as `default` (one clickhouse-client command in the deploy notes) or this
+-- file gains a scoped CREATE TABLE grant in its own reviewed PR.
+--
+-- Verification (ceremony step 6):
+--   clickhouse-client -u bullpen --password ... "SELECT 1"                      -> ok
+--   clickhouse-client -u bullpen --password ... "INSERT INTO ..."               -> ok
+--   clickhouse-client -u bullpen --password ... "DROP TABLE prediction_log"     -> DENIED
+--
+-- Rollback: REVOKE ALL ON default.* FROM bullpen; then point BULLPEN_CLICKHOUSE_USER back
+-- to `default` (the default user is untouched by this script).
+
+GRANT SELECT, INSERT ON default.* TO bullpen;
