@@ -11,6 +11,14 @@ Wants=network-online.target
 Type=oneshot
 User=bullpen
 Group=bullpen
+# TWO box prerequisites before this unit's timer is re-armed (M2-B; install.sh installs it
+# DISABLED until these are met, so a reinstall cannot flip it to "enabled + failing"):
+#   1. uv provisioned at /usr/local/bin/uv (owner decision 2026-07-03: install/symlink uv
+#      there so the ExecStart below resolves - the box previously had no uv at that path).
+#   2. The training PROJECT present at WorkingDirectory below. deploy.sh stages only app.jar
+#      to /opt/bullpen, NOT training/, so /opt/bullpen/training must be provisioned separately
+#      (checkout / clone / a deploy step) for `uv run` to find pyproject.toml + src.
+# Re-arm after both: sudo systemctl enable --now bullpen-retrain.timer
 WorkingDirectory=/opt/bullpen/training
 
 # secrets.env carries BULLPEN_ADMIN_USER + BULLPEN_ADMIN_PASSWORD that match

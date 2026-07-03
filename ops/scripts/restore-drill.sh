@@ -59,10 +59,16 @@ CB_BINARY=${CB_BINARY:-/usr/bin/clickhouse-backup}
 # Required, no default credential. Resolves from CH_PASSWORD or the rotated BULLPEN_CLICKHOUSE_PASSWORD
 # (the app's secret, e.g. from /etc/default/bullpen). Real runs preflight-check it; --dry-run is exempt.
 CH_PASSWORD="${CH_PASSWORD:-${BULLPEN_CLICKHOUSE_PASSWORD:-}}"
-# LIVE ClickHouse user (Path B: post-rotation the app + backup tooling auth as a dedicated `bullpen`
-# SQL user; defaults to `default`). Only the LIVE-connecting paths use it - the throwaway r2 scratch
-# is created + read as `default` and is self-consistent.
-CH_USER="${BULLPEN_CLICKHOUSE_USER:-default}"
+# LIVE ClickHouse user. The drill is BACKUP tooling, so it authenticates as `default`, the same
+# identity the snapshot uses - NOT the least-privilege `bullpen` app user (M2-B6). The Path B
+# cutover gave the app a `bullpen` user granted only SELECT/INSERT/CREATE TABLE on default.*; the
+# drill's live legs issue OPTIMIZE, clickhouse-backup FREEZE (ALTER), TRUNCATE, and write into the
+# `bullpen` DB - all outside that grant - so inheriting BULLPEN_CLICKHOUSE_USER=bullpen (which
+# sourcing /etc/default/bullpen for the password preflight would set) would deny them. Both users
+# share the one rotated BULLPEN_CLICKHOUSE_PASSWORD, so CH_PASSWORD is correct either way. Honor an
+# explicit CH_USER override (e.g. for a non-default admin), else default to `default`; do NOT read
+# BULLPEN_CLICKHOUSE_USER. The throwaway r2 scratch is created + read as `default` too.
+CH_USER="${CH_USER:-default}"
 # The app connects to the `default` ClickHouse DB (bullpen.clickhouse.url ends in
 # /default and the user is `default`); the `bullpen` DB is empty on the box. Verify
 # + boot against `default` - the old `bullpen` default made verify query empty
