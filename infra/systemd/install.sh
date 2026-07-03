@@ -245,17 +245,21 @@ if [[ "$INSTALL_GPU_TEMP" == "true" ]]; then
   fi
 fi
 
-# Job timers (retrain + stale-claim reaper). Enable the .timer units; they do not depend on app.jar.
+# Job timers. The stale-claim reaper (curl-based) is enabled + started. The RETRAIN timer is
+# installed but LEFT DISABLED (M2-B, 2026-07-03): its ExecStart=/usr/local/bin/uv does not
+# resolve on the box, so `enable --now` would flip the intended "retrain OFF" state to
+# "enabled + failing 203/EXEC every 02-06 ET fire". Re-arm it (uncomment below / systemctl
+# enable --now bullpen-retrain.timer) once the uv path + provisioning are decided.
 if [[ "$INSTALL_JOB_TIMERS" == "true" ]]; then
-  for t in bullpen-retrain.timer bullpen-stale-claim-reaper.timer; do
-    if [[ "$NO_START" == "true" ]]; then
-      sudo systemctl enable "$t"
-      log "enabled (not started): ${t}"
-    else
-      sudo systemctl enable --now "$t"
-      log "enabled + started: ${t}"
-    fi
-  done
+  if [[ "$NO_START" == "true" ]]; then
+    sudo systemctl enable bullpen-stale-claim-reaper.timer
+    log "enabled (not started): bullpen-stale-claim-reaper.timer"
+  else
+    sudo systemctl enable --now bullpen-stale-claim-reaper.timer
+    log "enabled + started: bullpen-stale-claim-reaper.timer"
+  fi
+  log "SKIPPED enabling bullpen-retrain.timer (installed-disabled): ExecStart uv path unresolved"
+  log "  -> re-arm with 'sudo systemctl enable --now bullpen-retrain.timer' after the uv fix"
 fi
 
 if [[ "$NO_START" == "true" ]]; then

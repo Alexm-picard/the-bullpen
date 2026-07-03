@@ -1,12 +1,49 @@
-<!-- M2-A1: declarative least-privilege `bullpen` app user (plan 0.4's users.d approach,
-     executed at the M2 window). COMMITTED TEMPLATE - the real users.d/bullpen.xml is
-     RENDERED (gitignored) by infra/clickhouse/render-users.sh, which substitutes the
+<!-- M2-A1/B6: declarative least-privilege `bullpen` app user (plan 0.4's users.d approach,
+     executed at the 2026-07-03 window). COMMITTED TEMPLATE - the real users.d/bullpen.xml
+     is RENDERED (gitignored) by infra/clickhouse/render-users.sh, which substitutes the
      sha256 hex of BULLPEN_CLICKHOUSE_PASSWORD. No plaintext and no crackable hash in git.
 
-     access_management=0: the bullpen user cannot GRANT/CREATE USER/etc - its privileges
-     are exactly what infra/clickhouse/grants/bullpen-grants.sql gives it (SELECT+INSERT
-     on the app database). The `default` user keeps access_management=1 (compose env) and
-     remains the admin/migration/grants identity.
+     GRANTS LIVE IN THIS FILE, not in SQL (box finding, 2026-07-03 window): XML-defined
+     users sit in a read-only access storage - `GRANT ... TO bullpen` via SQL fails with
+     ACCESS_STORAGE_READONLY - and an XML user with NO <grants> block silently gets FULL
+     access, which is the exact inversion of what a least-privilege user is for. So the
+     <grants> block below is load-bearing: removing it does not lock the user down, it
+     opens the box up.
+
+     Grant shape (option A + the ALTER addition, owner-approved 2026-07-03). Each grant maps
+     to a real thing the app does, all under default.* (the app connects to the default DB):
+       SELECT, INSERT      - the runtime surface: reads (serving, drift, truth-join) and
+                             appends (prediction_log, pitches_live, drift_metrics).
+       CREATE TABLE        - the app boot-time migration runner (ClickHouseMigrationRunner,
+                             @PostConstruct, every boot) issues CREATE TABLE IF NOT EXISTS
+                             _schema_migrations UNCONDITIONALLY before anything else, and CH
+                             checks the CREATE privilege BEFORE evaluating IF NOT EXISTS - so
+                             even on an already-migrated DB a CREATE-less user cannot boot.
+                             (The versioned CREATE TABLE migrations are SKIPPED once applied;
+                             the tracking table is the real driver.)
+       ALTER ADD COLUMN,   - the SAME migration runner REPLAYS any unapplied migration as this
+       ALTER MODIFY COLUMN   user, and ~12 of the migrations are ALTER TABLE ADD/MODIFY COLUMN.
+                             Without these, the next ALTER-bearing migration deploy, or a
+                             clean/restored-DB boot as bullpen (rule-8 restore, DR - the runner
+                             replays from V002 and dies at the first ALTER), fails app startup.
+                             Found latent by the M2-B adversarial verification.
+     Deliberately ABSENT (the destructive ops this user exists to make impossible, defense in
+     depth behind the block-destructive-ch session hook a plain clickhouse-client bypasses):
+     DROP TABLE, TRUNCATE, ALTER DROP COLUMN, and mutations (ALTER UPDATE / ALTER DELETE),
+     RENAME. New DDL outside this set is a re-decision, not a quiet grant widening.
+
+     Verification (matches the executed B6 ceremony), as user bullpen:
+       SELECT 1                   -> ok
+       INSERT INTO ...            -> ok
+       ALTER TABLE ... ADD COLUMN -> ok
+       DROP TABLE prediction_log  -> DENIED
+
+     access_management=0: the bullpen user cannot GRANT/CREATE USER/etc. The `default`
+     user keeps access_management=1 (compose env) and remains the admin identity.
+
+     Applying changes: users.d edits require a ClickHouse container FORCE-RECREATE (the
+     single-file bind mount goes stale on an inode swap, and CH reads users.d only at
+     startup). render-users.sh prints the exact compose recreate command on every render.
 
      Rollback: revert BULLPEN_CLICKHOUSE_USER to `default` in /etc/default/bullpen (+ the
      backup env) and restart api+worker - the default user stays fully functional until a
@@ -21,6 +58,11 @@
             <profile>default</profile>
             <quota>default</quota>
             <access_management>0</access_management>
+            <grants>
+                <query>GRANT SELECT, INSERT ON default.*</query>
+                <query>GRANT CREATE TABLE ON default.*</query>
+                <query>GRANT ALTER ADD COLUMN, ALTER MODIFY COLUMN ON default.*</query>
+            </grants>
         </bullpen>
     </users>
 </clickhouse>

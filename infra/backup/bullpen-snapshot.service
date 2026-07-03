@@ -7,6 +7,15 @@ Wants=network-online.target
 Type=oneshot
 # Pull env from a file you keep at /etc/default/bullpen (chmod 600 — contains Discord webhook)
 EnvironmentFile=-/etc/default/bullpen
+# M2-B6: the snapshot authenticates to ClickHouse as `default`, NOT the least-privilege app
+# user. After the Path B cutover /etc/default/bullpen sets BULLPEN_CLICKHOUSE_USER=bullpen
+# (SELECT/INSERT/CREATE only), which cannot run backups. This works by NAME, not by order:
+# CH_USER and BULLPEN_CLICKHOUSE_USER are different keys, and clickhouse-snapshot.sh resolves
+# CH_USER:-BULLPEN_CLICKHOUSE_USER:-default, so pinning CH_USER=default here short-circuits the
+# bullpen fallback. (systemd's EnvironmentFile always overrides Environment= regardless of the
+# order they appear, so this must NOT be a CH_USER also set in the env file - it isn't.) Mirrors
+# the box drop-in added at the window; without it a reinstall regresses the snapshot to bullpen.
+Environment=CH_USER=default
 ExecStart=/home/%i/code/the-bullpen/infra/backup/clickhouse-snapshot.sh
 Nice=10
 IOSchedulingClass=best-effort
