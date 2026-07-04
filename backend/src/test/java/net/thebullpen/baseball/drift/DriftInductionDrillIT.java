@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import java.util.UUID;
+import net.thebullpen.baseball.data.JobLockRepository;
 import net.thebullpen.baseball.drift.TruthJoinedPredictionFetcher.TruthJoinedRow;
 import net.thebullpen.baseball.drift.alerting.AlertHistoryRepository;
 import net.thebullpen.baseball.drift.alerting.DriftAlertEvaluator;
@@ -140,6 +141,7 @@ class DriftInductionDrillIT {
             driftRepo,
             historyRepo,
             discord,
+            mock(JobLockRepository.class),
             PAGE_ECE_THRESHOLD,
             NOTICE_PSI_THRESHOLD);
     int alerts = evaluator.runOnce();
@@ -208,7 +210,8 @@ class DriftInductionDrillIT {
     }
     when(fetcher.fetch(eq(MODEL), eq(VERSION_ID), any(Instant.class), any(Instant.class)))
         .thenReturn(joined);
-    new CalibrationJob(registryRepo, fetcher, captureRepo).runOnce(Instant.now());
+    new CalibrationJob(registryRepo, fetcher, captureRepo, mock(JobLockRepository.class))
+        .runOnce(Instant.now());
 
     @SuppressWarnings("unchecked")
     ArgumentCaptor<List<DriftMetric>> cap = ArgumentCaptor.forClass(List.class);

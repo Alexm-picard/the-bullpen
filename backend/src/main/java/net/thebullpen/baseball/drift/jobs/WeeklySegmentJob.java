@@ -3,9 +3,12 @@ package net.thebullpen.baseball.drift.jobs;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import net.thebullpen.baseball.data.JobLockRepository;
 import net.thebullpen.baseball.drift.DriftMetric;
 import net.thebullpen.baseball.drift.DriftMetricsRepository;
 import net.thebullpen.baseball.drift.MetricType;
@@ -50,21 +53,32 @@ public class WeeklySegmentJob {
 
   static final long LOW_SAMPLE_THRESHOLD = 100L;
 
+  private static final String JOB_NAME = "weekly_segment";
+  private static final ZoneId ET = ZoneId.of("America/New_York");
+
   private final RegistryRepository registryRepo;
   private final SegmentedTruthJoinedPredictionFetcher fetcher;
   private final DriftMetricsRepository driftRepo;
+  private final JobLockRepository jobLocks;
 
   public WeeklySegmentJob(
       RegistryRepository registryRepo,
       SegmentedTruthJoinedPredictionFetcher fetcher,
-      DriftMetricsRepository driftRepo) {
+      DriftMetricsRepository driftRepo,
+      JobLockRepository jobLocks) {
     this.registryRepo = registryRepo;
     this.fetcher = fetcher;
     this.driftRepo = driftRepo;
+    this.jobLocks = jobLocks;
   }
 
   @Scheduled(cron = "0 30 23 * * SUN", zone = "America/New_York")
   public void run() {
+    LocalDate fireDate = LocalDate.now(ET);
+    if (!jobLocks.tryAcquire(JOB_NAME, fireDate)) {
+      log.info("{} already ran for {} on another instance; skipping", JOB_NAME, fireDate);
+      return;
+    }
     try {
       runOnce(Instant.now());
     } catch (RuntimeException e) {

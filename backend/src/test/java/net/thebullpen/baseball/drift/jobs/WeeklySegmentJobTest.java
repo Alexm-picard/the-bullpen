@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import net.thebullpen.baseball.data.JobLockRepository;
 import net.thebullpen.baseball.drift.DriftMetric;
 import net.thebullpen.baseball.drift.DriftMetricsRepository;
 import net.thebullpen.baseball.drift.MetricType;
@@ -36,7 +37,7 @@ class WeeklySegmentJobTest {
     registryRepo = mock(RegistryRepository.class);
     fetcher = mock(SegmentedTruthJoinedPredictionFetcher.class);
     driftRepo = mock(DriftMetricsRepository.class);
-    job = new WeeklySegmentJob(registryRepo, fetcher, driftRepo);
+    job = new WeeklySegmentJob(registryRepo, fetcher, driftRepo, mock(JobLockRepository.class));
   }
 
   @Test

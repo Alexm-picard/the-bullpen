@@ -3,10 +3,13 @@ package net.thebullpen.baseball.drift.jobs;
 import java.nio.file.Path;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import net.thebullpen.baseball.data.JobLockRepository;
 import net.thebullpen.baseball.drift.DriftMetric;
 import net.thebullpen.baseball.drift.DriftMetricsRepository;
 import net.thebullpen.baseball.drift.MetricType;
@@ -37,24 +40,35 @@ public class PsiPredictionJob {
 
   private static final Logger log = LoggerFactory.getLogger(PsiPredictionJob.class);
 
+  private static final String JOB_NAME = "psi_prediction";
+  private static final ZoneId ET = ZoneId.of("America/New_York");
+
   private final RegistryRepository registryRepo;
   private final TrainingDistributionLoader trainingLoader;
   private final PredictionDistributionFetcher fetcher;
   private final DriftMetricsRepository driftRepo;
+  private final JobLockRepository jobLocks;
 
   public PsiPredictionJob(
       RegistryRepository registryRepo,
       TrainingDistributionLoader trainingLoader,
       PredictionDistributionFetcher fetcher,
-      DriftMetricsRepository driftRepo) {
+      DriftMetricsRepository driftRepo,
+      JobLockRepository jobLocks) {
     this.registryRepo = registryRepo;
     this.trainingLoader = trainingLoader;
     this.fetcher = fetcher;
     this.driftRepo = driftRepo;
+    this.jobLocks = jobLocks;
   }
 
   @Scheduled(cron = "0 10 2 * * *", zone = "America/New_York")
   public void run() {
+    LocalDate fireDate = LocalDate.now(ET);
+    if (!jobLocks.tryAcquire(JOB_NAME, fireDate)) {
+      log.info("{} already ran for {} on another instance; skipping", JOB_NAME, fireDate);
+      return;
+    }
     try {
       runOnce(Instant.now());
     } catch (RuntimeException e) {

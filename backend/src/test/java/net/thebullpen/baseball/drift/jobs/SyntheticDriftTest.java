@@ -14,6 +14,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import net.thebullpen.baseball.data.JobLockRepository;
 import net.thebullpen.baseball.drift.DriftMetric;
 import net.thebullpen.baseball.drift.DriftMetricsRepository;
 import net.thebullpen.baseball.drift.FeatureDistributionFetcher;
@@ -73,7 +74,8 @@ class SyntheticDriftTest {
             eq("model_a"), eq(1L), eq("launch_speed"), any(Instant.class), any(Instant.class)))
         .thenReturn(observed);
 
-    PsiFeatureJob job = new PsiFeatureJob(registryRepo, loader, fetcher, driftRepo);
+    PsiFeatureJob job =
+        new PsiFeatureJob(registryRepo, loader, fetcher, driftRepo, mock(JobLockRepository.class));
     job.runOnce(Instant.now());
 
     DriftMetric written = captureSingle(driftRepo);
@@ -107,7 +109,8 @@ class SyntheticDriftTest {
             eq("model_a"), eq(1L), eq("launch_speed"), any(Instant.class), any(Instant.class)))
         .thenReturn(observed);
 
-    PsiFeatureJob job = new PsiFeatureJob(registryRepo, loader, fetcher, driftRepo);
+    PsiFeatureJob job =
+        new PsiFeatureJob(registryRepo, loader, fetcher, driftRepo, mock(JobLockRepository.class));
     job.runOnce(Instant.now());
 
     DriftMetric written = captureSingle(driftRepo);
@@ -144,7 +147,9 @@ class SyntheticDriftTest {
             eq("pitch_outcome_pre"), eq(1L), any(Instant.class), any(Instant.class)))
         .thenReturn(Map.of("in_play", observed));
 
-    PsiPredictionJob job = new PsiPredictionJob(registryRepo, loader, fetcher, driftRepo);
+    PsiPredictionJob job =
+        new PsiPredictionJob(
+            registryRepo, loader, fetcher, driftRepo, mock(JobLockRepository.class));
     job.runOnce(Instant.now());
 
     DriftMetric written = captureSingle(driftRepo);
@@ -175,7 +180,8 @@ class SyntheticDriftTest {
     when(fetcher.fetch(eq("model_a"), eq(1L), any(Instant.class), any(Instant.class)))
         .thenReturn(joined);
 
-    CalibrationJob job = new CalibrationJob(registryRepo, fetcher, driftRepo);
+    CalibrationJob job =
+        new CalibrationJob(registryRepo, fetcher, driftRepo, mock(JobLockRepository.class));
     job.runOnce(Instant.now());
 
     List<DriftMetric> written = captureAll(driftRepo);
@@ -208,7 +214,8 @@ class SyntheticDriftTest {
     when(fetcher.fetch(eq("model_a"), eq(1L), any(Instant.class), any(Instant.class)))
         .thenReturn(joined);
 
-    CalibrationJob job = new CalibrationJob(registryRepo, fetcher, driftRepo);
+    CalibrationJob job =
+        new CalibrationJob(registryRepo, fetcher, driftRepo, mock(JobLockRepository.class));
     job.runOnce(Instant.now());
 
     List<DriftMetric> written = captureAll(driftRepo);
