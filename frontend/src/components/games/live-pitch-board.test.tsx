@@ -1,14 +1,22 @@
+// @vitest-environment jsdom
 /**
- * Data-state tests for <LivePitchBoard> (redesign PR-2): row content, the
- * gold just-thrown tick, the [154] champion-less "n/a" prediction contract,
- * agree/disagree reads, and the empty state.
+ * Behavioral (render + DOM query) tests for <LivePitchBoard> (C-34). Upgraded from
+ * renderToStaticMarkup string matching to real DOM queries against the rendered output: row
+ * content, the gold just-thrown tick, the [154] champion-less "n/a" prediction contract,
+ * agree/disagree reads, the row cap, and the empty state. The board is purely presentational
+ * (plain table + design tokens, no Mantine / no fetch), so this needs only jsdom + render.
  */
-import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import "@testing-library/jest-dom/vitest";
+
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
 
 import type { LivePitchRow } from "../../api/games";
 
 import { LivePitchBoard } from "./live-pitch-board";
+
+// The suite runs without vitest `globals`, so testing-library's auto-cleanup is not registered.
+afterEach(cleanup);
 
 function pitch(over: Partial<LivePitchRow> = {}): LivePitchRow {
   return {
@@ -43,61 +51,70 @@ function pitch(over: Partial<LivePitchRow> = {}): LivePitchRow {
 
 describe("LivePitchBoard", () => {
   it("renders one row per pitch with type, velo, count, and outcome chip", () => {
-    const html = renderToStaticMarkup(
+    render(
       <LivePitchBoard
         pitches={[
-          pitch({ cursor: 2, description: "swinging_strike", pitchType: "SL" }),
+          pitch({
+            cursor: 2,
+            description: "swinging_strike",
+            pitchType: "SL",
+            releaseSpeedMph: 88.1,
+          }),
           pitch({ cursor: 1 }),
         ]}
       />,
     );
-    expect(html).toContain("SL");
-    expect(html).toContain("94.8");
-    expect(html).toContain("1-1");
-    expect(html).toContain("swinging strike");
-    expect(html).toContain("foul");
+    expect(screen.getByText("SL")).toBeInTheDocument();
+    expect(screen.getByText("88.1")).toBeInTheDocument();
+    expect(screen.getByText("94.8")).toBeInTheDocument();
+    expect(screen.getAllByText("1-1")).toHaveLength(2);
+    expect(screen.getByText("swinging strike")).toBeInTheDocument();
+    expect(screen.getByText("foul")).toBeInTheDocument();
+    // header row + one row per pitch
+    expect(screen.getAllByRole("row")).toHaveLength(3);
   });
 
   it("marks only the newest pitch with the just-thrown tick", () => {
-    const html = renderToStaticMarkup(
+    render(
       <LivePitchBoard pitches={[pitch({ cursor: 3 }), pitch({ cursor: 2 })]} />,
     );
-    expect(html.match(/just-thrown-tick/g)).toHaveLength(1);
+    expect(screen.getAllByTestId("just-thrown-tick")).toHaveLength(1);
   });
 
   it("reads n/a while live runs champion-less ([154])", () => {
-    const html = renderToStaticMarkup(<LivePitchBoard pitches={[pitch()]} />);
-    expect(html).toContain("n/a");
-    expect(html).toContain("[154]");
+    render(<LivePitchBoard pitches={[pitch()]} />);
+    expect(screen.getByText("n/a")).toBeInTheDocument();
+    expect(screen.getByTitle(/\[154\]/)).toBeInTheDocument();
   });
 
   it("reads agreement and disagreement once a model predicts", () => {
-    const agree = renderToStaticMarkup(
+    const { unmount } = render(
       <LivePitchBoard
         pitches={[pitch({ predictedWinner: "foul", description: "foul" })]}
       />,
     );
-    expect(agree).toContain("✓ foul");
+    expect(screen.getByText(/✓\s*foul/)).toBeInTheDocument();
+    unmount();
 
-    const disagree = renderToStaticMarkup(
+    render(
       <LivePitchBoard
         pitches={[pitch({ predictedWinner: "ball", description: "foul" })]}
       />,
     );
-    expect(disagree).toContain("✗ ball");
+    expect(screen.getByText(/✗\s*ball/)).toBeInTheDocument();
   });
 
   it("caps rendered rows at the limit", () => {
     const many = Array.from({ length: 60 }, (_, i) => pitch({ cursor: i + 1 }));
-    const html = renderToStaticMarkup(
-      <LivePitchBoard pitches={many} limit={50} />,
-    );
-    expect(html.match(/<tr/g)).toHaveLength(51); // header + 50 rows
+    render(<LivePitchBoard pitches={many} limit={50} />);
+    expect(screen.getAllByRole("row")).toHaveLength(51); // header + 50 rows
   });
 
   it("renders the waiting state for an empty log", () => {
-    const html = renderToStaticMarkup(<LivePitchBoard pitches={[]} />);
-    expect(html).toContain("Waiting for the first pitch");
-    expect(html).not.toContain("<table");
+    render(<LivePitchBoard pitches={[]} />);
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Waiting for the first pitch",
+    );
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 });
