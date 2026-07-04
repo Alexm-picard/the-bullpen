@@ -84,24 +84,24 @@
     },
     {
       "type": "timeseries",
-      "title": "Prediction latency by model (p50 / p95 / p99)",
+      "title": "Prediction latency by model (p50 / p95 / p99, fleet)",
       "id": 5,
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
       "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
       "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
       "targets": [
         {
-          "expr": "thebullpen_inference_prediction_latency_seconds{job=~\"thebullpen.*\", quantile=\"0.5\"}",
+          "expr": "histogram_quantile(0.5, sum(rate(thebullpen_inference_prediction_latency_seconds_bucket{job=~\"thebullpen.*\"}[5m])) by (le, model_name))",
           "legendFormat": "{{model_name}} p50",
           "refId": "A"
         },
         {
-          "expr": "thebullpen_inference_prediction_latency_seconds{job=~\"thebullpen.*\", quantile=\"0.95\"}",
+          "expr": "histogram_quantile(0.95, sum(rate(thebullpen_inference_prediction_latency_seconds_bucket{job=~\"thebullpen.*\"}[5m])) by (le, model_name))",
           "legendFormat": "{{model_name}} p95",
           "refId": "B"
         },
         {
-          "expr": "thebullpen_inference_prediction_latency_seconds{job=~\"thebullpen.*\", quantile=\"0.99\"}",
+          "expr": "histogram_quantile(0.99, sum(rate(thebullpen_inference_prediction_latency_seconds_bucket{job=~\"thebullpen.*\"}[5m])) by (le, model_name))",
           "legendFormat": "{{model_name}} p99",
           "refId": "C"
         }
