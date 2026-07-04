@@ -1,10 +1,13 @@
 package net.thebullpen.baseball.registry;
 
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import net.thebullpen.baseball.data.JobLockRepository;
 import net.thebullpen.baseball.data.PredictionLogRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,21 +39,27 @@ public class ReconciliationJob {
 
   private static final Logger log = LoggerFactory.getLogger(ReconciliationJob.class);
 
+  private static final String JOB_NAME = "reconciliation";
+  private static final ZoneId ET = ZoneId.of("America/New_York");
+
   private final RegistryRepository registryRepo;
   private final PredictionLogRepository predictionLogRepo;
   private final DiscordNotifier discord;
+  private final JobLockRepository jobLocks;
   private final int lookbackDays;
 
   public ReconciliationJob(
       RegistryRepository registryRepo,
       PredictionLogRepository predictionLogRepo,
       DiscordNotifier discord,
+      JobLockRepository jobLocks,
       @org.springframework.beans.factory.annotation.Value(
               "${bullpen.reconciliation.lookback-days:7}")
           int lookbackDays) {
     this.registryRepo = registryRepo;
     this.predictionLogRepo = predictionLogRepo;
     this.discord = discord;
+    this.jobLocks = jobLocks;
     this.lookbackDays = lookbackDays;
   }
 
@@ -60,6 +69,11 @@ public class ReconciliationJob {
    */
   @Scheduled(cron = "0 0 4 ? * SUN", zone = "America/New_York")
   public void run() {
+    LocalDate fireDate = LocalDate.now(ET);
+    if (!jobLocks.tryAcquire(JOB_NAME, fireDate)) {
+      log.info("{} already ran for {} on another instance; skipping", JOB_NAME, fireDate);
+      return;
+    }
     try {
       List<String[]> known = registryRepo.findAllNameVersionPairs();
       List<String[]> seen = querySeenPairsFromPredictionLog();

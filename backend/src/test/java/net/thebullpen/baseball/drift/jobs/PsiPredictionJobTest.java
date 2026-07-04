@@ -15,6 +15,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import net.thebullpen.baseball.data.JobLockRepository;
 import net.thebullpen.baseball.drift.DriftMetric;
 import net.thebullpen.baseball.drift.DriftMetricsRepository;
 import net.thebullpen.baseball.drift.MetricType;
@@ -41,7 +42,9 @@ class PsiPredictionJobTest {
     trainingLoader = mock(TrainingDistributionLoader.class);
     fetcher = mock(PredictionDistributionFetcher.class);
     driftRepo = mock(DriftMetricsRepository.class);
-    job = new PsiPredictionJob(registryRepo, trainingLoader, fetcher, driftRepo);
+    job =
+        new PsiPredictionJob(
+            registryRepo, trainingLoader, fetcher, driftRepo, mock(JobLockRepository.class));
   }
 
   @Test

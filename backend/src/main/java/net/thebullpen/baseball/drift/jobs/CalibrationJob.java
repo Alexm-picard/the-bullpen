@@ -2,9 +2,12 @@ package net.thebullpen.baseball.drift.jobs;
 
 import java.sql.SQLException;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import net.thebullpen.baseball.data.JobLockRepository;
 import net.thebullpen.baseball.drift.DriftMetric;
 import net.thebullpen.baseball.drift.DriftMetricsRepository;
 import net.thebullpen.baseball.drift.MetricType;
@@ -37,21 +40,32 @@ public class CalibrationJob {
 
   private static final Logger log = LoggerFactory.getLogger(CalibrationJob.class);
 
+  private static final String JOB_NAME = "calibration";
+  private static final ZoneId ET = ZoneId.of("America/New_York");
+
   private final RegistryRepository registryRepo;
   private final TruthJoinedPredictionFetcher fetcher;
   private final DriftMetricsRepository driftRepo;
+  private final JobLockRepository jobLocks;
 
   public CalibrationJob(
       RegistryRepository registryRepo,
       TruthJoinedPredictionFetcher fetcher,
-      DriftMetricsRepository driftRepo) {
+      DriftMetricsRepository driftRepo,
+      JobLockRepository jobLocks) {
     this.registryRepo = registryRepo;
     this.fetcher = fetcher;
     this.driftRepo = driftRepo;
+    this.jobLocks = jobLocks;
   }
 
   @Scheduled(cron = "0 30 2 * * *", zone = "America/New_York")
   public void run() {
+    LocalDate fireDate = LocalDate.now(ET);
+    if (!jobLocks.tryAcquire(JOB_NAME, fireDate)) {
+      log.info("{} already ran for {} on another instance; skipping", JOB_NAME, fireDate);
+      return;
+    }
     try {
       runOnce(Instant.now());
     } catch (RuntimeException e) {

@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import javax.sql.DataSource;
+import net.thebullpen.baseball.data.JobLockRepository;
 import net.thebullpen.baseball.drift.alerting.AlertHistoryRepository;
 import net.thebullpen.baseball.drift.alerting.DriftAlertEvaluator;
 import net.thebullpen.baseball.drift.jobs.PsiFeatureJob;
@@ -195,7 +196,9 @@ class RealFeatureDistributionFetcherIT {
     when(registryRepo.findActiveChampions()).thenReturn(List.of(champ));
 
     // The REAL job wired with the REAL fetcher + REAL drift repo (ClickHouse) + REAL loader.
-    PsiFeatureJob job = new PsiFeatureJob(registryRepo, trainingLoader, fetcher, driftRepo);
+    PsiFeatureJob job =
+        new PsiFeatureJob(
+            registryRepo, trainingLoader, fetcher, driftRepo, mock(JobLockRepository.class));
 
     // Seven days of drifted traffic (launch speeds ~105 vs the ~90 reference), one job run per
     // day. Noon-ET anchor so the per-day collapse cannot straddle an ET midnight (DEF-M3 idiom).
@@ -225,7 +228,14 @@ class RealFeatureDistributionFetcherIT {
     // fires the NOTICE and records alert history.
     DiscordNotifier discord = mock(DiscordNotifier.class);
     DriftAlertEvaluator evaluator =
-        new DriftAlertEvaluator(registryRepo, driftRepo, historyRepo, discord, 0.10, 0.25);
+        new DriftAlertEvaluator(
+            registryRepo,
+            driftRepo,
+            historyRepo,
+            discord,
+            mock(JobLockRepository.class),
+            0.10,
+            0.25);
     int fired = evaluator.runOnce();
 
     assertThat(fired).as("feature-drift NOTICE fired from job-written rows").isGreaterThan(0);

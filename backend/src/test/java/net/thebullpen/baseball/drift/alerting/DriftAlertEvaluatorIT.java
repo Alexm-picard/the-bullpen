@@ -17,6 +17,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import net.thebullpen.baseball.data.JobLockRepository;
 import net.thebullpen.baseball.drift.DriftMetric;
 import net.thebullpen.baseball.drift.DriftMetricsRepository;
 import net.thebullpen.baseball.drift.MetricType;
@@ -77,7 +78,15 @@ class DriftAlertEvaluatorIT {
     registryRepo = mock(RegistryRepository.class);
     driftRepo = mock(DriftMetricsRepository.class);
     discord = mock(DiscordNotifier.class);
-    evaluator = new DriftAlertEvaluator(registryRepo, driftRepo, historyRepo, discord, 0.10, 0.25);
+    evaluator =
+        new DriftAlertEvaluator(
+            registryRepo,
+            driftRepo,
+            historyRepo,
+            discord,
+            mock(JobLockRepository.class),
+            0.10,
+            0.25);
   }
 
   // --- PAGE: calibration ------------------------------------------------

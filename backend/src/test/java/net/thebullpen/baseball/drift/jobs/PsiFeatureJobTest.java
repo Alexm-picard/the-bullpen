@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import net.thebullpen.baseball.data.JobLockRepository;
 import net.thebullpen.baseball.drift.DriftMetric;
 import net.thebullpen.baseball.drift.DriftMetricsRepository;
 import net.thebullpen.baseball.drift.FeatureDistributionFetcher;
@@ -45,7 +46,9 @@ class PsiFeatureJobTest {
     trainingLoader = mock(TrainingDistributionLoader.class);
     fetcher = mock(FeatureDistributionFetcher.class);
     driftRepo = mock(DriftMetricsRepository.class);
-    job = new PsiFeatureJob(registryRepo, trainingLoader, fetcher, driftRepo);
+    job =
+        new PsiFeatureJob(
+            registryRepo, trainingLoader, fetcher, driftRepo, mock(JobLockRepository.class));
   }
 
   @Test

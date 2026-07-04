@@ -1,10 +1,12 @@
 package net.thebullpen.baseball.drift.alerting;
 
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import net.thebullpen.baseball.data.JobLockRepository;
 import net.thebullpen.baseball.drift.DriftMetric;
 import net.thebullpen.baseball.drift.DriftMetricsRepository;
 import net.thebullpen.baseball.drift.DriftWindows;
@@ -55,10 +57,13 @@ public class DriftAlertEvaluator {
   // "Consecutive days" is measured in calendar days in this zone (matches the 3 AM ET schedule).
   private static final ZoneId ALERT_ZONE = ZoneId.of("America/New_York");
 
+  private static final String JOB_NAME = "drift_alert_evaluator";
+
   private final RegistryRepository registryRepo;
   private final DriftMetricsRepository driftRepo;
   private final AlertHistoryRepository historyRepo;
   private final DiscordNotifier discord;
+  private final JobLockRepository jobLocks;
   private final double calibrationPageThreshold;
   private final double featurePsiNoticeThreshold;
 
@@ -67,6 +72,7 @@ public class DriftAlertEvaluator {
       DriftMetricsRepository driftRepo,
       AlertHistoryRepository historyRepo,
       DiscordNotifier discord,
+      JobLockRepository jobLocks,
       @Value("${bullpen.drift.alert.calibration-page-threshold:0.10}")
           double calibrationPageThreshold,
       @Value("${bullpen.drift.alert.feature-psi-notice-threshold:0.25}")
@@ -75,12 +81,18 @@ public class DriftAlertEvaluator {
     this.driftRepo = driftRepo;
     this.historyRepo = historyRepo;
     this.discord = discord;
+    this.jobLocks = jobLocks;
     this.calibrationPageThreshold = calibrationPageThreshold;
     this.featurePsiNoticeThreshold = featurePsiNoticeThreshold;
   }
 
   @Scheduled(cron = "0 0 3 * * *", zone = "America/New_York")
   public void evaluate() {
+    LocalDate fireDate = LocalDate.now(ALERT_ZONE);
+    if (!jobLocks.tryAcquire(JOB_NAME, fireDate)) {
+      log.info("{} already ran for {} on another instance; skipping", JOB_NAME, fireDate);
+      return;
+    }
     try {
       runOnce();
     } catch (RuntimeException e) {
