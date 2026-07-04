@@ -50,13 +50,13 @@ session and most "obvious" alternatives have already been considered and rejecte
   (failed primary). So the [154]/ADR-0011 "no user-visible pitch prediction" guarantee holds via the
   absent UI caller, NOT routing mode.
 - **Coverage is measured everywhere; backend, training, and frontend now gate.** Backend
-  JaCoCo (in `backend/build.gradle.kts` and `backend.yml`) gates on a regression floor (LINE >= 72%,
-  BRANCH >= 58%, a few points under the 2026-06-15 CI baseline of 77.85% / 65.67%), enforced only
+  JaCoCo (in `backend/build.gradle.kts` and `backend.yml`) gates on a regression floor (LINE >= 80%,
+  BRANCH >= 68%, a few points under the 2026-07-04 CI baseline of 82.42% / 70.54%), enforced only
   when the Docker ITs run (`-Dbullpen.it.docker=true`, i.e. CI) so local `./gradlew build` is
-  unaffected. Training coverage (~46%) is gated as a 40% regression floor, with 75% an aspirational
-  warning-only target (`training.yml`). Frontend vitest v8 (`frontend.yml` `npm run test:coverage`)
-  gates on a regression floor (lines/statements >= 65%, branches >= 55%, functions >= 60%, in
-  `vite.config.ts`). The README's earlier unbacked "~95%" has
+  unaffected. Training coverage (~57% blended TOTAL) is gated as a 55% regression floor, with 75% an
+  aspirational warning-only target (`training.yml`). Frontend vitest v8 (`frontend.yml`
+  `npm run test:coverage`) gates on a regression floor (lines >= 82%, statements >= 80%,
+  branches >= 62%, functions >= 75%, in `vite.config.ts`). The README's earlier unbacked "~95%" has
   been corrected to the measured figures. Rule still holds: do **not** cite a coverage percentage you
   cannot reproduce from CI.
 

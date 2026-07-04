@@ -98,14 +98,16 @@ jobs:
             tests/retraining \
             tests/test_smoke.py
       # Coverage gate. 75% (pyproject fail_under) stays the aspirational TARGET, surfaced as a
-      # warning. The ENFORCED gate is a regression FLOOR at 40% (current is ~46%): coverage may not
-      # backslide below it, but isn't blocked from shipping today. Raise the floor as coverage
-      # climbs toward 75; that's when the floor and the target converge.
-      - name: Coverage gate (regression floor 40%; 75% is the aspirational target)
+      # warning. The ENFORCED gate is a regression FLOOR at 55% (the blended coverage.py TOTAL is
+      # ~57% as of 2026-07-04, up from ~46%): coverage may not backslide below it, but isn't blocked
+      # from shipping today. Raise the floor as coverage climbs toward 75; that's when the floor and
+      # the target converge. The floor is coverage.py's combined line+branch TOTAL (--cov-branch on),
+      # not the cobertura line-rate.
+      - name: Coverage gate (regression floor 55%; 75% is the aspirational target)
         working-directory: training
         run: |
           uv run coverage report || echo "::warning title=Coverage below 75% target::training coverage is under the 75% aspiration (non-blocking)"
-          uv run coverage report --fail-under=40 >/dev/null
+          uv run coverage report --fail-under=55 >/dev/null
       - name: Coverage XML artifact
         if: always()
         working-directory: training
