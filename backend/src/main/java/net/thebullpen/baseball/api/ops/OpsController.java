@@ -1,6 +1,7 @@
 package net.thebullpen.baseball.api.ops;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
 import java.util.Map;
 import net.thebullpen.baseball.api.dto.LatencyStat;
@@ -44,6 +45,12 @@ import org.springframework.web.bind.annotation.RestController;
  * materialises when CH isn't around — the drift section then surfaces an empty list and the UI
  * shows its "no drift data yet" placeholder.
  */
+@Tag(
+    name = "Ops dashboard",
+    description =
+        "Public read API behind the Ops dashboard: drift metrics, A/B routing, retrain queue,"
+            + " recent ops events, latency, and calibration + accuracy scorecards. No auth"
+            + " (decision [29]); returns empty rather than 404 for speculative polling.")
 @RestController
 @RequestMapping("/v1/ops")
 @Profile("api")

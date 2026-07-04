@@ -1,5 +1,10 @@
 package net.thebullpen.baseball.api;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
 import java.util.ArrayList;
 import java.util.List;
@@ -65,9 +70,28 @@ public class PredictPitchController {
     this.service = service;
   }
 
+  @Operation(
+      summary = "Predict the calibrated pitch-outcome distribution",
+      description =
+          "Serves the registered pitch-outcome model for the given pre-pitch (and, for head=post,"
+              + " post-pitch) features and returns the calibrated 5-class distribution plus its"
+              + " argmax. Pre and post are two separate registered models (rule 9); 503 when the"
+              + " requested head has no LIVE champion.")
+  @ApiResponse(
+      responseCode = "200",
+      description = "Calibrated outcome distribution with the serving model identity.",
+      content =
+          @Content(
+              mediaType = "application/json",
+              schema = @Schema(implementation = PitchPredictionResponse.class)))
   @PostMapping("/pitch")
   public PitchPredictionResponse predict(
-      @RequestParam(name = "head", defaultValue = "pre") String headRaw,
+      @Parameter(
+              description =
+                  "Which head to serve: 'pre' (pre-pitch, default) or 'post' (post-pitch, which"
+                      + " requires the Tier 4 fields).")
+          @RequestParam(name = "head", defaultValue = "pre")
+          String headRaw,
       @Valid @RequestBody PitchRequest req)
       throws Exception {
     Head head;

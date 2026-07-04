@@ -3,6 +3,10 @@ package net.thebullpen.baseball.api;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.Timer;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -72,6 +76,19 @@ public class PredictBattedBallController {
    * (Park Explorer / dev curl), a random long is used — assignment is then per-request, not
    * per-game, which is fine for the demo-traffic case.
    */
+  @Operation(
+      summary = "Predict P(home run) for a batted ball at one park",
+      description =
+          "Runs the batted-ball model for the given launch parameters at the requested park and"
+              + " logs the prediction asynchronously. Routing fans out to champion + any shadow"
+              + " via the A/B router.")
+  @ApiResponse(
+      responseCode = "200",
+      description = "Predicted home-run probability with the serving model identity.",
+      content =
+          @Content(
+              mediaType = "application/json",
+              schema = @Schema(implementation = PredictionResponse.class)))
   @PostMapping("/batted-ball")
   public PredictionResponse predict(
       @Valid @RequestBody BattedBallRequest req,

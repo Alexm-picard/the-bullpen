@@ -1,5 +1,6 @@
 package net.thebullpen.baseball.api.admin;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
 import net.thebullpen.baseball.api.admin.dto.SetChallengerRequest;
@@ -50,6 +51,11 @@ import org.springframework.web.server.ResponseStatusException;
  *       InvalidTrafficPct} / {@code ShadowModeWithTraffic} → 400
  * </ul>
  */
+@Tag(
+    name = "Admin: Routing",
+    description =
+        "ADMIN-authed A/B routing writes: set/clear challenger, move the traffic slider, and flip"
+            + " SHADOW <-> AB mode. Requires HTTP Basic (SecurityConfig /v1/admin/**).")
 @RestController
 @RequestMapping("/v1/admin/routing")
 @Profile("api")

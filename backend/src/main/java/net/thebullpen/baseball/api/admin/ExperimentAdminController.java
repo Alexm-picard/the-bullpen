@@ -1,5 +1,6 @@
 package net.thebullpen.baseball.api.admin;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
 import net.thebullpen.baseball.api.admin.dto.AbortExperimentRequest;
@@ -47,6 +48,11 @@ import org.springframework.web.server.ResponseStatusException;
  *   <li>{@link ExperimentException.InsufficientSampleSize} → 409
  * </ul>
  */
+@Tag(
+    name = "Admin: Experiments",
+    description =
+        "ADMIN-authed experiment lifecycle: declare, evaluate, complete, abort, and import offline"
+            + " promotion-gate evidence. Requires HTTP Basic (SecurityConfig /v1/admin/**).")
 @RestController
 @RequestMapping("/v1/admin/experiments")
 @Profile("api")

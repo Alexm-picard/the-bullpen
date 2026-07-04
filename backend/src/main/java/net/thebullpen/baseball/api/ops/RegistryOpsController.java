@@ -1,5 +1,6 @@
 package net.thebullpen.baseball.api.ops;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
 import net.thebullpen.baseball.registry.RegistryService;
 import net.thebullpen.baseball.registry.dto.ModelVersion;
@@ -26,6 +27,12 @@ import org.springframework.web.server.ResponseStatusException;
  *   <li>{@code GET /v1/ops/registry/{model_name}/{version_id}} — one row. 404 if not found.
  * </ul>
  */
+@Tag(
+    name = "Registry (read)",
+    description =
+        "Public read-side of the model registry: model names, versions, stages, and schema hashes."
+            + " No auth (decision [29], non-sensitive); lists return empty rather than 404 for"
+            + " speculative dashboard polling.")
 @RestController
 @RequestMapping("/v1/ops/registry")
 @Profile("api")
