@@ -3,6 +3,10 @@ package net.thebullpen.baseball.api;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.Timer;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
 import java.time.Instant;
 import java.util.List;
@@ -82,6 +86,21 @@ public class PredictAllParksController {
     this.objectMapper = objectMapper;
   }
 
+  @Operation(
+      summary = "Predict per-park outcome distribution for a batted ball",
+      description =
+          "Runs the real per-park outcome model once and returns P(home run) for the launch"
+              + " parameters at each of the 30 MLB parks, plus per-park carry feet when the"
+              + " champion has a carry head. Serves the registry LIVE champion; 503 when none is"
+              + " live.")
+  @ApiResponse(
+      responseCode = "200",
+      description =
+          "Per-park home-run probabilities (and optional carry feet) with model identity.",
+      content =
+          @Content(
+              mediaType = "application/json",
+              schema = @Schema(implementation = AllParksPredictionResponse.class)))
   @PostMapping("/batted-ball/all-parks")
   public AllParksPredictionResponse predictAllParks(
       @Valid @RequestBody AllParksOutcomeRequest req,

@@ -1,6 +1,7 @@
 package net.thebullpen.baseball.api.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.Map;
 
 /**
@@ -22,9 +23,16 @@ import java.util.Map;
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record AllParksPredictionResponse(
-    Map<String, Double> probHrByPark,
-    Map<String, Double> carryFtByPark,
-    String modelName,
-    String modelVersion,
-    long latencyMicros,
-    String correlationId) {}
+    @Schema(description = "Per-park P(home run), keyed by 3-letter park id (30 entries).")
+        Map<String, Double> probHrByPark,
+    @Schema(
+            description =
+                "Per-park predicted carry distance in feet; null (and omitted) for a"
+                    + " probabilities-only champion.")
+        Map<String, Double> carryFtByPark,
+    @Schema(example = "battedball_outcome", description = "Serving model name.") String modelName,
+    @Schema(example = "v2", description = "Serving model version.") String modelVersion,
+    @Schema(example = "1240", description = "Total inference wall-clock time, microseconds.")
+        long latencyMicros,
+    @Schema(description = "Request correlation id echoed back for log tracing.")
+        String correlationId) {}

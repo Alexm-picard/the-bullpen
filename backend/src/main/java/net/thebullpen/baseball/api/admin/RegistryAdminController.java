@@ -1,5 +1,6 @@
 package net.thebullpen.baseball.api.admin;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
 import net.thebullpen.baseball.api.admin.dto.PromoteRequest;
@@ -58,6 +59,12 @@ import org.springframework.web.server.ResponseStatusException;
  *   <li>{@code IllegalArgumentException} from path/body mismatch → 400
  * </ul>
  */
+@Tag(
+    name = "Admin: Registry",
+    description =
+        "ADMIN-authed model registry writes: list versions, register a model (feature-schema-hash"
+            + " gated), and promote/transition stage (rule-5 promotion gate on CHAMPION). Requires"
+            + " HTTP Basic (SecurityConfig /v1/admin/**).")
 @RestController
 @RequestMapping("/v1/admin/registry")
 @Profile("api")

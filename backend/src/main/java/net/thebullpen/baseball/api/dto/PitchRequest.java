@@ -1,5 +1,6 @@
 package net.thebullpen.baseball.api.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
@@ -27,25 +28,48 @@ import jakarta.validation.constraints.PositiveOrZero;
  * based on matchup before calling, same convention as the toy endpoint.
  */
 public record PitchRequest(
-    @NotNull @Min(0) @Max(3) Integer countBalls,
-    @NotNull @Min(0) @Max(2) Integer countStrikes,
-    @NotNull @Min(0) @Max(2) Integer outs,
-    @NotNull @Min(1) @Max(20) Integer inning,
-    @NotNull @Min(0) @Max(7) Integer baseState,
-    @NotNull @Min(-30) @Max(30) Integer scoreDiff,
-    @NotNull @Min(0) @Max(6) Integer dow,
-    @NotBlank @Pattern(regexp = "L|R", message = "pitcherThrows must be 'L' or 'R'")
+    @Schema(example = "1", description = "Balls in the count, 0-3.") @NotNull @Min(0) @Max(3)
+        Integer countBalls,
+    @Schema(example = "2", description = "Strikes in the count, 0-2.") @NotNull @Min(0) @Max(2)
+        Integer countStrikes,
+    @Schema(example = "1", description = "Outs in the inning, 0-2.") @NotNull @Min(0) @Max(2)
+        Integer outs,
+    @Schema(example = "6", description = "Inning number, 1-20.") @NotNull @Min(1) @Max(20)
+        Integer inning,
+    @Schema(example = "0", description = "Base-occupancy code, 0-7 (bitmask of occupied bases).")
+        @NotNull
+        @Min(0)
+        @Max(7)
+        Integer baseState,
+    @Schema(
+            example = "0",
+            description = "Score differential from the pitching team's view, -30..30.")
+        @NotNull
+        @Min(-30)
+        @Max(30)
+        Integer scoreDiff,
+    @Schema(example = "3", description = "Day of week, 0 (Sun) - 6 (Sat).") @NotNull @Min(0) @Max(6)
+        Integer dow,
+    @Schema(example = "R", description = "Pitcher throwing hand: L or R.")
+        @NotBlank
+        @Pattern(regexp = "L|R", message = "pitcherThrows must be 'L' or 'R'")
         String pitcherThrows,
-    @NotBlank
+    @Schema(example = "R", description = "Batter stand: L or R (resolve switch hitters upstream).")
+        @NotBlank
         @Pattern(
             regexp = "L|R",
             message = "batterStand must be 'L' or 'R' (resolve switch hitters upstream)")
         String batterStand,
-    @NotBlank String parkId,
-    @NotNull @PositiveOrZero Long pitcherId,
-    @NotNull @PositiveOrZero Long batterId,
+    @Schema(example = "NYY", description = "3-letter MLB park id.") @NotBlank String parkId,
+    @Schema(example = "592789", description = "MLBAM pitcher id.") @NotNull @PositiveOrZero
+        Long pitcherId,
+    @Schema(example = "545361", description = "MLBAM batter id.") @NotNull @PositiveOrZero
+        Long batterId,
     // Tier 3 form features — optional; null means "we don't have it yet, let the model handle NaN".
-    @DecimalMin("0.0") @DecimalMax("10000.0") Double pitcherPitchesLast28d,
+    @Schema(description = "Optional Tier 3 form: pitcher pitches thrown in the last 28 days.")
+        @DecimalMin("0.0")
+        @DecimalMax("10000.0")
+        Double pitcherPitchesLast28d,
     @DecimalMin("0.0") @DecimalMax("300.0") Double pitcherPitchesInGame,
     @DecimalMin("0.0") @DecimalMax("400.0") Double daysSinceLastAppearance,
     @DecimalMin("0.0") @DecimalMax("1.0") Double pitcherStrikeRate28d,
@@ -57,7 +81,8 @@ public record PitchRequest(
     @DecimalMin("0.0") @DecimalMax("1.0") Double batterBallRate28d,
     @DecimalMin("0.0") @DecimalMax("1.0") Double batterInplayRateStd,
     // Tier 4 (post-pitch) — required only when head=post; controller enforces cross-field rule.
-    String pitchType,
+    @Schema(description = "Tier 4 (post-pitch): pitch type code. Required when head=post.")
+        String pitchType,
     @DecimalMin("40.0") @DecimalMax("110.0") Double releaseSpeedMph,
     @DecimalMin("-5.0") @DecimalMax("5.0") Double plateXIn,
     @DecimalMin("-5.0") @DecimalMax("8.0") Double plateZIn,
