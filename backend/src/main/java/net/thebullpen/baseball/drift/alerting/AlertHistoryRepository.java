@@ -37,7 +37,17 @@ public class AlertHistoryRepository {
     return count != null && count > 0;
   }
 
-  /** Record one alert fire. Returns the inserted id. */
+  /**
+   * Record one alert fire. Returns the effective row id for this alert on the current (UTC) day.
+   *
+   * <p>D-36 Part B defense-in-depth: the INSERT uses {@code ON CONFLICT(alert_key, date(fired_at))
+   * DO NOTHING} against the {@code ux_ah_key_day} unique index (V018) - scoped to that index only,
+   * so a real CHECK / NOT-NULL violation still fails loud rather than being silently dropped. The
+   * 24h {@link #firedWithin} check remains the PRIMARY business dedup; this index only trips if two
+   * worker instances both pass {@code firedWithin} and race the INSERT. When the row already exists
+   * the INSERT is a no-op and this returns the EXISTING row's id (same alert, same day) rather than
+   * a new one - so callers that read the return value always get a valid id for the day's alert.
+   */
   public long record(
       String alertKey,
       AlertSeverity severity,
@@ -45,18 +55,24 @@ public class AlertHistoryRepository {
       Double metricThreshold,
       String details) {
     jdbc.update(
-        "INSERT INTO alert_history (alert_key, severity, metric_value, metric_threshold, details)"
-            + " VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO alert_history"
+            + " (alert_key, severity, metric_value, metric_threshold, details)"
+            + " VALUES (?, ?, ?, ?, ?)"
+            + " ON CONFLICT(alert_key, date(fired_at)) DO NOTHING",
         alertKey,
         severity.name(),
         metricValue,
         metricThreshold,
         details);
     try {
+      // Re-select the day's row id (whether we just inserted it or lost the ON CONFLICT race). The
+      // max-id row for this key IS today's: ids are monotonic, record fires "now", firedWithin
+      // gates
+      // any prior fire to another day, and ux_ah_key_day caps it at one per UTC day. So ORDER BY id
+      // DESC LIMIT 1 returns it with no date('now') midnight-boundary race against fired_at.
       Long id =
           jdbc.queryForObject(
-              "SELECT id FROM alert_history WHERE alert_key = ? ORDER BY fired_at DESC, id DESC"
-                  + " LIMIT 1",
+              "SELECT id FROM alert_history WHERE alert_key = ? ORDER BY id DESC LIMIT 1",
               Long.class,
               alertKey);
       return id == null ? -1L : id;
