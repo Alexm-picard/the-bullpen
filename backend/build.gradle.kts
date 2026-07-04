@@ -177,8 +177,9 @@ tasks.named<Test>("test") {
 // A2 / Wave-4 - coverage measurement plus a binding regression floor. jacocoTestReport always
 // publishes the honest baseline (no class exclusions: the denominator is the whole main source
 // set, so the percentage isn't quietly massaged). jacocoTestCoverageVerification adds a HARD floor
-// a few points under the CI-measured baseline (LINE 77.85% / BRANCH 65.67% on 2026-06-15, full
-// suite incl. Docker ITs) so a real coverage regression reds the build without flapping on noise.
+// a few points under the CI-measured baseline (LINE 82.42% / BRANCH 70.54% on 2026-07-04, full
+// suite incl. Docker ITs; up from the 2026-06-15 77.85% / 65.67% as the two-instance + Wave D tests
+// landed) so a real coverage regression reds the build without flapping on noise.
 //
 // The floor is enforced ONLY when the Docker-gated ITs actually ran (-Dbullpen.it.docker=true, i.e.
 // CI). A local `./gradlew build` on macOS skips those ITs, which drags coverage below the floor;
@@ -204,12 +205,12 @@ tasks.jacocoTestCoverageVerification {
             limit {
                 counter = "LINE"
                 value = "COVEREDRATIO"
-                minimum = "0.72".toBigDecimal()
+                minimum = "0.80".toBigDecimal()
             }
             limit {
                 counter = "BRANCH"
                 value = "COVEREDRATIO"
-                minimum = "0.58".toBigDecimal()
+                minimum = "0.68".toBigDecimal()
             }
         }
     }

@@ -61,7 +61,7 @@ export default defineConfig({
     },
   },
   // A2 - coverage measurement (audit remediation). v8 provider, gated on a regression floor
-  // (see the `thresholds` block below: 65/65/55/60) so coverage can't silently backslide.
+  // (see the `thresholds` block below: 82/80/62/75) so coverage can't silently backslide.
   // Excludes design-system showcase fixtures + generated/config files from the denominator
   // so the percentage reflects logic, not hand-authored data tables.
   test: {
@@ -80,14 +80,15 @@ export default defineConfig({
         "src/main.tsx",
         "src/**/*.d.ts",
       ],
-      // Regression floor a few points below current (2026-06-07: lines 72.8 / stmts 71.5 /
-      // branches 60.6 / functions 67.9). Gates a coverage DROP without blocking today; ratchet up
-      // as coverage rises. This is a no-backsliding guard, not the 75% aspiration.
+      // Regression floor a few points below current (2026-07-04 CI: lines 84.2 / stmts 82.0 /
+      // branches 64.5 / functions 77.5, up from 2026-06-07 as the behavioral tests landed). Gates a
+      // coverage DROP without blocking today; ratchet up as coverage rises. No-backsliding guard,
+      // not the 75% aspiration.
       thresholds: {
-        lines: 65,
-        statements: 65,
-        branches: 55,
-        functions: 60,
+        lines: 82,
+        statements: 80,
+        branches: 62,
+        functions: 75,
       },
     },
   },
