@@ -1,5 +1,7 @@
 package net.thebullpen.baseball.api.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 /**
  * One row of the public model-accuracy scorecard ({@code GET /v1/ops/accuracy}), built from a
  * committed promotion-evidence JSON.
@@ -11,7 +13,8 @@ package net.thebullpen.baseball.api.dto;
  * {@code battedball_outcome} would_fail_guardrail) is never implied to be accurate-and-serving.
  * {@code stage} is a static hint reflecting decisions [165]/[154]/[163] (the live registry stage is
  * shown on the Ops fleet table). Every metric is nullable so a missing field renders as an em-dash
- * in the UI, never as 0.
+ * in the UI, never as 0 - the {@code @Schema(nullable = true)} markers keep the generated contract
+ * honest about that (Schemathesis response-schema conformance, C-33).
  *
  * <p>{@code modelName} is the registry/serving name; {@code evidenceModelName} is the training
  * /challenger name (e.g. {@code batted_ball_mlp} -> {@code battedball_outcome}) - both are surfaced
@@ -29,15 +32,15 @@ public record ModelAccuracyScorecard(
     String gateStatus,
     String verdictOutcome,
     long sampleSize,
-    Double brier,
-    Double ece,
-    Double logLoss,
-    Double eceVsRetro,
-    Double vsBaselineMargin,
-    Double brierCvMean,
-    Double brierCvStd,
-    Double eceCvMean,
-    Double eceCvStd,
-    String calibrationNote,
+    @Schema(nullable = true) Double brier,
+    @Schema(nullable = true) Double ece,
+    @Schema(nullable = true) Double logLoss,
+    @Schema(nullable = true) Double eceVsRetro,
+    @Schema(nullable = true) Double vsBaselineMargin,
+    @Schema(nullable = true) Double brierCvMean,
+    @Schema(nullable = true) Double brierCvStd,
+    @Schema(nullable = true) Double eceCvMean,
+    @Schema(nullable = true) Double eceCvStd,
+    @Schema(nullable = true) String calibrationNote,
     String generatedAt,
     String gitCommit) {}

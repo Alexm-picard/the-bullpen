@@ -14,8 +14,11 @@ import org.springframework.web.bind.annotation.RestController;
 @Profile("api")
 public class HealthController {
 
+  // Map<String, String> (not Object) so the generated response schema is additionalProperties of
+  // type string - all three values are strings, and an Object-valued map makes springdoc type them
+  // as "object", which then fails Schemathesis response-schema conformance (C-33).
   @GetMapping("/health")
-  public Map<String, Object> health() {
+  public Map<String, String> health() {
     return Map.of(
         "status", "ok",
         "profile", "api",

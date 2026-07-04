@@ -1,5 +1,7 @@
 package net.thebullpen.baseball.api.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 /**
  * Response body for the forward simulator endpoints — Phase 2a.9.
  *
@@ -15,7 +17,10 @@ public record SimulateResponse(
     double pWalk,
     double pStrikeout,
     double pInPlay,
-    Integer mcTrials,
+    @Schema(
+            nullable = true,
+            description = "Monte-Carlo trial count; null for the analytical method.")
+        Integer mcTrials,
     String modelName,
     String modelVersion,
     long latencyMicros,

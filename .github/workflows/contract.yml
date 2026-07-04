@@ -1,13 +1,22 @@
 name: contract
 
-# Schemathesis API contract test (plan S1f): boots the Spring `api` profile and
-# fuzzes every operation declared in the springdoc-generated OpenAPI spec
-# (/v3/api-docs), asserting the implementation never returns a 5xx for an input
-# the schema permits. This is the high-signal, low-flake contract check — full
-# schema-conformance would need the spec enriched with the 4xx error responses
-# (tracked as a follow-up). It already caught two real "500 on malformed input"
-# bugs (non-numeric path var; firewall-rejected header), now fixed + regression-
-# tested.
+# Schemathesis API contract test (plan S1f + Wave C C-33): boots the Spring `api`
+# profile and fuzzes every operation in the springdoc OpenAPI spec (/v3/api-docs),
+# now enriched by C-32 (OpenApiConfig) with the shared ApiError error envelope and
+# request/response examples. Two conformance checks run:
+#   - status_code_conformance: every returned status is documented for that operation.
+#     This SUBSUMES the old not_a_server_error check - 500 is deliberately undocumented,
+#     so a real server error still fails here; but a documented 503 (a predict endpoint
+#     with no LIVE champion in the CH-disabled CI boot) is a legitimate response, which
+#     lets us fuzz the pitch + all-parks predict paths instead of excluding them.
+#   - response_schema_conformance: every response body matches its declared schema -
+#     2xx bodies AND the ApiError envelope on 4xx (ApiErrorController makes even
+#     container-level errors, e.g. Tomcat-rejected malformed paths, return ApiError).
+# Only /v1/admin stays excluded (ADMIN-authed + write-bearing: fuzzing it needs creds
+# and would mutate registry/routing state). The schemathesis version is pinned and the
+# generator seed is fixed (--seed, v4's rename of --hypothesis-seed) so CI is reproducible.
+# History: earlier caught two real "500 on malformed input" bugs (non-numeric path var;
+# firewall-rejected header), now fixed + regression-tested.
 on:
   push:
     branches: [main]
@@ -68,12 +77,13 @@ jobs:
           done
           echo "API did not become healthy:"; tail -40 /tmp/api.log; exit 1
 
-      - name: Schemathesis — no 5xx on schema-valid input
+      - name: Schemathesis — status-code + response-schema conformance (all but /v1/admin)
         run: |
-          uvx --from schemathesis schemathesis run http://localhost:8080/v3/api-docs \
-            --exclude-path-regex '(/v1/admin|/v1/predict/pitch|/v1/predict/batted-ball/all-parks)' \
-            --checks not_a_server_error \
-            --max-examples 30
+          uvx --from 'schemathesis==4.22.3' schemathesis run http://localhost:8080/v3/api-docs \
+            --exclude-path-regex '/v1/admin' \
+            --checks status_code_conformance,response_schema_conformance \
+            --max-examples 100 \
+            --seed 1234
 
       - name: API log tail on failure
         if: failure()
