@@ -16,6 +16,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import net.thebullpen.baseball.data.JobLeaseRepository;
 import net.thebullpen.baseball.data.LivePitchesRepository;
 import net.thebullpen.baseball.inference.ModelUnavailableException;
 import org.junit.jupiter.api.Test;
@@ -97,8 +98,21 @@ class LivePollingServiceTest {
         Optional.of(predictor),
         Optional.empty(),
         new IngestMetrics(new SimpleMeterRegistry()),
+        heldLease(),
         0L,
-        15L);
+        15L,
+        30L);
+  }
+
+  /**
+   * A {@link JobLeaseRepository} mock that always grants the D-37 live-polling lease, so {@code
+   * tick()} proceeds into the loop under test instead of returning dormant. The lease's own
+   * acquire/renew/failover semantics are covered by {@code JobLeaseRepositoryIT}.
+   */
+  private static JobLeaseRepository heldLease() {
+    JobLeaseRepository lease = mock(JobLeaseRepository.class);
+    when(lease.tryAcquireOrRenew(any(), any(), anyLong())).thenReturn(true);
+    return lease;
   }
 
   @Test
@@ -187,8 +201,10 @@ class LivePollingServiceTest {
             Optional.empty(),
             Optional.empty(),
             new IngestMetrics(new SimpleMeterRegistry()),
+            heldLease(),
             0L,
-            15L)
+            15L,
+            30L)
         .pollGame(822810L);
 
     verify(repo, times(1)).insertPitches(any());
@@ -203,7 +219,15 @@ class LivePollingServiceTest {
         .thenReturn(feed(List.of(pitch(1, 1), pitch(1, 2)), nextPitch(1, 3)));
 
     new LivePollingService(
-            client, repo, Optional.empty(), Optional.empty(), new IngestMetrics(registry), 0L, 15L)
+            client,
+            repo,
+            Optional.empty(),
+            Optional.empty(),
+            new IngestMetrics(registry),
+            heldLease(),
+            0L,
+            15L,
+            30L)
         .pollGame(822810L);
 
     assertThat(registry.get("bullpen_ingest_pitches_total").counter().count()).isEqualTo(2.0);
@@ -231,7 +255,15 @@ class LivePollingServiceTest {
     when(client.fetchLiveFeed(822810L)).thenReturn(unknownStatusFeed);
 
     new LivePollingService(
-            client, repo, Optional.empty(), Optional.empty(), new IngestMetrics(registry), 0L, 15L)
+            client,
+            repo,
+            Optional.empty(),
+            Optional.empty(),
+            new IngestMetrics(registry),
+            heldLease(),
+            0L,
+            15L,
+            30L)
         .pollGame(822810L);
 
     assertThat(

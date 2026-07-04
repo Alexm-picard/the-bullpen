@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import net.thebullpen.baseball.data.JobLeaseRepository;
 import net.thebullpen.baseball.data.LivePitchesRepository;
 import net.thebullpen.baseball.data.PitcherFormRepository;
 import org.slf4j.Logger;
@@ -40,6 +41,8 @@ public class LivePollingService {
 
   private static final Logger log = LoggerFactory.getLogger(LivePollingService.class);
   private static final ZoneId ET = ZoneId.of("America/New_York");
+  // D-37: the single-owner lease name this service holds. One instance polls the MLB API at a time.
+  private static final String LIVE_POLL_LEASE = "live_polling";
 
   private final MlbStatsApiClient client;
   private final LivePitchesRepository repo;
@@ -48,6 +51,13 @@ public class LivePollingService {
   // the nightly snapshot and the predictor degrades to NaN, same as before A3.
   private final Optional<PitcherFormRepository> formRepo;
   private final IngestMetrics metrics;
+  // D-37: single-owner heartbeat lease so a second worker instance stays dormant instead of
+  // double-INSERTing pitches and doubling MLB API load. Renewed at the top of every tick.
+  private final JobLeaseRepository jobLease;
+  // Stable per-instance owner id, generated once at construction (NOT static, NOT Math.random) so a
+  // restarted process presents a fresh identity and the old lease simply ages out to stale.
+  private final String leaseOwner = java.util.UUID.randomUUID().toString();
+  private final long leaseStaleSeconds;
   private final GameStateMachine stateMachine = new GameStateMachine();
   private final long minApiGapMs;
   private final long scheduleRefreshMin;
@@ -73,19 +83,26 @@ public class LivePollingService {
       Optional<LivePitchPredictor> predictor,
       Optional<PitcherFormRepository> formRepo,
       IngestMetrics metrics,
+      JobLeaseRepository jobLease,
       @Value("${bullpen.ingest.live.api-min-gap-ms:500}") long minApiGapMs,
-      @Value("${bullpen.ingest.live.schedule-refresh-min:15}") long scheduleRefreshMin) {
+      @Value("${bullpen.ingest.live.schedule-refresh-min:15}") long scheduleRefreshMin,
+      @Value("${bullpen.ingest.live.lease-stale-seconds:30}") long leaseStaleSeconds) {
     this.client = client;
     this.repo = repo;
     this.predictor = predictor;
     this.formRepo = formRepo;
     this.metrics = metrics;
+    this.jobLease = jobLease;
     this.minApiGapMs = minApiGapMs;
     this.scheduleRefreshMin = scheduleRefreshMin;
+    this.leaseStaleSeconds = leaseStaleSeconds;
   }
 
   @Scheduled(fixedDelayString = "${bullpen.ingest.live.tick-ms:5000}")
   public void tick() {
+    if (!jobLease.tryAcquireOrRenew(LIVE_POLL_LEASE, leaseOwner, leaseStaleSeconds)) {
+      return; // another instance holds the live-polling lease; stay dormant (singleton poller)
+    }
     try {
       refreshScheduleIfStale();
       for (ScheduledGame g : schedule) {
