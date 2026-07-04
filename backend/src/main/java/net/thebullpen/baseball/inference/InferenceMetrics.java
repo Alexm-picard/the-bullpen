@@ -3,6 +3,7 @@ package net.thebullpen.baseball.inference;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
+import java.time.Duration;
 import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
@@ -43,7 +44,23 @@ public class InferenceMetrics {
         name ->
             Timer.builder(LATENCY_METRIC)
                 .tag("model_name", name)
-                .publishPercentiles(0.5, 0.95, 0.99)
+                // Histogram-only. In this micrometer-prometheus registry a meter renders as EITHER
+                // a
+                // summary (client-computed {quantile=}) OR a histogram (_bucket{le=}) under one
+                // name,
+                // never both - so client .publishPercentiles(...) would be inert once the histogram
+                // is on, and is deliberately omitted. The histogram is strictly more capable: a
+                // fleet-wide p99 aggregates _bucket across instances, and a per-instance p99 is
+                // still
+                // available by grouping histogram_quantile() by instance.
+                // serviceLevelObjectives(50ms)
+                // adds an explicit le=0.05 SLA bucket; min/max bound the ladder to the real latency
+                // band (~45 buckets/model instead of the unbounded ~70, and sharper low-end
+                // interp).
+                .publishPercentileHistogram()
+                .serviceLevelObjectives(Duration.ofMillis(50))
+                .minimumExpectedValue(Duration.ofMillis(1))
+                .maximumExpectedValue(Duration.ofSeconds(1))
                 .register(registry));
   }
 

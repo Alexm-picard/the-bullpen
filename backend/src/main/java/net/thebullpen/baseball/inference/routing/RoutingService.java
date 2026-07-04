@@ -15,11 +15,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Service over {@code model_routing} (3b.1). Read on every inference request via {@link
- * #getRouting(String)} — Caffeine-cached at 30s TTL (see {@link CacheConfig}) so the SQLite hit is
- * amortized across thousands of predictions. Writes ({@link #setChallenger}, {@link
- * #setTrafficPct}, {@link #setMode}, {@link #ensureRoutingForChampion}) evict the cache for the
- * affected model so admin slider changes are visible within the TTL window in the worst case +
- * immediate from the writer's perspective.
+ * #getRouting(String)} — Caffeine-cached at a configurable TTL (default 30s via {@code
+ * bullpen.cache.routing-ttl-seconds}; see {@link CacheConfig}) so the SQLite hit is amortized
+ * across thousands of predictions. Writes ({@link #setChallenger}, {@link #setTrafficPct}, {@link
+ * #setMode}, {@link #ensureRoutingForChampion}) evict the cache for the affected model so admin
+ * slider changes are visible within the TTL window in the worst case + immediate from the writer's
+ * perspective.
  *
  * <p>Validation rules (mapped to {@link RoutingException} subclasses for exhaustive HTTP-status
  * pattern matching in {@link net.thebullpen.baseball.api.admin.RoutingAdminController}):
@@ -48,7 +49,7 @@ public class RoutingService {
 
   /**
    * Cached lookup — every inference request hits this and the cache absorbs the load. Misses read
-   * from SQLite; the value is held for 30s.
+   * from SQLite; the value is held for the routing-cache TTL (default 30s).
    *
    * <p>Throws {@link RoutingException.UnknownModel} when no row exists for {@code modelName}.
    * Callers on the inference path treat this as "model isn't promoted yet" rather than a
