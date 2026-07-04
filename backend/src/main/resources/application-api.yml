@@ -1,6 +1,15 @@
 server:
   port: ${BULLPEN_API_PORT:8080}
 
+# Emit OpenAPI 3.0.1 rather than springdoc 2.x's default 3.1. Reason: swagger-core 2.2.x silently
+# DROPS @Schema(nullable=true) in 3.1 mode (3.1 wants a type:[T,"null"] union, which it does not
+# emit) instead of honoring it, so genuinely-nullable response fields (SimulateResponse.mcTrials,
+# the ModelAccuracyScorecard metrics + calibrationNote) fail Schemathesis response-schema
+# conformance. In 3.0.1 the nullable flag is honored end-to-end. 3.0 is fully adequate for this API.
+springdoc:
+  api-docs:
+    version: openapi_3_0
+
 # api profile serves the React frontend's prediction requests
 spring:
   threads:

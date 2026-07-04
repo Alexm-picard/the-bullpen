@@ -33,10 +33,12 @@ import org.springframework.context.annotation.Profile;
  *
  * <p>The declared status set mirrors the real non-2xx surface: {@code ApiErrorAdvice} maps 400 (bad
  * input), 404 (no such resource), 405 (method), 415 (media type), 503 (model unavailable); {@code
- * RateLimitFilter} writes 429 outside MVC. All six carry the identical {@code ApiError} body, so
- * one shared component covers them. 500 is deliberately NOT declared - the contract asserts the
- * service never returns one, and Schemathesis' {@code not_a_server_error} check enforces that
- * independently.
+ * RateLimitFilter} writes 429 outside MVC; and 413/414 cover container-level rejections (payload /
+ * URI too large) that {@code ApiErrorController} re-emits as {@code ApiError} - declaring them
+ * keeps status-code conformance robust if the fuzzer ever generates an over-long path. All carry
+ * the identical {@code ApiError} body, so one shared component covers them. 500 is deliberately NOT
+ * declared - the contract asserts the service never returns one, and Schemathesis' {@code
+ * status_code_conformance} check enforces that (an undocumented 500 fails it).
  *
  * <p>Scoped to the {@code api} profile (the only profile that serves the public HTTP surface).
  */
@@ -53,6 +55,8 @@ public class OpenApiConfig {
     {"400", "Invalid request: validation failed, malformed JSON, or a bad path/query value."},
     {"404", "No such resource."},
     {"405", "HTTP method not allowed for this path."},
+    {"413", "Request payload too large."},
+    {"414", "Request URI too long."},
     {"415", "Unsupported request media type - send application/json."},
     {"429", "Rate limit exceeded - back off and retry after the Retry-After interval."},
     {"503", "The model or a required dependency is temporarily unavailable."},
