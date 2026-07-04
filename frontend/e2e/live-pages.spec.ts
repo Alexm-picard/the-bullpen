@@ -158,6 +158,30 @@ test("live game page renders the pitch log when the feed has pitches", async ({
   expect(errors, "uncaught errors on populated /games/:id").toEqual([]);
 });
 
+test("live game page renders the first-class empty pitch-log state when the feed has no pitches", async ({
+  page,
+}) => {
+  const errors = trackPageErrors(page);
+  await page.route(`**/v1/games/${GAME_ID}`, (route) => json(route, GAME));
+  // An in-progress game whose pitch feed is still empty - the common pre-first-pitch case.
+  await page.route(`**/v1/games/${GAME_ID}/pitches*`, (route) =>
+    json(route, []),
+  );
+
+  await page.goto(`/games/${GAME_ID}`);
+
+  await expect(page.locator("h1").first()).toBeVisible();
+  // The slug-era guard must not fire on a numeric id.
+  await expect(page.getByText("Invalid game id")).toHaveCount(0);
+  // The pitch-log section still renders...
+  await expect(
+    page.locator('[aria-labelledby="game-pitch-log-label"]'),
+  ).toBeVisible();
+  // ...with the LivePitchBoard's first-class waiting state, not a blank table or an error.
+  await expect(page.getByText("Waiting for the first pitch")).toBeVisible();
+  expect(errors, "uncaught errors on empty /games/:id").toEqual([]);
+});
+
 // --- /ops (live registry x routing x latency, with fixture fallback) -----------------------
 
 /** Mock every /v1/ops/* read; callers override `registry` to drive the live-vs-fallback path. */

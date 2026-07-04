@@ -70,7 +70,6 @@ def _load_and_verify_contract(contract_path: Path) -> dict[str, Any]:
 
 def export(*, artifact_dir: Path, contract_path: Path = CONTRACT_PATH) -> dict[str, Any]:
     spec = _load_and_verify_contract(contract_path)
-    opset = int(spec["onnx_opset"])
 
     model_path = artifact_dir / "model.txt"
     if not model_path.exists():
@@ -81,19 +80,27 @@ def export(*, artifact_dir: Path, contract_path: Path = CONTRACT_PATH) -> dict[s
     bundle = load_baseline(artifact_dir)
     n_features = len(FEATURE_COLUMNS)
     initial_types = [("input", FloatTensorType([None, n_features]))]
+    # Let onnxmltools pick the LightGBM opset - it caps below the contract's serving onnx_opset (an
+    # MLP/onnxruntime figure) because the LightGBM path emits the ai.onnx.ml TreeEnsemble domain,
+    # exactly as lgbm_per_park's exporter does. Forcing the contract opset made the converter raise
+    # "target_opset N is higher than supported". The rule-7 hash still validates because this
+    # exporter never rewrites the contract JSON (its declared onnx_opset stays 18 in-file and is not
+    # re-checked against the emitted graph). ORT-Java loads the lower opset (per_park serves 9).
     onnx_model = onnxmltools.convert.convert_lightgbm(
         bundle.booster,
         initial_types=initial_types,
-        target_opset=opset,
         zipmap=False,
     )
     onnx.checker.check_model(onnx_model)
+    emitted_opset = next(
+        (o.version for o in onnx_model.opset_import if o.domain in ("", "ai.onnx")), 0
+    )
     onnx_path = artifact_dir / "model.onnx"
     onnxmltools.utils.save_model(onnx_model, str(onnx_path))
 
     onnx_sha = hashlib.sha256(onnx_path.read_bytes()).hexdigest()
     print(
-        f"wrote {onnx_path} ({n_features} inputs, opset {opset}, sha {onnx_sha[:12]})\n"
+        f"wrote {onnx_path} ({n_features} inputs, opset {emitted_opset}, sha {onnx_sha[:12]})\n"
         f"  schema_hash: {spec['schema_hash']}\n"
         "  NEXT: run the Python<->Java parity check before registering "
         "(verify the categorical park_id splits converted faithfully)."
