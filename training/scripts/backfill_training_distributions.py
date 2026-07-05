@@ -220,7 +220,12 @@ def _load_battedball_frame(seasons: range, container: str) -> pd.DataFrame:
 
 
 def _load_pitch_frame(parquet: Path, model_dir: Path) -> pd.DataFrame:
-    """Read the pitch-post parquet (already the 41-vector) and decode its _int categoricals."""
+    """Read the pitch-post parquet (already the 41-vector) and decode its _int categoricals.
+
+    The operator MUST pass the champion's REGISTERED training snapshot (``training_data.parquet`` in
+    the bundle dir), not an ad-hoc parquet: the parquet carries no season/date column, so rule-13 is
+    enforced upstream at snapshot registration, not here.
+    """
     park = json.loads((model_dir / "park_id_mapping.json").read_text())["park_id"]
     ptype = json.loads((model_dir / "pitch_type_mapping.json").read_text())["pitch_type"]
     park_by_int = {int(v): k for k, v in park.items()}
@@ -299,6 +304,14 @@ def main(argv: list[str] | None = None) -> int:
 
     # 2. feature_distributions (request keys) + 3. training_prediction_distribution (served probs).
     feature_block = build_feature_block(frame, cfg, args.max_sample)
+    # An all-null source column yields an empty continuous sample - the Java PSI quantile-edge step
+    # cannot bin an empty reference, so warn loudly (the operator should confirm the column is
+    # populated in this snapshot) rather than emit a degenerate block that silently skips.
+    empty = [
+        k for k, v in feature_block.items() if v.get("kind") == "continuous" and not v.get("sample")
+    ]
+    if empty:
+        print(f"  WARNING: empty continuous sample (all-null source) for: {empty}")
     proba = (
         np.load(args.proba_npy)
         if args.proba_npy is not None

@@ -92,11 +92,12 @@ def test_prediction_distribution_rejects_shape_mismatch():
 
 def test_blocks_are_json_serializable_and_deterministic():
     df = _frame()
-    args = dict(
-        continuous={"launchSpeedMph": "launch_speed_mph"}, categorical={"parkId": "park_id"}
+    a = compute_feature_distributions(
+        df, continuous={"launchSpeedMph": "launch_speed_mph"}, categorical={"parkId": "park_id"}
     )
-    a = compute_feature_distributions(df, **args)
-    b = compute_feature_distributions(df, **args)
+    b = compute_feature_distributions(
+        df, continuous={"launchSpeedMph": "launch_speed_mph"}, categorical={"parkId": "park_id"}
+    )
     assert json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)  # deterministic, no RNG
 
 
