@@ -67,9 +67,14 @@ def _continuous_block(series: pd.Series, max_sample: int) -> dict:
 
 
 def _categorical_block(series: pd.Series) -> dict:
-    # Stringify + drop NaN so keys match the observed side, which normalizes the JSONExtract
-    # token by stripping quotes (string "BOS" -> key "BOS"; int-coded "1" -> key "1").
-    counts = series.dropna().astype(str).value_counts()
+    # Keys must match the observed side, which reads the JSONExtract token stripped of quotes. A
+    # whole-number categorical (base_state / outs / count_balls) must render as "0"/"1", NOT "1.0" -
+    # the request logs them as JSON ints - so cast a numeric series to int first; string categories
+    # ("BOS") pass through unchanged.
+    clean = series.dropna()
+    if pd.api.types.is_numeric_dtype(clean):
+        clean = clean.astype("int64")
+    counts = clean.astype(str).value_counts()
     return {"kind": "categorical", "counts": {str(k): int(v) for k, v in counts.items()}}
 
 

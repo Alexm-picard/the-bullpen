@@ -98,3 +98,13 @@ def test_blocks_are_json_serializable_and_deterministic():
     a = compute_feature_distributions(df, **args)
     b = compute_feature_distributions(df, **args)
     assert json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)  # deterministic, no RNG
+
+
+def test_numeric_categorical_renders_as_int_string_not_float():
+    # A double-coded whole-number categorical (count_balls in the pitch parquet) must key as "0"/"1"
+    # to match the observed JSONExtract of a JSON int - never "0.0"/"1.0" (a silent-skip mismatch).
+    df = pd.DataFrame({"count_balls": [0.0, 1.0, 1.0, 2.0, 3.0]})
+    blocks = compute_feature_distributions(
+        df, continuous={}, categorical={"countBalls": "count_balls"}
+    )
+    assert blocks["countBalls"]["counts"] == {"1": 2, "0": 1, "2": 1, "3": 1}

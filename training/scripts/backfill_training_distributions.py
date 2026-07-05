@@ -17,10 +17,11 @@ joins observed<->reference by exact key; a mismatch fails SILENTLY (the job skip
 keys below were CONFIRMED against real prod ``prediction_log.features`` rows for both champions on
 2026-07-04 - do not "fix" them to snake_case model names.
 
-Two things below are still BOX-CONFIRMED, not guessed (see the SOURCE-SCHEMA notes): the SOURCE
-column names in the training frame and the categorical VALUE space (is ``stand`` "R"/"L" or 0/1?).
-They are config so the box can correct them against the real parquet / ClickHouse schema before the
-run, exactly as the request keys were confirmed.
+SOURCE modes (both prod-confirmed 2026-07-04): ``battedball_outcome`` derives from ClickHouse over
+2015-2025 (build_year_query + rows_to_frame; request-space ``stand``/``baseState`` are reconstructed
+from the model one-hots); ``pitch_outcome_post`` reads the on-box parquet and DECODES its ``_int``
+categoricals back to request space. The served prediction distribution is computed in-CLI via each
+family's real ONNX + calibrator (``--proba-npy`` is an escape hatch).
 """
 
 from __future__ import annotations
@@ -53,11 +54,10 @@ class ChampionConfig:
     excluded: list[str] = field(default_factory=list)
 
 
-# Confirmed against prod prediction_log.features on 2026-07-04 (real logged rows, both champions).
-# SOURCE-SCHEMA (box-confirm before run): the values on the right are training-frame column names.
-# For battedball the cleanest source is a ClickHouse pull over 2015-2025 (raw request fields live
-# there in request-value space); for pitch_outcome_post it is the on-box training_data.parquet.
-# Confirm column names + that categoricals are in REQUEST-value space (stand "R"/"L", not 0/1).
+# Keys confirmed against prod prediction_log.features 2026-07-04; source columns confirmed same day
+# against the CH schema (battedball) + the on-box parquet (pitch). Right-hand values are the columns
+# present AFTER family prep: battedball reconstructs stand_str/base_state_int from model one-hots;
+# pitch decodes park_id/pitch_type/pitcher_throws/batter_stand from the parquet _int cols.
 CHAMPIONS: dict[str, ChampionConfig] = {
     "battedball_outcome": ChampionConfig(
         model_name="battedball_outcome",
@@ -69,8 +69,9 @@ CHAMPIONS: dict[str, ChampionConfig] = {
             "hitDistanceFt": "hit_distance_ft",
         },
         categorical={
-            "stand": "stand",
-            "baseState": "base_state",
+            # reconstructed from the model one-hots by _reconstruct_battedball_categoricals.
+            "stand": "stand_str",
+            "baseState": "base_state_int",
             "outs": "outs",
         },
         # No parkId / releaseSpeedMph: absent from the battedball request (would silent-skip).
@@ -149,22 +150,135 @@ def merge_into_metadata(
     return meta
 
 
+# --- family source prep + served inference --------------------------------------------------------
+# Box-validated: battedball derives from ClickHouse (docker exec); pitch reads the on-box parquet;
+# both run the real ONNX + calibrator. The PURE transforms (reconstruct / decode) are unit-tested on
+# the Mac; the CH query + ONNX inference are lazy-imported and exercised only on the box.
+
+
+def _parse_seasons(spec: str) -> range:
+    """'2015-2025' -> range(2015, 2026). Rule-13: 2026 is holdout-only, refuse it."""
+    lo, hi = (int(x) for x in spec.split("-", 1))
+    if lo > hi or hi >= 2026:
+        raise SystemExit(f"rule-13: training seasons must be <= 2025 (got {spec})")
+    return range(lo, hi + 1)
+
+
+def _reconstruct_battedball_categoricals(df: pd.DataFrame) -> pd.DataFrame:
+    """Add request-space `stand_str` + `base_state_int` from the model one-hots (pure, testable).
+
+    rows_to_frame emits the model frame (stand_R/stand_L, base_state_0..7 one-hots); the observed
+    side logs the raw request `stand` ("L"/"R") and `baseState` (int), so recover those to join.
+    """
+    out = df.copy()
+    out["stand_str"] = np.where(df["stand_L"] == 1, "L", "R")
+    base_cols = [f"base_state_{i}" for i in range(8)]
+    out["base_state_int"] = df[base_cols].to_numpy().argmax(axis=1)
+    return out
+
+
+def _decode_pitch_categoricals(
+    df: pd.DataFrame, park_by_int: dict[int, str], ptype_by_int: dict[int, str]
+) -> pd.DataFrame:
+    """Decode the parquet's _int categoricals back to request space (pure, testable).
+
+    throws/stand use {0:"L", 1:"R"} (train_pre.STAND_TO_INT/THROWS_TO_INT; R is the null fallback so
+    the int is always 0 or 1). park/pitch_type invert the bundle's name->int mapping.
+    """
+    throws_stand = {0: "L", 1: "R"}  # 0=L, 1=R (R is the null fallback); never assumed backwards.
+    out = df.copy()
+    out["park_id"] = df["park_id_int"].map(park_by_int.get)
+    out["pitch_type"] = df["pitch_type_int"].map(ptype_by_int.get)
+    out["pitcher_throws"] = df["pitcher_throws_int"].map(throws_stand.get)
+    out["batter_stand"] = df["batter_stand_int"].map(throws_stand.get)
+    return out
+
+
+def _load_battedball_frame(seasons: range, container: str) -> pd.DataFrame:
+    """CH-derive the training population (build_year_query + rows_to_frame) + request-space cats.
+
+    Box-only: shells out to `docker exec <container> clickhouse-client`, reusing the exact training
+    WHERE + the frame OnnxMlpPredictor consumes (eval.promotion.export_batted_ball_full).
+    """
+    import subprocess
+
+    from bullpen_training.eval.promotion.export_batted_ball_full import (
+        build_year_query,
+        rows_to_frame,
+    )
+
+    parts = []
+    for year in seasons:
+        tsv = subprocess.run(
+            ["docker", "exec", container, "clickhouse-client", "--query", build_year_query(year)],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        parts.append(rows_to_frame(tsv))
+    return _reconstruct_battedball_categoricals(pd.concat(parts, ignore_index=True))
+
+
+def _load_pitch_frame(parquet: Path, model_dir: Path) -> pd.DataFrame:
+    """Read the pitch-post parquet (already the 41-vector) and decode its _int categoricals."""
+    park = json.loads((model_dir / "park_id_mapping.json").read_text())["park_id"]
+    ptype = json.loads((model_dir / "pitch_type_mapping.json").read_text())["pitch_type"]
+    park_by_int = {int(v): k for k, v in park.items()}
+    ptype_by_int = {int(v): k for k, v in ptype.items()}
+    return _decode_pitch_categoricals(pd.read_parquet(parquet), park_by_int, ptype_by_int)
+
+
+def _served_proba(model: str, model_dir: Path, frame: pd.DataFrame) -> np.ndarray:
+    """Run the champion's served chain on the frame -> (n_rows, n_classes) calibrated probs."""
+    if model == "battedball_outcome":
+        from bullpen_training.battedball.eval.backfill_accuracy import OnnxMlpPredictor
+
+        return OnnxMlpPredictor(model_dir).predict_proba(frame)
+
+    import onnxruntime as ort
+
+    from bullpen_training.pitch import PITCH_FEATURE_COLUMNS_POST
+    from bullpen_training.pitch.eval._shared import onnx_probabilities
+    from bullpen_training.pitch.isotonic import IsotonicCalibrator
+
+    session = ort.InferenceSession(str(model_dir / "model.onnx"))
+    mat = frame[list(PITCH_FEATURE_COLUMNS_POST)].to_numpy(np.float32)
+    raw = onnx_probabilities(session, mat, input_name=session.get_inputs()[0].name)
+    return IsotonicCalibrator.from_json(model_dir / "calibrator.json").transform(raw)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--model", required=True, choices=sorted(CHAMPIONS))
     ap.add_argument(
-        "--training-parquet", required=True, type=Path, help="the champion's training slice"
+        "--model-dir",
+        required=True,
+        type=Path,
+        help="champion bundle dir (model.onnx + calibrator.json + mappings + metadata.json)",
     )
     ap.add_argument(
-        "--metadata", required=True, type=Path, help="the champion's metadata.json to update"
+        "--training-parquet",
+        type=Path,
+        default=None,
+        help="pitch_outcome_post: the on-box training_data.parquet (battedball uses ClickHouse)",
+    )
+    ap.add_argument(
+        "--seasons", default="2015-2025", help="battedball CH training seasons, inclusive (<= 2025)"
+    )
+    ap.add_argument(
+        "--container", default="bullpen-clickhouse", help="battedball: the ClickHouse container"
+    )
+    ap.add_argument(
+        "--metadata",
+        type=Path,
+        default=None,
+        help="metadata.json to update (default <model-dir>/metadata.json)",
     )
     ap.add_argument(
         "--proba-npy",
         type=Path,
         default=None,
-        help="optional (n_rows, n_classes) .npy of the champion's CALIBRATED served probabilities "
-        "over the training frame (produced on the box via the family serving path); enables the "
-        "training_prediction_distribution block. Omit to write feature_distributions only.",
+        help="escape hatch: precomputed (n, classes) calibrated probs; overrides in-CLI inference",
     )
     ap.add_argument("--max-sample", type=int, default=5000)
     ap.add_argument(
@@ -173,34 +287,36 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     cfg = CHAMPIONS[args.model]
-    frame = pd.read_parquet(args.training_parquet)
+    metadata_path = args.metadata or (args.model_dir / "metadata.json")
 
+    # 1. request-space frame (family source).
+    if args.model == "battedball_outcome":
+        frame = _load_battedball_frame(_parse_seasons(args.seasons), args.container)
+    else:
+        if args.training_parquet is None:
+            ap.error("pitch_outcome_post requires --training-parquet")
+        frame = _load_pitch_frame(args.training_parquet, args.model_dir)
+
+    # 2. feature_distributions (request keys) + 3. training_prediction_distribution (served probs).
     feature_block = build_feature_block(frame, cfg, args.max_sample)
-
-    prediction_block: dict | None = None
-    if args.proba_npy is not None:
-        proba = np.load(args.proba_npy)
-        prediction_block = compute_prediction_distribution(proba, cfg.class_labels, args.max_sample)
-
-    n_feat = len(feature_block)
-    n_pred = len(prediction_block) if prediction_block else 0
-    print(
-        f"[{cfg.model_name}] feature_distributions: {n_feat} keys "
-        f"({sorted(feature_block)}); training_prediction_distribution: {n_pred} classes"
+    proba = (
+        np.load(args.proba_npy)
+        if args.proba_npy is not None
+        else _served_proba(args.model, args.model_dir, frame)
     )
-    if prediction_block is None:
-        print(
-            "  note: no --proba-npy -> feature_distributions only; PSI_PREDICTION needs the "
-            "prediction block (run the champion serving path on the box to produce the .npy)."
-        )
+    prediction_block = compute_prediction_distribution(proba, cfg.class_labels, args.max_sample)
 
+    print(
+        f"[{cfg.model_name}] {len(frame)} rows -> feature_distributions {len(feature_block)} keys "
+        f"({sorted(feature_block)}); prediction_distribution {len(prediction_block)} classes"
+    )
     if args.dry_run:
         print("  --dry-run: metadata.json not written")
         return 0
 
-    meta = merge_into_metadata(args.metadata, feature_block, prediction_block)
-    args.metadata.write_text(json.dumps(meta, indent=2) + "\n")
-    print(f"  wrote {n_feat} feature + {n_pred} prediction blocks into {args.metadata}")
+    meta = merge_into_metadata(metadata_path, feature_block, prediction_block)
+    metadata_path.write_text(json.dumps(meta, indent=2) + "\n")
+    print(f"  wrote both blocks into {metadata_path}")
     return 0
 
 
