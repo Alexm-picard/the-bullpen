@@ -95,6 +95,7 @@ jobs:
             tests/battedball/lgbm_per_park \
             tests/battedball/lr_baseline \
             tests/registry_client \
+            tests/scripts \
             tests/retraining \
             tests/test_smoke.py
       # Coverage gate. 75% (pyproject fail_under) stays the aspirational TARGET, surfaced as a
