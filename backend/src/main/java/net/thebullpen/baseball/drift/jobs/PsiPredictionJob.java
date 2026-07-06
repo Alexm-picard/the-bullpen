@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import net.thebullpen.baseball.data.JobLockRepository;
+import net.thebullpen.baseball.drift.DriftHealthMetrics;
 import net.thebullpen.baseball.drift.DriftMetric;
 import net.thebullpen.baseball.drift.DriftMetricsRepository;
 import net.thebullpen.baseball.drift.MetricType;
@@ -19,6 +20,7 @@ import net.thebullpen.baseball.drift.algorithms.Psi;
 import net.thebullpen.baseball.registry.RegistryRepository;
 import net.thebullpen.baseball.registry.SnapshotStorage;
 import net.thebullpen.baseball.registry.dto.ModelVersion;
+import net.thebullpen.baseball.registry.dto.Stage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Profile;
@@ -48,18 +50,21 @@ public class PsiPredictionJob {
   private final PredictionDistributionFetcher fetcher;
   private final DriftMetricsRepository driftRepo;
   private final JobLockRepository jobLocks;
+  private final DriftHealthMetrics driftHealth;
 
   public PsiPredictionJob(
       RegistryRepository registryRepo,
       TrainingDistributionLoader trainingLoader,
       PredictionDistributionFetcher fetcher,
       DriftMetricsRepository driftRepo,
-      JobLockRepository jobLocks) {
+      JobLockRepository jobLocks,
+      DriftHealthMetrics driftHealth) {
     this.registryRepo = registryRepo;
     this.trainingLoader = trainingLoader;
     this.fetcher = fetcher;
     this.driftRepo = driftRepo;
     this.jobLocks = jobLocks;
+    this.driftHealth = driftHealth;
   }
 
   @Scheduled(cron = "0 10 2 * * *", zone = "America/New_York")
@@ -117,6 +122,7 @@ public class PsiPredictionJob {
     Map<String, double[]> refs =
         trainingLoader.loadPerClassPredictionReference(champ.id(), Path.of(champ.metadataPath()));
     if (refs.isEmpty()) {
+      reportMissingBaseline(champ);
       return out;
     }
     Map<String, List<Double>> observed =
@@ -149,5 +155,29 @@ public class PsiPredictionJob {
               windowEnd));
     }
     return out;
+  }
+
+  /**
+   * A serving version has no per-class prediction baseline in its {@code metadata.json}. CHAMPION =
+   * PSI-prediction dark for the production model (decision [175]) - WARN + alertable counter;
+   * SHADOW = benign, INFO only. Mirrors {@link PsiFeatureJob#reportMissingBaseline}.
+   */
+  private void reportMissingBaseline(ModelVersion serving) {
+    if (serving.stage() == Stage.CHAMPION) {
+      log.warn(
+          "PsiPredictionJob: CHAMPION {} (id={}) has NO prediction-distribution baseline - PSI is"
+              + " dark for this production model. Run"
+              + " scripts/backfill_training_distributions.py --model {} against the champion bundle.",
+          serving.naturalKey(),
+          serving.id(),
+          serving.modelName());
+      driftHealth.markChampionMissingBaseline(serving.modelName(), "prediction");
+    } else {
+      log.info(
+          "PsiPredictionJob: {} {} (id={}) has no prediction-distribution baseline; skipping PSI",
+          serving.stage(),
+          serving.naturalKey(),
+          serving.id());
+    }
   }
 }

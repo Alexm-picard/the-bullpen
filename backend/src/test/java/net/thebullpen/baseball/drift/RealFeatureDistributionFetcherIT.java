@@ -7,6 +7,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Timestamp;
@@ -198,7 +199,12 @@ class RealFeatureDistributionFetcherIT {
     // The REAL job wired with the REAL fetcher + REAL drift repo (ClickHouse) + REAL loader.
     PsiFeatureJob job =
         new PsiFeatureJob(
-            registryRepo, trainingLoader, fetcher, driftRepo, mock(JobLockRepository.class));
+            registryRepo,
+            trainingLoader,
+            fetcher,
+            driftRepo,
+            mock(JobLockRepository.class),
+            new DriftHealthMetrics(new SimpleMeterRegistry()));
 
     // Seven days of drifted traffic (launch speeds ~105 vs the ~90 reference), one job run per
     // day. Noon-ET anchor so the per-day collapse cannot straddle an ET midnight (DEF-M3 idiom).

@@ -145,3 +145,21 @@ groups:
         annotations:
           summary: "GPU above 90C"
           description: "GPU at {{ $value }}C for 1m - shutdown territory. Kill the running retrain (`systemctl stop bullpen-retrain`) and investigate cooling before the box hard-stops."
+
+      # --- Wave E / E-1 part 2b -----------------------------------------------
+
+      # A serving CHAMPION has no training-distribution baseline in its metadata.json, so the daily
+      # PSI job cannot compute drift for it - the model runs blind. This is the exact silent-starve
+      # that produced zero drift_metrics rows on 2026-07-04 (decision [175]); the PsiFeatureJob /
+      # PsiPredictionJob now bump this counter once per daily run per dark champion. Increase over a
+      # full daily cycle (25h) means the model has been PSI-dark since the last 2 AM ET run.
+      # Remediation: run scripts/backfill_training_distributions.py --model <model> against the
+      # champion bundle (the single baseline-emission mechanism; see the promotion runbook).
+      - alert: DriftBaselineMissing
+        expr: sum by (model, kind) (increase(bullpen_drift_baseline_missing_total[25h])) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Champion {{ $labels.model }} has no {{ $labels.kind }} drift baseline"
+          description: "The daily PSI-{{ $labels.kind }} job found serving champion {{ $labels.model }} with no training-distribution baseline - drift detection is dark for a production model. Run `scripts/backfill_training_distributions.py --model {{ $labels.model }}` against the champion bundle to restore it."

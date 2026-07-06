@@ -10,11 +10,13 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import net.thebullpen.baseball.data.JobLockRepository;
+import net.thebullpen.baseball.drift.DriftHealthMetrics;
 import net.thebullpen.baseball.drift.DriftMetric;
 import net.thebullpen.baseball.drift.DriftMetricsRepository;
 import net.thebullpen.baseball.drift.FeatureDistributionFetcher;
@@ -38,6 +40,7 @@ class PsiFeatureJobTest {
   private TrainingDistributionLoader trainingLoader;
   private FeatureDistributionFetcher fetcher;
   private DriftMetricsRepository driftRepo;
+  private SimpleMeterRegistry meterRegistry;
   private PsiFeatureJob job;
 
   @BeforeEach
@@ -46,9 +49,25 @@ class PsiFeatureJobTest {
     trainingLoader = mock(TrainingDistributionLoader.class);
     fetcher = mock(FeatureDistributionFetcher.class);
     driftRepo = mock(DriftMetricsRepository.class);
+    meterRegistry = new SimpleMeterRegistry();
     job =
         new PsiFeatureJob(
-            registryRepo, trainingLoader, fetcher, driftRepo, mock(JobLockRepository.class));
+            registryRepo,
+            trainingLoader,
+            fetcher,
+            driftRepo,
+            mock(JobLockRepository.class),
+            new DriftHealthMetrics(meterRegistry));
+  }
+
+  private double missingBaselineCount(String model, String kind) {
+    var counter =
+        meterRegistry
+            .find("bullpen_drift_baseline_missing_total")
+            .tag("model", model)
+            .tag("kind", kind)
+            .counter();
+    return counter == null ? 0.0 : counter.count();
   }
 
   @Test
@@ -68,6 +87,33 @@ class PsiFeatureJobTest {
     int rows = job.runOnce(Instant.now());
     assertThat(rows).isEqualTo(0);
     verify(driftRepo, never()).insertBatch(any());
+  }
+
+  @Test
+  void champion_missing_baseline_increments_the_alert_counter() {
+    // Decision [175]: a served champion with no baseline used to skip silently. Now it bumps the
+    // ops-visible counter so PSI-dark on production is alertable.
+    ModelVersion champ = champion("model_a", 1L, "/tmp/no_meta.json");
+    when(registryRepo.findActiveServingVersions()).thenReturn(List.of(champ));
+    when(trainingLoader.load(eq(1L), any(Path.class))).thenReturn(ReferenceDistributions.empty());
+
+    job.runOnce(Instant.now());
+
+    assertThat(missingBaselineCount("model_a", "feature")).isEqualTo(1.0);
+  }
+
+  @Test
+  void shadow_missing_baseline_does_not_increment_counter() {
+    // A SHADOW challenger legitimately may lack a baseline; keep the alert clean (any nonzero value
+    // must mean a served champion is dark).
+    ModelVersion shadow = shadow("model_a", 2L, "/tmp/no_meta.json");
+    when(registryRepo.findActiveServingVersions()).thenReturn(List.of(shadow));
+    when(trainingLoader.load(eq(2L), any(Path.class))).thenReturn(ReferenceDistributions.empty());
+
+    int rows = job.runOnce(Instant.now());
+
+    assertThat(rows).isEqualTo(0);
+    assertThat(missingBaselineCount("model_a", "feature")).isEqualTo(0.0);
   }
 
   @Test
@@ -155,6 +201,14 @@ class PsiFeatureJobTest {
   }
 
   private static ModelVersion champion(String name, long id, String metadataPath) {
+    return modelVersion(name, id, metadataPath, Stage.CHAMPION);
+  }
+
+  private static ModelVersion shadow(String name, long id, String metadataPath) {
+    return modelVersion(name, id, metadataPath, Stage.SHADOW);
+  }
+
+  private static ModelVersion modelVersion(String name, long id, String metadataPath, Stage stage) {
     return new ModelVersion(
         id,
         name,
@@ -167,7 +221,7 @@ class PsiFeatureJobTest {
         "{}",
         Instant.now(),
         Instant.now(),
-        Stage.CHAMPION,
+        stage,
         "test",
         null,
         Instant.now(),
