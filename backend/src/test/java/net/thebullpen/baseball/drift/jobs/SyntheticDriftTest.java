@@ -7,6 +7,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -15,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import net.thebullpen.baseball.data.JobLockRepository;
+import net.thebullpen.baseball.drift.DriftHealthMetrics;
 import net.thebullpen.baseball.drift.DriftMetric;
 import net.thebullpen.baseball.drift.DriftMetricsRepository;
 import net.thebullpen.baseball.drift.FeatureDistributionFetcher;
@@ -75,7 +77,13 @@ class SyntheticDriftTest {
         .thenReturn(observed);
 
     PsiFeatureJob job =
-        new PsiFeatureJob(registryRepo, loader, fetcher, driftRepo, mock(JobLockRepository.class));
+        new PsiFeatureJob(
+            registryRepo,
+            loader,
+            fetcher,
+            driftRepo,
+            mock(JobLockRepository.class),
+            new DriftHealthMetrics(new SimpleMeterRegistry()));
     job.runOnce(Instant.now());
 
     DriftMetric written = captureSingle(driftRepo);
@@ -110,7 +118,13 @@ class SyntheticDriftTest {
         .thenReturn(observed);
 
     PsiFeatureJob job =
-        new PsiFeatureJob(registryRepo, loader, fetcher, driftRepo, mock(JobLockRepository.class));
+        new PsiFeatureJob(
+            registryRepo,
+            loader,
+            fetcher,
+            driftRepo,
+            mock(JobLockRepository.class),
+            new DriftHealthMetrics(new SimpleMeterRegistry()));
     job.runOnce(Instant.now());
 
     DriftMetric written = captureSingle(driftRepo);
@@ -149,7 +163,12 @@ class SyntheticDriftTest {
 
     PsiPredictionJob job =
         new PsiPredictionJob(
-            registryRepo, loader, fetcher, driftRepo, mock(JobLockRepository.class));
+            registryRepo,
+            loader,
+            fetcher,
+            driftRepo,
+            mock(JobLockRepository.class),
+            new DriftHealthMetrics(new SimpleMeterRegistry()));
     job.runOnce(Instant.now());
 
     DriftMetric written = captureSingle(driftRepo);

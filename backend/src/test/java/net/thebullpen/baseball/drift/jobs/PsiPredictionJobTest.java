@@ -9,6 +9,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.HashMap;
@@ -16,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import net.thebullpen.baseball.data.JobLockRepository;
+import net.thebullpen.baseball.drift.DriftHealthMetrics;
 import net.thebullpen.baseball.drift.DriftMetric;
 import net.thebullpen.baseball.drift.DriftMetricsRepository;
 import net.thebullpen.baseball.drift.MetricType;
@@ -34,6 +36,7 @@ class PsiPredictionJobTest {
   private TrainingDistributionLoader trainingLoader;
   private PredictionDistributionFetcher fetcher;
   private DriftMetricsRepository driftRepo;
+  private SimpleMeterRegistry meterRegistry;
   private PsiPredictionJob job;
 
   @BeforeEach
@@ -42,9 +45,25 @@ class PsiPredictionJobTest {
     trainingLoader = mock(TrainingDistributionLoader.class);
     fetcher = mock(PredictionDistributionFetcher.class);
     driftRepo = mock(DriftMetricsRepository.class);
+    meterRegistry = new SimpleMeterRegistry();
     job =
         new PsiPredictionJob(
-            registryRepo, trainingLoader, fetcher, driftRepo, mock(JobLockRepository.class));
+            registryRepo,
+            trainingLoader,
+            fetcher,
+            driftRepo,
+            mock(JobLockRepository.class),
+            new DriftHealthMetrics(meterRegistry));
+  }
+
+  private double missingBaselineCount(String model, String kind) {
+    var counter =
+        meterRegistry
+            .find("bullpen_drift_baseline_missing_total")
+            .tag("model", model)
+            .tag("kind", kind)
+            .counter();
+    return counter == null ? 0.0 : counter.count();
   }
 
   @Test
@@ -78,6 +97,31 @@ class PsiPredictionJobTest {
         .thenReturn(Map.of());
 
     assertThat(job.runOnce(Instant.now())).isEqualTo(0);
+  }
+
+  @Test
+  void champion_missing_prediction_baseline_increments_the_alert_counter() {
+    // Decision [175], prediction side: a served champion with no per-class baseline bumps the
+    // ops-visible counter instead of skipping silently.
+    ModelVersion champ = champion("model_a", 1L, "/tmp/meta.json");
+    when(registryRepo.findActiveServingVersions()).thenReturn(List.of(champ));
+    when(trainingLoader.loadPerClassPredictionReference(eq(1L), any(Path.class)))
+        .thenReturn(Map.of());
+
+    job.runOnce(Instant.now());
+
+    assertThat(missingBaselineCount("model_a", "prediction")).isEqualTo(1.0);
+  }
+
+  @Test
+  void shadow_missing_prediction_baseline_does_not_increment_counter() {
+    ModelVersion shadow = serving("model_a", 2L, "/tmp/meta.json", Stage.SHADOW);
+    when(registryRepo.findActiveServingVersions()).thenReturn(List.of(shadow));
+    when(trainingLoader.loadPerClassPredictionReference(eq(2L), any(Path.class)))
+        .thenReturn(Map.of());
+
+    assertThat(job.runOnce(Instant.now())).isEqualTo(0);
+    assertThat(missingBaselineCount("model_a", "prediction")).isEqualTo(0.0);
   }
 
   @Test
