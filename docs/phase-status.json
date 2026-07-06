@@ -324,22 +324,23 @@
         },
         {
           "label": "Drift: PSI per feature, PSI on predictions, calibration on observed outcomes",
-          "done": false,
-          "details": "Partial: PSI-on-predictions + calibration-vs-observed-outcome are REAL (RealPredictionDistributionFetcher + ClickHouse truth-join, worker profile). Per-FEATURE PSI is SCAFFOLDED - PsiFeatureJob + the PSI/chi-sq math are wired but the only FeatureDistributionFetcher is a stub returning empty (no real feature-distribution source yet)."
+          "done": true,
+          "details": "All three real. PSI-on-predictions + calibration-vs-observed-outcome: RealPredictionDistributionFetcher + ClickHouse truth-join (worker profile). Per-FEATURE PSI is now REAL end-to-end: RealFeatureDistributionFetcher (@Primary, @ConditionalOnProperty bullpen.clickhouse.enabled) reads the observed 24h distribution from prediction_log.features and PsiFeatureJob joins it against the training-baseline reference in metadata.json (TrainingDistributionLoader). The training-baseline emission is the E-1 backfill CLI (scripts/backfill_training_distributions.py, merged); a champion promoted without one is caught loudly by the DriftBaselineMissing detector (E-1 part 2b) instead of starving PSI silently. Live per-feature drift_metrics rows pend the owner box backfill of the current champions (E-1 gate); the code path is complete."
         },
         {
           "label": "Synthetic drift tests (inject known shifts, verify detection)",
-          "done": false
+          "done": true,
+          "details": "SyntheticDriftTest (backend, drift/jobs): injects a known 1-sigma feature shift and asserts PsiFeatureJob writes PSI > 0.25, a no-injection control stays under the 0.05 no-drift floor, and a 5pp per-class shift drives PsiPredictionJob PSI > 0.1. Uses real Psi math + a real SimpleMeterRegistry; the RealFeatureDistributionFetcherIT (Testcontainers) additionally verifies 7 days of drifted traffic land real PSI_FEATURE rows on ClickHouse."
         },
         {
           "label": "retraining_queue + three triggers (scheduled / drift / manual)",
           "done": true,
-          "details": "Done: retraining_queue table + RetrainingQueueService + scheduled/drift/manual triggers + systemd timer. CAVEAT: the per-model retrain DISPATCH callable is a sentinel stub (training/.../retraining/_dispatch.py) pending wiring to each Phase-2 trainer - the queue/orchestration is real; the actual automated retrain is not."
+          "details": "Done: retraining_queue table + RetrainingQueueService + scheduled/drift/manual triggers + systemd timer. Dispatch is WIRED for the served family: dispatch key 'battedball_outcome' -> _servable_battedball_outcome -> retrain_battedball_outcome (trains the served BattedBallMLP + carry head, exports the single-file serving ONNX, fits per-park isotonics, packs RetrainOutput). The other 5 registry names are explicit _not_yet_wired UnsupportedModel (honest, not silent). The remaining gap is a real-DATA box retrain through this path (C-31 / BOX HAND-OFF #1); promotion stays human-gated (rule 6)."
         },
         {
           "label": "End-to-end retrain test passing",
-          "done": false,
-          "details": "Scaffolded: run.py orchestration is tested end-to-end with a MOCKED dispatch callable; a true automated retrain does not run because the per-model dispatch is a sentinel stub (see above). Promotion stays human-gated regardless (rule 6)."
+          "done": true,
+          "details": "test_battedball_outcome_dispatch.py drives the REAL dispatch end-to-end on a synthetic miniature: run_once claims a queued trigger -> _servable_battedball_outcome trains + exports + calibrates -> the produced RetrainOutput flows through register -> mark_complete (queue row = succeeded, registered version id recorded); the rule-13 holdout override is fenced and fails the trigger. run.py orchestration is separately covered in test_run.py. The one remaining proof is a real-DATA box retrain (C-31 / BOX HAND-OFF #1, TD-owned) - real seasons + GPU + full ClickHouse. Promotion stays human-gated (rule 6)."
         },
         {
           "label": "JMH benchmark suite for the inference path + perf-regression CI gate (25% threshold)",
