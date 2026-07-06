@@ -12,10 +12,16 @@ import json
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from bullpen_training.registry_client.distributions import (
+    CHAMPIONS,
+    build_feature_block,
     compute_feature_distributions,
     compute_prediction_distribution,
+    decode_pitch_categoricals,
+    emit_distribution_blocks,
+    reconstruct_battedball_categoricals,
 )
 
 
@@ -109,3 +115,102 @@ def test_numeric_categorical_renders_as_int_string_not_float():
         df, continuous={}, categorical={"countBalls": "count_balls"}
     )
     assert blocks["countBalls"]["counts"] == {"1": 2, "0": 1, "2": 1, "3": 1}
+
+
+# --- champion config + request-space transforms (hoisted from the backfill CLI, E-1 part 2) ---
+
+
+def _battedball_model_frame(n: int = 96) -> pd.DataFrame:
+    """The model-space frame rows_to_frame emits: one-hots + request-space continuous + outs."""
+    stand_l = np.arange(n) % 2  # index 0 -> R, index 1 -> L
+    base = np.arange(n) % 8
+    df = pd.DataFrame(
+        {
+            "launch_speed_mph": np.linspace(60.0, 118.0, n),
+            "launch_angle_deg": np.linspace(-20.0, 45.0, n),
+            "spray_angle_deg": np.linspace(-45.0, 45.0, n),
+            "hit_distance_ft": np.linspace(0.0, 460.0, n),
+            "stand_L": stand_l,
+            "stand_R": 1 - stand_l,
+            "outs": np.arange(n) % 3,
+        }
+    )
+    for i in range(8):
+        df[f"base_state_{i}"] = (base == i).astype(int)
+    return df
+
+
+def test_reconstruct_battedball_categoricals_from_one_hots():
+    df = reconstruct_battedball_categoricals(_battedball_model_frame(8))
+    assert list(df["stand_str"]) == ["R", "L", "R", "L", "R", "L", "R", "L"]
+    assert list(df["base_state_int"]) == [0, 1, 2, 3, 4, 5, 6, 7]
+
+
+def test_battedball_feature_block_keys_are_request_fields():
+    df = reconstruct_battedball_categoricals(_battedball_model_frame(80))
+    block = build_feature_block(df, CHAMPIONS["battedball_outcome"], 5000)
+    assert set(block) == {
+        "launchSpeedMph",
+        "launchAngleDeg",
+        "sprayAngleDeg",
+        "hitDistanceFt",
+        "stand",
+        "baseState",
+        "outs",
+    }
+    assert set(block["stand"]["counts"]) == {"L", "R"}
+    assert set(block["baseState"]["counts"]) == {str(i) for i in range(8)}  # int-string keys
+    assert "parkId" not in block and "releaseSpeedMph" not in block  # the silent-skip trap
+
+
+def test_decode_pitch_categoricals_inverts_int_encodings():
+    df = pd.DataFrame(
+        {
+            "park_id_int": [0, 1, 0],
+            "pitch_type_int": [3, 3, 7],
+            "pitcher_throws_int": [0, 1, 1],
+            "batter_stand_int": [1, 0, 1],
+        }
+    )
+    out = decode_pitch_categoricals(
+        df, park_by_int={0: "ATL", 1: "AZ"}, ptype_by_int={3: "FF", 7: "SL"}
+    )
+    assert list(out["park_id"]) == ["ATL", "AZ", "ATL"]
+    assert list(out["pitch_type"]) == ["FF", "FF", "SL"]
+    assert list(out["pitcher_throws"]) == ["L", "R", "R"]  # 0=L, 1=R (R is the null fallback)
+    assert list(out["batter_stand"]) == ["R", "L", "R"]
+
+
+def test_build_feature_block_raises_on_missing_source_column():
+    df = reconstruct_battedball_categoricals(_battedball_model_frame(24)).drop(
+        columns=["spray_angle_deg"]
+    )
+    with pytest.raises(ValueError, match="spray_angle_deg"):
+        build_feature_block(df, CHAMPIONS["battedball_outcome"], 5000)
+
+
+def test_emit_distribution_blocks_returns_both():
+    df = reconstruct_battedball_categoricals(_battedball_model_frame(60))
+    proba = np.tile(np.array([0.6, 0.2, 0.1, 0.03, 0.07]), (len(df), 1))
+    feature_block, prediction_block = emit_distribution_blocks(
+        df, CHAMPIONS["battedball_outcome"], proba
+    )
+    assert "launchSpeedMph" in feature_block  # request-key feature block
+    assert set(prediction_block) == {"out", "1b", "2b", "3b", "hr"}  # class-keyed prediction block
+
+
+def test_distributions_module_is_torch_free():
+    # E-1 part 2's reuse value rests on this module importing WITHOUT torch/onnx (trainers import
+    # it; dragging torch into the trainer path risks the macOS torch+libomp segfault). Check in a
+    # FRESH interpreter so a prior test's torch import can't mask a regression.
+    import subprocess
+    import sys
+
+    code = (
+        "import sys, bullpen_training.registry_client.distributions as _;"
+        "heavy = sorted(m for m in sys.modules"
+        " if m.split('.')[0] in {'torch', 'onnx', 'onnxruntime', 'lightgbm', 'sklearn'});"
+        "assert not heavy, heavy"
+    )
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr

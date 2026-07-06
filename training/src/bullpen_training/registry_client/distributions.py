@@ -33,6 +33,7 @@ a data split - the temporal-split rule does not apply, but determinism is still 
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import cast
 
 import numpy as np
@@ -117,3 +118,153 @@ def compute_prediction_distribution(
         label: _quantile_representative_sample(proba[:, j], max_sample)
         for j, label in enumerate(class_labels)
     }
+
+
+# --- champion baseline registry + block emission (hoisted from the backfill CLI for reuse) --------
+# The request-key config + the source-space decoders live here (torch-free: numpy + pandas only) so
+# BOTH the backfill CLI and the native trainer emission produce byte-identical blocks, and the
+# prod-confirmed request-key casing is defined once.
+
+
+@dataclass(frozen=True)
+class ChampionConfig:
+    """Per-champion baseline spec.
+
+    Request keys are prod-confirmed (2026-07-04); source columns are training-frame columns AFTER
+    family prep (reconstruct / decode).
+    """
+
+    model_name: str
+    class_labels: list[str]
+    continuous: dict[str, str]
+    categorical: dict[str, str]
+    excluded: list[str] = field(default_factory=list)
+
+
+# Keys confirmed against prod prediction_log.features 2026-07-04 (real logged rows, both champions).
+# Do NOT "fix" the camelCase request keys to snake_case model names - PSI joins observed<->reference
+# by EXACT key and a mismatch fails silently.
+CHAMPIONS: dict[str, ChampionConfig] = {
+    "battedball_outcome": ChampionConfig(
+        model_name="battedball_outcome",
+        class_labels=["out", "1b", "2b", "3b", "hr"],
+        continuous={
+            "launchSpeedMph": "launch_speed_mph",
+            "launchAngleDeg": "launch_angle_deg",
+            "sprayAngleDeg": "spray_angle_deg",
+            "hitDistanceFt": "hit_distance_ft",
+        },
+        # reconstructed from the model one-hots by reconstruct_battedball_categoricals.
+        categorical={"stand": "stand_str", "baseState": "base_state_int", "outs": "outs"},
+        # No parkId / releaseSpeedMph: absent from the battedball request (would silent-skip).
+        excluded=["parkId", "releaseSpeedMph"],
+    ),
+    "pitch_outcome_post": ChampionConfig(
+        model_name="pitch_outcome_post",
+        class_labels=["ball", "called_strike", "swinging_strike", "foul", "in_play"],
+        continuous={
+            "releaseSpeedMph": "release_speed_mph",
+            "plateXIn": "plate_x_in",
+            "plateZIn": "plate_z_in",
+            "pfxXIn": "pfx_x_in",
+            "pfxZIn": "pfx_z_in",
+            "spinRateRpm": "spin_rate_rpm",
+            "spinAxisDeg": "spin_axis_deg",
+            "releasePosXIn": "release_pos_x_in",
+            "releasePosZIn": "release_pos_z_in",
+        },
+        # park_id/pitch_type/pitcher_throws/batter_stand decoded from the parquet _int cols by
+        # decode_pitch_categoricals; the numeric ints (count_balls...) are request-space already.
+        categorical={
+            "pitcherThrows": "pitcher_throws",
+            "batterStand": "batter_stand",
+            "parkId": "park_id",
+            "pitchType": "pitch_type",
+            "countBalls": "count_balls",
+            "countStrikes": "count_strikes",
+            "outs": "outs",
+            "inning": "inning",
+            "baseState": "base_state",
+            "scoreDiff": "score_diff",
+            "dow": "dow",
+        },
+        excluded=["pitcherId", "batterId"],  # high-cardinality IDs, meaningless as drift features.
+    ),
+}
+
+
+def _resolve_present(
+    frame: pd.DataFrame, mapping: dict[str, str]
+) -> tuple[dict[str, str], list[str]]:
+    """Split a key->column mapping into (present, missing) against the frame's columns."""
+    present = {k: c for k, c in mapping.items() if c in frame.columns}
+    missing = [f"{k} <- {c}" for k, c in mapping.items() if c not in frame.columns]
+    return present, missing
+
+
+def build_feature_block(frame: pd.DataFrame, cfg: ChampionConfig, max_sample: int) -> dict:
+    """feature_distributions for ``cfg`` from ``frame``.
+
+    Raises ``ValueError`` on a missing source column rather than silently emitting a partial
+    reference the box can't diagnose.
+    """
+    cont, miss_c = _resolve_present(frame, cfg.continuous)
+    cat, miss_cat = _resolve_present(frame, cfg.categorical)
+    missing = miss_c + miss_cat
+    if missing:
+        raise ValueError(
+            f"[{cfg.model_name}] training frame is missing source columns for: {missing}. "
+            "Confirm the source-schema column names against the parquet / ClickHouse schema."
+        )
+    return compute_feature_distributions(
+        frame, continuous=cont, categorical=cat, max_sample=max_sample
+    )
+
+
+def reconstruct_battedball_categoricals(df: pd.DataFrame) -> pd.DataFrame:
+    """Add request-space ``stand_str`` + ``base_state_int`` from the model one-hots.
+
+    The model matrix carries the one-hots (stand_R/stand_L, base_state_0..7); the observed side logs
+    the raw request ``stand`` ("L"/"R") and ``baseState`` (int), so recover those to join.
+    """
+    out = df.copy()
+    out["stand_str"] = np.where(df["stand_L"] == 1, "L", "R")
+    base_cols = [f"base_state_{i}" for i in range(8)]
+    out["base_state_int"] = df[base_cols].to_numpy().argmax(axis=1)
+    return out
+
+
+def decode_pitch_categoricals(
+    df: pd.DataFrame, park_by_int: dict[int, str], ptype_by_int: dict[int, str]
+) -> pd.DataFrame:
+    """Decode the pitch parquet's _int categoricals to request space.
+
+    throws/stand use {0:"L", 1:"R"} (STAND_TO_INT/THROWS_TO_INT; R is the null fallback, so the int
+    is always 0 or 1); park/pitch_type invert the bundle's name->int mapping.
+    """
+    throws_stand = {0: "L", 1: "R"}
+    out = df.copy()
+    out["park_id"] = df["park_id_int"].map(park_by_int.get)
+    out["pitch_type"] = df["pitch_type_int"].map(ptype_by_int.get)
+    out["pitcher_throws"] = df["pitcher_throws_int"].map(throws_stand.get)
+    out["batter_stand"] = df["batter_stand_int"].map(throws_stand.get)
+    return out
+
+
+def emit_distribution_blocks(
+    frame: pd.DataFrame,
+    cfg: ChampionConfig,
+    proba: np.ndarray,
+    *,
+    max_sample: int = DEFAULT_MAX_SAMPLE,
+) -> tuple[dict, dict]:
+    """Compute both baseline blocks for a champion in one call.
+
+    The shared entry point the backfill CLI and native trainer emission both use, so their output
+    is byte-identical. ``frame`` must already carry the request-space source columns ``cfg`` maps to
+    (post reconstruct / decode); ``proba`` is the champion's calibrated served probabilities
+    ``(n_rows, n_classes)``. Returns ``(feature_distributions, training_prediction_distribution)``.
+    """
+    feature_block = build_feature_block(frame, cfg, max_sample)
+    prediction_block = compute_prediction_distribution(proba, cfg.class_labels, max_sample)
+    return feature_block, prediction_block
