@@ -18,7 +18,6 @@ its own metadata at assembly time.
 
 from __future__ import annotations
 
-import copy
 import hashlib
 import json
 from pathlib import Path
@@ -34,6 +33,7 @@ from skl2onnx.common.data_types import FloatTensorType
 
 from bullpen_training.features import LABEL_CLASSES
 from bullpen_training.pitch.register_snapshot import contract_path_for, feature_columns_for
+from bullpen_training.registry_client import feature_hasher
 
 DEFAULT_ARTIFACTS_DIR = Path(__file__).resolve().parents[3] / "artifacts"
 PARITY_ATOL = 1e-5  # linear model: float32 graph vs float64 sklearn stays well inside this
@@ -43,11 +43,7 @@ N_PARITY_ROWS = 256
 def _load_verified_contract(contract_path: Path) -> dict[str, Any]:
     """Read the canonical contract and hard-fail on a stale schema_hash (rule 7)."""
     spec = cast(dict[str, Any], json.loads(contract_path.read_text()))
-    canonical = copy.deepcopy(spec)
-    canonical["schema_hash"] = ""
-    recomputed = hashlib.sha256(
-        json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
+    recomputed = feature_hasher.compute(contract_path)
     if spec["schema_hash"] != recomputed:
         raise RuntimeError(f"{contract_path.name} schema_hash stale")
     return spec

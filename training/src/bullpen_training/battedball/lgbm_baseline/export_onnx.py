@@ -27,7 +27,6 @@ Run on the desktop (the model.txt lives there, ADR-0006):
 
 from __future__ import annotations
 
-import copy
 import hashlib
 import json
 from pathlib import Path
@@ -40,6 +39,7 @@ from onnxmltools.convert.common.data_types import FloatTensorType  # type: ignor
 
 from bullpen_training.battedball.lgbm_baseline import load_baseline
 from bullpen_training.battedball.lgbm_baseline.dataset import FEATURE_COLUMNS
+from bullpen_training.registry_client import feature_hasher
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 CONTRACT_PATH = REPO_ROOT / "contracts" / "feature_pipeline_lgbm_battedball.json"
@@ -50,11 +50,7 @@ def _load_and_verify_contract(contract_path: Path) -> dict[str, Any]:
     FEATURE_COLUMNS. Drift is a hard fail (the registry would refuse it anyway)."""
     spec = cast(dict[str, Any], json.loads(contract_path.read_text()))
     declared = spec["schema_hash"]
-    canonical = copy.deepcopy(spec)
-    canonical["schema_hash"] = ""
-    recomputed = hashlib.sha256(
-        json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
+    recomputed = feature_hasher.compute(contract_path)
     if declared != recomputed:
         raise RuntimeError(
             f"{contract_path.name} schema_hash is stale (declared={declared} "
