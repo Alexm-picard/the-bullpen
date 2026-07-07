@@ -54,7 +54,8 @@ import {
 import type { FleetRow, FleetRowState } from "../data/about-fixtures";
 import type { ModelVersion } from "../api/ops";
 import { BUILD_DATE, BUILD_SHA } from "../build-info";
-import { colors, layouts, typography } from "../design/broadcast";
+import { PageChrome } from "../components/shared/page-chrome";
+import { colors, typography } from "../design/broadcast";
 
 import "./about/about.css";
 
@@ -100,20 +101,6 @@ function registryToFleetRows(versions: ModelVersion[]): FleetRow[] {
 
 // ── Page component ────────────────────────────────────────────────────────────
 
-const fieldStyle: React.CSSProperties = {
-  backgroundColor: colors.field,
-  minHeight: "100%",
-  padding: "24px 16px 0",
-};
-
-const columnStyle: React.CSSProperties = {
-  maxWidth: layouts.broadcastMaxWidth,
-  margin: "0 auto",
-  display: "flex",
-  flexDirection: "column",
-  gap: 28,
-};
-
 const noteStyle: React.CSSProperties = {
   margin: "0 0 8px",
   fontFamily: typography.fonts.body,
@@ -136,91 +123,87 @@ export default function AboutPage() {
     live ? "" : " · showcase data (backend unreachable)";
 
   return (
-    <div style={fieldStyle}>
-      <div style={columnStyle}>
-        <AboutHeader
-          issueDate={ABOUT_META.issueDate}
-          builtBy={ABOUT_META.builtBy}
-          edition={ABOUT_META.edition}
-          calendar={ABOUT_META.calendar}
-          weeklyHours={ABOUT_META.weeklyHours}
-        />
+    <PageChrome>
+      <AboutHeader
+        issueDate={ABOUT_META.issueDate}
+        builtBy={ABOUT_META.builtBy}
+        edition={ABOUT_META.edition}
+        calendar={ABOUT_META.calendar}
+        weeklyHours={ABOUT_META.weeklyHours}
+      />
 
-        <AboutFactsRibbon cells={FACTS_RIBBON} />
-        <p style={noteStyle}>
-          Showcase data -- illustrative project figures, not a live count.
-        </p>
+      <AboutFactsRibbon cells={FACTS_RIBBON} />
+      <p style={noteStyle}>
+        Showcase data -- illustrative project figures, not a live count.
+      </p>
 
-        <section aria-labelledby="about-opening-pitch-label">
-          <div style={{ marginBottom: 12 }}>
-            <LowerThird id="about-opening-pitch-label">
-              Opening Pitch
-            </LowerThird>
-          </div>
-          <AboutOpeningPitch paragraphs={OPENING_PITCH_PARAS} />
-        </section>
+      <section aria-labelledby="about-opening-pitch-label">
+        <div style={{ marginBottom: 12 }}>
+          <LowerThird id="about-opening-pitch-label">Opening Pitch</LowerThird>
+        </div>
+        <AboutOpeningPitch paragraphs={OPENING_PITCH_PARAS} />
+      </section>
 
-        <section aria-labelledby="about-stack-label">
-          <div style={{ marginBottom: 12 }}>
-            <LowerThird id="about-stack-label">The Stack</LowerThird>
-          </div>
-          <AboutStackTable rows={STACK_ROWS} />
-        </section>
+      <section aria-labelledby="about-stack-label">
+        <div style={{ marginBottom: 12 }}>
+          <LowerThird id="about-stack-label">The Stack</LowerThird>
+        </div>
+        <AboutStackTable rows={STACK_ROWS} />
+      </section>
 
-        <section aria-labelledby="about-fleet-label">
-          <div style={{ marginBottom: 12 }}>
-            <LowerThird id="about-fleet-label">Model Fleet</LowerThird>
-          </div>
-          {!fleetIsLive && (
-            <p style={noteStyle}>
-              Showcase data{showcaseSuffix(false)} -- showing fixture rows. Live
-              registry reflects actual registered models.
-            </p>
-          )}
-          <AboutModelFleet paragraphs={MODEL_FLEET_PARAS} rows={fleetRows} />
+      <section aria-labelledby="about-fleet-label">
+        <div style={{ marginBottom: 12 }}>
+          <LowerThird id="about-fleet-label">Model Fleet</LowerThird>
+        </div>
+        {!fleetIsLive && (
           <p style={noteStyle}>
-            Honest scope: the live batted-ball champion serves a per-park
-            calibrated physics estimate (retrodiction ~0.30 vs realized
-            outcomes; its linear baseline still wins on aggregate Brier), and no
-            pitch champion is promoted - both pitch heads run in shadow pending
-            an honest gate.
+            Showcase data{showcaseSuffix(false)} -- showing fixture rows. Live
+            registry reflects actual registered models.
           </p>
-        </section>
+        )}
+        <AboutModelFleet paragraphs={MODEL_FLEET_PARAS} rows={fleetRows} />
+        <p style={noteStyle}>
+          Honest scope: the live batted-ball champion serves a per-park
+          calibrated physics estimate (retrodiction ~0.30 vs realized outcomes;
+          its linear baseline still wins on aggregate Brier), and no pitch
+          champion is promoted - both pitch heads run in shadow pending an
+          honest gate.
+        </p>
+      </section>
 
-        <section aria-labelledby="about-discipline-label">
-          <div style={{ marginBottom: 12 }}>
-            <LowerThird id="about-discipline-label">
-              Operational Discipline
-            </LowerThird>
-          </div>
-          <AboutDiscipline notes={DISCIPLINE_NOTES} />
-        </section>
+      <section aria-labelledby="about-discipline-label">
+        <div style={{ marginBottom: 12 }}>
+          <LowerThird id="about-discipline-label">
+            Operational Discipline
+          </LowerThird>
+        </div>
+        <AboutDiscipline notes={DISCIPLINE_NOTES} />
+      </section>
 
-        <section aria-labelledby="about-rejected-label">
-          <div style={{ marginBottom: 12 }}>
-            <LowerThird id="about-rejected-label">
-              Intentionally Not Here
-            </LowerThird>
-          </div>
-          <AboutRejectedAlternatives
-            paragraph={REJECTED_PARA}
-            tags={REJECTED_TAGS}
-          />
-        </section>
-
-        <section aria-labelledby="about-roadmap-label">
-          <div style={{ marginBottom: 12 }}>
-            <LowerThird id="about-roadmap-label">Roadmap Honesty</LowerThird>
-          </div>
-          <AboutRoadmap paragraph={ROADMAP_PARA} />
-        </section>
-
-        <AboutColophonFooter
-          buildSha={BUILD_SHA}
-          buildDate={BUILD_DATE}
-          repoPlaceholder={ABOUT_META.repoPlaceholder}
+      <section aria-labelledby="about-rejected-label">
+        <div style={{ marginBottom: 12 }}>
+          <LowerThird id="about-rejected-label">
+            Intentionally Not Here
+          </LowerThird>
+        </div>
+        <AboutRejectedAlternatives
+          paragraph={REJECTED_PARA}
+          tags={REJECTED_TAGS}
         />
-      </div>
-    </div>
+      </section>
+
+      <section aria-labelledby="about-roadmap-label">
+        <div style={{ marginBottom: 12 }}>
+          <LowerThird id="about-roadmap-label">Roadmap Honesty</LowerThird>
+        </div>
+        <AboutRoadmap paragraph={ROADMAP_PARA} />
+      </section>
+
+      <AboutColophonFooter
+        buildSha={BUILD_SHA}
+        buildDate={BUILD_DATE}
+        repoPlaceholder={ABOUT_META.repoPlaceholder}
+      />
+    </PageChrome>
   );
 }

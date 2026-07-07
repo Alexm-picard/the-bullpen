@@ -36,8 +36,8 @@ import { MODEL_CHIPS } from "../data/home-fixtures";
 import type { ModelChip, ModelChipState } from "../data/home-fixtures";
 import { SHOWCASE_MATCHUPS } from "../data/matchups-showcase";
 import { SHOWCASE_GAMES } from "../data/slate-fixtures";
-import { BUILD_DATE, BUILD_SHA } from "../build-info";
-import { colors, layouts, typography } from "../design/broadcast";
+import { BroadcastFooter, PageChrome } from "../components/shared/page-chrome";
+import { colors, typography } from "../design/broadcast";
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
@@ -97,20 +97,6 @@ function registryToChips(
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
-const fieldStyle: React.CSSProperties = {
-  backgroundColor: colors.field,
-  minHeight: "100%",
-  padding: "24px 16px 0",
-};
-
-const columnStyle: React.CSSProperties = {
-  maxWidth: layouts.broadcastMaxWidth,
-  margin: "0 auto",
-  display: "flex",
-  flexDirection: "column",
-  gap: 24,
-};
-
 const captionStyle: React.CSSProperties = {
   margin: "4px 0 0",
   fontFamily: typography.fonts.mono,
@@ -148,141 +134,119 @@ export default function HomePage() {
   const issueDate = ET_DATE.format(now).replace(",", " ·");
 
   return (
-    <div style={fieldStyle}>
-      <div style={columnStyle}>
-        <header>
-          <h1
-            style={{
-              margin: 0,
-              fontFamily: typography.fonts.display,
-              fontStyle: "italic",
-              fontWeight: typography.weights.heavy,
-              fontSize: typography.scale[6],
-              lineHeight: typography.lineHeights.display,
-              letterSpacing: "0.01em",
-              textTransform: "uppercase",
-              color: colors.ink,
-            }}
-          >
-            Tonight&rsquo;s Slate
-          </h1>
-          <p
-            style={{
-              margin: "2px 0 0",
-              fontFamily: typography.fonts.mono,
-              fontSize: 12,
-              fontFeatureSettings: '"tnum" 1',
-              letterSpacing: "0.02em",
-              color: colors.textMuted,
-            }}
-          >
-            {issueDate} · issued {issuedAt} · {slate.length} matchups ·{" "}
-            {matchupSource} · first pitch {firstPitchWindow(slate)}
-          </p>
-        </header>
+    <PageChrome gap={24}>
+      <header>
+        <h1
+          style={{
+            margin: 0,
+            fontFamily: typography.fonts.display,
+            fontStyle: "italic",
+            fontWeight: typography.weights.heavy,
+            fontSize: typography.scale[6],
+            lineHeight: typography.lineHeights.display,
+            letterSpacing: "0.01em",
+            textTransform: "uppercase",
+            color: colors.ink,
+          }}
+        >
+          Tonight&rsquo;s Slate
+        </h1>
+        <p
+          style={{
+            margin: "2px 0 0",
+            fontFamily: typography.fonts.mono,
+            fontSize: 12,
+            fontFeatureSettings: '"tnum" 1',
+            letterSpacing: "0.02em",
+            color: colors.textMuted,
+          }}
+        >
+          {issueDate} · issued {issuedAt} · {slate.length} matchups ·{" "}
+          {matchupSource} · first pitch {firstPitchWindow(slate)}
+        </p>
+      </header>
 
-        {/* Fleet strip: live from the registry when the backend is reachable */}
-        <div>
-          <BroadcastFleetStrip chips={chips} />
-          {!ribbonIsLive && (
+      {/* Fleet strip: live from the registry when the backend is reachable */}
+      <div>
+        <BroadcastFleetStrip chips={chips} />
+        {!ribbonIsLive && (
+          <p style={captionStyle}>
+            Model fleet · showcase data (backend unreachable)
+          </p>
+        )}
+      </div>
+
+      {/* Tonight's Games: LIVE slate from /v1/games/today */}
+      <section aria-labelledby="tonight-games-label">
+        <div style={{ marginBottom: 12 }}>
+          <LowerThird
+            id="tonight-games-label"
+            meta={
+              todaysGames.isError
+                ? "SHOWCASE"
+                : todaysGames.data && todaysGames.data.length > 0
+                  ? `LIVE · ${todaysGames.data.length} GAMES`
+                  : "LIVE"
+            }
+          >
+            Tonight&rsquo;s Games
+          </LowerThird>
+        </div>
+        {todaysGames.isLoading ? (
+          <p style={captionStyle}>Loading tonight&rsquo;s games&hellip;</p>
+        ) : todaysGames.isError ? (
+          // Degrade gracefully like the fleet strip + matchups board, instead
+          // of a raw "Failed to fetch": show the showcase slate + honest caption.
+          <>
+            <LiveTonightStrip games={SHOWCASE_GAMES} />
             <p style={captionStyle}>
-              Model fleet · showcase data (backend unreachable)
+              Tonight&rsquo;s games · showcase data (backend unreachable)
+            </p>
+          </>
+        ) : (
+          <LiveTonightStrip games={todaysGames.data ?? []} />
+        )}
+      </section>
+
+      {/* Featured matchup: the single best battle of the slate - shown ABOVE the
+            board so the headline matchup leads the page */}
+      {featured && (
+        <div>
+          <FeaturedMatchupPanel matchup={featured} />
+          {!matchupsAreLive && (
+            <p style={captionStyle}>
+              Featured matchup · showcase data (the morning slate has not posted
+              yet)
             </p>
           )}
         </div>
+      )}
 
-        {/* Tonight's Games: LIVE slate from /v1/games/today */}
-        <section aria-labelledby="tonight-games-label">
-          <div style={{ marginBottom: 12 }}>
-            <LowerThird
-              id="tonight-games-label"
-              meta={
-                todaysGames.isError
-                  ? "SHOWCASE"
-                  : todaysGames.data && todaysGames.data.length > 0
-                    ? `LIVE · ${todaysGames.data.length} GAMES`
-                    : "LIVE"
-              }
-            >
-              Tonight&rsquo;s Games
-            </LowerThird>
-          </div>
-          {todaysGames.isLoading ? (
-            <p style={captionStyle}>Loading tonight&rsquo;s games&hellip;</p>
-          ) : todaysGames.isError ? (
-            // Degrade gracefully like the fleet strip + matchups board, instead
-            // of a raw "Failed to fetch": show the showcase slate + honest caption.
-            <>
-              <LiveTonightStrip games={SHOWCASE_GAMES} />
-              <p style={captionStyle}>
-                Tonight&rsquo;s games · showcase data (backend unreachable)
-              </p>
-            </>
-          ) : (
-            <LiveTonightStrip games={todaysGames.data ?? []} />
-          )}
-        </section>
-
-        {/* Featured matchup: the single best battle of the slate - shown ABOVE the
-            board so the headline matchup leads the page */}
-        {featured && (
-          <div>
-            <FeaturedMatchupPanel matchup={featured} />
-            {!matchupsAreLive && (
-              <p style={captionStyle}>
-                Featured matchup · showcase data (the morning slate has not
-                posted yet)
-              </p>
-            )}
-          </div>
+      {/* Tonight's Matchups: per-game lean-aware board (the rest of the slate) */}
+      <section aria-labelledby="slate-section-label">
+        <div style={{ marginBottom: 12 }}>
+          <LowerThird
+            id="slate-section-label"
+            meta={matchupsAreLive ? `LIVE · ${board.length} GAMES` : "SHOWCASE"}
+          >
+            Tonight&rsquo;s Matchups
+          </LowerThird>
+        </div>
+        {board.length > 0 ? (
+          <TonightsMatchupsBoard
+            rows={board}
+            caption={
+              matchupsAreLive
+                ? "Tonight's slate · lean-aware matchups from the morning + lineup passes"
+                : "Tonight's slate · showcase data (the morning slate has not posted yet)"
+            }
+          />
+        ) : (
+          <p style={captionStyle}>No further matchups on the slate yet.</p>
         )}
+      </section>
 
-        {/* Tonight's Matchups: per-game lean-aware board (the rest of the slate) */}
-        <section aria-labelledby="slate-section-label">
-          <div style={{ marginBottom: 12 }}>
-            <LowerThird
-              id="slate-section-label"
-              meta={
-                matchupsAreLive ? `LIVE · ${board.length} GAMES` : "SHOWCASE"
-              }
-            >
-              Tonight&rsquo;s Matchups
-            </LowerThird>
-          </div>
-          {board.length > 0 ? (
-            <TonightsMatchupsBoard
-              rows={board}
-              caption={
-                matchupsAreLive
-                  ? "Tonight's slate · lean-aware matchups from the morning + lineup passes"
-                  : "Tonight's slate · showcase data (the morning slate has not posted yet)"
-              }
-            />
-          ) : (
-            <p style={captionStyle}>No further matchups on the slate yet.</p>
-          )}
-        </section>
-
-        <footer
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            margin: "0 -16px",
-            padding: "10px 16px",
-            backgroundColor: colors.chromeDeep,
-            fontFamily: typography.fonts.mono,
-            fontSize: 11,
-            letterSpacing: "0.04em",
-            color: colors.textOnChromeMuted,
-          }}
-        >
-          <span>THE BULLPEN · TONIGHT&rsquo;S SLATE</span>
-          <span>
-            build {BUILD_SHA} · {BUILD_DATE}
-          </span>
-        </footer>
-      </div>
-    </div>
+      <BroadcastFooter>TONIGHT&rsquo;S SLATE</BroadcastFooter>
+    </PageChrome>
   );
 }

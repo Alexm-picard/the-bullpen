@@ -48,24 +48,8 @@ import {
   type StatTableRow,
 } from "../components/shared/stat-table";
 import type { MetricMeta } from "../design/cellColor";
-import { BUILD_DATE, BUILD_SHA } from "../build-info";
-import { colors, layouts, typography } from "../design/broadcast";
-
-// -- Page chrome (cloned from about-page / ops-page) ----------------------
-
-const fieldStyle: React.CSSProperties = {
-  backgroundColor: colors.field,
-  minHeight: "100%",
-  padding: "24px 16px 0",
-};
-
-const columnStyle: React.CSSProperties = {
-  maxWidth: layouts.broadcastMaxWidth,
-  margin: "0 auto",
-  display: "flex",
-  flexDirection: "column",
-  gap: 28,
-};
+import { BroadcastFooter, PageChrome } from "../components/shared/page-chrome";
+import { colors, typography } from "../design/broadcast";
 
 const noteStyle: React.CSSProperties = {
   margin: "0 0 8px",
@@ -209,185 +193,164 @@ export default function AccuracyPage() {
   const report = backfill.data ?? null;
 
   return (
-    <div style={fieldStyle}>
-      <div style={columnStyle}>
-        <header>
-          <span
-            style={{
-              fontFamily: typography.fonts.mono,
-              fontSize: 12,
-              fontWeight: typography.weights.semibold,
-              letterSpacing: "0.12em",
-              textTransform: "uppercase",
-              color: colors.goldInk,
-            }}
-          >
-            Model Accuracy
-          </span>
-          <h1
-            style={{
-              margin: "8px 0 0",
-              fontFamily: typography.fonts.display,
-              fontStyle: "italic",
-              fontWeight: typography.weights.heavy,
-              fontSize: typography.scale[6],
-              lineHeight: typography.lineHeights.display,
-              letterSpacing: "0.01em",
-              textTransform: "uppercase",
-              color: colors.ink,
-            }}
-          >
-            Held-Out Accuracy
-          </h1>
-          <p
-            style={{
-              margin: "6px 0 0",
-              fontFamily: typography.fonts.body,
-              fontSize: 15,
-              color: colors.text,
-              lineHeight: 1.5,
-            }}
-          >
-            Offline rolling-origin CV on held-out folds - not live game
-            accuracy.
-          </p>
-        </header>
-
-        <p style={noteStyle}>
-          These are OFFLINE numbers: each model is scored by rolling-origin
-          temporal cross-validation on held-out folds (2015-2025), never on live
-          in-production outcomes. There is no live truth-join behind this page -
-          a model's user-facing calibration is measured offline here, separately
-          from any future live verification. For the batted-ball model in
-          particular, read its REALITY ECE (calibration against realized
-          outcomes) as the honest figure; its {`ece_vs_retro`} is a
-          self-referential gap against the retrodiction target and is NOT a
-          claim of real-world calibration.
-        </p>
-
-        <section aria-labelledby="accuracy-scorecard-label">
-          <div style={{ marginBottom: 12 }}>
-            <LowerThird id="accuracy-scorecard-label" meta="OFFLINE ROLLING-CV">
-              Held-Out Scorecard
-            </LowerThird>
-          </div>
-          {scorecard.isLoading ? (
-            <p style={sectionNoteStyle}>Loading held-out scorecard...</p>
-          ) : scorecard.isError ? (
-            <p style={sectionNoteStyle}>
-              Could not load the held-out scorecard
-              {scorecard.error ? `: ${scorecard.error.message}` : ""}.
-            </p>
-          ) : hasScores ? (
-            <>
-              <StatTable
-                columns={SCORECARD_COLUMNS}
-                rows={scorecardRows(scoreRows)}
-                caption={
-                  evaluationLabel ??
-                  "Offline rolling-origin CV (4 folds, 2015-2025 held-out); not live production accuracy"
-                }
-              />
-              {calibrationNotes.length > 0 && (
-                <div style={{ marginTop: 10 }}>
-                  {calibrationNotes.map((c) => (
-                    <p key={c.model} style={noteStyle}>
-                      <span
-                        style={{
-                          fontFamily: typography.fonts.mono,
-                          fontSize: 11,
-                          letterSpacing: "0.06em",
-                          textTransform: "uppercase",
-                          color: colors.goldInk,
-                        }}
-                      >
-                        {c.model}
-                      </span>{" "}
-                      - {c.note}
-                    </p>
-                  ))}
-                </div>
-              )}
-            </>
-          ) : (
-            <NoHistoryNote title="No held-out scorecard yet">
-              The registry has no evidence rows to score - the scorecard fills
-              once a model is registered with a rolling-origin CV evidence row.
-              Until then there is nothing honest to show here, so we show
-              nothing rather than zeros.
-            </NoHistoryNote>
-          )}
-        </section>
-
-        <section aria-labelledby="accuracy-backfill-label">
-          <div style={{ marginBottom: 12 }}>
-            <LowerThird
-              id="accuracy-backfill-label"
-              meta="RETRODICTED - HOME-PARK TRUTH"
-            >
-              Batted-Ball Backfill - Real vs Predicted
-            </LowerThird>
-          </div>
-          <p style={sectionNoteStyle}>
-            An OFFLINE backfill that scores the batted-ball model
-            (battedball_outcome) over historical in-play events, truthed only on
-            home-park rows. The confusion matrix below is the HOME-PARK matrix
-            the artifact ships - not a sum across all 30 parks. Because the
-            artifact exposes per-class precision/recall and a confusion matrix
-            (not binned HR predicted-vs-observed), there is no reliability
-            diagram here by design.
-          </p>
-          {backfill.isLoading ? (
-            <p style={sectionNoteStyle}>Loading backfill...</p>
-          ) : backfill.isError ? (
-            <p style={sectionNoteStyle}>
-              Could not load the backfill
-              {backfill.error ? `: ${backfill.error.message}` : ""}.
-            </p>
-          ) : report ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              <ConfusionMatrix
-                labels={report.outcome_order}
-                matrix={report.confusion}
-                caption={`Home-park truth - ${report.n_samples.toLocaleString()} in-play events - true (rows) vs predicted (cols)`}
-              />
-              <StatTable
-                columns={BACKFILL_COLUMNS}
-                rows={backfillAggregateRows(report)}
-                caption={`${report.model_name} ${report.model_version} - ${report.season_from}-${report.season_to} - ${report.eval_kind}`}
-              />
-              <p style={noteStyle}>{report.disclaimer}</p>
-            </div>
-          ) : (
-            <NoHistoryNote title="Backfill not served yet">
-              The batted-ball backfill artifact lives box/R2-only and has not
-              been committed to the API yet (the endpoint currently returns 204
-              No Content). The confusion matrix, aggregate, and disclaimer
-              appear here once a box hand-off commits the artifact.
-            </NoHistoryNote>
-          )}
-        </section>
-
-        <footer
+    <PageChrome>
+      <header>
+        <span
           style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            margin: "0 -16px",
-            padding: "10px 16px",
-            backgroundColor: colors.chromeDeep,
             fontFamily: typography.fonts.mono,
-            fontSize: 11,
-            letterSpacing: "0.04em",
-            color: colors.textOnChromeMuted,
+            fontSize: 12,
+            fontWeight: typography.weights.semibold,
+            letterSpacing: "0.12em",
+            textTransform: "uppercase",
+            color: colors.goldInk,
           }}
         >
-          <span>THE BULLPEN · ACCURACY</span>
-          <span>
-            build {BUILD_SHA} · {BUILD_DATE}
-          </span>
-        </footer>
-      </div>
-    </div>
+          Model Accuracy
+        </span>
+        <h1
+          style={{
+            margin: "8px 0 0",
+            fontFamily: typography.fonts.display,
+            fontStyle: "italic",
+            fontWeight: typography.weights.heavy,
+            fontSize: typography.scale[6],
+            lineHeight: typography.lineHeights.display,
+            letterSpacing: "0.01em",
+            textTransform: "uppercase",
+            color: colors.ink,
+          }}
+        >
+          Held-Out Accuracy
+        </h1>
+        <p
+          style={{
+            margin: "6px 0 0",
+            fontFamily: typography.fonts.body,
+            fontSize: 15,
+            color: colors.text,
+            lineHeight: 1.5,
+          }}
+        >
+          Offline rolling-origin CV on held-out folds - not live game accuracy.
+        </p>
+      </header>
+
+      <p style={noteStyle}>
+        These are OFFLINE numbers: each model is scored by rolling-origin
+        temporal cross-validation on held-out folds (2015-2025), never on live
+        in-production outcomes. There is no live truth-join behind this page - a
+        model's user-facing calibration is measured offline here, separately
+        from any future live verification. For the batted-ball model in
+        particular, read its REALITY ECE (calibration against realized outcomes)
+        as the honest figure; its {`ece_vs_retro`} is a self-referential gap
+        against the retrodiction target and is NOT a claim of real-world
+        calibration.
+      </p>
+
+      <section aria-labelledby="accuracy-scorecard-label">
+        <div style={{ marginBottom: 12 }}>
+          <LowerThird id="accuracy-scorecard-label" meta="OFFLINE ROLLING-CV">
+            Held-Out Scorecard
+          </LowerThird>
+        </div>
+        {scorecard.isLoading ? (
+          <p style={sectionNoteStyle}>Loading held-out scorecard...</p>
+        ) : scorecard.isError ? (
+          <p style={sectionNoteStyle}>
+            Could not load the held-out scorecard
+            {scorecard.error ? `: ${scorecard.error.message}` : ""}.
+          </p>
+        ) : hasScores ? (
+          <>
+            <StatTable
+              columns={SCORECARD_COLUMNS}
+              rows={scorecardRows(scoreRows)}
+              caption={
+                evaluationLabel ??
+                "Offline rolling-origin CV (4 folds, 2015-2025 held-out); not live production accuracy"
+              }
+            />
+            {calibrationNotes.length > 0 && (
+              <div style={{ marginTop: 10 }}>
+                {calibrationNotes.map((c) => (
+                  <p key={c.model} style={noteStyle}>
+                    <span
+                      style={{
+                        fontFamily: typography.fonts.mono,
+                        fontSize: 11,
+                        letterSpacing: "0.06em",
+                        textTransform: "uppercase",
+                        color: colors.goldInk,
+                      }}
+                    >
+                      {c.model}
+                    </span>{" "}
+                    - {c.note}
+                  </p>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <NoHistoryNote title="No held-out scorecard yet">
+            The registry has no evidence rows to score - the scorecard fills
+            once a model is registered with a rolling-origin CV evidence row.
+            Until then there is nothing honest to show here, so we show nothing
+            rather than zeros.
+          </NoHistoryNote>
+        )}
+      </section>
+
+      <section aria-labelledby="accuracy-backfill-label">
+        <div style={{ marginBottom: 12 }}>
+          <LowerThird
+            id="accuracy-backfill-label"
+            meta="RETRODICTED - HOME-PARK TRUTH"
+          >
+            Batted-Ball Backfill - Real vs Predicted
+          </LowerThird>
+        </div>
+        <p style={sectionNoteStyle}>
+          An OFFLINE backfill that scores the batted-ball model
+          (battedball_outcome) over historical in-play events, truthed only on
+          home-park rows. The confusion matrix below is the HOME-PARK matrix the
+          artifact ships - not a sum across all 30 parks. Because the artifact
+          exposes per-class precision/recall and a confusion matrix (not binned
+          HR predicted-vs-observed), there is no reliability diagram here by
+          design.
+        </p>
+        {backfill.isLoading ? (
+          <p style={sectionNoteStyle}>Loading backfill...</p>
+        ) : backfill.isError ? (
+          <p style={sectionNoteStyle}>
+            Could not load the backfill
+            {backfill.error ? `: ${backfill.error.message}` : ""}.
+          </p>
+        ) : report ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <ConfusionMatrix
+              labels={report.outcome_order}
+              matrix={report.confusion}
+              caption={`Home-park truth - ${report.n_samples.toLocaleString()} in-play events - true (rows) vs predicted (cols)`}
+            />
+            <StatTable
+              columns={BACKFILL_COLUMNS}
+              rows={backfillAggregateRows(report)}
+              caption={`${report.model_name} ${report.model_version} - ${report.season_from}-${report.season_to} - ${report.eval_kind}`}
+            />
+            <p style={noteStyle}>{report.disclaimer}</p>
+          </div>
+        ) : (
+          <NoHistoryNote title="Backfill not served yet">
+            The batted-ball backfill artifact lives box/R2-only and has not been
+            committed to the API yet (the endpoint currently returns 204 No
+            Content). The confusion matrix, aggregate, and disclaimer appear
+            here once a box hand-off commits the artifact.
+          </NoHistoryNote>
+        )}
+      </section>
+
+      <BroadcastFooter>ACCURACY</BroadcastFooter>
+    </PageChrome>
   );
 }

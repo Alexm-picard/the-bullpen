@@ -5,22 +5,8 @@
  */
 import { Link } from "react-router-dom";
 
+import { PageChrome } from "../components/shared/page-chrome";
 import { colors, layouts, typography } from "../design/broadcast";
-
-const fieldStyle: React.CSSProperties = {
-  backgroundColor: colors.field,
-  minHeight: "100%",
-  padding: "24px 16px 0",
-};
-
-const columnStyle: React.CSSProperties = {
-  maxWidth: layouts.broadcastMaxWidth,
-  margin: "0 auto",
-  display: "flex",
-  flexDirection: "column",
-  gap: 12,
-  paddingTop: 56,
-};
 
 const codeStyle: React.CSSProperties = {
   fontFamily: typography.fonts.display,
@@ -59,18 +45,16 @@ const linkStyle: React.CSSProperties = {
 
 export default function NotFoundPage() {
   return (
-    <div style={fieldStyle}>
-      <div style={columnStyle}>
-        <p style={codeStyle}>404</p>
-        <h1 style={headingStyle}>No play at this base.</h1>
-        <p style={bodyStyle}>
-          That page isn&rsquo;t in the lineup. Check the URL, or head back to
-          tonight&rsquo;s slate.
-        </p>
-        <Link to="/" style={linkStyle}>
-          &larr; Back to home
-        </Link>
-      </div>
-    </div>
+    <PageChrome gap={12} topPad={56}>
+      <p style={codeStyle}>404</p>
+      <h1 style={headingStyle}>No play at this base.</h1>
+      <p style={bodyStyle}>
+        That page isn&rsquo;t in the lineup. Check the URL, or head back to
+        tonight&rsquo;s slate.
+      </p>
+      <Link to="/" style={linkStyle}>
+        &larr; Back to home
+      </Link>
+    </PageChrome>
   );
 }
