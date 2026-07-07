@@ -63,7 +63,8 @@ def multiclass_brier(y_true: np.ndarray, y_pred_proba: np.ndarray) -> float:
     """
     proba = _validate_proba(y_pred_proba)
     onehot = _coerce_to_onehot(y_true, proba.shape[1])
-    return float(np.mean(np.sum((proba - onehot) ** 2, axis=1)) / proba.shape[1])
+    per_row_sq_err: np.ndarray = np.sum((proba - onehot) ** 2, axis=1)
+    return float(np.mean(per_row_sq_err) / proba.shape[1])
 
 
 def multiclass_log_loss(
@@ -73,7 +74,8 @@ def multiclass_log_loss(
     proba = _validate_proba(y_pred_proba)
     onehot = _coerce_to_onehot(y_true, proba.shape[1])
     clipped = np.clip(proba, eps, 1.0 - eps)
-    return float(-np.mean(np.sum(onehot * np.log(clipped), axis=1)))
+    per_row_ll: np.ndarray = np.sum(onehot * np.log(clipped), axis=1)
+    return float(-np.mean(per_row_ll))
 
 
 def expected_calibration_error(

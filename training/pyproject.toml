@@ -55,7 +55,9 @@ extend-exclude = ["artifacts"]
 select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
 
 [tool.pyright]
-include = ["src", "eval", "tests"]
+# "eval" pointed at a non-existent top-level dir (the real code is
+# src/bullpen_training/eval, already covered by "src"); dropped as stale.
+include = ["src", "tests"]
 # pitch_comparison/ is the exploratory model-comparison research subpackage
 # (transformer/embedding/arsenal studies that informed model selection) — not
 # on the production train or serve path (pitch/, battedball/, eval/, ingest/
@@ -66,12 +68,20 @@ include = ["src", "eval", "tests"]
 exclude = ["src/bullpen_training/pitch_comparison"]
 pythonVersion = "3.11"
 # strict applies to modules where Unknown* would catch real bugs. The data
-# subpackages (ingest/, eval/) wrap pandas/pybaseball/clickhouse-driver
-# whose stubs are partial or absent — strict mode there is theatre, not
-# safety. New non-data modules should add themselves to this list.
+# LOADERS in ingest/ + eval/ wrap pandas/pybaseball/clickhouse-driver whose
+# stubs are partial or absent - strict there is theatre, not safety - but the
+# pure-computation modules within eval/ (metrics, promotion criteria) and the
+# stdlib-only registry_client/feature_hasher DO benefit, so they are
+# strict-listed individually. cv_harness.py stays basic: it is a pandas
+# DataFrame orchestrator, and reportMissingTypeStubs=false (no pandas-stubs, a
+# deliberate project choice) means strict there is the same theatre. New
+# non-data modules should add themselves here.
 strict = [
     "src/bullpen_training/__init__.py",
     "src/bullpen_training/logging_config.py",
+    "src/bullpen_training/eval/metrics.py",
+    "src/bullpen_training/eval/promotion/criteria.py",
+    "src/bullpen_training/registry_client/feature_hasher.py",
 ]
 reportMissingTypeStubs = false
 reportMissingImports = "warning"
