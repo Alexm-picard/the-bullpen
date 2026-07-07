@@ -33,11 +33,7 @@ const OpsPage = lazy(() => import("./pages/ops-page"));
 const AccuracyPage = lazy(() => import("./pages/accuracy-page"));
 
 const PlayersPage = lazy(() => import("./pages/players-page"));
-const PlayerProfilePage = lazy(() =>
-  import("./pages/players-page").then((m) => ({
-    default: m.PlayerProfilePage,
-  })),
-);
+const PlayerProfilePage = lazy(() => import("./pages/player-profile-page"));
 
 const GamesPage = lazy(() => import("./pages/games-page"));
 const GamePage = lazy(() =>

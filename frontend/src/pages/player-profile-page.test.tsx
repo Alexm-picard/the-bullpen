@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest";
 
 import { theme } from "../design/theme";
 
-import { PlayerProfilePage } from "./players-page";
+import PlayerProfilePage from "./player-profile-page";
 
 function render(ui: React.ReactElement): string {
   const client = new QueryClient({
