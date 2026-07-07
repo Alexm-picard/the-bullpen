@@ -25,9 +25,10 @@ pending; a synthetic induced-drift drill stands in for now).
 ## What's interesting about it
 
 - A **custom ML systems wrapper** - model registry, A/B router (shadow-mode),
-  drift detection, retraining queue + triggers (per-model dispatch wiring still
-  pending) - written from scratch in Java rather than pulled in via MLflow. The
-  wrapper is the project; the models are the excuse.
+  drift detection, retraining queue + triggers (dispatch wired for the served
+  batted-ball head; the rest explicit UnsupportedModel) - written from scratch in
+  Java rather than pulled in via MLflow. The wrapper is the project; the models
+  are the excuse.
 - **ONNX Runtime in-process** in Java + Spring Boot 3 — no Python
   sidecar, no live RPC. Training is Python; serving is JVM.
 - **Broadcast-graphics design system** (Barlow Condensed / Inter /
