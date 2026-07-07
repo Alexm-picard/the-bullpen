@@ -105,6 +105,12 @@ def build_year_query(year: int, *, allow_holdout_eval: bool = False) -> str:
         raise ValueError(
             f"rule 13: refusing to export season {year} (>= {HOLDOUT_YEAR} is holdout)"
         )
+    # join_algorithm='partial_merge': the pitches-FINAL x bbip_retrodicted_labels-FINAL default hash
+    # join OOMs (ClickHouse exit 241, MEMORY_LIMIT_EXCEEDED) under the production box's 4 GiB
+    # container cap; partial_merge sort-merges and spills to disk, running the same join in seconds
+    # with a bounded footprint (proven on the box). It changes only HOW the join executes, never
+    # WHICH rows it returns, so every caller (backfill, backfill-accuracy, rolling-CV, carry-promo,
+    # full export) gets the identical result set - just memory-safe under the cap.
     return f"""
     SELECT
       toString(p.launch_speed_mph) AS launch_speed_mph,
@@ -137,6 +143,7 @@ def build_year_query(year: int, *, allow_holdout_eval: bool = False) -> str:
       AND r.observed_outcome IS NOT NULL
       AND toYear(p.game_date) = {year}
     ORDER BY p.game_date, p.game_id, p.at_bat_index, p.pitch_number
+    SETTINGS join_algorithm = 'partial_merge'
     FORMAT TSV
     """
 
