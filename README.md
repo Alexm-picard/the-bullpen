@@ -25,9 +25,10 @@ pending; a synthetic induced-drift drill stands in for now).
 ## What's interesting about it
 
 - A **custom ML systems wrapper** - model registry, A/B router (shadow-mode),
-  drift detection, retraining queue + triggers (per-model dispatch wiring still
-  pending) - written from scratch in Java rather than pulled in via MLflow. The
-  wrapper is the project; the models are the excuse.
+  drift detection, retraining queue + triggers (dispatch wired for the served
+  batted-ball head; the rest explicit UnsupportedModel) - written from scratch in
+  Java rather than pulled in via MLflow. The wrapper is the project; the models
+  are the excuse.
 - **ONNX Runtime in-process** in Java + Spring Boot 3 — no Python
   sidecar, no live RPC. Training is Python; serving is JVM.
 - **Broadcast-graphics design system** (Barlow Condensed / Inter /
@@ -41,14 +42,15 @@ pending; a synthetic induced-drift drill stands in for now).
 - A **drift -> postmortem** chain (automated trigger, human promotion gate -
   decision [44] / rule 6), validated end-to-end by a synthetic induced-drift
   drill; the first real in-season postmortem is pending.
-- **Measured test coverage**, not a vibe: 551 backend test methods, 492 Python
+- **Measured test coverage**, not a vibe: 700+ backend test methods, 600+ Python
   tests (including the four required temporal-leakage tests, mutation-checked),
-  and 368 frontend tests. Line/branch coverage is published every CI run and
+  and 400+ frontend tests. Line/branch coverage is published every CI run and
   gated on a regression floor (backend JaCoCo under the Docker ITs; frontend
-  vitest v8 at 65/65/55/60) - read the current number from the latest run's
-  artifacts rather than a figure pasted here, which drifts.
-  Every commit also gates on lint, hex-codes, bundle-budget, static a11y, and a
-  Schemathesis API-contract check.
+  vitest v8; training coverage.py) - read the current numbers from the latest run
+  rather than figures pasted here, which drift (the thresholds live in
+  `build.gradle.kts`, `vite.config.ts`, and `pyproject.toml`).
+  Every commit also gates on lint, hex-codes, bundle-budget, a real axe-core a11y
+  gate, and a Schemathesis API-contract check.
 
 ## Screenshots
 
@@ -143,6 +145,25 @@ flowchart TD
     API --> FE
 ```
 
+A single prediction request (the serving hot path is ClickHouse-free; logging is
+async, off the response path):
+
+```mermaid
+sequenceDiagram
+    participant FE as React SPA
+    participant API as Spring API
+    participant R as A/B router
+    participant M as ONNX Runtime + calibrator
+    participant CH as ClickHouse
+    FE->>API: POST /v1/predict/...
+    API->>R: route(gameId, modelName)
+    R-->>API: champion (+ any shadows)
+    API->>M: in-process infer, then calibrate
+    M-->>API: calibrated probabilities
+    API-->>FE: prediction
+    API-)CH: async log to prediction_log
+```
+
 ## Data sources + licensing
 
 The code in this repository is released under the [MIT License](LICENSE). That
@@ -184,15 +205,19 @@ Underlying play-by-play data is not redistributed.**
   [`docs/cross-park-fidelity-plan.md`](docs/cross-park-fidelity-plan.md). The `/parks` heatmap and
   the About page surface this physics-estimate framing (and the rho gap) directly to users rather
   than presenting raw P(HR) as fact (decision [163]).
-- **Automated retraining and per-feature PSI are scaffolded, not fully wired.** The
-  retraining queue + the three triggers (scheduled / drift / manual) + the systemd
-  timer are real and tested, but the per-model retrain _dispatch_ callable is a
-  sentinel stub (`training/.../retraining/_dispatch.py`) pending wiring to each
-  Phase-2 trainer - no model retrains end-to-end automatically yet (promotion stays
-  human-gated regardless, rule 6). On the drift side, PSI-on-predictions and
-  calibration-vs-observed-outcome are real (ClickHouse-backed); per-_feature_ PSI
-  runs against a stub feature-distribution fetcher (returns empty) - the job and the
-  PSI math are wired, the real feature-distribution source is not.
+- **Automated retraining and per-feature PSI are wired; the box proofs are the
+  remaining gate.** The retraining queue + the three triggers (scheduled / drift /
+  manual) + the systemd timer are real and tested, and the retrain _dispatch_ is
+  wired for the served batted-ball family (`_servable_battedball_outcome`, covered
+  by an end-to-end-on-a-miniature test); the other registry names are explicit
+  `UnsupportedModel`. One real-data box retrain through that path is the remaining
+  proof (promotion stays human-gated regardless, rule 6). On the drift side, all
+  three signals are real and ClickHouse-backed: PSI-on-predictions,
+  calibration-vs-observed-outcome, and per-_feature_ PSI (a real fetcher reads
+  `prediction_log.features` against a training-time baseline the E-1 backfill CLI
+  emits; a champion promoted without one trips a loud `DriftBaselineMissing` alert
+  rather than silently skipping). Live drift rows populate once the box backfills
+  the current champions' baselines.
 - Live game polling worker (MLB Stats API client + parser + per-game scheduled
   poll on the worker profile, feeding `pitches_live` and the `prediction_log`
   truth-join) is **built, merged, and unit-tested**, and is enabled in prod
@@ -204,9 +229,10 @@ Underlying play-by-play data is not redistributed.**
 at_bat_index, pitch_number)` is implemented and feeds the nightly calibration
   - per-segment drift jobs; per-player history / calibration views populate as
     live shadow predictions accrue.
-- Playwright e2e is currently a small smoke spec; broader live-page specs and
-  Lighthouse / axe-core CI defer to Phase 5.x. Static linters (hex codes,
-  bundle budget, a11y heuristics) fill the gap until then.
+- Playwright e2e covers the live pages (both the populated and the empty
+  pitch-log states) and runs a real axe-core accessibility gate in CI; static
+  linters (hex codes, bundle budget) run alongside. Lighthouse performance
+  budgets are the remaining CI add.
 
 ## What's next (v1.5)
 
