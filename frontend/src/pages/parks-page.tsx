@@ -32,28 +32,14 @@ import {
   PARK_THUMBNAILS,
   PARKS_META,
 } from "../data/parks-fixtures";
-import { BUILD_DATE, BUILD_SHA } from "../build-info";
-import { colors, layouts, typography } from "../design/broadcast";
+import { BroadcastFooter, PageChrome } from "../components/shared/page-chrome";
+import { colors, typography } from "../design/broadcast";
 
 import "./parks/parks.css";
 
 // Shared caption for all fixture-backed sections on this page.
 const SHOWCASE_NOTE =
   "Showcase data -- GET /v1/parks/factors not yet implemented.";
-
-const fieldStyle: React.CSSProperties = {
-  backgroundColor: colors.field,
-  minHeight: "100%",
-  padding: "24px 16px 0",
-};
-
-const columnStyle: React.CSSProperties = {
-  maxWidth: layouts.broadcastMaxWidth,
-  margin: "0 auto",
-  display: "flex",
-  flexDirection: "column",
-  gap: 28,
-};
 
 const noteStyle: React.CSSProperties = {
   margin: "0 0 8px",
@@ -143,175 +129,153 @@ export default function ParksPage() {
   };
 
   return (
-    <div style={fieldStyle}>
-      <div style={columnStyle}>
-        <ParksHeader
-          edition={PARKS_META.edition}
-          sampleN={PARKS_META.sampleN}
-          dataWindow={PARKS_META.dataWindow}
-          modelTag={PARKS_META.modelTag}
-        />
+    <PageChrome>
+      <ParksHeader
+        edition={PARKS_META.edition}
+        sampleN={PARKS_META.sampleN}
+        dataWindow={PARKS_META.dataWindow}
+        modelTag={PARKS_META.modelTag}
+      />
 
-        <ParksMethodology line={PARKS_META.methodologyLine} />
-        <p style={noteStyle}>{SHOWCASE_NOTE}</p>
+      <ParksMethodology line={PARKS_META.methodologyLine} />
+      <p style={noteStyle}>{SHOWCASE_NOTE}</p>
 
-        <section aria-labelledby="parks-hr-label">
-          <div style={{ marginBottom: 12 }}>
-            <LowerThird id="parks-hr-label" meta="LIVE · 30 PARKS">
-              Home-Run Probability by Park
-            </LowerThird>
-          </div>
-          <p style={caveatStyle}>
-            <strong>
-              Physics estimate, not a reality-validated predictor.
-            </strong>{" "}
-            These per-park probabilities come from a calibrated batted-ball
-            model whose physics retrodiction correlates only about 0.30 with
-            realized outcomes (its linear baseline still wins on aggregate
-            Brier). Read them as relative comparisons between parks, not
-            absolute HR rates - see{" "}
-            <Link
-              to="/about"
-              style={{ color: colors.goldInk, textDecoration: "underline" }}
-            >
-              About
-            </Link>{" "}
-            for the methodology and roadmap.
-          </p>
-          <div style={controlsRowStyle}>
-            <NumberInput
-              label="Exit velo (mph)"
-              value={launchSpeedMph}
-              onChange={(v) =>
-                setLaunchSpeedMph(typeof v === "number" ? v : Number(v) || 110)
-              }
-              min={40}
-              max={125}
-              step={1}
-              w={130}
-            />
-            <NumberInput
-              label="Launch angle (deg)"
-              value={launchAngleDeg}
-              onChange={(v) =>
-                setLaunchAngleDeg(typeof v === "number" ? v : Number(v) || 28)
-              }
-              min={-20}
-              max={60}
-              step={1}
-              w={150}
-            />
-            <NumberInput
-              label="Spray angle (deg)"
-              description="- pull / + oppo"
-              value={sprayAngleDeg}
-              onChange={(v) =>
-                setSprayAngleDeg(typeof v === "number" ? v : Number(v) || 0)
-              }
-              min={-45}
-              max={45}
-              step={1}
-              w={150}
-            />
-            <div>
-              <span style={controlLabelStyle}>Bat side</span>
-              <SegmentedControl
-                value={stand}
-                onChange={(v) => setStand(v === "L" ? "L" : "R")}
-                data={[
-                  { label: "LHB", value: "L" },
-                  { label: "RHB", value: "R" },
-                ]}
-              />
-            </div>
-          </div>
-          {allParks.isError ? (
-            <p style={errorStyle}>
-              Could not load the all-parks prediction
-              {allParks.error instanceof Error
-                ? `: ${allParks.error.message}`
-                : ""}
-              .
-            </p>
-          ) : allParks.isLoading ? (
-            <p style={noteStyle}>Computing P(HR) across the 30 parks&hellip;</p>
-          ) : allParks.data ? (
-            <>
-              <p style={noteStyle}>
-                Live: {allParks.data.modelName} {allParks.data.modelVersion} -
-                estimated P(HR) for a {launchSpeedMph} mph / {launchAngleDeg}
-                &deg; / {sprayAngleDeg}&deg; spray batted ball,{" "}
-                {stand === "R" ? "RHB" : "LHB"}, at each park. Bar length and
-                color show the absolute P(HR), so near-equal parks read as
-                near-equal.
-                {allParks.data.carryFtByPark
-                  ? " The carry column is the model's predicted carry distance (ft) at each park."
-                  : ""}
-              </p>
-              <ParkHrHeatmap
-                probHrByPark={allParks.data.probHrByPark}
-                carryFtByPark={allParks.data.carryFtByPark}
-                parkRows={PARK_ROWS}
-              />
-            </>
-          ) : null}
-        </section>
-
-        <section aria-labelledby="parks-overview-label">
-          <div style={{ marginBottom: 12 }}>
-            <LowerThird id="parks-overview-label" meta="30 PARKS">
-              Overview
-            </LowerThird>
-          </div>
-          <p style={noteStyle}>{SHOWCASE_NOTE}</p>
-          <OverviewParksTable rows={PARK_ROWS} />
-        </section>
-
-        <section aria-labelledby="parks-switcher-label">
-          <div style={{ marginBottom: 12 }}>
-            <LowerThird id="parks-switcher-label">
-              Park Switcher · Mini Heatmaps
-            </LowerThird>
-          </div>
-          <p style={noteStyle}>{SHOWCASE_NOTE}</p>
-          <ParkSwitcherStrip
-            thumbnails={PARK_THUMBNAILS}
-            rows={PARK_ROWS}
-            activeParkId={activeParkId}
-            onSelect={handleSelect}
+      <section aria-labelledby="parks-hr-label">
+        <div style={{ marginBottom: 12 }}>
+          <LowerThird id="parks-hr-label" meta="LIVE · 30 PARKS">
+            Home-Run Probability by Park
+          </LowerThird>
+        </div>
+        <p style={caveatStyle}>
+          <strong>Physics estimate, not a reality-validated predictor.</strong>{" "}
+          These per-park probabilities come from a calibrated batted-ball model
+          whose physics retrodiction correlates only about 0.30 with realized
+          outcomes (its linear baseline still wins on aggregate Brier). Read
+          them as relative comparisons between parks, not absolute HR rates -
+          see{" "}
+          <Link
+            to="/about"
+            style={{ color: colors.goldInk, textDecoration: "underline" }}
+          >
+            About
+          </Link>{" "}
+          for the methodology and roadmap.
+        </p>
+        <div style={controlsRowStyle}>
+          <NumberInput
+            label="Exit velo (mph)"
+            value={launchSpeedMph}
+            onChange={(v) =>
+              setLaunchSpeedMph(typeof v === "number" ? v : Number(v) || 110)
+            }
+            min={40}
+            max={125}
+            step={1}
+            w={130}
           />
-        </section>
-
-        <section aria-labelledby="parks-spotlight-label">
-          <div style={{ marginBottom: 12 }}>
-            <LowerThird id="parks-spotlight-label">
-              Spotlight · Coors Field
-            </LowerThird>
+          <NumberInput
+            label="Launch angle (deg)"
+            value={launchAngleDeg}
+            onChange={(v) =>
+              setLaunchAngleDeg(typeof v === "number" ? v : Number(v) || 28)
+            }
+            min={-20}
+            max={60}
+            step={1}
+            w={150}
+          />
+          <NumberInput
+            label="Spray angle (deg)"
+            description="- pull / + oppo"
+            value={sprayAngleDeg}
+            onChange={(v) =>
+              setSprayAngleDeg(typeof v === "number" ? v : Number(v) || 0)
+            }
+            min={-45}
+            max={45}
+            step={1}
+            w={150}
+          />
+          <div>
+            <span style={controlLabelStyle}>Bat side</span>
+            <SegmentedControl
+              value={stand}
+              onChange={(v) => setStand(v === "L" ? "L" : "R")}
+              data={[
+                { label: "LHB", value: "L" },
+                { label: "RHB", value: "R" },
+              ]}
+            />
           </div>
-          <p style={noteStyle}>{SHOWCASE_NOTE}</p>
-          <ParkSpotlight spotlight={COORS_SPOTLIGHT} />
-        </section>
+        </div>
+        {allParks.isError ? (
+          <p style={errorStyle}>
+            Could not load the all-parks prediction
+            {allParks.error instanceof Error
+              ? `: ${allParks.error.message}`
+              : ""}
+            .
+          </p>
+        ) : allParks.isLoading ? (
+          <p style={noteStyle}>Computing P(HR) across the 30 parks&hellip;</p>
+        ) : allParks.data ? (
+          <>
+            <p style={noteStyle}>
+              Live: {allParks.data.modelName} {allParks.data.modelVersion} -
+              estimated P(HR) for a {launchSpeedMph} mph / {launchAngleDeg}
+              &deg; / {sprayAngleDeg}&deg; spray batted ball,{" "}
+              {stand === "R" ? "RHB" : "LHB"}, at each park. Bar length and
+              color show the absolute P(HR), so near-equal parks read as
+              near-equal.
+              {allParks.data.carryFtByPark
+                ? " The carry column is the model's predicted carry distance (ft) at each park."
+                : ""}
+            </p>
+            <ParkHrHeatmap
+              probHrByPark={allParks.data.probHrByPark}
+              carryFtByPark={allParks.data.carryFtByPark}
+              parkRows={PARK_ROWS}
+            />
+          </>
+        ) : null}
+      </section>
 
-        <footer
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            margin: "0 -16px",
-            padding: "10px 16px",
-            backgroundColor: colors.chromeDeep,
-            fontFamily: typography.fonts.mono,
-            fontSize: 11,
-            letterSpacing: "0.04em",
-            color: colors.textOnChromeMuted,
-          }}
-        >
-          <span>THE BULLPEN · PARK FACTORS</span>
-          <span>
-            build {BUILD_SHA} · {BUILD_DATE}
-          </span>
-        </footer>
-      </div>
-    </div>
+      <section aria-labelledby="parks-overview-label">
+        <div style={{ marginBottom: 12 }}>
+          <LowerThird id="parks-overview-label" meta="30 PARKS">
+            Overview
+          </LowerThird>
+        </div>
+        <p style={noteStyle}>{SHOWCASE_NOTE}</p>
+        <OverviewParksTable rows={PARK_ROWS} />
+      </section>
+
+      <section aria-labelledby="parks-switcher-label">
+        <div style={{ marginBottom: 12 }}>
+          <LowerThird id="parks-switcher-label">
+            Park Switcher · Mini Heatmaps
+          </LowerThird>
+        </div>
+        <p style={noteStyle}>{SHOWCASE_NOTE}</p>
+        <ParkSwitcherStrip
+          thumbnails={PARK_THUMBNAILS}
+          rows={PARK_ROWS}
+          activeParkId={activeParkId}
+          onSelect={handleSelect}
+        />
+      </section>
+
+      <section aria-labelledby="parks-spotlight-label">
+        <div style={{ marginBottom: 12 }}>
+          <LowerThird id="parks-spotlight-label">
+            Spotlight · Coors Field
+          </LowerThird>
+        </div>
+        <p style={noteStyle}>{SHOWCASE_NOTE}</p>
+        <ParkSpotlight spotlight={COORS_SPOTLIGHT} />
+      </section>
+
+      <BroadcastFooter>PARK FACTORS</BroadcastFooter>
+    </PageChrome>
   );
 }

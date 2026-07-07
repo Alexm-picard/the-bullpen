@@ -63,8 +63,8 @@ import {
   RETRAIN_QUEUE,
 } from "../data/ops-fixtures";
 import type { DriftFeatureRow, DriftOutputRow } from "../data/ops-fixtures";
-import { BUILD_DATE, BUILD_SHA } from "../build-info";
-import { colors, layouts, typography } from "../design/broadcast";
+import { BroadcastFooter, PageChrome } from "../components/shared/page-chrome";
+import { colors, typography } from "../design/broadcast";
 
 import "./ops/ops.css";
 
@@ -93,20 +93,6 @@ const ECE_SKELETON: DriftOutputRow[] = ECE_BY_OUTPUT.map((o) => ({
   output: o.output,
   byModel: {},
 }));
-
-const fieldStyle: React.CSSProperties = {
-  backgroundColor: colors.field,
-  minHeight: "100%",
-  padding: "24px 16px 0",
-};
-
-const columnStyle: React.CSSProperties = {
-  maxWidth: layouts.broadcastMaxWidth,
-  margin: "0 auto",
-  display: "flex",
-  flexDirection: "column",
-  gap: 28,
-};
 
 const noteStyle: React.CSSProperties = {
   margin: "0 0 8px",
@@ -189,104 +175,84 @@ export default function OpsPage() {
     live ? "" : " · showcase data (backend unreachable)";
 
   return (
-    <div style={fieldStyle}>
-      <div style={columnStyle}>
-        <OpsHeader
-          issueDate={issueDate}
-          modelCount={fleet.length}
-          alertCount={alertCount}
-          awaitingPromotionCount={awaitingPromotionCount}
-          issuedAt={issuedAt}
-          window={OPS_META.window}
+    <PageChrome>
+      <OpsHeader
+        issueDate={issueDate}
+        modelCount={fleet.length}
+        alertCount={alertCount}
+        awaitingPromotionCount={awaitingPromotionCount}
+        issuedAt={issuedAt}
+        window={OPS_META.window}
+      />
+
+      <InfraRibbon services={INFRA_SERVICES} />
+
+      <section aria-labelledby="ops-fleet-section-label">
+        <div style={{ marginBottom: 12 }}>
+          <LowerThird
+            id="ops-fleet-section-label"
+            meta={`${fleet.length} REGISTERED`}
+          >
+            Model Fleet
+          </LowerThird>
+        </div>
+        <ModelFleetTable
+          rows={fleet}
+          caption={`Registry · state, traffic, 24h drift + p99 latency${showcaseSuffix(fleetIsLive)}`}
         />
+      </section>
 
-        <InfraRibbon services={INFRA_SERVICES} />
+      <section aria-labelledby="ops-drift-section-label">
+        <div style={{ marginBottom: 12 }}>
+          <LowerThird
+            id="ops-drift-section-label"
+            meta="PSI | ECE Δ · LAST 24H WINDOW"
+          >
+            Drift Snapshot
+          </LowerThird>
+        </div>
+        <p style={noteStyle}>
+          Monitored surface shown; cells fill from the nightly drift jobs
+          (champions and shadows both watched) as predictions accumulate.
+        </p>
+        <DriftSnapshotGrid
+          models={fleet}
+          psiByFeature={psiByFeature}
+          eceByOutput={eceByOutput}
+        />
+      </section>
 
-        <section aria-labelledby="ops-fleet-section-label">
-          <div style={{ marginBottom: 12 }}>
-            <LowerThird
-              id="ops-fleet-section-label"
-              meta={`${fleet.length} REGISTERED`}
-            >
-              Model Fleet
-            </LowerThird>
-          </div>
-          <ModelFleetTable
-            rows={fleet}
-            caption={`Registry · state, traffic, 24h drift + p99 latency${showcaseSuffix(fleetIsLive)}`}
-          />
-        </section>
+      <section aria-labelledby="ops-latency-section-label">
+        <div style={{ marginBottom: 12 }}>
+          <LowerThird id="ops-latency-section-label" meta="BY PERCENTILE">
+            Latency Detail
+          </LowerThird>
+        </div>
+        <LatencyDetailTable
+          rows={latencyRows}
+          caption={`Latency by percentile · onnxruntime-java in-process${showcaseSuffix(latencyIsLive)}`}
+        />
+      </section>
 
-        <section aria-labelledby="ops-drift-section-label">
-          <div style={{ marginBottom: 12 }}>
-            <LowerThird
-              id="ops-drift-section-label"
-              meta="PSI | ECE Δ · LAST 24H WINDOW"
-            >
-              Drift Snapshot
-            </LowerThird>
-          </div>
-          <p style={noteStyle}>
-            Monitored surface shown; cells fill from the nightly drift jobs
-            (champions and shadows both watched) as predictions accumulate.
-          </p>
-          <DriftSnapshotGrid
-            models={fleet}
-            psiByFeature={psiByFeature}
-            eceByOutput={eceByOutput}
-          />
-        </section>
+      <RetrainQueueList entries={retrainEntries} />
 
-        <section aria-labelledby="ops-latency-section-label">
-          <div style={{ marginBottom: 12 }}>
-            <LowerThird id="ops-latency-section-label" meta="BY PERCENTILE">
-              Latency Detail
-            </LowerThird>
-          </div>
-          <LatencyDetailTable
-            rows={latencyRows}
-            caption={`Latency by percentile · onnxruntime-java in-process${showcaseSuffix(latencyIsLive)}`}
-          />
-        </section>
+      <section aria-labelledby="ops-log-section-label">
+        <div style={{ marginBottom: 12 }}>
+          <LowerThird
+            id="ops-log-section-label"
+            meta={
+              opsLogIsLive
+                ? "RECENT EVENTS"
+                : "SHOWCASE DATA (BACKEND UNREACHABLE)"
+            }
+          >
+            Ops Log
+          </LowerThird>
+        </div>
+        <OpsLogTable entries={opsLog} />
+      </section>
 
-        <RetrainQueueList entries={retrainEntries} />
-
-        <section aria-labelledby="ops-log-section-label">
-          <div style={{ marginBottom: 12 }}>
-            <LowerThird
-              id="ops-log-section-label"
-              meta={
-                opsLogIsLive
-                  ? "RECENT EVENTS"
-                  : "SHOWCASE DATA (BACKEND UNREACHABLE)"
-              }
-            >
-              Ops Log
-            </LowerThird>
-          </div>
-          <OpsLogTable entries={opsLog} />
-        </section>
-
-        <footer
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            margin: "0 -16px",
-            padding: "10px 16px",
-            backgroundColor: colors.chromeDeep,
-            fontFamily: typography.fonts.mono,
-            fontSize: 11,
-            letterSpacing: "0.04em",
-            color: colors.textOnChromeMuted,
-          }}
-        >
-          <span>THE BULLPEN · OPS</span>
-          <span>
-            build {BUILD_SHA} · {BUILD_DATE}
-          </span>
-        </footer>
-      </div>
-    </div>
+      <BroadcastFooter>OPS</BroadcastFooter>
+    </PageChrome>
   );
 }

@@ -25,8 +25,8 @@ import { LowerThird } from "../components/broadcast/lower-third";
 import { SlateBoard } from "../components/games/slate-board";
 import { SHOWCASE_MATCHUPS } from "../data/matchups-showcase";
 import { SHOWCASE_GAMES } from "../data/slate-fixtures";
-import { BUILD_DATE, BUILD_SHA } from "../build-info";
-import { colors, layouts, typography } from "../design/broadcast";
+import { BroadcastFooter, PageChrome } from "../components/shared/page-chrome";
+import { colors, typography } from "../design/broadcast";
 
 function todayIssueDate(): string {
   return new Intl.DateTimeFormat("en-US", {
@@ -45,20 +45,6 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: "scheduled", label: "Scheduled" },
   { key: "final", label: "Completed" },
 ];
-
-const fieldStyle: React.CSSProperties = {
-  backgroundColor: colors.field,
-  minHeight: "100%",
-  padding: "24px 16px 48px",
-};
-
-const columnStyle: React.CSSProperties = {
-  maxWidth: layouts.broadcastMaxWidth,
-  margin: "0 auto",
-  display: "flex",
-  flexDirection: "column",
-  gap: 22,
-};
 
 function countTag(counts: Record<SlateStatus, number>): string {
   const parts: string[] = [];
@@ -113,133 +99,113 @@ export default function GamesPage() {
     filter === "all" ? cards : cards.filter((c) => c.status === filter);
 
   return (
-    <div style={fieldStyle}>
-      <div style={columnStyle}>
-        <header
-          style={{
-            display: "flex",
-            alignItems: "flex-end",
-            justifyContent: "space-between",
-            gap: 16,
-            flexWrap: "wrap",
-          }}
-        >
-          <div>
-            <h1
-              style={{
-                margin: 0,
-                fontFamily: typography.fonts.display,
-                fontStyle: "italic",
-                fontWeight: typography.weights.heavy,
-                fontSize: typography.scale[6],
-                lineHeight: typography.lineHeights.display,
-                letterSpacing: "0.01em",
-                textTransform: "uppercase",
-                color: colors.ink,
-              }}
-            >
-              Today&rsquo;s Games
-            </h1>
-            <p
-              style={{
-                margin: "2px 0 0",
-                fontFamily: typography.fonts.mono,
-                fontSize: 12,
-                fontFeatureSettings: '"tnum" 1',
-                letterSpacing: "0.02em",
-                color: colors.textMuted,
-              }}
-            >
-              {todayIssueDate()} &middot; live ingest &middot; slate fills as
-              games go live
-            </p>
-          </div>
-
-          <div
-            role="group"
-            aria-label="Filter games by status"
+    <PageChrome gap={22} bottomPad={48}>
+      <header
+        style={{
+          display: "flex",
+          alignItems: "flex-end",
+          justifyContent: "space-between",
+          gap: 16,
+          flexWrap: "wrap",
+        }}
+      >
+        <div>
+          <h1
             style={{
-              display: "inline-flex",
-              border: `1px solid ${colors.rule}`,
-              backgroundColor: colors.panel,
+              margin: 0,
+              fontFamily: typography.fonts.display,
+              fontStyle: "italic",
+              fontWeight: typography.weights.heavy,
+              fontSize: typography.scale[6],
+              lineHeight: typography.lineHeights.display,
+              letterSpacing: "0.01em",
+              textTransform: "uppercase",
+              color: colors.ink,
             }}
           >
-            {FILTERS.map((f, i) => (
-              <button
-                key={f.key}
-                type="button"
-                aria-pressed={filter === f.key}
-                onClick={() => setFilter(f.key)}
-                style={{
-                  ...filterButtonStyle(filter === f.key),
-                  borderLeft: i > 0 ? `1px solid ${colors.rule}` : "none",
-                }}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
-        </header>
+            Today&rsquo;s Games
+          </h1>
+          <p
+            style={{
+              margin: "2px 0 0",
+              fontFamily: typography.fonts.mono,
+              fontSize: 12,
+              fontFeatureSettings: '"tnum" 1',
+              letterSpacing: "0.02em",
+              color: colors.textMuted,
+            }}
+          >
+            {todayIssueDate()} &middot; live ingest &middot; slate fills as
+            games go live
+          </p>
+        </div>
 
-        <section aria-labelledby="games-slate-label">
-          <div style={{ marginBottom: 14 }}>
-            <LowerThird
-              id="games-slate-label"
-              meta={cards.length > 0 ? countTag(counts) : undefined}
-            >
-              Slate
-            </LowerThird>
-          </div>
-
-          {loading ? (
-            <p
-              style={{
-                fontFamily: typography.fonts.body,
-                color: colors.textMuted,
-              }}
-            >
-              Loading today&rsquo;s slate&hellip;
-            </p>
-          ) : (
-            <>
-              <SlateBoard cards={filtered} />
-              {usingShowcase && (
-                <p
-                  style={{
-                    margin: "12px 0 0",
-                    fontFamily: typography.fonts.mono,
-                    fontSize: 11,
-                    letterSpacing: "0.04em",
-                    color: colors.textMuted,
-                  }}
-                >
-                  Showcase slate · backend unreachable or no games posted yet
-                </p>
-              )}
-            </>
-          )}
-        </section>
-
-        <footer
+        <div
+          role="group"
+          aria-label="Filter games by status"
           style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            margin: "0 -16px",
-            padding: "10px 16px",
-            backgroundColor: colors.chromeDeep,
-            fontFamily: typography.fonts.mono,
-            fontSize: 11,
-            letterSpacing: "0.04em",
-            color: colors.textOnChromeMuted,
+            display: "inline-flex",
+            border: `1px solid ${colors.rule}`,
+            backgroundColor: colors.panel,
           }}
         >
-          <span>THE BULLPEN · TODAY&rsquo;S GAMES</span>
-          <span>
-            build {BUILD_SHA} · {BUILD_DATE}
-          </span>
-        </footer>
-      </div>
-    </div>
+          {FILTERS.map((f, i) => (
+            <button
+              key={f.key}
+              type="button"
+              aria-pressed={filter === f.key}
+              onClick={() => setFilter(f.key)}
+              style={{
+                ...filterButtonStyle(filter === f.key),
+                borderLeft: i > 0 ? `1px solid ${colors.rule}` : "none",
+              }}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      </header>
+
+      <section aria-labelledby="games-slate-label">
+        <div style={{ marginBottom: 14 }}>
+          <LowerThird
+            id="games-slate-label"
+            meta={cards.length > 0 ? countTag(counts) : undefined}
+          >
+            Slate
+          </LowerThird>
+        </div>
+
+        {loading ? (
+          <p
+            style={{
+              fontFamily: typography.fonts.body,
+              color: colors.textMuted,
+            }}
+          >
+            Loading today&rsquo;s slate&hellip;
+          </p>
+        ) : (
+          <>
+            <SlateBoard cards={filtered} />
+            {usingShowcase && (
+              <p
+                style={{
+                  margin: "12px 0 0",
+                  fontFamily: typography.fonts.mono,
+                  fontSize: 11,
+                  letterSpacing: "0.04em",
+                  color: colors.textMuted,
+                }}
+              >
+                Showcase slate · backend unreachable or no games posted yet
+              </p>
+            )}
+          </>
+        )}
+      </section>
+
+      <BroadcastFooter>TODAY&rsquo;S GAMES</BroadcastFooter>
+    </PageChrome>
   );
 }

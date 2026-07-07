@@ -59,25 +59,12 @@ import {
   type ScoutingPlayer,
 } from "../data/matchup-fixtures";
 import { FEATURED_REPORTS } from "../data/players-landing-fixtures";
-import { colors, layouts, typography } from "../design/broadcast";
+import { PageChrome } from "../components/shared/page-chrome";
+import { colors, typography } from "../design/broadcast";
 
 import "../components/scouting/matchup.css";
 
 // ── Shared shell styles ───────────────────────────────────────────────────────
-
-const fieldStyle: React.CSSProperties = {
-  backgroundColor: colors.field,
-  minHeight: "100%",
-  padding: "24px 16px 48px",
-};
-
-const columnStyle: React.CSSProperties = {
-  maxWidth: layouts.broadcastMaxWidth,
-  margin: "0 auto",
-  display: "flex",
-  flexDirection: "column",
-  gap: 28,
-};
 
 const h1Style: React.CSSProperties = {
   margin: 0,
@@ -115,74 +102,72 @@ function isPositionPlayer(p: ScoutingPlayer): boolean {
 export default function PlayersPage() {
   const navigate = useNavigate();
   return (
-    <div style={fieldStyle}>
-      <div style={columnStyle}>
-        <header>
-          <p
-            style={{
-              margin: "0 0 4px",
-              fontFamily: typography.fonts.mono,
-              fontSize: 12,
-              fontWeight: typography.weights.semibold,
-              letterSpacing: "0.12em",
-              textTransform: "uppercase",
-              color: colors.goldInk,
-            }}
-          >
-            Player Lookup
-          </p>
-          <h1 style={h1Style}>Pull a Scouting Report</h1>
-          <p
-            style={{
-              margin: "8px 0 0",
-              fontFamily: typography.fonts.body,
-              fontSize: typography.scale[3],
-              color: colors.textMuted,
-              lineHeight: 1.45,
-              maxWidth: 580,
-            }}
-          >
-            Find a batter or pitcher by name. Each report covers tool grades,
-            pitch mix or splits, density charts, recent predictions, and a
-            calibration check.
-          </p>
-        </header>
+    <PageChrome bottomPad={48}>
+      <header>
+        <p
+          style={{
+            margin: "0 0 4px",
+            fontFamily: typography.fonts.mono,
+            fontSize: 12,
+            fontWeight: typography.weights.semibold,
+            letterSpacing: "0.12em",
+            textTransform: "uppercase",
+            color: colors.goldInk,
+          }}
+        >
+          Player Lookup
+        </p>
+        <h1 style={h1Style}>Pull a Scouting Report</h1>
+        <p
+          style={{
+            margin: "8px 0 0",
+            fontFamily: typography.fonts.body,
+            fontSize: typography.scale[3],
+            color: colors.textMuted,
+            lineHeight: 1.45,
+            maxWidth: 580,
+          }}
+        >
+          Find a batter or pitcher by name. Each report covers tool grades,
+          pitch mix or splits, density charts, recent predictions, and a
+          calibration check.
+        </p>
+      </header>
 
-        <BroadcastPanel cut padding={16}>
-          <PlayerSearch
-            autoFocus
-            onSelect={(p) => {
-              navigate(`/players/${p.id}`);
-            }}
-          />
-          <div
-            style={{
-              marginTop: 12,
-              fontFamily: typography.fonts.mono,
-              fontSize: 11,
-              color: colors.textMuted,
-              letterSpacing: "0.04em",
-              textTransform: "uppercase",
-            }}
-          >
-            Search the full roster · type a name or jersey #
-          </div>
-        </BroadcastPanel>
+      <BroadcastPanel cut padding={16}>
+        <PlayerSearch
+          autoFocus
+          onSelect={(p) => {
+            navigate(`/players/${p.id}`);
+          }}
+        />
+        <div
+          style={{
+            marginTop: 12,
+            fontFamily: typography.fonts.mono,
+            fontSize: 11,
+            color: colors.textMuted,
+            letterSpacing: "0.04em",
+            textTransform: "uppercase",
+          }}
+        >
+          Search the full roster · type a name or jersey #
+        </div>
+      </BroadcastPanel>
 
-        <section aria-labelledby="featured-reports-label">
-          <div style={{ marginBottom: 14 }}>
-            <LowerThird id="featured-reports-label" meta="SHOWCASE">
-              Featured Reports
-            </LowerThird>
-          </div>
-          <FeaturedReports reports={FEATURED_REPORTS} />
-        </section>
+      <section aria-labelledby="featured-reports-label">
+        <div style={{ marginBottom: 14 }}>
+          <LowerThird id="featured-reports-label" meta="SHOWCASE">
+            Featured Reports
+          </LowerThird>
+        </div>
+        <FeaturedReports reports={FEATURED_REPORTS} />
+      </section>
 
-        <ModelStandouts />
+      <ModelStandouts />
 
-        <BrowsePlayers />
-      </div>
-    </div>
+      <BrowsePlayers />
+    </PageChrome>
   );
 }
 
@@ -383,151 +368,149 @@ export function PlayerProfilePage() {
   );
 
   return (
-    <div style={fieldStyle}>
-      <div style={columnStyle}>
-        {isRealPlayer ? (
-          <>
-            <header>
-              <p
-                style={{
-                  margin: "0 0 4px",
-                  fontFamily: typography.fonts.mono,
-                  fontSize: 12,
-                  fontWeight: typography.weights.semibold,
-                  letterSpacing: "0.12em",
-                  textTransform: "uppercase",
-                  color: colors.goldInk,
-                }}
-              >
-                Player Profile
+    <PageChrome bottomPad={48}>
+      {isRealPlayer ? (
+        <>
+          <header>
+            <p
+              style={{
+                margin: "0 0 4px",
+                fontFamily: typography.fonts.mono,
+                fontSize: 12,
+                fontWeight: typography.weights.semibold,
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                color: colors.goldInk,
+              }}
+            >
+              Player Profile
+            </p>
+            <h1 style={h1Style}>
+              {realPlayer.data?.name ??
+                (realPlayer.isError
+                  ? "Player not found"
+                  : realPlayer.isLoading
+                    ? "Loading…"
+                    : `Player #${playerId}`)}
+            </h1>
+            {realPlayer.data ? (
+              <p style={liveLoadingStyle}>
+                {realPlayer.data.primaryPosition.trim() || "—"}
+                {realPlayer.data.team ? ` · ${realPlayer.data.team}` : ""}
               </p>
-              <h1 style={h1Style}>
-                {realPlayer.data?.name ??
-                  (realPlayer.isError
-                    ? "Player not found"
-                    : realPlayer.isLoading
-                      ? "Loading…"
-                      : `Player #${playerId}`)}
-              </h1>
-              {realPlayer.data ? (
-                <p style={liveLoadingStyle}>
-                  {realPlayer.data.primaryPosition.trim() || "—"}
-                  {realPlayer.data.team ? ` · ${realPlayer.data.team}` : ""}
-                </p>
-              ) : null}
-            </header>
-            {isPitcher ? (
-              <section aria-labelledby="arsenal-label">
-                <div style={{ marginBottom: 12 }}>
-                  <LowerThird id="arsenal-label">
-                    Arsenal · Velocity Range
-                  </LowerThird>
-                </div>
-                {arsenal.isError ? (
-                  <p style={liveErrorStyle}>
-                    Could not load this pitcher&rsquo;s arsenal.
-                  </p>
-                ) : arsenal.isLoading ? (
-                  <p style={liveLoadingStyle}>Loading arsenal&hellip;</p>
-                ) : (
-                  <BroadcastPanel padding={12}>
-                    <PitcherArsenalCard pitches={arsenal.data ?? []} />
-                  </BroadcastPanel>
-                )}
-              </section>
-            ) : realPlayer.data && playerId != null ? (
-              <section aria-labelledby="batted-balls-label">
-                <div style={{ marginBottom: 12 }}>
-                  <LowerThird id="batted-balls-label">
-                    In-Play Batted Balls
-                  </LowerThird>
-                </div>
-                <BattedBallsView playerId={playerId} />
-              </section>
             ) : null}
-          </>
+          </header>
+          {isPitcher ? (
+            <section aria-labelledby="arsenal-label">
+              <div style={{ marginBottom: 12 }}>
+                <LowerThird id="arsenal-label">
+                  Arsenal · Velocity Range
+                </LowerThird>
+              </div>
+              {arsenal.isError ? (
+                <p style={liveErrorStyle}>
+                  Could not load this pitcher&rsquo;s arsenal.
+                </p>
+              ) : arsenal.isLoading ? (
+                <p style={liveLoadingStyle}>Loading arsenal&hellip;</p>
+              ) : (
+                <BroadcastPanel padding={12}>
+                  <PitcherArsenalCard pitches={arsenal.data ?? []} />
+                </BroadcastPanel>
+              )}
+            </section>
+          ) : realPlayer.data && playerId != null ? (
+            <section aria-labelledby="batted-balls-label">
+              <div style={{ marginBottom: 12 }}>
+                <LowerThird id="batted-balls-label">
+                  In-Play Batted Balls
+                </LowerThird>
+              </div>
+              <BattedBallsView playerId={playerId} />
+            </section>
+          ) : null}
+        </>
+      ) : (
+        <>
+          <MatchupHeader
+            primary={report.primary}
+            opponent={report.opponent}
+            context={report.context}
+          />
+
+          <div className="matchup-report__columns">
+            <PitcherColumn report={report} />
+            <BatterColumn report={report} />
+          </div>
+        </>
+      )}
+
+      <section aria-labelledby="recent-predictions-label">
+        <div style={{ marginBottom: 12 }}>
+          <LowerThird id="recent-predictions-label">
+            Recent Predictions
+          </LowerThird>
+        </div>
+        {predictions.isError ? (
+          <p style={liveErrorStyle}>
+            Could not load this player&rsquo;s predictions
+            {predictions.error instanceof Error
+              ? `: ${predictions.error.message}`
+              : ""}
+            .
+          </p>
+        ) : predictions.isLoading ? (
+          <p style={liveLoadingStyle}>Loading recent predictions&hellip;</p>
+        ) : predictionRows.length > 0 ? (
+          <RecentPredictionsTable
+            rows={predictionRows}
+            caption="settled predictions for this player · pitch_outcome_pre (live)"
+          />
         ) : (
-          <>
-            <MatchupHeader
-              primary={report.primary}
-              opponent={report.opponent}
-              context={report.context}
-            />
-
-            <div className="matchup-report__columns">
-              <PitcherColumn report={report} />
-              <BatterColumn report={report} />
-            </div>
-          </>
+          <NoHistoryNote>
+            No settled predictions for this player yet. This table fills in as
+            the pitch model serves this player&rsquo;s live matchups and the
+            observed outcomes settle (24h truth-join). Until then it is empty by
+            design, not an error.
+          </NoHistoryNote>
         )}
+      </section>
 
-        <section aria-labelledby="recent-predictions-label">
+      <div className="matchup-report__pair">
+        <section aria-labelledby="calibration-label">
           <div style={{ marginBottom: 12 }}>
-            <LowerThird id="recent-predictions-label">
-              Recent Predictions
+            <LowerThird id="calibration-label">
+              Calibration · pitch_outcome_pre
             </LowerThird>
           </div>
-          {predictions.isError ? (
+          {calibration.isError ? (
             <p style={liveErrorStyle}>
-              Could not load this player&rsquo;s predictions
-              {predictions.error instanceof Error
-                ? `: ${predictions.error.message}`
-                : ""}
-              .
+              Could not load this player&rsquo;s calibration.
             </p>
-          ) : predictions.isLoading ? (
-            <p style={liveLoadingStyle}>Loading recent predictions&hellip;</p>
-          ) : predictionRows.length > 0 ? (
-            <RecentPredictionsTable
-              rows={predictionRows}
-              caption="settled predictions for this player · pitch_outcome_pre (live)"
-            />
+          ) : calibration.isLoading ? (
+            <p style={liveLoadingStyle}>Loading calibration&hellip;</p>
+          ) : calibration.data && calibration.data.length > 0 ? (
+            <BroadcastPanel padding={12}>
+              <ReliabilityDiagram
+                bins={calibration.data}
+                caption="this player · predicted-probability distribution"
+              />
+            </BroadcastPanel>
           ) : (
-            <NoHistoryNote>
-              No settled predictions for this player yet. This table fills in as
-              the pitch model serves this player&rsquo;s live matchups and the
-              observed outcomes settle (24h truth-join). Until then it is empty
-              by design, not an error.
+            <NoHistoryNote title="No calibration data yet">
+              Bins appear once enough predictions accumulate for this player to
+              chart the predicted-probability distribution. Observed-frequency
+              calibration awaits a live truth-join.
             </NoHistoryNote>
           )}
         </section>
-
-        <div className="matchup-report__pair">
-          <section aria-labelledby="calibration-label">
-            <div style={{ marginBottom: 12 }}>
-              <LowerThird id="calibration-label">
-                Calibration · pitch_outcome_pre
-              </LowerThird>
-            </div>
-            {calibration.isError ? (
-              <p style={liveErrorStyle}>
-                Could not load this player&rsquo;s calibration.
-              </p>
-            ) : calibration.isLoading ? (
-              <p style={liveLoadingStyle}>Loading calibration&hellip;</p>
-            ) : calibration.data && calibration.data.length > 0 ? (
-              <BroadcastPanel padding={12}>
-                <ReliabilityDiagram
-                  bins={calibration.data}
-                  caption="this player · predicted-probability distribution"
-                />
-              </BroadcastPanel>
-            ) : (
-              <NoHistoryNote title="No calibration data yet">
-                Bins appear once enough predictions accumulate for this player
-                to chart the predicted-probability distribution.
-                Observed-frequency calibration awaits a live truth-join.
-              </NoHistoryNote>
-            )}
-          </section>
-          {isRealPlayer ? null : (
-            <KeyNotes
-              notes={report.keyNotes}
-              palette={broadcastKeyNotesPalette}
-            />
-          )}
-        </div>
+        {isRealPlayer ? null : (
+          <KeyNotes
+            notes={report.keyNotes}
+            palette={broadcastKeyNotesPalette}
+          />
+        )}
       </div>
-    </div>
+    </PageChrome>
   );
 }
