@@ -30,7 +30,7 @@ import copy
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 
 def compute(feature_pipeline_path: str | Path) -> str:
@@ -50,7 +50,7 @@ def compute_from_content(json_content: str) -> str:
         raise ValueError(
             f"registry: feature pipeline root must be a JSON object, got {type(data).__name__}"
         )
-    canonical = _with_zeroed_schema_hash(data)
+    canonical = _with_zeroed_schema_hash(cast("dict[str, Any]", data))
     canonical_blob = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(canonical_blob).hexdigest()
 
