@@ -189,16 +189,34 @@ class PredictPitchRoutingIT {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.modelVersion").value("v1")); // champion serves the user
 
-    PredictionLogEvent shadowEvent =
-        logger.events.stream()
-            .filter(e -> e.role() == PredictionLogEvent.Role.SHADOW)
-            .findFirst()
-            .orElseThrow(() -> new AssertionError("no SHADOW prediction-log event captured"));
+    // F1.4: the SHADOW row is logged FIRE-AND-FORGET off the request path, so it lands shortly
+    // AFTER the response returns - await it rather than reading synchronously.
+    PredictionLogEvent shadowEvent = awaitShadowEvent();
     assertThat(shadowEvent.modelName()).isEqualTo(MODEL_NAME); // rule 9: same model name
     assertThat(shadowEvent.modelVersion()).isEqualTo("v2");
     assertThat(shadowEvent.modelVersionId())
         .as("the SHADOW row carries the challenger's FK")
         .isEqualTo(challengerId);
+  }
+
+  /**
+   * Poll the captured events for the fire-and-forget SHADOW row (F1.4 logs it off the request
+   * thread, so it arrives shortly after the HTTP response). {@code events} is a {@link
+   * CopyOnWriteArrayList}, so the cross-thread read is safe.
+   */
+  private PredictionLogEvent awaitShadowEvent() throws InterruptedException {
+    long deadlineNanos = System.nanoTime() + java.time.Duration.ofSeconds(5).toNanos();
+    while (System.nanoTime() < deadlineNanos) {
+      var found =
+          logger.events.stream()
+              .filter(e -> e.role() == PredictionLogEvent.Role.SHADOW)
+              .findFirst();
+      if (found.isPresent()) {
+        return found.get();
+      }
+      Thread.sleep(20);
+    }
+    throw new AssertionError("no SHADOW prediction-log event captured within 5s");
   }
 
   // --- helpers ----------------------------------------------------------

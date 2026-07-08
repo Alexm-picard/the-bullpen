@@ -5,7 +5,6 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import java.time.Duration;
 import java.util.concurrent.ConcurrentHashMap;
-import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 /**
@@ -21,8 +20,9 @@ import org.springframework.stereotype.Component;
  *
  * <p>One timer/counter per (model_name[, label]) combo is cached so we don't allocate per request.
  */
+// Not @Profile-restricted: InferenceRouter (used by the worker's LivePitchPredictor too) injects
+// this for the shadow-latency metric, so it must exist in the worker context as well as the api.
 @Component
-@Profile("api")
 public class InferenceMetrics {
 
   private static final String LATENCY_METRIC = "thebullpen_inference_prediction_latency_seconds";
