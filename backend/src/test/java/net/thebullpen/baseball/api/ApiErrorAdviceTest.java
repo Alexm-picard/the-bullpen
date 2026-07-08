@@ -63,6 +63,18 @@ class ApiErrorAdviceTest {
   }
 
   @Test
+  void a_raw_illegal_argument_maps_to_400_without_leaking_its_message() throws Exception {
+    // A raw IllegalArgumentException (internal precondition, e.g. a missing calibrator) is a client
+    // 400, but its message can carry internal detail, so the envelope must be generic - the leaked
+    // string must NOT appear in the response. The detail is logged under the correlation id
+    // instead.
+    mvc.perform(get("/test/illegal-argument"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("invalid_input"))
+        .andExpect(jsonPath("$.error.message").value("the request contained an invalid value"));
+  }
+
+  @Test
   void firewall_rejected_request_maps_to_400_not_500() throws Exception {
     // A StrictHttpFirewall rejection (e.g. a non-ASCII header value) surfaces as a
     // RequestRejectedException during MVC dispatch; it is a client error, so 400 - not the generic
@@ -87,6 +99,11 @@ class ApiErrorAdviceTest {
     @GetMapping("/test/illegal-state")
     String illegalState() {
       throw new IllegalStateException("a genuine bug");
+    }
+
+    @GetMapping("/test/illegal-argument")
+    String illegalArgument() {
+      throw new IllegalArgumentException("no calibrators for park SECRET_INTERNAL_DETAIL");
     }
 
     @GetMapping("/test/wrapped-model-unavailable")
