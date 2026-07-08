@@ -372,6 +372,49 @@ class InferenceRouterTest {
         .isEqualTo(1.0);
   }
 
+  @Test
+  void a_shadow_defect_is_counted_as_defect_and_never_fails_the_served_path() throws Exception {
+    // DEF-L3: a programming bug (NPE) in the challenger surfaces (logged ERROR, reason="defect")
+    // but
+    // must NOT fail the served champion path. The counter tag distinguishes it from a plain
+    // degrade.
+    SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+    InferenceRouter r =
+        new InferenceRouter(
+            routing,
+            bucketer,
+            Executors.newVirtualThreadPerTaskExecutor(),
+            new InferenceMetrics(meterRegistry),
+            30_000L);
+    RoutingConfig cfg = abCfg("model_a", 100L, 200L, 0.0, RoutingMode.SHADOW);
+    when(routing.findRouting("model_a")).thenReturn(Optional.of(cfg));
+    when(bucketer.route(anyLong(), any(), any())).thenReturn(Role.CHAMPION);
+
+    RoutedPrediction<String> result =
+        r.route(
+            "model_a",
+            12345L,
+            vid -> {
+              if (vid == 200L) {
+                throw new NullPointerException("bug in challenger wiring");
+              }
+              return "champ-resp";
+            },
+            () -> "unused");
+
+    assertThat(result.servingResponse()).isEqualTo("champ-resp");
+    result.shadowFuture().orElseThrow().handle((x, e) -> null).get(2, TimeUnit.SECONDS);
+
+    assertThat(
+            meterRegistry
+                .get("thebullpen_inference_shadow_dropped_total")
+                .tag("model_name", "model_a")
+                .tag("reason", "defect")
+                .counter()
+                .count())
+        .isEqualTo(1.0);
+  }
+
   // --- helpers ----------------------------------------------------------
 
   private RoutingConfig champOnlyCfg(String modelName, long champId) {
