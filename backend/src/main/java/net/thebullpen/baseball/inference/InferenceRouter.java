@@ -119,11 +119,15 @@ public class InferenceRouter {
 
     // AB bucketed to challenger: the challenger IS the served prediction, so the user DOES wait on
     // it (correct - it's what they get back). A challenger failure degrades to the champion. This
-    // is NOT the shadow path.
+    // is NOT the shadow path. Both models run and complete here (pre-F1.4 AB semantics, unchanged):
+    // the champion is joined before the serve decision so a challenger failure has a resolved
+    // champion to fall back to, and the champion latency is a real parallel leg, not
+    // fire-and-forget.
     if (cfg.mode() == RoutingMode.AB && primaryRole == Role.CHALLENGER && cfg.hasChallenger()) {
       CompletableFuture<Resp> challengerFut =
           CompletableFuture.supplyAsync(
               () -> predictByVersionId.apply(cfg.challengerVersionId()), executor);
+      Resp abChampionResp = championFut.join();
       Resp challengerResp = safeJoin(challengerFut, modelName);
       if (challengerResp != null) {
         return new RoutedPrediction<>(
@@ -134,7 +138,7 @@ public class InferenceRouter {
             Optional.empty());
       }
       return new RoutedPrediction<>(
-          championFut.join(),
+          abChampionResp,
           cfg.championVersionId(),
           Role.CHAMPION,
           Optional.empty(),
