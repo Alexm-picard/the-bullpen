@@ -23,6 +23,8 @@ import net.thebullpen.baseball.inference.PredictionLogEvent;
 import net.thebullpen.baseball.inference.RoutedPrediction;
 import net.thebullpen.baseball.inference.ToyBattedBallInference;
 import net.thebullpen.baseball.inference.routing.Role;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.context.annotation.Profile;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -41,6 +43,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/v1/predict")
 @Profile("api")
 public class PredictBattedBallController {
+
+  private static final Logger log = LoggerFactory.getLogger(PredictBattedBallController.class);
 
   private final ObjectMapper objectMapper;
   private final ToyBattedBallInference inference;
@@ -170,24 +174,41 @@ public class PredictBattedBallController {
               elapsedMs,
               correlationId));
 
-      // Shadow-mode dispatch: log the parallel SHADOW prediction with the challenger's metadata.
-      if (routed.hasShadowRow()) {
-        long shadowVid = routed.shadowVersionId().orElseThrow();
-        var shadowModel = modelLoader.loadBattedBall(shadowVid);
-        logger.enqueue(
-            new PredictionLogEvent(
-                UUID.randomUUID(),
-                requestAt,
-                ToyBattedBallInference.MODEL_NAME,
-                shadowModel.version(),
-                shadowVid,
-                PredictionLogEvent.Role.SHADOW,
-                shadowModel.schemaHash(),
-                serializeFeatures(req),
-                serializePrediction(routed.shadowResponse().orElseThrow()),
-                elapsedMs,
-                correlationId));
-      }
+      // Shadow-mode dispatch: log the parallel SHADOW prediction FIRE-AND-FORGET off the request
+      // path (F1.4), with the challenger's metadata.
+      routed
+          .shadowFuture()
+          .ifPresent(
+              shadowFut -> {
+                long shadowVid = routed.shadowVersionId().orElseThrow();
+                shadowFut.whenComplete(
+                    (shadowResp, ex) -> {
+                      if (ex != null) {
+                        return;
+                      }
+                      try {
+                        var shadowModel = modelLoader.loadBattedBall(shadowVid);
+                        logger.enqueue(
+                            new PredictionLogEvent(
+                                UUID.randomUUID(),
+                                requestAt,
+                                ToyBattedBallInference.MODEL_NAME,
+                                shadowModel.version(),
+                                shadowVid,
+                                PredictionLogEvent.Role.SHADOW,
+                                shadowModel.schemaHash(),
+                                serializeFeatures(req),
+                                serializePrediction(shadowResp),
+                                elapsedMs,
+                                correlationId));
+                      } catch (JsonProcessingException je) {
+                        log.warn(
+                            "shadow row serialization failed for {}: {}",
+                            ToyBattedBallInference.MODEL_NAME,
+                            je.toString());
+                      }
+                    });
+              });
 
       return new PredictionResponse(
           prob,

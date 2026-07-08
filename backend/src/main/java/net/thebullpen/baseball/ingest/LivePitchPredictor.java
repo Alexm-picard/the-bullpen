@@ -171,21 +171,31 @@ public class LivePitchPredictor {
             mapRole(routed.servingRole()),
             latencyMs));
 
-    if (routed.hasShadowRow()) {
-      long shadowVid = routed.shadowVersionId().orElseThrow();
-      LoadedPitchModel shadowModel = modelLoader.loadPitchPre(shadowVid);
-      logger.enqueue(
-          buildEvent(
-              ctx,
-              featureReq,
-              routed.shadowResponse().orElseThrow(),
-              requestAt,
-              shadowModel.version(),
-              shadowVid,
-              shadowModel.schemaHash(),
-              PredictionLogEvent.Role.SHADOW,
-              latencyMs));
-    }
+    // Shadow row logged FIRE-AND-FORGET off the request path (F1.4).
+    routed
+        .shadowFuture()
+        .ifPresent(
+            shadowFut -> {
+              long shadowVid = routed.shadowVersionId().orElseThrow();
+              shadowFut.whenComplete(
+                  (shadowResp, ex) -> {
+                    if (ex != null) {
+                      return;
+                    }
+                    LoadedPitchModel shadowModel = modelLoader.loadPitchPre(shadowVid);
+                    logger.enqueue(
+                        buildEvent(
+                            ctx,
+                            featureReq,
+                            shadowResp,
+                            requestAt,
+                            shadowModel.version(),
+                            shadowVid,
+                            shadowModel.schemaHash(),
+                            PredictionLogEvent.Role.SHADOW,
+                            latencyMs));
+                  });
+            });
 
     return routed.servingResponse();
   }

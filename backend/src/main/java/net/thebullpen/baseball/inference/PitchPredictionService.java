@@ -13,6 +13,8 @@ import net.thebullpen.baseball.api.dto.PitchRequest;
 import net.thebullpen.baseball.inference.routing.Role;
 import net.thebullpen.baseball.registry.RegistryService;
 import net.thebullpen.baseball.registry.dto.ModelVersion;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
@@ -34,6 +36,8 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 @Profile("api")
 public class PitchPredictionService {
+
+  private static final Logger log = LoggerFactory.getLogger(PitchPredictionService.class);
 
   public static final String PRE_MODEL_NAME = "pitch_outcome_pre";
   public static final String POST_MODEL_NAME = "pitch_outcome_post";
@@ -139,24 +143,39 @@ public class PitchPredictionService {
               elapsedMs,
               correlationId));
 
-      if (routed.hasShadowRow()) {
-        long shadowVid = routed.shadowVersionId().orElseThrow();
-        LoadedPitchModel shadowModel = load(head, shadowVid);
-        Map<String, Double> shadowProbs = routed.shadowResponse().orElseThrow();
-        logger.enqueue(
-            new PredictionLogEvent(
-                UUID.randomUUID(),
-                requestAt,
-                modelName,
-                shadowModel.version(),
-                shadowVid,
-                PredictionLogEvent.Role.SHADOW,
-                shadowModel.schemaHash(),
-                serializeFeatures(req),
-                serializePrediction(shadowProbs, argmax(shadowProbs)),
-                elapsedMs,
-                correlationId));
-      }
+      // Shadow row logged FIRE-AND-FORGET off the request path (F1.4): the champion already
+      // returned; the shadow logs its row when it completes (the router surfaced any failure).
+      routed
+          .shadowFuture()
+          .ifPresent(
+              shadowFut -> {
+                long shadowVid = routed.shadowVersionId().orElseThrow();
+                shadowFut.whenComplete(
+                    (shadowProbs, ex) -> {
+                      if (ex != null) {
+                        return;
+                      }
+                      try {
+                        LoadedPitchModel shadowModel = load(head, shadowVid);
+                        logger.enqueue(
+                            new PredictionLogEvent(
+                                UUID.randomUUID(),
+                                requestAt,
+                                modelName,
+                                shadowModel.version(),
+                                shadowVid,
+                                PredictionLogEvent.Role.SHADOW,
+                                shadowModel.schemaHash(),
+                                serializeFeatures(req),
+                                serializePrediction(shadowProbs, argmax(shadowProbs)),
+                                elapsedMs,
+                                correlationId));
+                      } catch (JsonProcessingException je) {
+                        log.warn(
+                            "shadow row serialization failed for {}: {}", modelName, je.toString());
+                      }
+                    });
+              });
 
       return new Served(probs, winner, modelName, servingVersion, elapsedNanos / 1_000L);
     } catch (ResponseStatusException e) {

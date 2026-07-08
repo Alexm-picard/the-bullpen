@@ -8,12 +8,15 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.thebullpen.baseball.inference.routing.Bucketer;
 import net.thebullpen.baseball.inference.routing.Role;
@@ -32,7 +35,12 @@ class InferenceRouterTest {
   private final RoutingService routing = mock(RoutingService.class);
   private final Bucketer bucketer = mock(Bucketer.class);
   private final InferenceRouter router =
-      new InferenceRouter(routing, bucketer, Executors.newVirtualThreadPerTaskExecutor());
+      new InferenceRouter(
+          routing,
+          bucketer,
+          Executors.newVirtualThreadPerTaskExecutor(),
+          new InferenceMetrics(new SimpleMeterRegistry()),
+          250L);
 
   // --- legacy fallback (no routing config) ------------------------------
 
@@ -71,7 +79,10 @@ class InferenceRouterTest {
     assertThat(result.servingResponse()).isEqualTo("champ-resp");
     assertThat(result.servingVersionId()).isEqualTo(100L);
     assertThat(result.servingRole()).isEqualTo(Role.CHAMPION);
-    assertThat(result.shadowResponse()).contains("shadow-resp");
+    // F1.4: the shadow is now a fire-and-forget FUTURE, not a resolved value. Joining it drives the
+    // challenger closure to completion and yields the shadow prediction.
+    assertThat(result.shadowFuture()).isPresent();
+    assertThat(result.shadowFuture().orElseThrow().join()).isEqualTo("shadow-resp");
     assertThat(result.shadowVersionId()).contains(200L);
     assertThat(calls.get(100L).get()).isEqualTo(1);
     assertThat(calls.get(200L).get()).isEqualTo(1);
@@ -170,35 +181,108 @@ class InferenceRouterTest {
             },
             () -> "unused");
 
+    // F1.4: the challenger runs fire-and-forget off the request path, so an inference failure never
+    // touches the user-facing champion result (route does NOT throw).
     assertThat(result.servingResponse()).isEqualTo("champ-resp");
     assertThat(result.servingVersionId()).isEqualTo(100L);
-    assertThat(result.hasShadowRow())
-        .as("challenger failure must NOT create a shadow log row")
-        .isFalse();
+    // The shadow future is attached, but it completes EXCEPTIONALLY; the caller's whenComplete sees
+    // ex != null and skips the enqueue, so no shadow row is logged despite the future existing.
+    assertThat(result.shadowFuture()).isPresent();
+    assertThatThrownBy(() -> result.shadowFuture().orElseThrow().join())
+        .as("a challenger inference failure completes the shadow future exceptionally")
+        .isInstanceOf(CompletionException.class)
+        .hasCauseInstanceOf(RuntimeException.class);
   }
 
   @Test
-  void shadow_mode_challenger_npe_surfaces_instead_of_silent_degradation() {
-    // DEF-L3: a programming bug (NPE) in the challenger must surface, not be masked as a degraded
-    // shadow run the way a genuine inference failure (a plain RuntimeException) is.
+  void shadow_mode_challenger_npe_surfaces_on_the_shadow_future_not_the_user_request() {
+    // DEF-L3: a programming bug (NPE) in the challenger must SURFACE, not be masked. Post-F1.4 the
+    // shadow runs fire-and-forget, so the NPE no longer fails the USER request (route returns the
+    // champion off the request path). It surfaces on the shadow future instead, and
+    // onShadowComplete
+    // logs it at ERROR as a defect (vs a plain inference failure which degrades at WARN).
     RoutingConfig cfg = abCfg("model_a", 100L, 200L, 0.0, RoutingMode.SHADOW);
     when(routing.findRouting("model_a")).thenReturn(Optional.of(cfg));
     when(bucketer.route(anyLong(), any(), any())).thenReturn(Role.CHAMPION);
 
-    assertThatThrownBy(
-            () ->
-                router.route(
-                    "model_a",
-                    12345L,
-                    vid -> {
-                      if (vid == 200L) {
-                        throw new NullPointerException("bug in challenger wiring");
-                      }
-                      return "champ-resp";
-                    },
-                    () -> "unused"))
+    RoutedPrediction<String> result =
+        router.route(
+            "model_a",
+            12345L,
+            vid -> {
+              if (vid == 200L) {
+                throw new NullPointerException("bug in challenger wiring");
+              }
+              return "champ-resp";
+            },
+            () -> "unused");
+
+    assertThat(result.servingResponse()).isEqualTo("champ-resp");
+    assertThatThrownBy(() -> result.shadowFuture().orElseThrow().join())
         .isInstanceOf(CompletionException.class)
         .hasCauseInstanceOf(NullPointerException.class);
+  }
+
+  // --- F1.4: the user never blocks on the shadow ------------------------
+
+  @Test
+  void shadow_mode_returns_champion_without_waiting_on_a_slow_shadow() throws Exception {
+    // The core F1.4 guarantee: even when the SHADOW challenger is slow, route() returns the
+    // champion
+    // immediately - the user is never blocked on the shadow inference. A generous shadow timeout is
+    // used so the shadow is genuinely still in flight (not timed out) when we assert it.
+    InferenceRouter fireAndForgetRouter =
+        new InferenceRouter(
+            routing,
+            bucketer,
+            Executors.newVirtualThreadPerTaskExecutor(),
+            new InferenceMetrics(new SimpleMeterRegistry()),
+            30_000L);
+    RoutingConfig cfg = abCfg("model_a", 100L, 200L, 0.0, RoutingMode.SHADOW);
+    when(routing.findRouting("model_a")).thenReturn(Optional.of(cfg));
+    when(bucketer.route(anyLong(), any(), any())).thenReturn(Role.CHAMPION);
+
+    CountDownLatch shadowStarted = new CountDownLatch(1);
+    CountDownLatch releaseShadow = new CountDownLatch(1);
+
+    long startNanos = System.nanoTime();
+    RoutedPrediction<String> result =
+        fireAndForgetRouter.route(
+            "model_a",
+            12345L,
+            vid -> {
+              if (vid == 200L) {
+                shadowStarted.countDown();
+                try {
+                  // Block until the test releases us: proves route() did not wait on the shadow.
+                  releaseShadow.await();
+                } catch (InterruptedException e) {
+                  Thread.currentThread().interrupt();
+                }
+                return "shadow-resp";
+              }
+              return "champ-resp";
+            },
+            () -> "unused");
+    long elapsedMs = (System.nanoTime() - startNanos) / 1_000_000L;
+
+    // The user got the champion, fast, without the (still-blocked) shadow finishing.
+    assertThat(result.servingResponse()).isEqualTo("champ-resp");
+    assertThat(result.servingRole()).isEqualTo(Role.CHAMPION);
+    assertThat(result.hasShadowRow()).isTrue();
+    assertThat(elapsedMs)
+        .as("route() must return the champion without blocking on the slow shadow")
+        .isLessThan(2_000L);
+
+    // The shadow really did start and is still in flight when route() returned.
+    assertThat(shadowStarted.await(2, TimeUnit.SECONDS)).isTrue();
+    assertThat(result.shadowFuture().orElseThrow().isDone())
+        .as("shadow is still running - route() returned without joining it")
+        .isFalse();
+
+    // Release it and confirm the fire-and-forget shadow still completes on its own.
+    releaseShadow.countDown();
+    assertThat(result.shadowFuture().orElseThrow().join()).isEqualTo("shadow-resp");
   }
 
   // --- helpers ----------------------------------------------------------
