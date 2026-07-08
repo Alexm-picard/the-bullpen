@@ -37,12 +37,20 @@ const READ_FRACTION = Number(__ENV.READ_FRACTION || 0.3); // mixed: fraction tha
 
 const HEADERS = { "Content-Type": "application/json" };
 
+// Superset payload valid for BOTH batted-ball endpoints (Jackson ignores unknown fields, Spring
+// Boot default): the single-park /v1/predict/batted-ball uses launchSpeedMph/launchAngleDeg/
+// releaseSpeedMph/parkId/stand; the /all-parks champion path STRICTLY requires sprayAngleDeg,
+// hitDistanceFt, baseState, outs (omitting them 400s all-parks 100%, seen on the 2026-07-07 box run).
 const BATTED_BALL = JSON.stringify({
   launchSpeedMph: 100.0,
   launchAngleDeg: 28.0,
   releaseSpeedMph: 95.0,
   parkId: "NYY",
   stand: "R",
+  sprayAngleDeg: 10.0,
+  hitDistanceFt: 380.0,
+  baseState: 0,
+  outs: 1,
 });
 
 // Pre-pitch head: Tier 1+2 required fields only (Tier 3/4 omitted -> model handles as missing).

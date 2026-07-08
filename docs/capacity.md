@@ -1,7 +1,8 @@
 # Capacity model - The Bullpen serving path
 
-**Status:** local prod-parity evidence + analytical projection. A short fixed-rate confirmation
-run against the prod box (off-window) is tracked as D-41 and will fill the "box (prod)" column.
+**Status:** local prod-parity evidence + analytical projection, now confirmed on the prod box. The
+D-41 box run happened 2026-07-07 (off-window); its numbers fill the "box (prod)" column and section 7
+below (relayed by the operator, committed from the Mac per ADR-0006's box-produced-evidence pattern).
 
 This document answers one question honestly: **how much load does the single-box deployment take,
 and where does it break first?** It exists because "Scalability" is the deliberately-bounded axis of
@@ -10,12 +11,12 @@ named bottleneck is what makes "single-box" a _measured_ decision instead of an 
 
 ## TL;DR
 
-| Path                                                  | Bottleneck                                                   | Ceiling (local Mac, toy model)               | Ceiling (prod box)     |
-| ----------------------------------------------------- | ------------------------------------------------------------ | -------------------------------------------- | ---------------------- |
-| `POST /v1/predict/batted-ball` (serving stack)        | HTTP + JSON + A/B routing (NOT inference, for the toy model) | ~1,950 req/s sustained, p99 < 1 ms, 0 errors | D-41                   |
-| Real-model inference                                  | ONNX forward CPU time (serialized per request)               | analytical: `1000 / forward_ms` per core     | D-41 (real forward_ms) |
-| ClickHouse-backed reads (`/v1/players/search`, games) | Hikari pool `bullpen.clickhouse.pool.max-size = 8`           | analytical: `8000 / query_ms`                | D-41                   |
-| Registry writes (SQLite)                              | single-writer file lock                                      | analytical (administrative, not per-request) | D-41                   |
+| Path                                                  | Bottleneck                                                   | Ceiling (local Mac, toy model)               | Ceiling (prod box, 2026-07-07)                                              |
+| ----------------------------------------------------- | ------------------------------------------------------------ | -------------------------------------------- | --------------------------------------------------------------------------- |
+| `POST /v1/predict/batted-ball` (serving stack, toy)   | HTTP + JSON + A/B routing (NOT inference, for the toy model) | ~1,950 req/s sustained, p99 < 1 ms, 0 errors | 300 req/s confirmed, 0/21,637 err, med ~0.6 ms, p99 34 ms (sec 7)           |
+| Real-model inference                                  | ONNX forward CPU time (serialized per request)               | analytical: `1000 / forward_ms` per core     | battedball champion 9.1 ms med -> ~110 req/s/core; post 19.8 ms med (sec 7) |
+| ClickHouse-backed reads (`/v1/players/search`, games) | Hikari pool `bullpen.clickhouse.pool.max-size = 8`           | analytical: `8000 / query_ms`                | mixed 30% reads @ 200 req/s: 0/14,424 err, p95 8.34 ms (sec 7)              |
+| Registry writes (SQLite)                              | single-writer file lock                                      | analytical (administrative, not per-request) | administrative (not load-tested)                                            |
 
 The serving _stack_ is not the bottleneck. For a real (non-toy) model the ceiling is **ONNX compute
 time**; for the read endpoints it is the **8-connection ClickHouse pool**. Both scale horizontally
@@ -91,17 +92,19 @@ forward/s per core in isolation - far above the ~2,000 req/s the stack sustains,
 why section 1 saw the stack, not inference, as the wall.
 
 For the **real** batted-ball MLP (shared backbone + 30 per-park heads) the forward is materially
-heavier - estimated ~10-15 ms - which **inverts** the ratio: a multi-ms forward dwarfs the ~150 us
-stack, so the real ceiling is compute. **D-41 measures the exact `forward_ms` on the box with the
-real artifact.** Because an ONNX forward is CPU-bound and runs single-threaded per request, the
-compute ceiling is:
+heavier - the D-41 box run (section 7) measured **~8-9 ms** for the served champion via `/all-parks` -
+which **inverts** the ratio: a multi-ms forward dwarfs the ~150 us stack, so the real ceiling is
+compute. Because an ONNX forward is CPU-bound and runs single-threaded per request, the compute
+ceiling is:
 
 ```
 max predict RPS  =  (1000 / forward_ms)  x  usable_cores
 ```
 
-At a working figure of `forward_ms = 14`: ~71 req/s per fully-utilized core, so ~71 x cores. Virtual
-threads do not raise this ceiling (they help concurrency/latency under I/O, not CPU-bound compute) -
+At the box-measured `forward_ms ~= 9` for the batted-ball champion (section 7): **~110 req/s per
+fully-utilized core**, so ~110 x cores; the heavier `pitch_outcome_post` at ~19.8 ms lands ~50
+req/s/core. Virtual threads do not raise this ceiling (they help concurrency/latency under I/O, not
+CPU-bound compute) -
 they keep the stack from adding its own bottleneck, which is exactly what section 1 shows. This is
 the number that matters in prod, and it is why the honest scaling lever is "duplicate the stateless
 `api` instance," not "tune the web tier."
@@ -167,6 +170,45 @@ Because the app sets `server.shutdown: graceful` and the request path is bounded
 `thebullpen_prediction_log_dropped_total`) rather than blocking the request, so overload degrades the
 audit trail before it degrades serving. The overload stage in the local run never reached this (toy
 model); the box run (D-41) documents the real knee.
+
+## 7. Box confirmation run (2026-07-07)
+
+The D-41 confirmation ran on the prod box off-window. It supplies the two things the local runs could
+not: the box's real hardware + network behavior, and the **real-model** `forward_ms` that section 2's
+analytical ceiling was waiting on. (Numbers relayed by the operator and committed from the Mac, per
+ADR-0006's box-produced-evidence pattern.)
+
+**Serving stack (toy `_toy_batted_ball`, `SCENARIO=battedball`).** A short fixed-rate confirmation at
+a 300 req/s plateau + a 450 req/s overload stage, x2 runs: **0 / 21,637 failed**, med 574-666 us, p99
+34 ms. Clean at the confirmed rate - the stack is no more the wall on the box than locally (the higher
+median vs the local 161 us is real hardware + network, not stack saturation). `/v1/predict/batted-ball`
+serves the **toy** model, so this benchmarks the serving STACK (HTTP + JSON + A/B routing) - the same
+thing section 1 measures locally, on both columns; the real champion is the `/all-parks` path below.
+
+**Mixed (30% ClickHouse reads, `SCENARIO=mixed`).** 200 req/s plateau: **0 / 14,424 failed**, med
+1.23 ms, p95 8.34 ms, p99 16.17 ms. The CH-backed reads add real pool-8 latency (section 3) with no
+failures at this rate.
+
+**Real-model forward time (the number section 2 needed).** Curl-timed, limiter-paced, n=105 each:
+
+| Real model (served)                            | median  | p95     | Implied per-core ceiling                |
+| ---------------------------------------------- | ------- | ------- | --------------------------------------- |
+| `battedball_outcome` champion via `/all-parks` | 9.1 ms  | 14.8 ms | ~8-9 ms real forward -> ~110 req/s/core |
+| `pitch_outcome_post`                           | 19.8 ms | 33.3 ms | ~1000/19.8 -> ~50 req/s/core            |
+
+These land section 2's formula `max predict RPS = (1000 / forward_ms) x cores` on real numbers: the
+batted-ball champion's ~8-9 ms forward is well under the estimated 10-15 ms (so ~110 req/s/core), the
+post head ~50 req/s/core. A duplicated `api` instance multiplies these linearly (CPU-bound), exactly
+as the N-instance projection (section 5) claims.
+
+**Memory.** 3.4-3.6 GiB headroom under load - comfortably inside the `api -Xmx1g` + `worker -Xmx512m`
+envelope; no GC pressure surfaced.
+
+**k6 pitch scenario (`SCENARIO=pitch`) expected-fails.** `pitch_outcome_pre` has no champion (shadow
+on a failed primary, [154] / ADR-0011), so `/v1/predict/pitch` (PRE by default) returns 503 under load
+
+- an expected fail, not a regression. The post head's real latency is captured above via the
+  curl-timed path, not the k6 pitch scenario.
 
 ## What keeps this a 9, not a 10
 
