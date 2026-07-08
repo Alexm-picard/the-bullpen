@@ -84,6 +84,32 @@ class SimulateControllerMetricsTest {
     assertThat(resp.servingMode()).isEqualTo("unrouted-diagnostic");
   }
 
+  @Test
+  void monte_carlo_endpoint_also_tags_simulator_and_uses_the_simulate_latency_metric()
+      throws Exception {
+    // Same guardrail on the MC path (shares ROLE + recordSimulateLatency with analytical).
+    stubInference();
+    when(registryService.findByName("pitch_outcome_pre")).thenReturn(List.of());
+
+    SimulateResponse resp = controller.monteCarlo(monteCarloRequest());
+
+    assertThat(resp.method()).isEqualTo("monte_carlo");
+    assertThat(resp.servingMode()).isEqualTo("unrouted-diagnostic");
+    assertThat(
+            meters
+                .get("thebullpen_inference_prediction_total")
+                .tag("role", "simulator")
+                .counter()
+                .count())
+        .isEqualTo(1.0);
+    assertThat(
+            meters.find("thebullpen_inference_prediction_total").tag("role", "champion").counter())
+        .isNull();
+    assertThat(meters.get("thebullpen_inference_simulate_latency_seconds").timer().count())
+        .isEqualTo(1L);
+    assertThat(meters.find("thebullpen_inference_prediction_latency_seconds").timer()).isNull();
+  }
+
   private void stubInference() throws Exception {
     when(inference.classLabels())
         .thenReturn(List.of("ball", "called_strike", "swinging_strike", "foul", "in_play"));
@@ -101,6 +127,12 @@ class SimulateControllerMetricsTest {
     return new SimulateRequest(
         0, 0, 1, 4, 0, 0, 3, "R", "L", "NYY", 545361L, 605141L, null, null, null, null, null, null,
         null, null, null, null, null, null, null);
+  }
+
+  private static SimulateRequest monteCarloRequest() {
+    return new SimulateRequest(
+        0, 0, 1, 4, 0, 0, 3, "R", "L", "NYY", 545361L, 605141L, null, null, null, null, null, null,
+        null, null, null, null, null, 200, 42L);
   }
 
   private static ModelVersion pitchPreV1(Stage stage) {
