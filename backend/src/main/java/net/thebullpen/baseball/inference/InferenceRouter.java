@@ -1,9 +1,11 @@
 package net.thebullpen.baseball.inference;
 
+import io.micrometer.core.instrument.Timer;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import net.thebullpen.baseball.inference.routing.Bucketer;
 import net.thebullpen.baseball.inference.routing.Role;
@@ -13,6 +15,7 @@ import net.thebullpen.baseball.inference.routing.RoutingService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
@@ -60,14 +63,20 @@ public class InferenceRouter {
   private final RoutingService routingService;
   private final Bucketer bucketer;
   private final ExecutorService executor;
+  private final InferenceMetrics metrics;
+  private final long shadowTimeoutMs;
 
   public InferenceRouter(
       RoutingService routingService,
       Bucketer bucketer,
-      @Qualifier("inferenceShadowExecutor") ExecutorService executor) {
+      @Qualifier("inferenceShadowExecutor") ExecutorService executor,
+      InferenceMetrics metrics,
+      @Value("${bullpen.inference.shadow-timeout-ms:250}") long shadowTimeoutMs) {
     this.routingService = routingService;
     this.bucketer = bucketer;
     this.executor = executor;
+    this.metrics = metrics;
+    this.shadowTimeoutMs = shadowTimeoutMs;
   }
 
   /**
@@ -103,44 +112,85 @@ public class InferenceRouter {
     RoutingConfig cfg = cfgOpt.get();
     Role primaryRole = bucketer.route(gameId, modelName, cfg);
 
-    // Always run champion in parallel (returned in shadow + AB-champion cases).
+    // Champion always runs on the VT executor.
     CompletableFuture<Resp> championFut =
         CompletableFuture.supplyAsync(
             () -> predictByVersionId.apply(cfg.championVersionId()), executor);
 
-    // Run challenger when: SHADOW with a challenger registered, OR AB-mode bucketed to challenger.
-    boolean runChallenger =
-        cfg.hasChallenger()
-            && (cfg.mode() == RoutingMode.SHADOW
-                || (cfg.mode() == RoutingMode.AB && primaryRole == Role.CHALLENGER));
-    CompletableFuture<Resp> challengerFut =
-        runChallenger
-            ? CompletableFuture.supplyAsync(
-                () -> predictByVersionId.apply(cfg.challengerVersionId()), executor)
-            : null;
+    // AB bucketed to challenger: the challenger IS the served prediction, so the user DOES wait on
+    // it (correct - it's what they get back). A challenger failure degrades to the champion. This
+    // is NOT the shadow path.
+    if (cfg.mode() == RoutingMode.AB && primaryRole == Role.CHALLENGER && cfg.hasChallenger()) {
+      CompletableFuture<Resp> challengerFut =
+          CompletableFuture.supplyAsync(
+              () -> predictByVersionId.apply(cfg.challengerVersionId()), executor);
+      Resp challengerResp = safeJoin(challengerFut, modelName);
+      if (challengerResp != null) {
+        return new RoutedPrediction<>(
+            challengerResp,
+            cfg.challengerVersionId(),
+            Role.CHALLENGER,
+            Optional.empty(),
+            Optional.empty());
+      }
+      return new RoutedPrediction<>(
+          championFut.join(),
+          cfg.championVersionId(),
+          Role.CHAMPION,
+          Optional.empty(),
+          Optional.empty());
+    }
 
     Resp championResp = championFut.join();
-    Resp challengerResp = challengerFut == null ? null : safeJoin(challengerFut, modelName);
 
-    // AB-routed-to-challenger AND the challenger ran successfully → serve the challenger.
-    boolean abServeChallenger =
-        cfg.mode() == RoutingMode.AB && primaryRole == Role.CHALLENGER && challengerResp != null;
-
-    Resp servingResp = abServeChallenger ? challengerResp : championResp;
-    long servingVersionId = abServeChallenger ? cfg.challengerVersionId() : cfg.championVersionId();
-    Role servingRole = abServeChallenger ? Role.CHALLENGER : Role.CHAMPION;
-
-    // Shadow row is logged separately ONLY in SHADOW mode (in AB mode the challenger IS the
-    // served prediction — no separate "shadow" row, just a CHALLENGER serving row).
-    Optional<Resp> shadowResp =
-        cfg.mode() == RoutingMode.SHADOW && challengerResp != null
-            ? Optional.of(challengerResp)
-            : Optional.empty();
-    Optional<Long> shadowVersionId =
-        shadowResp.isPresent() ? Optional.of(cfg.challengerVersionId()) : Optional.empty();
+    // SHADOW with a challenger: run it FIRE-AND-FORGET off the request path (F1.4). We return the
+    // champion IMMEDIATELY without joining the shadow - the shadow-join here used to stall every
+    // user request by a full extra inference. The shadow future is bounded by orTimeout, records
+    // its own latency (never blended into the served metric), and surfaces defects loudly via
+    // onShadowComplete; the caller attaches a whenComplete to log the SHADOW row when it lands.
+    if (cfg.mode() == RoutingMode.SHADOW && cfg.hasChallenger()) {
+      Timer.Sample sample = metrics.startTimer();
+      CompletableFuture<Resp> shadowFut =
+          CompletableFuture.supplyAsync(
+                  () -> predictByVersionId.apply(cfg.challengerVersionId()), executor)
+              .orTimeout(shadowTimeoutMs, TimeUnit.MILLISECONDS)
+              .whenComplete((resp, ex) -> onShadowComplete(modelName, sample, ex));
+      return new RoutedPrediction<>(
+          championResp,
+          cfg.championVersionId(),
+          Role.CHAMPION,
+          Optional.of(shadowFut),
+          Optional.of(cfg.challengerVersionId()));
+    }
 
     return new RoutedPrediction<>(
-        servingResp, servingVersionId, servingRole, shadowResp, shadowVersionId);
+        championResp, cfg.championVersionId(), Role.CHAMPION, Optional.empty(), Optional.empty());
+  }
+
+  /**
+   * Completion hook for the fire-and-forget shadow leg. On success it records shadow latency on the
+   * dedicated metric; on failure it preserves the DEF-L3 distinction (a programming bug / {@link
+   * Error} is a DEFECT and is surfaced at ERROR; a normal inference failure or an {@code orTimeout}
+   * is a degrade and is logged at WARN). It never rethrows - the shadow is off the request path, so
+   * a shadow defect must NOT fail the user (it is loud in the logs instead).
+   */
+  private void onShadowComplete(String modelName, Timer.Sample sample, Throwable ex) {
+    if (ex == null) {
+      metrics.recordShadowLatency(sample, modelName);
+      return;
+    }
+    Throwable cause =
+        ex instanceof CompletionException ce && ce.getCause() != null ? ce.getCause() : ex;
+    if (cause instanceof Error
+        || cause instanceof NullPointerException
+        || cause instanceof ClassCastException) {
+      log.error(
+          "shadow challenger for {} threw a DEFECT off the request path (surfacing, not degrading)",
+          modelName,
+          cause);
+    } else {
+      log.warn("shadow challenger for {} degraded off the request path: {}", modelName, cause);
+    }
   }
 
   private static <Resp> Resp safeJoin(CompletableFuture<Resp> fut, String modelName) {

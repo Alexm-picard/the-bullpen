@@ -28,6 +28,8 @@ import net.thebullpen.baseball.inference.RoutedPrediction;
 import net.thebullpen.baseball.inference.routing.Role;
 import net.thebullpen.baseball.registry.RegistryService;
 import net.thebullpen.baseball.registry.dto.ModelVersion;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
@@ -60,6 +62,8 @@ import org.springframework.web.server.ResponseStatusException;
 @RequestMapping("/v1/predict")
 @Profile("api")
 public class PredictAllParksController {
+
+  private static final Logger log = LoggerFactory.getLogger(PredictAllParksController.class);
 
   static final String MODEL_NAME = "battedball_outcome";
   private static final String HR_OUTCOME = "hr";
@@ -148,23 +152,40 @@ public class PredictAllParksController {
               elapsedMs,
               correlationId));
 
-      if (routed.hasShadowRow()) {
-        long shadowVid = routed.shadowVersionId().orElseThrow();
-        LoadedAllParksModel shadowModel = modelLoader.loadAllParks(shadowVid);
-        logger.enqueue(
-            new PredictionLogEvent(
-                UUID.randomUUID(),
-                requestAt,
-                MODEL_NAME,
-                shadowModel.version(),
-                shadowVid,
-                PredictionLogEvent.Role.SHADOW,
-                shadowModel.schemaHash(),
-                serializeFeatures(req),
-                serializeDistribution(routed.shadowResponse().orElseThrow().distribution()),
-                elapsedMs,
-                correlationId));
-      }
+      // Shadow row logged FIRE-AND-FORGET off the request path (F1.4).
+      routed
+          .shadowFuture()
+          .ifPresent(
+              shadowFut -> {
+                long shadowVid = routed.shadowVersionId().orElseThrow();
+                shadowFut.whenComplete(
+                    (shadowResp, ex) -> {
+                      if (ex != null) {
+                        return;
+                      }
+                      try {
+                        LoadedAllParksModel shadowModel = modelLoader.loadAllParks(shadowVid);
+                        logger.enqueue(
+                            new PredictionLogEvent(
+                                UUID.randomUUID(),
+                                requestAt,
+                                MODEL_NAME,
+                                shadowModel.version(),
+                                shadowVid,
+                                PredictionLogEvent.Role.SHADOW,
+                                shadowModel.schemaHash(),
+                                serializeFeatures(req),
+                                serializeDistribution(shadowResp.distribution()),
+                                elapsedMs,
+                                correlationId));
+                      } catch (JsonProcessingException je) {
+                        log.warn(
+                            "shadow row serialization failed for {}: {}",
+                            MODEL_NAME,
+                            je.toString());
+                      }
+                    });
+              });
 
       return new AllParksPredictionResponse(
           probHrByPark,
