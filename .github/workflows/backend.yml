@@ -4,8 +4,10 @@ on:
   push:
     branches: [main]
     paths: ['backend/**', 'contracts/**', 'training/**', '.github/workflows/backend.yml']
+    # Include this workflow file so a change to CI itself (e.g. the artifact-generation steps that
+    # gate the @EnabledIf pitch/simulate web tests) is validated on the PR, not first on push to main.
   pull_request:
-    paths: ['backend/**', 'contracts/**', 'training/**']
+    paths: ['backend/**', 'contracts/**', 'training/**', '.github/workflows/backend.yml']
 
 # ClickHouse is intentionally NOT a service container here:
 #   - clickhouse/clickhouse-server:*-alpine fails in Actions service runtime
