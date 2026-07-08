@@ -1,6 +1,7 @@
 package net.thebullpen.baseball.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -16,6 +17,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.OptionalLong;
 import net.thebullpen.baseball.inference.FeaturePipelineBattedBall;
+import net.thebullpen.baseball.inference.LoadedAllParksModel;
 import net.thebullpen.baseball.inference.ModelLoader;
 import net.thebullpen.baseball.inference.PitchPredictionService;
 import net.thebullpen.baseball.inference.ToyBattedBallInference;
@@ -32,9 +34,10 @@ import org.springframework.context.ApplicationEventPublisher;
 
 /**
  * Unit tests for {@link WarmupReadiness}. Mocks the ONNX boundary (ModelLoader /
- * ToyBattedBallInference) and the two registry-facing services, so no real model is loaded: the
- * decision logic (which model gets warmed, fail-closed vs best-effort) is what these lock. The
- * happy path with a real all-parks model is covered by the inference ITs + the box smoke.
+ * ToyBattedBallInference / the final LoadedAllParksModel, mockable via the Mockito 5 inline
+ * mock-maker) and the two registry-facing services, so no real model is loaded: the dispatch
+ * decisions (which model gets warmed, fail-closed vs best-effort, and the readiness state machine)
+ * are what these lock. Only the REAL ONNX graph compile is left to the inference ITs + box smoke.
  */
 class WarmupReadinessTest {
 
@@ -95,6 +98,56 @@ class WarmupReadinessTest {
     assertThat(states).containsExactly(ReadinessState.REFUSING_TRAFFIC);
   }
 
+  @Test
+  void a_registry_live_champion_that_fails_to_load_keeps_readiness_down() {
+    // No routing row, but /parks still serves the registry LIVE champion (the controller fallback).
+    // That branch is fail-closed too: an unloadable registry champion must keep readiness DOWN.
+    when(routingService.findRouting(WarmupReadiness.BATTED_BALL_MODEL))
+        .thenReturn(Optional.empty());
+    when(registry.findChampion(WarmupReadiness.BATTED_BALL_MODEL))
+        .thenReturn(Optional.of(modelVersion(3L)));
+    when(modelLoader.loadAllParks(3L)).thenThrow(new RuntimeException("onnx boom"));
+
+    warmup.onApplicationEvent(null);
+
+    assertThat(states).containsExactly(ReadinessState.REFUSING_TRAFFIC);
+  }
+
+  // --- served champion loads: readiness comes UP ---------------------------
+
+  @Test
+  void a_loadable_routing_champion_warms_all_parks_and_accepts_traffic() throws Exception {
+    LoadedAllParksModel model = mock(LoadedAllParksModel.class);
+    when(routingService.findRouting(WarmupReadiness.BATTED_BALL_MODEL))
+        .thenReturn(Optional.of(routing(10L, null)));
+    when(modelLoader.loadAllParks(10L)).thenReturn(model);
+    // pitch heads resolve to Optional.empty() (Mockito default) -> skipped.
+
+    warmup.onApplicationEvent(null);
+
+    assertThat(states)
+        .containsExactly(ReadinessState.REFUSING_TRAFFIC, ReadinessState.ACCEPTING_TRAFFIC);
+    verify(model, times(WarmupReadiness.WARMUP_ITERATIONS)).predictWithCarry(any());
+    verify(toy, never()).predict(anyDouble(), anyDouble(), anyDouble(), anyString(), anyString());
+  }
+
+  @Test
+  void a_broken_challenger_does_not_fail_readiness_when_the_champion_loads() throws Exception {
+    // Champion loads + predicts fine; the challenger's load throws. Readiness must still flip UP -
+    // the shadow contract is silent-degrade and the challenger is never the served prediction.
+    LoadedAllParksModel champion = mock(LoadedAllParksModel.class);
+    when(routingService.findRouting(WarmupReadiness.BATTED_BALL_MODEL))
+        .thenReturn(Optional.of(routing(10L, 20L)));
+    when(modelLoader.loadAllParks(10L)).thenReturn(champion);
+    when(modelLoader.loadAllParks(20L)).thenThrow(new RuntimeException("challenger boom"));
+
+    warmup.onApplicationEvent(null);
+
+    assertThat(states)
+        .containsExactly(ReadinessState.REFUSING_TRAFFIC, ReadinessState.ACCEPTING_TRAFFIC);
+    verify(champion, times(WarmupReadiness.WARMUP_ITERATIONS)).predictWithCarry(any());
+  }
+
   // --- unregistered environment: toy fallback, still ready -----------------
 
   @Test
@@ -106,7 +159,8 @@ class WarmupReadinessTest {
 
     assertThat(states)
         .containsExactly(ReadinessState.REFUSING_TRAFFIC, ReadinessState.ACCEPTING_TRAFFIC);
-    verify(toy, times(3)).predict(anyDouble(), anyDouble(), anyDouble(), anyString(), anyString());
+    verify(toy, times(WarmupReadiness.WARMUP_ITERATIONS))
+        .predict(anyDouble(), anyDouble(), anyDouble(), anyString(), anyString());
     verify(modelLoader, never()).loadAllParks(anyLong());
   }
 
@@ -122,6 +176,43 @@ class WarmupReadinessTest {
     when(routingService.findRouting(PitchPredictionService.PRE_MODEL_NAME))
         .thenReturn(Optional.of(routing(5L, null)));
     when(modelLoader.loadPitchPre(5L)).thenThrow(new RuntimeException("pitch boom"));
+    when(routingService.findRouting(PitchPredictionService.POST_MODEL_NAME))
+        .thenReturn(Optional.empty());
+    when(registry.findChampion(PitchPredictionService.POST_MODEL_NAME))
+        .thenReturn(Optional.empty());
+
+    warmup.onApplicationEvent(null);
+
+    assertThat(states)
+        .containsExactly(ReadinessState.REFUSING_TRAFFIC, ReadinessState.ACCEPTING_TRAFFIC);
+  }
+
+  @Test
+  void a_pitch_post_head_that_fails_to_warm_does_not_fail_readiness() {
+    // Symmetric to the pitch-pre case (guards against a copy-paste divergence in the post method):
+    // battedball unregistered -> toy ready; pitch-post resolves a champion but its load throws.
+    when(routingService.findRouting(WarmupReadiness.BATTED_BALL_MODEL))
+        .thenReturn(Optional.empty());
+    when(registry.findChampion(WarmupReadiness.BATTED_BALL_MODEL)).thenReturn(Optional.empty());
+    when(routingService.findRouting(PitchPredictionService.POST_MODEL_NAME))
+        .thenReturn(Optional.of(routing(8L, null)));
+    when(modelLoader.loadPitchPost(8L)).thenThrow(new RuntimeException("pitch post boom"));
+
+    warmup.onApplicationEvent(null);
+
+    assertThat(states)
+        .containsExactly(ReadinessState.REFUSING_TRAFFIC, ReadinessState.ACCEPTING_TRAFFIC);
+  }
+
+  @Test
+  void a_registry_lookup_failure_during_pitch_resolution_does_not_fail_readiness() {
+    // Batted-ball unregistered -> toy warms, api ready. The pitch-pre resolution lookup itself
+    // throws (a transient registry/routing blip); it must be swallowed, never fail readiness.
+    when(routingService.findRouting(WarmupReadiness.BATTED_BALL_MODEL))
+        .thenReturn(Optional.empty());
+    when(registry.findChampion(WarmupReadiness.BATTED_BALL_MODEL)).thenReturn(Optional.empty());
+    when(routingService.findRouting(PitchPredictionService.PRE_MODEL_NAME))
+        .thenThrow(new RuntimeException("registry blip"));
     when(routingService.findRouting(PitchPredictionService.POST_MODEL_NAME))
         .thenReturn(Optional.empty());
     when(registry.findChampion(PitchPredictionService.POST_MODEL_NAME))

@@ -56,12 +56,14 @@ import org.springframework.stereotype.Component;
 public class WarmupReadiness implements ApplicationListener<ApplicationReadyEvent> {
 
   private static final Logger log = LoggerFactory.getLogger(WarmupReadiness.class);
-  private static final int WARMUP_ITERATIONS = 3;
+  static final int WARMUP_ITERATIONS = 3; // package-private so the test asserts against it
 
   /**
-   * The registry name of the served batted-ball model. Source of truth is {@code
-   * PredictAllParksController.MODEL_NAME} (package-private in {@code api}); kept in sync by the
-   * warm-up ITs that boot the real controller.
+   * The registry name of the served batted-ball model. It MUST equal {@code
+   * PredictAllParksController.MODEL_NAME} (package-private in {@code api}, deliberately not
+   * imported so {@code config} does not depend on {@code api}). There is no automated cross-check,
+   * so a rename must touch both; if they diverge, warm-up would fail-closed on the wrong name and
+   * the actually-served champion would never be warmed.
    */
   static final String BATTED_BALL_MODEL = "battedball_outcome";
 
@@ -91,6 +93,9 @@ public class WarmupReadiness implements ApplicationListener<ApplicationReadyEven
       warm();
       AvailabilityChangeEvent.publish(publisher, this, ReadinessState.ACCEPTING_TRAFFIC);
     } catch (Exception ex) {
+      // Fail-closed: a served-champion warm failure leaves readiness DOWN (the api can't serve
+      // /parks anyway). Errors (e.g. a broken native ONNX runtime) are intentionally NOT caught -
+      // that is an environment-level defect that should surface loudly and abort startup (DEF-L3).
       log.error("warm-up failed; readiness stays DOWN", ex);
     }
   }
@@ -166,11 +171,14 @@ public class WarmupReadiness implements ApplicationListener<ApplicationReadyEven
   // --- pitch heads (best-effort; no user-facing surface) -------------------
 
   private String warmPitchPreBestEffort() {
-    OptionalLong vid = resolveChampionId(PitchPredictionService.PRE_MODEL_NAME);
-    if (vid.isEmpty()) {
-      return "skipped (not registered)";
-    }
+    // The resolution lookup (routing + registry) is INSIDE the try: a transient registry/routing
+    // failure during a pitch head's warm is best-effort too and must never fail readiness. Only the
+    // served battedball_outcome champion is fail-closed.
     try {
+      OptionalLong vid = resolveChampionId(PitchPredictionService.PRE_MODEL_NAME);
+      if (vid.isEmpty()) {
+        return "skipped (not registered)";
+      }
       LoadedPitchModel model = modelLoader.loadPitchPre(vid.getAsLong());
       FeaturePipelinePitchPre.Request req = samplePitchPreRequest();
       for (int i = 0; i < WARMUP_ITERATIONS; i++) {
@@ -187,11 +195,11 @@ public class WarmupReadiness implements ApplicationListener<ApplicationReadyEven
   }
 
   private String warmPitchPostBestEffort() {
-    OptionalLong vid = resolveChampionId(PitchPredictionService.POST_MODEL_NAME);
-    if (vid.isEmpty()) {
-      return "skipped (not registered)";
-    }
     try {
+      OptionalLong vid = resolveChampionId(PitchPredictionService.POST_MODEL_NAME);
+      if (vid.isEmpty()) {
+        return "skipped (not registered)";
+      }
       LoadedPitchModel model = modelLoader.loadPitchPost(vid.getAsLong());
       FeaturePipelinePitchPost.Request req = samplePitchPostRequest();
       for (int i = 0; i < WARMUP_ITERATIONS; i++) {
