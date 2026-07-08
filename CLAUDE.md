@@ -50,8 +50,9 @@ session and most "obvious" alternatives have already been considered and rejecte
   (failed primary). So the [154]/ADR-0011 "no user-visible pitch prediction" guarantee holds via the
   absent UI caller, NOT routing mode.
 - **Coverage is measured everywhere; backend, training, and frontend now gate.** Backend
-  JaCoCo (in `backend/build.gradle.kts` and `backend.yml`) gates on a regression floor (LINE >= 80%,
-  BRANCH >= 68%, a few points under the 2026-07-04 CI baseline of 82.42% / 70.54%), enforced only
+  JaCoCo (in `backend/build.gradle.kts` and `backend.yml`) gates on a regression floor (LINE >= 82%,
+  BRANCH >= 70%, re-baselined 2026-07-08 when F2.3 un-skipped the pitch + simulate web tests; a few
+  points under the CI baseline, which was 82.42% / 70.54% on 2026-07-04 and higher after), enforced only
   when the Docker ITs run (`-Dbullpen.it.docker=true`, i.e. CI) so local `./gradlew build` is
   unaffected. Training coverage (~57% blended TOTAL) is gated as a 55% regression floor, with 75% an
   aspirational warning-only target (`training.yml`). Frontend vitest v8 (`frontend.yml`
