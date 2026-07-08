@@ -71,12 +71,36 @@ class PsiTest {
   }
 
   @Test
-  void categorical_with_disjoint_distributions_yields_high_chi_squared() {
+  void categorical_disjoint_distributions_yield_the_max_distance() {
     Map<String, Integer> reference = Map.of("A", 1000, "B", 1000);
     Map<String, Integer> actual = Map.of("C", 1000, "D", 1000);
     double chi2 = Psi.computeCategorical(reference, actual);
-    // Each of 4 keys contributes (1000)^2 / 1000 = 1000 → total = 4000.
-    assertThat(chi2).isEqualTo(4000.0);
+    // Proportions: each of the 4 disjoint keys contributes (0.5)^2 / 0.5 = 0.5 -> total 2.0, the
+    // theoretical maximum of the symmetric chi-squared distance (fully disjoint supports). The old
+    // raw-count formula returned 4000 here, which was scale-dependent garbage.
+    assertThat(chi2).isEqualTo(2.0);
+  }
+
+  @Test
+  void categorical_same_shape_at_wildly_different_scales_is_near_zero() {
+    // Regression for the production defect surfaced on the first live drift cycle (2026-07-08):
+    // a ~1M-row training reference met a ~100-row actual window and the raw-count chi² collapsed to
+    // ~the reference row count (~710k) for every categorical feature. Normalizing to proportions
+    // makes an identical shape score ~0 regardless of the totals.
+    Map<String, Integer> reference = Map.of("A", 700_000, "B", 300_000);
+    Map<String, Integer> actual = Map.of("A", 70, "B", 30);
+    assertThat(Psi.computeCategorical(reference, actual)).isCloseTo(0.0, within(1e-9));
+  }
+
+  @Test
+  void categorical_proportion_shift_is_scale_invariant() {
+    // Same proportional shift (0.5/0.5 -> 0.6/0.4) at two very different actual-window sizes yields
+    // the same distance: the metric depends on shape, not counts.
+    Map<String, Integer> reference = Map.of("A", 500_000, "B", 500_000);
+    double small = Psi.computeCategorical(reference, Map.of("A", 60, "B", 40));
+    double large = Psi.computeCategorical(reference, Map.of("A", 600_000, "B", 400_000));
+    assertThat(small).isCloseTo(large, within(1e-9));
+    assertThat(small).isGreaterThan(0.0);
   }
 
   @Test
