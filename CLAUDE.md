@@ -197,13 +197,13 @@ Most commands assume the working directory is the project root unless noted.
 
 ### Backend (Java)
 
-- Build: `./gradlew -p backend build`
-- Test: `./gradlew -p backend test`
-- Format: `./gradlew -p backend spotlessApply`
-- Static analysis: `./gradlew -p backend spotbugsMain errorproneMain`
-- Run API profile: `./gradlew -p backend bootRun --args='--spring.profiles.active=api'`
-- Run worker profile: `./gradlew -p backend bootRun --args='--spring.profiles.active=worker'`
-- Migrate SQLite registry: `./gradlew -p backend flywayMigrate`
+- Build: `cd backend && ./gradlew build`
+- Test: `cd backend && ./gradlew test`
+- Format: `cd backend && ./gradlew spotlessApply`
+- Static analysis: `cd backend && ./gradlew spotbugsMain errorproneMain`
+- Run API profile: `cd backend && ./gradlew bootRun --args='--spring.profiles.active=api'`
+- Run worker profile: `cd backend && ./gradlew bootRun --args='--spring.profiles.active=worker'`
+- Migrate SQLite registry: `cd backend && ./gradlew flywayMigrate`
 
 ### Training (Python)
 
@@ -219,7 +219,7 @@ Most commands assume the working directory is the project root unless noted.
 
 - Install: `cd frontend && npm install`
 - Dev server: `cd frontend && npm run dev`
-- Type check: `cd frontend && npx tsc --noEmit`
+- Type check: `cd frontend && npx tsc -b` (`tsc --noEmit` is a silent no-op with this project's references config)
 - Lint: `cd frontend && npm run lint`
 - Unit tests: `cd frontend && npm test`
 - E2E (Playwright): `cd frontend && npx playwright test`
