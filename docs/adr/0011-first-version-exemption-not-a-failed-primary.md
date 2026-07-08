@@ -155,4 +155,18 @@ and 9 themselves are unchanged.
 
 ## Revision History
 
-(none)
+- **2026-07-08** - SCOPED AMENDMENT (decision [177]; owner + TD converged via
+  /decide). This ADR's "no user-visible pitch prediction" stance is NARROWED to
+  "no user-visible PREDICTIVE pitch surface." A RETROSPECTIVE display of the
+  champion `pitch_outcome_post`'s ALREADY-LOGGED per-pitch predictions vs the
+  realized outcomes, on the game-page pitch log, is now SANCTIONED - earned by
+  the honest PASSING gate ([164]/[165]: Brier 0.104 vs LR 0.149, ECE 0.0013)
+  plus PR #210's committed 2026-holdout evidence (59.1% top-1 / 80.8% top-2 on
+  237,396 unseen pitches). This is a scope clarification, NOT a supersession:
+  the core guarantee holds - no user-visible surface shows a pitch prediction
+  BEFORE the pitch is thrown (POST's release / early-flight features make an
+  honest surface retrospective by nature, and live / next-pitch PREDICTION
+  stays non-user-visible pending a pre-pitch-capable champion earned through
+  the research program). Status stays Accepted; only the SCOPE of "no
+  user-visible pitch prediction" is clarified, not the discipline. See decision
+  [177].
