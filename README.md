@@ -56,11 +56,13 @@ pending; a synthetic induced-drift drill stands in for now).
 
 The live site ([thebullpen.net](https://thebullpen.net)):
 
-|                              Tonight's slate                               |                                 Ops dashboard                                 |
-| :------------------------------------------------------------------------: | :---------------------------------------------------------------------------: |
-| [![Tonight's slate](docs/screenshots/home.png)](docs/screenshots/home.png) |    [![Ops dashboard](docs/screenshots/ops.png)](docs/screenshots/ops.png)     |
-|                               **Live game**                                |                             **Park HR explorer**                              |
-|    [![Live game](docs/screenshots/game.png)](docs/screenshots/game.png)    | [![Park HR explorer](docs/screenshots/parks.png)](docs/screenshots/parks.png) |
+|                                Tonight's slate                                 |                                         Ops dashboard                                         |
+| :----------------------------------------------------------------------------: | :-------------------------------------------------------------------------------------------: |
+|   [![Tonight's slate](docs/screenshots/home.png)](docs/screenshots/home.png)   |            [![Ops dashboard](docs/screenshots/ops.png)](docs/screenshots/ops.png)             |
+|                                 **Live game**                                  |                                     **Park HR explorer**                                      |
+|      [![Live game](docs/screenshots/game.png)](docs/screenshots/game.png)      |   [![Park HR explorer](docs/screenshots/parks-full.jpeg)](docs/screenshots/parks-full.jpeg)   |
+|                               **Player search**                                |                                      **Player profile**                                       |
+| [![Player search](docs/screenshots/players.png)](docs/screenshots/players.png) | [![Player profile](docs/screenshots/player-ohtani.jpeg)](docs/screenshots/player-ohtani.jpeg) |
 
 ## How to try it
 
