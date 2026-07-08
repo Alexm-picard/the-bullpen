@@ -53,11 +53,13 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public class RateLimitFilter extends OncePerRequestFilter {
 
   private static final String PREDICT_PREFIX = "/v1/predict/";
+  private static final String SIMULATE_PREFIX = "/v1/simulate/";
   private static final String SEARCH_PATH = "/v1/players/search";
   private static final String ADMIN_PREFIX = "/v1/admin/";
 
   private final boolean enabled;
   private final int predictPerMinute;
+  private final int simulatePerMinute;
   private final int searchPerMinute;
   private final int adminPerMinute;
   private final List<IpAddressMatcher> trustedProxies;
@@ -68,12 +70,16 @@ public class RateLimitFilter extends OncePerRequestFilter {
   public RateLimitFilter(
       @Value("${bullpen.ratelimit.enabled:true}") boolean enabled,
       @Value("${bullpen.ratelimit.predict-per-minute:60}") int predictPerMinute,
+      // Simulate is ~12-40x the compute of a single predict (12 per-state ONNX calls + a Markov/MC
+      // solve), so it gets its own, tighter bucket rather than sharing the predict class (F1.6).
+      @Value("${bullpen.ratelimit.simulate-per-minute:15}") int simulatePerMinute,
       @Value("${bullpen.ratelimit.search-per-minute:120}") int searchPerMinute,
       @Value("${bullpen.ratelimit.admin-per-minute:20}") int adminPerMinute,
       @Value("${bullpen.ratelimit.trusted-proxies:127.0.0.0/8,::1}") List<String> trustedProxies,
       ObjectMapper objectMapper) {
     this.enabled = enabled;
     this.predictPerMinute = predictPerMinute;
+    this.simulatePerMinute = simulatePerMinute;
     this.searchPerMinute = searchPerMinute;
     this.adminPerMinute = adminPerMinute;
     // trim so an override like "127.0.0.0/8, ::1" (space after comma) cannot throw at startup.
@@ -93,6 +99,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
     }
     String path = request.getRequestURI();
     return !(path.startsWith(PREDICT_PREFIX)
+        || path.startsWith(SIMULATE_PREFIX)
         || path.equals(SEARCH_PATH)
         || path.startsWith(ADMIN_PREFIX));
   }
@@ -110,6 +117,9 @@ public class RateLimitFilter extends OncePerRequestFilter {
     } else if (path.equals(SEARCH_PATH)) {
       routeClass = "search";
       limit = searchPerMinute;
+    } else if (path.startsWith(SIMULATE_PREFIX)) {
+      routeClass = "simulate";
+      limit = simulatePerMinute;
     } else {
       routeClass = "predict";
       limit = predictPerMinute;
