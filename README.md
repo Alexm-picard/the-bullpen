@@ -29,7 +29,7 @@ pending; a synthetic induced-drift drill stands in for now).
   batted-ball head; the rest explicit UnsupportedModel) - written from scratch in
   Java rather than pulled in via MLflow. The wrapper is the project; the models
   are the excuse.
-- **ONNX Runtime in-process** in Java + Spring Boot 3 — no Python
+- **ONNX Runtime in-process** in Java + Spring Boot 3 - no Python
   sidecar, no live RPC. Training is Python; serving is JVM.
 - **Broadcast-graphics design system** (Barlow Condensed / Inter /
   JetBrains Mono, scorebug + lower-third telecast chrome). The product is
@@ -37,7 +37,7 @@ pending; a synthetic induced-drift drill stands in for now).
   not yet-another-SaaS chrome (decision [160], superseding the earlier
   scouting-report identity [133]).
 - **Per-model eval artifact** with rolling-origin cross-validation,
-  reliability diagrams, calibration metrics — always co-registered with
+  reliability diagrams, calibration metrics - always co-registered with
   a logistic-regression baseline to bound the neural model's lift.
 - A **drift -> postmortem** chain (automated trigger, human promotion gate -
   decision [44] / rule 6), validated end-to-end by a synthetic induced-drift
@@ -64,21 +64,32 @@ The live site ([thebullpen.net](https://thebullpen.net)):
 
 ## How to try it
 
-The simplest path is the live site above. Local dev:
+The simplest path is the live site above. To run it locally:
 
 ```bash
-# Stateful services (ClickHouse, Prometheus, Grafana)
-docker compose -f infra/docker-compose.yml up -d
+# 1. Stateful services (ClickHouse, Prometheus, Grafana). The ClickHouse container is
+#    FAIL-CLOSED since decision [161] - it refuses to start without a password - so seed the
+#    env FIRST, then bring the services up via the Makefile target (it renders the ClickHouse
+#    users file and passes --env-file). A bare `docker compose up` fails on the required :? vars.
+cp infra/.env.example infra/.env      # then set BULLPEN_CLICKHOUSE_PASSWORD + GRAFANA_ADMIN_PASSWORD
+make services-up                      # render-users.sh + docker compose --env-file infra/.env up -d
 
-# Backend (api profile on 8080, worker on 8081)
+# 2. Backend (api profile on 8080, worker on 8081). The Gradle wrapper lives in backend/, not root.
 cd backend && ./gradlew bootRun --args='--spring.profiles.active=api'
 
-# Frontend (Vite on 5173, calls Spring via CORS)
+# 3. Frontend (Vite on 5173, calls Spring via CORS)
 cd ../frontend && npm install && npm run dev
 
-# Training pipeline (Python 3.11+ via uv)
-cd ../training && uv sync && uv run pytest
+# 4. Training - run the test suite (OMP_NUM_THREADS=1 avoids a macOS libomp segfault)
+cd ../training && uv sync && OMP_NUM_THREADS=1 uv run python -m pytest
 ```
+
+**What works with an empty stack.** The backend boots against an empty ClickHouse with no
+registered ONNX model: the predict endpoints return a documented `503` (no live champion, not a
+crash), and every read surface (`/v1/ops/*`, players, parks, games) falls back to committed
+fixtures - so the SPA and the Ops dashboard render end-to-end before you have any data or models.
+Real predictions need the historical Statcast pull plus a trained-and-registered model, which is
+the self-hosted box workflow (ADR-0006), not the local quickstart.
 
 ## Training the models
 
@@ -88,7 +99,7 @@ are shadow) plus their two baselines (pitch LR, batted-ball LGBM). Training runs
 the full 2015–2025 ClickHouse dataset and the GPU); the Mac runs a sampled
 iteration loop. **2026 is holdout-only** (rule 13).
 
-**All at once** — from `training/`, the full sequence (feature table →
+**All at once** - from `training/`, the full sequence (feature table →
 pitch heads + baselines → batted-ball pipeline):
 
 ```bash
@@ -103,27 +114,27 @@ uv run python -m bullpen_training.pitch.production --model lr         # → LR b
 bash scripts/run_2c_overnight.sh
 ```
 
-**In sections** — every step above is independent and idempotent, so on a
+**In sections** - every step above is independent and idempotent, so on a
 box that thermal-throttles you run one, let it cool, run the next; the
 batted-ball orchestrator is itself sectionable stage-by-stage. The full
-procedure — prerequisites, per-stage heat/time table, cooldown cut-points,
-gates, and registration — lives in
+procedure - prerequisites, per-stage heat/time table, cooldown cut-points,
+gates, and registration - lives in
 [`docs/runbooks/training-models.md`](docs/runbooks/training-models.md)
 (batted-ball detail in
 [`2c-overnight-pipeline.md`](docs/runbooks/2c-overnight-pipeline.md)).
 
 ## Design + decisions
 
-Most "obvious" alternatives have been rejected with written rationale —
+Most "obvious" alternatives have been rejected with written rationale -
 check before re-litigating:
 
-- [System design](docs/design.md) — every locked technical choice with
+- [System design](docs/design.md) - every locked technical choice with
   context.
-- [Numbered decisions log](docs/decisions.md) — chronological append-only
+- [Numbered decisions log](docs/decisions.md) - chronological append-only
   flat log.
-- [Phased build plan](docs/plan.md) — Phase 0 → Phase 5, soft-cut
+- [Phased build plan](docs/plan.md) - Phase 0 → Phase 5, soft-cut
   priority list, two-week review cadence.
-- [`CLAUDE.md`](CLAUDE.md) — non-negotiable discipline rules.
+- [`CLAUDE.md`](CLAUDE.md) - non-negotiable discipline rules.
 - ADRs (long-form, top ~15 % of decisions): [`docs/adr/`](docs/adr/)
 
 ### Architecture
@@ -189,7 +200,9 @@ Underlying play-by-play data is not redistributed.**
   (live via `/v1/ops/*`, falling back to committed fixtures only when those return
   empty or the backend is offline). Still pure showcase from
   `frontend/src/data/*-fixtures.ts`: the `/parks` factor table, the About
-  methodology page, and the Ops drift-snapshot skeleton (no drift endpoint yet).
+  methodology page, and the Ops drift-snapshot panel (fixtures - the drift-detection
+  jobs that write `drift_metrics` are real, see below, but no user-facing drift-read
+  endpoint feeds this panel yet).
 - **Cross-park batted-ball fidelity is a known limitation.**
   `/v1/predict/batted-ball/all-parks` is served by the registered batted-ball
   champion across the 30 parks. The ball-flight physics validation passes (bias
@@ -251,22 +264,22 @@ at_bat_index, pitch_number)` is implemented and feeds the nightly calibration
 - **Drift postmortems** land under
   [`docs/postmortems/`](docs/postmortems/) when a model degrades and the
   human review writes one up. First one is a pre-season **induced-drift
-  drill** —
+  drill** -
   [`drill-2026-05-30-induced-battedball-drift.md`](docs/postmortems/drill-2026-05-30-induced-battedball-drift.md)
-  — that injected a 1σ feature shift + over-confidence and walked the real
-  detect → PAGE/NOTICE → human-gated retrain chain end-to-end (PSI 0.912,
-  ECE 0.188). Explicitly synthetic; proves the detector has teeth before
-  the first real in-season event.
+  - that injected a 1σ feature shift + over-confidence and walked the real
+    detect → PAGE/NOTICE → human-gated retrain chain end-to-end (PSI 0.912,
+    ECE 0.188). Explicitly synthetic; proves the detector has teeth before
+    the first real in-season event.
 - **Restore + reboot drill reports** under
   [`docs/drills/`](docs/drills/) (rule 8).
-- **Hardening sweeps** (Phase 5.5) — running observations in
+- **Hardening sweeps** (Phase 5.5) - running observations in
   [`docs/hardening/observations.md`](docs/hardening/observations.md),
   triaged into dated sweep docs with measured before/after per item. First
   one:
-  [`2026-05-30_sweep.md`](docs/hardening/2026-05-30_sweep.md) (11 items —
+  [`2026-05-30_sweep.md`](docs/hardening/2026-05-30_sweep.md) (11 items -
   CI red→green, 2 Schemathesis-found 500s→400, TS strict 67→0, raw-SQL
   leak 1→0, perf baselines, the drift-chain validation).
-- **Hiring readiness** (Phase 6) — deliverables tracked in
+- **Hiring readiness** (Phase 6) - deliverables tracked in
   [`docs/hiring/`](docs/hiring/): 60-second verbal pitch, lessons-
   learned doc, OSS contribution targets, recruiter-time-test.
 
@@ -275,13 +288,13 @@ at_bat_index, pitch_number)` is implemented and feeds the nightly calibration
 ```
 thebullpen/
 ├── backend/        Java 21 + Spring Boot 3 (Gradle Kotlin DSL)
-├── training/       Python 3.11 (uv) — model training, eval, ONNX export
+├── training/       Python 3.11 (uv) - model training, eval, ONNX export
 ├── frontend/       React 19 + TypeScript + Vite + Mantine 9 + Tailwind 4
 ├── contracts/      Canonical Python↔Java file contract
 ├── infra/          docker-compose, Prometheus + Grafana, backup scripts
 ├── docs/           design.md, plan.md, decisions.md, adr/, drills/, etc.
 ├── .githooks/      pre-commit (schema_hash discipline)
-└── deploy.sh       Phase 0 deploy stub — prefer the deploy-safely skill
+└── deploy.sh       Phase 0 deploy stub - prefer the deploy-safely skill
 ```
 
 ## Contact
