@@ -64,6 +64,14 @@ jobs:
             --head pre --out-dir artifacts/pitch_outcome_pre/v2
           uv run python -m bullpen_training.pitch.parity_fixture --synthetic \
             --model-dir artifacts/pitch_outcome_pre/v2
+          # pitch_outcome_pre/v1 is the SERVED pre artifact: PitchInferenceService's
+          # @ConditionalOnExpression + @Value default to it and MODEL_VERSION is "v1", so the bean
+          # (hence SimulateController via @ConditionalOnBean) only exists when v1/model.onnx is
+          # present. Without this the @EnabledIf on PredictPitchControllerTest + SimulateControllerTest
+          # is false and ~13 methods (incl. ALL /v1/simulate web coverage) silently skip in CI. Same
+          # deterministic miniature as v2 (v2 is the pre PARITY target); no parity fixture needed here.
+          uv run python -m bullpen_training.pitch.generate_ci_artifacts \
+            --head pre --out-dir artifacts/pitch_outcome_pre/v1
           uv run python -m bullpen_training.pitch.generate_ci_artifacts \
             --head post --out-dir artifacts/pitch_outcome_post/v1
           uv run python -m bullpen_training.pitch.parity_fixture_post --synthetic \
