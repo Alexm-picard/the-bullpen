@@ -27,6 +27,7 @@ public class InferenceMetrics {
 
   private static final String LATENCY_METRIC = "thebullpen_inference_prediction_latency_seconds";
   private static final String SHADOW_LATENCY_METRIC = "thebullpen_inference_shadow_latency_seconds";
+  private static final String SHADOW_DROPPED_METRIC = "thebullpen_inference_shadow_dropped_total";
   private static final String COUNT_METRIC = "thebullpen_inference_prediction_total";
   private static final String ERROR_METRIC = "thebullpen_inference_prediction_errors_total";
 
@@ -35,6 +36,7 @@ public class InferenceMetrics {
   private final ConcurrentHashMap<String, Timer> shadowTimers = new ConcurrentHashMap<>();
   private final ConcurrentHashMap<String, Counter> counters = new ConcurrentHashMap<>();
   private final ConcurrentHashMap<String, Counter> errors = new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<String, Counter> shadowDrops = new ConcurrentHashMap<>();
 
   public InferenceMetrics(MeterRegistry registry) {
     this.registry = registry;
@@ -98,6 +100,26 @@ public class InferenceMetrics {
                 Counter.builder(COUNT_METRIC)
                     .tag("model_name", modelName)
                     .tag("role", role)
+                    .register(registry))
+        .increment();
+  }
+
+  /**
+   * Count a fire-and-forget SHADOW challenger leg that produced no {@code prediction_log} row
+   * (F1.4). {@code reason} is one of {@code timeout} (the {@code orTimeout} bound fired), {@code
+   * defect} (a programming bug / {@link Error}), or {@code degraded} (a normal inference/load
+   * failure). Without this, dropped shadows would silently bias the shadow log that feeds
+   * experiment eval - the counter makes the drop rate (and a post-routing-flip timeout spike)
+   * observable.
+   */
+  public void incrementShadowDropped(String modelName, String reason) {
+    shadowDrops
+        .computeIfAbsent(
+            modelName + "|" + reason,
+            key ->
+                Counter.builder(SHADOW_DROPPED_METRIC)
+                    .tag("model_name", modelName)
+                    .tag("reason", reason)
                     .register(registry))
         .increment();
   }
