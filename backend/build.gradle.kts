@@ -179,7 +179,10 @@ tasks.named<Test>("test") {
 // set, so the percentage isn't quietly massaged). jacocoTestCoverageVerification adds a HARD floor
 // a few points under the CI-measured baseline (LINE 82.42% / BRANCH 70.54% on 2026-07-04, full
 // suite incl. Docker ITs; up from the 2026-06-15 77.85% / 65.67% as the two-instance + Wave D tests
-// landed) so a real coverage regression reds the build without flapping on noise.
+// landed) so a real coverage regression reds the build without flapping on noise. Re-baselined
+// 2026-07-08 (F2.3): un-skipping the @EnabledIf pitch + simulate web tests (~13 methods, incl. the
+// previously-0%-covered simulation package) raised the CI baseline further, so the floor moves
+// LINE 80 -> 82 and BRANCH 68 -> 70; the exact new baseline is in the backend-test job summary.
 //
 // The floor is enforced ONLY when the Docker-gated ITs actually ran (-Dbullpen.it.docker=true, i.e.
 // CI). A local `./gradlew build` on macOS skips those ITs, which drags coverage below the floor;
@@ -205,12 +208,12 @@ tasks.jacocoTestCoverageVerification {
             limit {
                 counter = "LINE"
                 value = "COVEREDRATIO"
-                minimum = "0.80".toBigDecimal()
+                minimum = "0.82".toBigDecimal()
             }
             limit {
                 counter = "BRANCH"
                 value = "COVEREDRATIO"
-                minimum = "0.68".toBigDecimal()
+                minimum = "0.70".toBigDecimal()
             }
         }
     }
