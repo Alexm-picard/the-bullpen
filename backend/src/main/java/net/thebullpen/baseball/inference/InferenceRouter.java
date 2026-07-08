@@ -6,6 +6,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 import net.thebullpen.baseball.inference.routing.Bucketer;
 import net.thebullpen.baseball.inference.routing.Role;
@@ -71,7 +72,7 @@ public class InferenceRouter {
       Bucketer bucketer,
       @Qualifier("inferenceShadowExecutor") ExecutorService executor,
       InferenceMetrics metrics,
-      @Value("${bullpen.inference.shadow-timeout-ms:250}") long shadowTimeoutMs) {
+      @Value("${bullpen.inference.shadow-timeout-ms:500}") long shadowTimeoutMs) {
     this.routingService = routingService;
     this.bucketer = bucketer;
     this.executor = executor;
@@ -183,18 +184,32 @@ public class InferenceRouter {
       metrics.recordShadowLatency(sample, modelName);
       return;
     }
+    // A dropped shadow logs no prediction_log row, so without this counter a timed-out or degraded
+    // shadow would vanish silently and bias the shadow log that feeds experiment eval. Count every
+    // drop by reason so the drop rate is observable (and a timeout spike after a routing flip is
+    // visible even when the challenger warm-up did not fully cover the cold path).
     Throwable cause =
         ex instanceof CompletionException ce && ce.getCause() != null ? ce.getCause() : ex;
-    if (cause instanceof Error
+    String reason;
+    if (cause instanceof TimeoutException) {
+      reason = "timeout";
+      log.warn(
+          "shadow challenger for {} timed out off the request path after {}ms",
+          modelName,
+          shadowTimeoutMs);
+    } else if (cause instanceof Error
         || cause instanceof NullPointerException
         || cause instanceof ClassCastException) {
+      reason = "defect";
       log.error(
           "shadow challenger for {} threw a DEFECT off the request path (surfacing, not degrading)",
           modelName,
           cause);
     } else {
+      reason = "degraded";
       log.warn("shadow challenger for {} degraded off the request path: {}", modelName, cause);
     }
+    metrics.incrementShadowDropped(modelName, reason);
   }
 
   private static <Resp> Resp safeJoin(CompletableFuture<Resp> fut, String modelName) {
