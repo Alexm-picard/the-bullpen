@@ -2,7 +2,7 @@
 
 > **Project**: The Bullpen (`thebullpen.net`) — A baseball analytics + ML systems platform
 > **Author**: Alex Picard
-> **Status**: Pre-implementation; all decisions locked through planning session
+> **Status**: Planning-era document (locked 2026-05). Authoritative for design rationale and locked decisions; it deliberately does NOT track build status - that lives in `docs/phase-status.json` (read by `/status`).
 > **Last updated**: 2026-05-29 (frontend identity re-pitched from editorial-data → scouting-report; see §7, §8, §10)
 
 ---
