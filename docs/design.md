@@ -593,6 +593,19 @@ transition probabilities. Two implementations:
 Both implemented; convergence test (MC mean → analytical) catches bugs
 in either.
 
+**Serving posture (unrouted by design)**: both `/v1/simulate` endpoints are
+deliberately UNROUTED diagnostics, not served-prediction surfaces. The
+simulator PINS one model artifact (`PitchInferenceService`, `pitch_outcome_pre`
+/v1) and calls it directly rather than through the A/B `InferenceRouter`,
+because the ~12 per-state pitch calls behind a single solve must all come from
+the same model version - routing per probe could stitch the transition matrix
+from two distributions across a mid-request promotion or bucketing flip, an
+incoherent chain with no way to detect it. The response reports
+`servingMode="unrouted-diagnostic"` plus the pinned artifact's registry stage;
+simulate latency lands on a dedicated
+`thebullpen_inference_simulate_latency_seconds` metric under `role="simulator"`,
+never the served-prediction histogram. See decision [176].
+
 **Half-inning extension** deferred to v1.5: continue the chain through
 outs to compute "P(scoring this inning)." Useful, low marginal effort,
 but not v1.
