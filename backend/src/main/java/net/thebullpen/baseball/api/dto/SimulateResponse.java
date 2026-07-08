@@ -23,5 +23,19 @@ public record SimulateResponse(
         Integer mcTrials,
     String modelName,
     String modelVersion,
+    @Schema(
+            description =
+                "How the model was served. Always \"unrouted-diagnostic\": the simulator pins one"
+                    + " artifact and calls it directly (NOT through the A/B router), because the"
+                    + " per-state Markov solve requires every probe to come from the same model"
+                    + " version - routing could stitch a mid-request promotion/flip across states.")
+        String servingMode,
+    @Schema(
+            nullable = true,
+            description =
+                "The served model's registry stage (e.g. \"shadow\"), or null when the pinned"
+                    + " artifact has no matching registry row. Informational: the simulator serves"
+                    + " the pinned artifact directly regardless of stage.")
+        String registryStage,
     long latencyMicros,
     String correlationId) {}

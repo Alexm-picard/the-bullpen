@@ -28,6 +28,8 @@ public class InferenceMetrics {
   private static final String LATENCY_METRIC = "thebullpen_inference_prediction_latency_seconds";
   private static final String SHADOW_LATENCY_METRIC = "thebullpen_inference_shadow_latency_seconds";
   private static final String SHADOW_DROPPED_METRIC = "thebullpen_inference_shadow_dropped_total";
+  private static final String SIMULATE_LATENCY_METRIC =
+      "thebullpen_inference_simulate_latency_seconds";
   private static final String COUNT_METRIC = "thebullpen_inference_prediction_total";
   private static final String ERROR_METRIC = "thebullpen_inference_prediction_errors_total";
 
@@ -37,6 +39,7 @@ public class InferenceMetrics {
   private final ConcurrentHashMap<String, Counter> counters = new ConcurrentHashMap<>();
   private final ConcurrentHashMap<String, Counter> errors = new ConcurrentHashMap<>();
   private final ConcurrentHashMap<String, Counter> shadowDrops = new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<String, Timer> simulateTimers = new ConcurrentHashMap<>();
 
   public InferenceMetrics(MeterRegistry registry) {
     this.registry = registry;
@@ -89,6 +92,28 @@ public class InferenceMetrics {
                     .serviceLevelObjectives(Duration.ofMillis(50))
                     .minimumExpectedValue(Duration.ofMillis(1))
                     .maximumExpectedValue(Duration.ofSeconds(1))
+                    .register(registry)));
+  }
+
+  /**
+   * Record the latency of a forward-simulator request, on its OWN metric ({@link
+   * #SIMULATE_LATENCY_METRIC}) so it NEVER blends into the served {@link #LATENCY_METRIC}. A
+   * simulate request is ~12 per-state ONNX calls plus a Markov/MC solve, so its wall time is not a
+   * single served prediction and must not skew the served-latency histogram (F1.6, decision:
+   * simulate is an unrouted diagnostic). Wider bounds than the served timer, no 50ms SLO. Returns
+   * the elapsed nanos for the response body.
+   */
+  public long recordSimulateLatency(Timer.Sample sample, String modelName) {
+    return sample.stop(
+        simulateTimers.computeIfAbsent(
+            modelName,
+            name ->
+                Timer.builder(SIMULATE_LATENCY_METRIC)
+                    .tag("model_name", name)
+                    .description("Latency of an unrouted forward-simulator request")
+                    .publishPercentileHistogram()
+                    .minimumExpectedValue(Duration.ofMillis(1))
+                    .maximumExpectedValue(Duration.ofSeconds(10))
                     .register(registry)));
   }
 

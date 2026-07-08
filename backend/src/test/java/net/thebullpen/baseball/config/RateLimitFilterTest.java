@@ -34,6 +34,11 @@ class RateLimitFilterTest {
       return "ok";
     }
 
+    @PostMapping("/v1/simulate/ping")
+    String simulate() {
+      return "ok";
+    }
+
     @GetMapping("/v1/players/search")
     String search() {
       return "ok";
@@ -56,9 +61,19 @@ class RateLimitFilterTest {
 
   private static RateLimitFilter filter(
       boolean enabled, int predictPerMinute, int searchPerMinute, int adminPerMinute) {
+    return filter(enabled, predictPerMinute, 15, searchPerMinute, adminPerMinute);
+  }
+
+  private static RateLimitFilter filter(
+      boolean enabled,
+      int predictPerMinute,
+      int simulatePerMinute,
+      int searchPerMinute,
+      int adminPerMinute) {
     return new RateLimitFilter(
         enabled,
         predictPerMinute,
+        simulatePerMinute,
         searchPerMinute,
         adminPerMinute,
         LOOPBACK_PROXIES,
@@ -100,6 +115,19 @@ class RateLimitFilterTest {
     for (int i = 0; i < 5; i++) {
       mvc.perform(get("/v1/ops/routing")).andExpect(status().isOk());
     }
+  }
+
+  @Test
+  void simulatePathsThrottledOnTheirOwnTighterBucket() throws Exception {
+    // Simulate is ~12-40x the compute of a predict, so it gets its own, tighter bucket (1/min here)
+    // rather than sharing the predict class - draining it must not touch predict, and vice versa.
+    MockMvc mvc = mvcWith(filter(true, 60, 1, 120, 20)); // predict=60, simulate=1
+    mvc.perform(post("/v1/simulate/ping")).andExpect(status().isOk());
+    mvc.perform(post("/v1/simulate/ping"))
+        .andExpect(status().isTooManyRequests())
+        .andExpect(jsonPath("$.error.code", equalTo("rate_limited")));
+    // The drained simulate bucket leaves the generous predict bucket untouched.
+    mvc.perform(post("/v1/predict/ping")).andExpect(status().isOk());
   }
 
   @Test

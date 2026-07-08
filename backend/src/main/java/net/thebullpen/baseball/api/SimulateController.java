@@ -5,6 +5,7 @@ import io.micrometer.core.instrument.Timer;
 import jakarta.validation.Valid;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.function.IntFunction;
 import net.thebullpen.baseball.api.dto.SimulateRequest;
@@ -12,6 +13,7 @@ import net.thebullpen.baseball.api.dto.SimulateResponse;
 import net.thebullpen.baseball.inference.FeaturePipelinePitchPre;
 import net.thebullpen.baseball.inference.InferenceMetrics;
 import net.thebullpen.baseball.inference.PitchInferenceService;
+import net.thebullpen.baseball.registry.RegistryService;
 import net.thebullpen.baseball.simulation.AnalyticalSolver;
 import net.thebullpen.baseball.simulation.MonteCarloSimulator;
 import net.thebullpen.baseball.simulation.PitchOutcome;
@@ -46,15 +48,26 @@ import org.springframework.web.bind.annotation.RestController;
 @ConditionalOnBean(PitchInferenceService.class)
 public class SimulateController {
 
-  private static final String ROLE = "champion";
+  // Unrouted diagnostic: the simulator PINS one artifact and calls it directly, never through the
+  // A/B router - the per-state Markov solve requires every one of its 12 probes to come from the
+  // SAME model version, and routing could stitch a mid-request promotion/flip across states into an
+  // incoherent transition matrix. The role tag is "simulator" (not "champion") so this traffic can
+  // never blend into any champion/shadow/challenger fleet query, and latency lands on its own
+  // metric
+  // (F1.6, see decisions.md).
+  private static final String ROLE = "simulator";
+  private static final String SERVING_MODE = "unrouted-diagnostic";
   private static final int DEFAULT_MC_TRIALS = 10_000;
 
   private final PitchInferenceService inference;
   private final InferenceMetrics metrics;
+  private final RegistryService registry;
 
-  public SimulateController(PitchInferenceService inference, InferenceMetrics metrics) {
+  public SimulateController(
+      PitchInferenceService inference, InferenceMetrics metrics, RegistryService registry) {
     this.inference = inference;
     this.metrics = metrics;
+    this.registry = registry;
   }
 
   @PostMapping("/plate-appearance")
@@ -64,7 +77,7 @@ public class SimulateController {
       IntFunction<double[]> probsByState = buildPerStateProbs(req);
       AnalyticalSolver.Solution solution = AnalyticalSolver.solve(probsByState);
       AnalyticalSolver.StateResult start = solution.at(req.startBalls(), req.startStrikes());
-      long elapsedNanos = sample.stop(metrics.timer(PitchInferenceService.MODEL_NAME));
+      long elapsedNanos = metrics.recordSimulateLatency(sample, PitchInferenceService.MODEL_NAME);
       metrics.incrementPrediction(PitchInferenceService.MODEL_NAME, ROLE);
       return new SimulateResponse(
           "analytical",
@@ -77,6 +90,8 @@ public class SimulateController {
           null,
           PitchInferenceService.MODEL_NAME,
           PitchInferenceService.MODEL_VERSION,
+          SERVING_MODE,
+          registryStage(),
           elapsedNanos / 1_000L,
           MDC.get("correlation_id"));
     } catch (Exception e) {
@@ -94,7 +109,7 @@ public class SimulateController {
       long seed = req.mcSeed() != null ? req.mcSeed() : System.nanoTime();
       MonteCarloSimulator.Result r =
           MonteCarloSimulator.run(req.startBalls(), req.startStrikes(), trials, probsByState, seed);
-      long elapsedNanos = sample.stop(metrics.timer(PitchInferenceService.MODEL_NAME));
+      long elapsedNanos = metrics.recordSimulateLatency(sample, PitchInferenceService.MODEL_NAME);
       metrics.incrementPrediction(PitchInferenceService.MODEL_NAME, ROLE);
       return new SimulateResponse(
           "monte_carlo",
@@ -107,12 +122,27 @@ public class SimulateController {
           trials,
           PitchInferenceService.MODEL_NAME,
           PitchInferenceService.MODEL_VERSION,
+          SERVING_MODE,
+          registryStage(),
           elapsedNanos / 1_000L,
           MDC.get("correlation_id"));
     } catch (Exception e) {
       metrics.incrementError(PitchInferenceService.MODEL_NAME, e.getClass().getSimpleName());
       throw e;
     }
+  }
+
+  /**
+   * The pinned served artifact's registry stage (e.g. {@code "shadow"}), or {@code null} when it
+   * has no matching registry row. Informational only - the simulator serves the pinned artifact
+   * directly regardless of stage. Cheap: one lookup by model name on a rate-limited endpoint.
+   */
+  private String registryStage() {
+    return registry.findByName(PitchInferenceService.MODEL_NAME).stream()
+        .filter(mv -> mv.version().equals(PitchInferenceService.MODEL_VERSION))
+        .map(mv -> mv.stage().name().toLowerCase(Locale.ROOT))
+        .findFirst()
+        .orElse(null);
   }
 
   /**
