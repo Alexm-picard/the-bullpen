@@ -47,6 +47,14 @@ help: ## Show this list
 
 ##@ Training (ADR-0006 dev/prod split)
 
+# NOTE (stale stubs): train-sample / train-full still point at
+# training/scripts/train_{sample,full}.py, which never materialized - the real
+# pipeline is the `bullpen_training` package (e.g. rolling-origin CV via
+# `uv run python -m bullpen_training.eval.promotion.driver`, see CLAUDE.md), and
+# full GPU training is box-side per ADR-0006. These targets were Phase-0
+# placeholders; rewire them onto the real module entry points or retire them
+# rather than trusting their "lands in Phase 2" text.
+
 .PHONY: train-sample
 train-sample: ## Iterate on a stratified sample locally (Mac, no GPU needed)
 	@if [[ ! -d training ]]; then \
@@ -141,10 +149,18 @@ sync-mirror: ## rclone sync R2 → portable drive (Mac only, pre-travel ritual)
 ##@ Build / check (cross-subdir)
 
 .PHONY: check
-check: ## Run all formatters / linters / tests
+check: ## Run all formatters / linters / tests (mirrors CI; safe on macOS)
 	cd backend  && ./gradlew check
-	cd training && uv run ruff check && uv run pyright && uv run pytest
-	cd frontend && npm run lint && npx tsc --noEmit && npm test --silent
+# training: `python -m pyright/pytest` (not the bare shims) so the uv-managed
+# interpreter is used even with a system pyright/pytest on PATH; OMP_NUM_THREADS=1
+# because the co-loaded ONNX/OpenMP runtimes segfault a single pytest on macOS
+# (this is a local-dev-only guard; CI runs on Linux and does not need it).
+	cd training && uv run ruff format --check . && uv run ruff check . \
+	  && uv run python -m pyright \
+	  && OMP_NUM_THREADS=1 uv run python -m pytest
+# frontend: `tsc -b` - `tsc --noEmit` is a silent no-op under this project's
+# references config, so it must never be used as the type-check gate.
+	cd frontend && npm run lint && npx tsc -b && npm test --silent
 
 .PHONY: services-up
 services-up: ## docker compose up stateful services (ClickHouse, Prometheus, Grafana)
