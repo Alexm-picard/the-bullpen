@@ -189,3 +189,56 @@ export function useLivePitches(id: number | null, status: string | undefined) {
   const pitches = useMemo(() => query.data ?? [], [query.data]);
   return { ...query, pitches };
 }
+
+/**
+ * One completed pitch's RETROSPECTIVE post-pitch champion call (F2.1c, decision [177]): the
+ * pitch_outcome_post champion's LOGGED distribution vs what actually happened. Only pitches that got
+ * a post prediction (full Tier-4) appear. Identity fields (inning, pitcherId, batterId,
+ * realizedOutcome) come from a LEFT JOIN and can be 0/null on a not-yet-reconciled pitch - the UI
+ * renders those as "-", never as a real id 0.
+ */
+export type PostPredictionRow = {
+  atBatIndex: number;
+  pitchNumber: number;
+  inning: number;
+  pitcherId: number;
+  batterId: number;
+  realizedOutcome: string | null;
+  postClasses: Record<string, number> | null;
+  postWinner: string | null;
+  modelVersion: string | null;
+};
+
+export type PostPredictionsPage = {
+  rows: PostPredictionRow[];
+  page: number;
+  size: number;
+  hasNext: boolean;
+};
+
+export const fetchPostPredictions = (id: number, page = 0, size = 50) =>
+  get<PostPredictionsPage>(
+    `/v1/games/${id}/post-predictions?page=${page}&size=${size}`,
+  );
+
+/**
+ * Poll the game's post-pitch champion predictions at the status-driven cadence, so the retrospective
+ * panel fills in as pitches complete. Page 0 (chronological) is enough for the panel; `hasNext`
+ * tells it more of the game exists beyond the shown window.
+ */
+export function usePostPredictions(
+  id: number | null,
+  status: string | undefined,
+  size = 50,
+) {
+  return useQuery<PostPredictionsPage, GameApiError>({
+    queryKey: ["games", "post-predictions", id, size],
+    enabled: id != null,
+    refetchInterval: statusPollIntervalMs(status),
+    staleTime: 5_000,
+    queryFn: () => {
+      if (id == null) throw new Error("id required");
+      return fetchPostPredictions(id, 0, size);
+    },
+  });
+}
