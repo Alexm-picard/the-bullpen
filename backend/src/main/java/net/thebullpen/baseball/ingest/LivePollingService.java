@@ -8,12 +8,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import net.thebullpen.baseball.config.IngestProperties;
 import net.thebullpen.baseball.data.JobLeaseRepository;
 import net.thebullpen.baseball.data.LivePitchesRepository;
 import net.thebullpen.baseball.data.PitcherFormRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -88,18 +88,17 @@ public class LivePollingService {
       Optional<PitcherFormRepository> formRepo,
       IngestMetrics metrics,
       JobLeaseRepository jobLease,
-      @Value("${bullpen.ingest.live.api-min-gap-ms:500}") long minApiGapMs,
-      @Value("${bullpen.ingest.live.schedule-refresh-min:15}") long scheduleRefreshMin,
-      @Value("${bullpen.ingest.live.lease-stale-seconds:30}") long leaseStaleSeconds) {
+      IngestProperties props) {
+    IngestProperties.Live live = props.live();
     this.client = client;
     this.repo = repo;
     this.predictor = predictor;
     this.formRepo = formRepo;
     this.metrics = metrics;
     this.jobLease = jobLease;
-    this.minApiGapMs = minApiGapMs;
-    this.scheduleRefreshMin = scheduleRefreshMin;
-    this.leaseStaleSeconds = leaseStaleSeconds;
+    this.minApiGapMs = live.apiMinGapMs();
+    this.scheduleRefreshMin = live.scheduleRefreshMin();
+    this.leaseStaleSeconds = live.leaseStaleSeconds();
   }
 
   @Scheduled(fixedDelayString = "${bullpen.ingest.live.tick-ms:5000}")

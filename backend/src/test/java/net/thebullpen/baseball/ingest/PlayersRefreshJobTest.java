@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.time.Year;
 import java.time.ZoneId;
 import java.util.List;
+import net.thebullpen.baseball.config.IngestProperties;
 import net.thebullpen.baseball.data.PlayersRefreshRepository;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -31,7 +32,14 @@ class PlayersRefreshJobTest {
 
   private final MlbStatsApiClient client = mock(MlbStatsApiClient.class);
   private final PlayersRefreshRepository repo = mock(PlayersRefreshRepository.class);
-  private final PlayersRefreshJob job = new PlayersRefreshJob(client, repo, false);
+  private final PlayersRefreshJob job = new PlayersRefreshJob(client, repo, props(false));
+
+  /** Ingest props carrying just the players.force-refresh-on-boot flag this suite varies. */
+  private static IngestProperties props(boolean forceRefreshOnBoot) {
+    return new IngestProperties(
+        new IngestProperties.Live("https://statsapi.mlb.com", "ua", 5000, 3, 500L, 15L, 30L),
+        new IngestProperties.Players(forceRefreshOnBoot));
+  }
 
   private static MlbPlayer player(long id, String name, boolean active) {
     return new MlbPlayer(id, name, "P", "R", "R", active, "DET");
@@ -118,7 +126,7 @@ class PlayersRefreshJobTest {
 
   @Test
   void forceRefresh_onBoot_repulls_even_when_table_is_populated() throws IOException {
-    var forced = new PlayersRefreshJob(client, repo, true);
+    var forced = new PlayersRefreshJob(client, repo, props(true));
     when(client.fetchPlayers(CURRENT_SEASON)).thenReturn(List.of(player(1, "A Player", true)));
     when(repo.upsertAll(anyList())).thenAnswer(inv -> ((List<?>) inv.getArgument(0)).size());
 
@@ -132,7 +140,7 @@ class PlayersRefreshJobTest {
 
   @Test
   void forceRefresh_swallows_a_fetch_failure() throws IOException {
-    var forced = new PlayersRefreshJob(client, repo, true);
+    var forced = new PlayersRefreshJob(client, repo, props(true));
     when(client.fetchPlayers(anyInt())).thenThrow(new IOException("MLB API down"));
 
     assertThatCode(forced::forceRefreshSafely).doesNotThrowAnyException();
