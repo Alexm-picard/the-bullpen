@@ -71,12 +71,13 @@ class RateLimitFilterTest {
       int searchPerMinute,
       int adminPerMinute) {
     return new RateLimitFilter(
-        enabled,
-        predictPerMinute,
-        simulatePerMinute,
-        searchPerMinute,
-        adminPerMinute,
-        LOOPBACK_PROXIES,
+        new RateLimitProperties(
+            enabled,
+            predictPerMinute,
+            simulatePerMinute,
+            searchPerMinute,
+            adminPerMinute,
+            LOOPBACK_PROXIES),
         new ObjectMapper());
   }
 
