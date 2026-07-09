@@ -12,9 +12,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import net.thebullpen.baseball.api.dto.GameSummary;
 import net.thebullpen.baseball.api.dto.LivePitchRow;
+import net.thebullpen.baseball.api.dto.PostPredictionRow;
+import net.thebullpen.baseball.api.dto.PostPredictionsPage;
 import net.thebullpen.baseball.data.LivePitchesRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -150,6 +153,66 @@ class GameControllerTest {
   @Test
   void pitchesSince_negative_cursor_rejected_with_400() throws Exception {
     mvc.perform(get("/v1/games/777001/pitches").param("since", "-1"))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void postPredictions_defaults_return_the_page() throws Exception {
+    when(repo.findPostPredictions(777001L, 0, 50))
+        .thenReturn(
+            new PostPredictionsPage(
+                List.of(
+                    new PostPredictionRow(
+                        1,
+                        1,
+                        7,
+                        660271L,
+                        545361L,
+                        "hit_into_play",
+                        Map.of("in_play", 0.7, "ball", 0.3),
+                        "in_play",
+                        "v1")),
+                0,
+                50,
+                false));
+
+    mvc.perform(get("/v1/games/777001/post-predictions"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.page").value(0))
+        .andExpect(jsonPath("$.size").value(50))
+        .andExpect(jsonPath("$.hasNext").value(false))
+        .andExpect(jsonPath("$.rows[0].atBatIndex").value(1))
+        .andExpect(jsonPath("$.rows[0].realizedOutcome").value("hit_into_play"))
+        .andExpect(jsonPath("$.rows[0].postWinner").value("in_play"))
+        .andExpect(jsonPath("$.rows[0].modelVersion").value("v1"));
+    verify(repo).findPostPredictions(777001L, 0, 50);
+  }
+
+  @Test
+  void postPredictions_forwards_page_and_size_parameters() throws Exception {
+    when(repo.findPostPredictions(eq(777001L), eq(2), eq(10)))
+        .thenReturn(new PostPredictionsPage(List.of(), 2, 10, false));
+
+    mvc.perform(get("/v1/games/777001/post-predictions").param("page", "2").param("size", "10"))
+        .andExpect(status().isOk());
+    verify(repo).findPostPredictions(777001L, 2, 10);
+  }
+
+  @Test
+  void postPredictions_negative_page_rejected_with_400() throws Exception {
+    mvc.perform(get("/v1/games/777001/post-predictions").param("page", "-1"))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void postPredictions_size_over_max_rejected_with_400() throws Exception {
+    mvc.perform(get("/v1/games/777001/post-predictions").param("size", "201"))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void postPredictions_size_below_min_rejected_with_400() throws Exception {
+    mvc.perform(get("/v1/games/777001/post-predictions").param("size", "0"))
         .andExpect(status().isBadRequest());
   }
 }

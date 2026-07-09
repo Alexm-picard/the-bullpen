@@ -5,6 +5,7 @@ import java.time.ZoneId;
 import java.util.List;
 import net.thebullpen.baseball.api.dto.GameSummary;
 import net.thebullpen.baseball.api.dto.LivePitchRow;
+import net.thebullpen.baseball.api.dto.PostPredictionsPage;
 import net.thebullpen.baseball.data.LivePitchesRepository;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
@@ -23,6 +24,9 @@ import org.springframework.web.server.ResponseStatusException;
  *   <li>{@code GET /v1/games/today} — list today's games (ET, since the season runs in ET).
  *   <li>{@code GET /v1/games/{id}} — single game summary.
  *   <li>{@code GET /v1/games/{id}/pitches?since=<cursor>} — delta of pitches added after cursor.
+ *   <li>{@code GET /v1/games/{id}/post-predictions?page=&size=} - paginated retrospective of the
+ *       logged {@code pitch_outcome_post} champion predictions joined to each pitch's realized
+ *       outcome (F2.1b, backs decision [177]'s panel).
  * </ul>
  *
  * <p>Backed by {@link LivePitchesRepository} reading {@code pitches_live} (V015). Until the
@@ -40,6 +44,8 @@ public class GameController {
 
   private static final ZoneId ET = ZoneId.of("America/New_York");
   private static final int PITCHES_SINCE_MIN = 0;
+  private static final int POST_PREDICTIONS_MIN_SIZE = 1;
+  private static final int POST_PREDICTIONS_MAX_SIZE = 200;
 
   private final LivePitchesRepository repo;
 
@@ -67,5 +73,24 @@ public class GameController {
           HttpStatus.BAD_REQUEST, "since must be >= " + PITCHES_SINCE_MIN);
     }
     return repo.findPitchesSince(id, since);
+  }
+
+  @GetMapping("/{id}/post-predictions")
+  public PostPredictionsPage postPredictions(
+      @PathVariable("id") long id,
+      @RequestParam(name = "page", defaultValue = "0") int page,
+      @RequestParam(name = "size", defaultValue = "50") int size) {
+    if (page < 0) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "page must be >= 0");
+    }
+    if (size < POST_PREDICTIONS_MIN_SIZE || size > POST_PREDICTIONS_MAX_SIZE) {
+      throw new ResponseStatusException(
+          HttpStatus.BAD_REQUEST,
+          "size must be between "
+              + POST_PREDICTIONS_MIN_SIZE
+              + " and "
+              + POST_PREDICTIONS_MAX_SIZE);
+    }
+    return repo.findPostPredictions(id, page, size);
   }
 }
