@@ -99,6 +99,11 @@ class LivePitchesRepositoryIT {
 
   private void insertPrediction(long gameId, int atBat, int pitch, String predictionJson)
       throws Exception {
+    insertPrediction(gameId, atBat, pitch, "pitch_outcome_pre", predictionJson);
+  }
+
+  private void insertPrediction(
+      long gameId, int atBat, int pitch, String modelName, String predictionJson) throws Exception {
     try (var conn = clickhouseDs.getConnection();
         var stmt = conn.createStatement()) {
       stmt.execute(
@@ -106,8 +111,8 @@ class LivePitchesRepositoryIT {
               "INSERT INTO prediction_log (request_id, request_at, model_name, model_version,"
                   + " role, feature_hash, features, prediction, latency_ms, correlation_id,"
                   + " game_id, at_bat_index, pitch_number) VALUES (generateUUIDv4(), now64(3),"
-                  + " 'pitch_outcome_pre', 'v1', 'champion', 'h', '{}', '%s', 1.0, '', %d, %d, %d)",
-              predictionJson, gameId, atBat, pitch));
+                  + " '%s', 'v1', 'champion', 'h', '{}', '%s', 1.0, '', %d, %d, %d)",
+              modelName, predictionJson, gameId, atBat, pitch));
     }
   }
 
@@ -327,6 +332,36 @@ class LivePitchesRepositoryIT {
     assertEquals(0.6, predicted.predictedClasses().get("ball"));
     assertNull(unpredicted.predictedWinner(), "no prediction logged -> the frontend's n/a path");
     assertNull(unpredicted.predictedClasses());
+  }
+
+  @Test
+  void findPitchesSince_stays_PRE_only_even_when_a_later_POST_champion_row_exists()
+      throws Exception {
+    // F2.1a: the worker also logs a pitch_outcome_post champion row keyed to the SAME pitch, but
+    // AFTER the pitch lands (a later request_at). Without the model_name filter that later POST row
+    // would win argMax and surface the post head on the game page - the exact [143]/[154]/ADR-0011
+    // violation registry-guard caught. The game page must keep showing the PRE prediction.
+    repo.insertPitches(parseFixture());
+    insertPrediction(
+        824753L,
+        1,
+        1,
+        "pitch_outcome_pre",
+        "{\"probabilities\":{\"ball\":0.6},\"winner\":\"ball\"}");
+    Thread.sleep(5); // the POST row lands strictly later
+    insertPrediction(
+        824753L,
+        1,
+        1,
+        "pitch_outcome_post",
+        "{\"probabilities\":{\"in_play\":0.95},\"winner\":\"in_play\"}");
+
+    LivePitchRow predicted = pitch(repo.findPitchesSince(824753L, 0L), 1, 1);
+    assertEquals(
+        "ball",
+        predicted.predictedWinner(),
+        "the later POST row must NOT override the PRE prediction");
+    assertEquals(0.6, predicted.predictedClasses().get("ball"));
   }
 
   @Test

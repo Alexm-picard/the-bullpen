@@ -7,12 +7,14 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.LoadingCache;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import net.thebullpen.baseball.data.PitcherForm;
 import net.thebullpen.baseball.data.PitcherFormRepository;
 import net.thebullpen.baseball.inference.AsyncPredictionLogger;
+import net.thebullpen.baseball.inference.FeaturePipelinePitchPost;
 import net.thebullpen.baseball.inference.FeaturePipelinePitchPre;
 import net.thebullpen.baseball.inference.InferenceRouter;
 import net.thebullpen.baseball.inference.LoadedPitchModel;
@@ -65,11 +67,13 @@ public class LivePitchPredictor {
   private static final Logger log = LoggerFactory.getLogger(LivePitchPredictor.class);
   private static final ObjectMapper MAPPER = new ObjectMapper();
   static final String MODEL_NAME = "pitch_outcome_pre";
+  static final String POST_MODEL_NAME = "pitch_outcome_post";
 
   private final InferenceRouter router;
   private final ModelLoader modelLoader;
   private final RegistryService registry;
   private final AsyncPredictionLogger logger;
+  private final IngestMetrics ingestMetrics;
 
   /**
    * Short-TTL cache over {@code pitcher_form_current} so the poll loop never issues one CH read per
@@ -85,11 +89,13 @@ public class LivePitchPredictor {
       ModelLoader modelLoader,
       RegistryService registry,
       AsyncPredictionLogger logger,
-      Optional<PitcherFormRepository> formRepo) {
+      Optional<PitcherFormRepository> formRepo,
+      IngestMetrics ingestMetrics) {
     this.router = router;
     this.modelLoader = modelLoader;
     this.registry = registry;
     this.logger = logger;
+    this.ingestMetrics = ingestMetrics;
     this.formCache =
         formRepo
             .map(
@@ -200,12 +206,146 @@ public class LivePitchPredictor {
     return routed.servingResponse();
   }
 
+  /**
+   * Route a COMPLETED pitch through the {@code pitch_outcome_post} champion and enqueue a keyed
+   * {@code prediction_log} row carrying the real {@code model_version_id} - the post-head mirror of
+   * {@link #predictAndLog} (F2.1a). Returns the calibrated 5-class distribution, or an empty map
+   * when the pitch is skipped (incomplete Tier-4 / no park) or degraded (no champion / routing).
+   *
+   * <p>Completeness gate FIRST: the post head consumes the full Tier-4 fit (pitch type, velocity,
+   * plate location, movement, spin, release position) plus a resolved park. When any of those is
+   * absent - a ~0.2-1% tracking blip, or a game-end feed whose {@code nextPitch} carries no park -
+   * the pitch is skipped and counted ({@code thebullpen_ingest_post_tier4_incomplete_total}) rather
+   * than fed NaN to the model.
+   */
+  public Map<String, Double> predictPostAndLog(LivePitch pitch, String parkId, LocalDate gameDate)
+      throws OrtException {
+    if (parkId == null) {
+      // No serving context (game end: nextPitch absent, so no park). A benign skip, NOT a tracking
+      // blip, so it must not inflate the incomplete-fit counter.
+      return Map.of();
+    }
+    if (!hasCompleteTier4(pitch)) {
+      // Genuine Tier-4 tracking blip (~0.2-1%): skip rather than NaN-feed, and count it so outages
+      // are visible in ops.
+      ingestMetrics.incrementPostTier4Incomplete();
+      return Map.of();
+    }
+
+    Instant requestAt = Instant.now();
+    long startNanos = System.nanoTime();
+    Optional<PitcherForm> form = lookupForm(pitch.pitcherId());
+    FeaturePipelinePitchPost.Request featureReq = toPostRequest(pitch, parkId, gameDate, form);
+
+    Optional<ModelVersion> champion = registry.findChampion(POST_MODEL_NAME);
+
+    RoutedPrediction<Map<String, Double>> routed;
+    try {
+      routed =
+          router.route(
+              POST_MODEL_NAME,
+              pitch.gameId(),
+              versionId -> predictPost(versionId, featureReq),
+              () -> {
+                // No routing config: serve the LIVE champion if one exists; otherwise signal "no
+                // model" with null so the caller degrades instead of logging a null-FK row.
+                if (champion.isEmpty()) {
+                  return null;
+                }
+                return predictPost(champion.get().id(), featureReq);
+              });
+    } catch (RuntimeException e) {
+      throw unwrapOrt(e);
+    }
+
+    if (routed.servingResponse() == null) {
+      log.debug(
+          "LivePitchPredictor: no {} champion / routing config - skipping live post prediction for"
+              + " game {}",
+          POST_MODEL_NAME,
+          pitch.gameId());
+      return Map.of();
+    }
+
+    float latencyMs = (System.nanoTime() - startNanos) / 1_000_000.0f;
+
+    long servingVersionId =
+        routed.servingVersionId() == -1L ? champion.orElseThrow().id() : routed.servingVersionId();
+    LoadedPitchModel servingModel = modelLoader.loadPitchPost(servingVersionId);
+
+    logger.enqueue(
+        buildPostEvent(
+            pitch,
+            featureReq,
+            routed.servingResponse(),
+            requestAt,
+            servingModel.version(),
+            servingVersionId,
+            servingModel.schemaHash(),
+            mapRole(routed.servingRole()),
+            latencyMs));
+
+    // Shadow row logged FIRE-AND-FORGET off the request path (F1.4).
+    routed
+        .shadowFuture()
+        .ifPresent(
+            shadowFut -> {
+              long shadowVid = routed.shadowVersionId().orElseThrow();
+              shadowFut.whenComplete(
+                  (shadowResp, ex) -> {
+                    if (ex != null) {
+                      return;
+                    }
+                    LoadedPitchModel shadowModel = modelLoader.loadPitchPost(shadowVid);
+                    logger.enqueue(
+                        buildPostEvent(
+                            pitch,
+                            featureReq,
+                            shadowResp,
+                            requestAt,
+                            shadowModel.version(),
+                            shadowVid,
+                            shadowModel.schemaHash(),
+                            PredictionLogEvent.Role.SHADOW,
+                            latencyMs));
+                  });
+            });
+
+    return routed.servingResponse();
+  }
+
   private Map<String, Double> predict(long versionId, FeaturePipelinePitchPre.Request req) {
     try {
       return modelLoader.loadPitchPre(versionId).predictPre(req);
     } catch (OrtException e) {
       throw new RuntimeException(e);
     }
+  }
+
+  private Map<String, Double> predictPost(long versionId, FeaturePipelinePitchPost.Request req) {
+    try {
+      return modelLoader.loadPitchPost(versionId).predictPost(req);
+    } catch (OrtException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  /**
+   * True when the completed pitch carries the full Tier-4 fit the post head needs. Any null means
+   * the live feed's fit was incomplete (a tracking blip); the pitch is skipped rather than fed NaN
+   * (F2.1a).
+   */
+  static boolean hasCompleteTier4(LivePitch p) {
+    return p.pitchType() != null
+        && p.releaseSpeedMph() != null
+        && p.plateXIn() != null
+        && p.plateZIn() != null
+        && p.pfxXIn() != null
+        && p.pfxZIn() != null
+        && p.spinRateRpm() != null
+        && p.spinAxisDeg() != null
+        && p.releasePosXIn() != null
+        && p.releasePosZIn() != null;
   }
 
   private static OrtException unwrapOrt(RuntimeException e) {
@@ -265,6 +405,59 @@ public class LivePitchPredictor {
   }
 
   /**
+   * Assemble the post-head request from a COMPLETED live pitch. Tier 1-3 mirror {@link #toRequest}
+   * exactly (constant-0 score_diff, ISO dow, 1/2/4 base mask, six pitcher-side Tier-3 slots from
+   * {@code pitcher_form_current} and the rest null -&gt; NaN); Tier 4 comes straight off the
+   * pitch's derived fit, guaranteed non-null by the {@link #hasCompleteTier4} gate the caller ran
+   * first.
+   */
+  static FeaturePipelinePitchPost.Request toPostRequest(
+      LivePitch pitch, String parkId, LocalDate gameDate, Optional<PitcherForm> form) {
+    Double pitchesLast28d = form.map(PitcherForm::pitchesLast28d).orElse(null);
+    Double pitchesInGame = form.map(PitcherForm::pitchesInGame).orElse(null);
+    Double daysSinceLastAppearance = form.map(PitcherForm::daysSinceLastAppearance).orElse(null);
+    Double strikeRate28d = form.map(PitcherForm::strikeRate28d).orElse(null);
+    Double swstrikeRate28d = form.map(PitcherForm::swstrikeRate28d).orElse(null);
+    Double inplayRate28d = form.map(PitcherForm::inplayRate28d).orElse(null);
+    return new FeaturePipelinePitchPost.Request(
+        pitch.preBalls(),
+        pitch.preStrikes(),
+        pitch.outs(),
+        pitch.inning(),
+        pitch.baseState(),
+        0, // score_diff: training placeholder is a constant 0 (no real score, no skew)
+        gameDate.getDayOfWeek().getValue(), // dow: ISO 1=Mon..7=Sun == toDayOfWeek
+        pitch.pitchHand(),
+        resolveBatSide(pitch.batSide(), pitch.pitchHand()),
+        parkId,
+        pitch.pitcherId(),
+        pitch.batterId(),
+        // Tier 3: six pitcher-side slots from pitcher_form_current (A3); the rest null -> NaN.
+        pitchesLast28d, // pitcherPitchesLast28d
+        pitchesInGame, // pitcherPitchesInGame
+        daysSinceLastAppearance,
+        strikeRate28d, // pitcherStrikeRate28d
+        swstrikeRate28d, // pitcherSwstrikeRate28d
+        inplayRate28d, // pitcherInplayRate28d
+        null, // pitcherStrikeRateStd - not in pitcher_form_current
+        null, // batterStrikeRate28d
+        null, // batterInplayRate28d
+        null, // batterBallRate28d
+        null, // batterInplayRateStd
+        // Tier 4: the derived fit off the completed pitch (non-null by the completeness gate).
+        pitch.pitchType(),
+        pitch.releaseSpeedMph(),
+        pitch.plateXIn(),
+        pitch.plateZIn(),
+        pitch.pfxXIn(),
+        pitch.pfxZIn(),
+        pitch.spinRateRpm(),
+        pitch.spinAxisDeg(),
+        pitch.releasePosXIn(),
+        pitch.releasePosZIn());
+  }
+
+  /**
    * True when the GUMBO payload carries the matchup the pre-head needs (pitcher + batter
    * handedness). Early {@code currentPlay} payloads can omit these for a sub-second window at the
    * top of an at-bat; the poller skips prediction until they populate (C5) rather than feed nulls
@@ -318,6 +511,41 @@ public class LivePitchPredictor {
         ctx.gameId(),
         ctx.atBatIndex(),
         ctx.pitchNumber());
+  }
+
+  /**
+   * Build the keyed post-head event for one routed role - identical in shape to {@link #buildEvent}
+   * but stamped with {@link #POST_MODEL_NAME} and the serialized POST request. Keyed to {@code
+   * (gameId, atBatIndex, pitchNumber)} so it reconciles to the pitch that produced it when step 5
+   * joins predictions to outcomes.
+   */
+  static PredictionLogEvent buildPostEvent(
+      LivePitch pitch,
+      FeaturePipelinePitchPost.Request featureReq,
+      Map<String, Double> probs,
+      Instant requestAt,
+      String modelVersion,
+      long modelVersionId,
+      String schemaHash,
+      PredictionLogEvent.Role role,
+      float latencyMs) {
+    String winner = argmax(probs);
+    return new PredictionLogEvent(
+        UUID.randomUUID(),
+        requestAt,
+        POST_MODEL_NAME,
+        modelVersion,
+        modelVersionId,
+        role,
+        schemaHash,
+        // Serialize the SAME request that produced probs (the exact scored feature vector).
+        serialize(featureReq),
+        serializePrediction(probs, winner),
+        latencyMs,
+        MDC.get("correlation_id"),
+        pitch.gameId(),
+        pitch.atBatIndex(),
+        pitch.pitchNumber());
   }
 
   static String argmax(Map<String, Double> probs) {

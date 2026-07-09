@@ -53,6 +53,12 @@ class LivePollingServiceTest {
         95.0,
         0.0,
         0.0,
+        -0.5,
+        1.2,
+        2200.0,
+        200.0,
+        -1.6,
+        5.9,
         false);
   }
 
@@ -446,6 +452,12 @@ class LivePollingServiceTest {
         95.0,
         0.0,
         0.0,
+        -0.5,
+        1.2,
+        2200.0,
+        200.0,
+        -1.6,
+        5.9,
         false);
   }
 

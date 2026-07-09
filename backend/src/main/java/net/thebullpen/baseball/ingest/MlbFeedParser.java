@@ -263,6 +263,10 @@ public class MlbFeedParser {
         JsonNode e = pitchEvents.get(i);
         JsonNode details = e.path("details");
         JsonNode pd = e.path("pitchData");
+        JsonNode breaks = pd.path("breaks");
+        // Derive the movement + release-position Tier-4 fields from the raw 9-param fit; null when
+        // the fit is incomplete (tracking blip) so the post leg skips the pitch (F2.1a).
+        GumboKinematics.Derived tier4 = deriveTier4(pd);
         pitches.add(
             new LivePitch(
                 gamePk,
@@ -287,6 +291,13 @@ public class MlbFeedParser {
                 asDouble(pd.path("startSpeed")),
                 asDouble(pd.path("coordinates").path("pX")),
                 asDouble(pd.path("coordinates").path("pZ")),
+                tier4 == null ? null : tier4.pfxXFt(),
+                tier4 == null ? null : tier4.pfxZFt(),
+                // spin is a validated pass-through (RPM + degrees, same units + frame).
+                asDouble(breaks.path("spinRate")),
+                asDouble(breaks.path("spinDirection")),
+                tier4 == null ? null : tier4.releasePosXFt(),
+                tier4 == null ? null : tier4.releasePosZFt(),
                 i == pitchEvents.size() - 1));
         // The next pitch's pre-count is this pitch's post-count (read from the feed, not computed).
         JsonNode c = e.path("count");
@@ -451,6 +462,41 @@ public class MlbFeedParser {
 
   private static Double asDouble(JsonNode n) {
     return n.isNumber() ? n.asDouble() : null;
+  }
+
+  /**
+   * Extract the raw 9-parameter trajectory fit ({@code pitchData.coordinates.*}) + {@code
+   * extension} and derive the Savant-equivalent movement + release-position Tier-4 fields (see
+   * {@link GumboKinematics}). Returns {@code null} when ANY of the ten inputs is absent - the
+   * completeness gate: an incomplete fit yields a skipped post prediction, never a NaN-fed one
+   * (F2.1a).
+   */
+  private static GumboKinematics.Derived deriveTier4(JsonNode pd) {
+    JsonNode c = pd.path("coordinates");
+    Double x0 = asDouble(c.path("x0"));
+    Double y0 = asDouble(c.path("y0"));
+    Double z0 = asDouble(c.path("z0"));
+    Double vX0 = asDouble(c.path("vX0"));
+    Double vY0 = asDouble(c.path("vY0"));
+    Double vZ0 = asDouble(c.path("vZ0"));
+    Double aX = asDouble(c.path("aX"));
+    Double aY = asDouble(c.path("aY"));
+    Double aZ = asDouble(c.path("aZ"));
+    Double extension = asDouble(pd.path("extension"));
+    if (x0 == null
+        || y0 == null
+        || z0 == null
+        || vX0 == null
+        || vY0 == null
+        || vZ0 == null
+        || aX == null
+        || aY == null
+        || aZ == null
+        || extension == null) {
+      return null;
+    }
+    return GumboKinematics.derive(
+        new GumboKinematics.Fit(x0, y0, z0, vX0, vY0, vZ0, aX, aY, aZ, extension));
   }
 
   private static String textOrNull(JsonNode n) {

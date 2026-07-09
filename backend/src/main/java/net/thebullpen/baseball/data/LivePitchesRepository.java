@@ -74,11 +74,17 @@ public class LivePitchesRepository {
           // every poll (decision [143]), so collapse to the latest by request_at. NULL-keyed
           // HTTP-path rows never match (game_id IS NULL after the equality). Unmatched pitches get
           // '' from the LEFT JOIN -> null predictions in the mapper (the frontend's "n/a" path).
+          // model_name = pitch_outcome_pre is LOAD-BEARING (F2.1a): the worker now also logs
+          // pitch_outcome_post champion rows keyed to the same pitch, but AFTER the pitch lands, so
+          // their later request_at would win argMax and surface the POST head here. The game page's
+          // next-pitch stays PRE-ONLY ([143]/[154]/ADR-0011); the POST head is retrospective-only
+          // on
+          // its own panel ([177]).
           + " LEFT JOIN ("
           + "   SELECT game_id, at_bat_index, pitch_number,"
           + "          argMax(prediction, request_at) AS prediction"
           + "   FROM prediction_log"
-          + "   WHERE game_id = ? AND role = 'champion'"
+          + "   WHERE game_id = ? AND role = 'champion' AND model_name = 'pitch_outcome_pre'"
           + "   GROUP BY game_id, at_bat_index, pitch_number"
           + " ) AS pred"
           + " ON pred.game_id = pl.game_id AND pred.at_bat_index = pl.at_bat_index"
@@ -198,8 +204,9 @@ public class LivePitchesRepository {
       "INSERT INTO pitches_live"
           + " (game_id, at_bat_index, pitch_number, game_date, pitcher_id, batter_id,"
           + " description, pitch_type, release_speed_mph, plate_x_in, plate_z_in,"
-          + " balls, strikes, outs, inning, home_score, away_score, home_team, away_team)"
-          + " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+          + " balls, strikes, outs, inning, home_score, away_score, home_team, away_team,"
+          + " pfx_x_in, pfx_z_in, spin_rate_rpm, spin_axis_deg, release_pos_x_in, release_pos_z_in)"
+          + " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
 
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -255,6 +262,13 @@ public class LivePitchesRepository {
             ps.setInt(17, p.awayScore());
             ps.setString(18, homeTeam);
             ps.setString(19, awayTeam);
+            // Derived Tier-4 (see GumboKinematics); null when the live fit was incomplete.
+            setNullableFloat(ps, 20, p.pfxXIn());
+            setNullableFloat(ps, 21, p.pfxZIn());
+            setNullableFloat(ps, 22, p.spinRateRpm());
+            setNullableFloat(ps, 23, p.spinAxisDeg());
+            setNullableFloat(ps, 24, p.releasePosXIn());
+            setNullableFloat(ps, 25, p.releasePosZIn());
           }
 
           @Override
