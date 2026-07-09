@@ -9,7 +9,6 @@ import java.sql.Statement;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.testcontainers.clickhouse.ClickHouseContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -38,16 +37,15 @@ class ClickHouseTimeoutIT {
           .withPassword("test");
 
   private static DataSource shortSocketTimeoutDataSource() throws Exception {
-    ClickHouseConfig cfg = new ClickHouseConfig();
-    ReflectionTestUtils.setField(cfg, "url", CH.getJdbcUrl());
-    ReflectionTestUtils.setField(cfg, "user", CH.getUsername());
-    ReflectionTestUtils.setField(cfg, "password", CH.getPassword());
-    ReflectionTestUtils.setField(cfg, "socketTimeoutMs", 1_000);
-    ReflectionTestUtils.setField(cfg, "connectTimeoutMs", 5_000);
-    ReflectionTestUtils.setField(cfg, "poolMaxSize", 2);
-    ReflectionTestUtils.setField(cfg, "poolConnectionTimeoutMs", 3_000L);
-    ReflectionTestUtils.setField(cfg, "poolValidationTimeoutMs", 2_000L);
-    ReflectionTestUtils.setField(cfg, "poolMaxLifetimeMs", 1_800_000L);
+    ClickHouseConfig cfg =
+        new ClickHouseConfig(
+            new ClickHouseProperties(
+                CH.getJdbcUrl(),
+                CH.getUsername(),
+                CH.getPassword(),
+                1_000,
+                5_000,
+                new ClickHouseProperties.Pool(2, 3_000L, 2_000L, 1_800_000L)));
     return cfg.clickhouseDataSource();
   }
 
