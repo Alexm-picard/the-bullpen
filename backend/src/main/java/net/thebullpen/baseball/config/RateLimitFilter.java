@@ -12,7 +12,6 @@ import java.time.Duration;
 import java.util.List;
 import net.thebullpen.baseball.api.dto.ApiError;
 import org.slf4j.MDC;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -67,24 +66,17 @@ public class RateLimitFilter extends OncePerRequestFilter {
   private final Cache<String, TokenBucket> buckets =
       Caffeine.newBuilder().maximumSize(50_000).expireAfterAccess(Duration.ofMinutes(10)).build();
 
-  public RateLimitFilter(
-      @Value("${bullpen.ratelimit.enabled:true}") boolean enabled,
-      @Value("${bullpen.ratelimit.predict-per-minute:60}") int predictPerMinute,
-      // Simulate is ~12-40x the compute of a single predict (12 per-state ONNX calls + a Markov/MC
-      // solve), so it gets its own, tighter bucket rather than sharing the predict class (F1.6).
-      @Value("${bullpen.ratelimit.simulate-per-minute:15}") int simulatePerMinute,
-      @Value("${bullpen.ratelimit.search-per-minute:120}") int searchPerMinute,
-      @Value("${bullpen.ratelimit.admin-per-minute:20}") int adminPerMinute,
-      @Value("${bullpen.ratelimit.trusted-proxies:127.0.0.0/8,::1}") List<String> trustedProxies,
-      ObjectMapper objectMapper) {
-    this.enabled = enabled;
-    this.predictPerMinute = predictPerMinute;
-    this.simulatePerMinute = simulatePerMinute;
-    this.searchPerMinute = searchPerMinute;
-    this.adminPerMinute = adminPerMinute;
+  public RateLimitFilter(RateLimitProperties props, ObjectMapper objectMapper) {
+    this.enabled = props.enabled();
+    this.predictPerMinute = props.predictPerMinute();
+    // Simulate is ~12-40x the compute of a single predict (12 per-state ONNX calls + a Markov/MC
+    // solve), so it gets its own, tighter bucket rather than sharing the predict class (F1.6).
+    this.simulatePerMinute = props.simulatePerMinute();
+    this.searchPerMinute = props.searchPerMinute();
+    this.adminPerMinute = props.adminPerMinute();
     // trim so an override like "127.0.0.0/8, ::1" (space after comma) cannot throw at startup.
     this.trustedProxies =
-        trustedProxies.stream()
+        props.trustedProxies().stream()
             .map(String::trim)
             .filter(s -> !s.isEmpty())
             .map(IpAddressMatcher::new)
