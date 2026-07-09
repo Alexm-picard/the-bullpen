@@ -65,15 +65,17 @@ class LivePitchPredictorPostTest {
   }
 
   @Test
-  void null_park_is_skipped_counted_and_never_logged() throws Exception {
-    // A game-end feed whose nextPitch carries no park: same skip-and-count as an incomplete fit.
+  void null_park_is_skipped_without_logging_and_without_counting_a_blip() throws Exception {
+    // A game-end feed whose nextPitch is absent (no park): a BENIGN skip, not a tracking blip, so
+    // it
+    // must NOT inflate the incomplete-fit counter (registry-guard note).
     LivePitch pitch = pitch(/* spinRateRpm= */ 2200.0);
 
     Map<String, Double> result =
         predictor.predictPostAndLog(pitch, /* parkId= */ null, LocalDate.of(2026, 6, 5));
 
     assertThat(result).isEmpty();
-    verify(ingestMetrics, times(1)).incrementPostTier4Incomplete();
+    verify(ingestMetrics, never()).incrementPostTier4Incomplete();
     verify(logger, never()).enqueue(any());
   }
 

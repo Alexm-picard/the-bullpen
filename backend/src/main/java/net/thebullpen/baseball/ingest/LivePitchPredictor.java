@@ -220,7 +220,14 @@ public class LivePitchPredictor {
    */
   public Map<String, Double> predictPostAndLog(LivePitch pitch, String parkId, LocalDate gameDate)
       throws OrtException {
-    if (parkId == null || !hasCompleteTier4(pitch)) {
+    if (parkId == null) {
+      // No serving context (game end: nextPitch absent, so no park). A benign skip, NOT a tracking
+      // blip, so it must not inflate the incomplete-fit counter.
+      return Map.of();
+    }
+    if (!hasCompleteTier4(pitch)) {
+      // Genuine Tier-4 tracking blip (~0.2-1%): skip rather than NaN-feed, and count it so outages
+      // are visible in ops.
       ingestMetrics.incrementPostTier4Incomplete();
       return Map.of();
     }
