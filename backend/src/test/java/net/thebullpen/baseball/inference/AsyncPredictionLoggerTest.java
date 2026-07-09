@@ -9,11 +9,25 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+import net.thebullpen.baseball.config.InferenceProperties;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class AsyncPredictionLoggerTest {
+
+  /** Inference props varying only the log queue capacity this suite exercises. */
+  private static InferenceProperties props(int queueCapacity) {
+    return new InferenceProperties(
+        null,
+        500L,
+        new InferenceProperties.Pitch(InferenceProperties.PITCH_ARTIFACTS_DEFAULT, false),
+        new InferenceProperties.PitchPost(
+            "../training/artifacts/pitch_outcome_post/v1",
+            "../contracts/feature_pipeline_post.json"),
+        new InferenceProperties.Toy("../training/artifacts/_toy/v0"),
+        new InferenceProperties.Log(queueCapacity));
+  }
 
   private SimpleMeterRegistry registry;
 
@@ -44,7 +58,8 @@ class AsyncPredictionLoggerTest {
   @Test
   void enqueue_thenFlush_drainsEverything() throws InterruptedException {
     CapturingWriter writer = new CapturingWriter();
-    AsyncPredictionLogger logger = new AsyncPredictionLogger(Optional.of(writer), registry, 1024);
+    AsyncPredictionLogger logger =
+        new AsyncPredictionLogger(Optional.of(writer), registry, props(1024));
     try {
       logger.start();
       for (int i = 0; i < 50; i++) logger.enqueue(sampleEvent(i));
@@ -64,7 +79,7 @@ class AsyncPredictionLoggerTest {
     CapturingWriter writer = new CapturingWriter();
     int capacity = 8;
     AsyncPredictionLogger logger =
-        new AsyncPredictionLogger(Optional.of(writer), registry, capacity);
+        new AsyncPredictionLogger(Optional.of(writer), registry, props(capacity));
     try {
       logger.start();
       // do NOT flush — fill the queue past capacity to force drops
@@ -85,7 +100,8 @@ class AsyncPredictionLoggerTest {
             throw new RuntimeException("simulated ClickHouse outage");
           }
         };
-    AsyncPredictionLogger logger = new AsyncPredictionLogger(Optional.of(throwing), registry, 32);
+    AsyncPredictionLogger logger =
+        new AsyncPredictionLogger(Optional.of(throwing), registry, props(32));
     try {
       logger.start();
       for (int i = 0; i < 5; i++) logger.enqueue(sampleEvent(i));
@@ -104,7 +120,8 @@ class AsyncPredictionLoggerTest {
   @Test
   void writerFailure_thenRecovery_deliversEverything() throws InterruptedException {
     FailOnceWriter writer = new FailOnceWriter();
-    AsyncPredictionLogger logger = new AsyncPredictionLogger(Optional.of(writer), registry, 32);
+    AsyncPredictionLogger logger =
+        new AsyncPredictionLogger(Optional.of(writer), registry, props(32));
     try {
       logger.start();
       for (int i = 0; i < 5; i++) logger.enqueue(sampleEvent(i));
@@ -123,7 +140,8 @@ class AsyncPredictionLoggerTest {
   void shutdownDrain_survivesATransientFailure() throws InterruptedException {
     // DEF-M2: a single failed flush during @PreDestroy must not abandon the rest of the queue.
     FailOnceWriter writer = new FailOnceWriter();
-    AsyncPredictionLogger logger = new AsyncPredictionLogger(Optional.of(writer), registry, 32);
+    AsyncPredictionLogger logger =
+        new AsyncPredictionLogger(Optional.of(writer), registry, props(32));
     logger.start();
     for (int i = 0; i < 5; i++) logger.enqueue(sampleEvent(i));
     logger.stop(); // drain: first flush fails (re-enqueues), second succeeds -> all 5 written
@@ -134,7 +152,7 @@ class AsyncPredictionLoggerTest {
 
   @Test
   void noWriterPresent_dropsSilentlyAndDoesNotCrash() throws InterruptedException {
-    AsyncPredictionLogger logger = new AsyncPredictionLogger(Optional.empty(), registry, 32);
+    AsyncPredictionLogger logger = new AsyncPredictionLogger(Optional.empty(), registry, props(32));
     try {
       logger.start();
       for (int i = 0; i < 3; i++) logger.enqueue(sampleEvent(i));
@@ -180,7 +198,8 @@ class AsyncPredictionLoggerTest {
     // With default capacity bumped to 20K + 1-sec flush cadence, drops should stay at 0 as long
     // as the writer can drain in time. This test simulates by flushing-as-we-go.
     CapturingWriter writer = new CapturingWriter();
-    AsyncPredictionLogger logger = new AsyncPredictionLogger(Optional.of(writer), registry, 20_000);
+    AsyncPredictionLogger logger =
+        new AsyncPredictionLogger(Optional.of(writer), registry, props(20_000));
     try {
       logger.start();
       int requests = 1000;
