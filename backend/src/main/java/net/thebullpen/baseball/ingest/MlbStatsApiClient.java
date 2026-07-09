@@ -8,6 +8,7 @@ import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import java.util.stream.Collectors;
+import net.thebullpen.baseball.config.IngestProperties;
 import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
@@ -18,7 +19,6 @@ import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.util.Timeout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
@@ -44,21 +44,17 @@ public class MlbStatsApiClient {
   private final int maxRetries;
   private final CloseableHttpClient http;
 
-  public MlbStatsApiClient(
-      MlbFeedParser parser,
-      @Value("${bullpen.ingest.live.base-url:https://statsapi.mlb.com}") String baseUrl,
-      @Value("${bullpen.ingest.live.user-agent:TheBullpen/1.0 (+https://thebullpen.net)}")
-          String userAgent,
-      @Value("${bullpen.ingest.live.timeout-ms:5000}") int timeoutMs,
-      @Value("${bullpen.ingest.live.max-retries:3}") int maxRetries) {
+  public MlbStatsApiClient(MlbFeedParser parser, IngestProperties props) {
+    IngestProperties.Live live = props.live();
     this.parser = parser;
+    String baseUrl = live.baseUrl();
     this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
-    this.userAgent = userAgent;
-    this.maxRetries = maxRetries;
+    this.userAgent = live.userAgent();
+    this.maxRetries = live.maxRetries();
     RequestConfig rc =
         RequestConfig.custom()
-            .setConnectionRequestTimeout(Timeout.ofMilliseconds(timeoutMs))
-            .setResponseTimeout(Timeout.ofMilliseconds(timeoutMs))
+            .setConnectionRequestTimeout(Timeout.ofMilliseconds(live.timeoutMs()))
+            .setResponseTimeout(Timeout.ofMilliseconds(live.timeoutMs()))
             .build();
     this.http = HttpClients.custom().setDefaultRequestConfig(rc).build();
   }

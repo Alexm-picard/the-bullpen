@@ -16,6 +16,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import net.thebullpen.baseball.config.IngestProperties;
 import net.thebullpen.baseball.data.JobLeaseRepository;
 import net.thebullpen.baseball.data.LivePitchesRepository;
 import net.thebullpen.baseball.inference.ModelUnavailableException;
@@ -96,6 +97,13 @@ class LivePollingServiceTest {
         next);
   }
 
+  /** Poller cadence props with a zero API gap so the unit tests don't throttle between polls. */
+  private static IngestProperties pollerProps() {
+    return new IngestProperties(
+        new IngestProperties.Live("https://statsapi.mlb.com", "ua", 5000, 3, 0L, 15L, 30L),
+        new IngestProperties.Players(false));
+  }
+
   private static LivePollingService service(
       MlbStatsApiClient client, LivePitchesRepository repo, LivePitchPredictor predictor) {
     return new LivePollingService(
@@ -105,9 +113,7 @@ class LivePollingServiceTest {
         Optional.empty(),
         new IngestMetrics(new SimpleMeterRegistry()),
         heldLease(),
-        0L,
-        15L,
-        30L);
+        pollerProps());
   }
 
   /**
@@ -208,9 +214,7 @@ class LivePollingServiceTest {
             Optional.empty(),
             new IngestMetrics(new SimpleMeterRegistry()),
             heldLease(),
-            0L,
-            15L,
-            30L)
+            pollerProps())
         .pollGame(822810L);
 
     verify(repo, times(1)).insertPitches(any());
@@ -231,9 +235,7 @@ class LivePollingServiceTest {
             Optional.empty(),
             new IngestMetrics(registry),
             heldLease(),
-            0L,
-            15L,
-            30L)
+            pollerProps())
         .pollGame(822810L);
 
     assertThat(registry.get("bullpen_ingest_pitches_total").counter().count()).isEqualTo(2.0);
@@ -267,9 +269,7 @@ class LivePollingServiceTest {
             Optional.empty(),
             new IngestMetrics(registry),
             heldLease(),
-            0L,
-            15L,
-            30L)
+            pollerProps())
         .pollGame(822810L);
 
     assertThat(
