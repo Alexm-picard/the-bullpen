@@ -33,10 +33,12 @@ public class IngestMetrics {
   static final String LAST_POLL_METRIC = "bullpen_ingest_last_poll_timestamp_seconds";
   static final String PITCHES_METRIC = "bullpen_ingest_pitches_total";
   static final String ANOMALY_METRIC = "bullpen_ingest_parse_anomalies_total";
+  static final String POST_TIER4_INCOMPLETE_METRIC = "bullpen_ingest_post_tier4_incomplete_total";
 
   private final MeterRegistry registry;
   private final AtomicLong lastPollEpochSeconds = new AtomicLong(0);
   private final Counter pitchesIngested;
+  private final Counter postTier4Incomplete;
   private final ConcurrentHashMap<String, Counter> anomalies = new ConcurrentHashMap<>();
 
   public IngestMetrics(MeterRegistry registry) {
@@ -47,6 +49,12 @@ public class IngestMetrics {
     this.pitchesIngested =
         Counter.builder(PITCHES_METRIC)
             .description("Pitches written to pitches_live by the live poller")
+            .register(registry);
+    this.postTier4Incomplete =
+        Counter.builder(POST_TIER4_INCOMPLETE_METRIC)
+            .description(
+                "Completed pitches skipped for post prediction because their Tier-4 fit was"
+                    + " incomplete")
             .register(registry);
   }
 
@@ -59,6 +67,15 @@ public class IngestMetrics {
     if (count > 0) {
       pitchesIngested.increment(count);
     }
+  }
+
+  /**
+   * A completed pitch was skipped for post prediction because its derived Tier-4 fit (movement /
+   * spin / release position) or its resolved park was incomplete (F2.1a) - never fed NaN to the
+   * post head.
+   */
+  public void incrementPostTier4Incomplete() {
+    postTier4Incomplete.increment();
   }
 
   /**

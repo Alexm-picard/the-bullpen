@@ -198,8 +198,9 @@ public class LivePitchesRepository {
       "INSERT INTO pitches_live"
           + " (game_id, at_bat_index, pitch_number, game_date, pitcher_id, batter_id,"
           + " description, pitch_type, release_speed_mph, plate_x_in, plate_z_in,"
-          + " balls, strikes, outs, inning, home_score, away_score, home_team, away_team)"
-          + " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+          + " balls, strikes, outs, inning, home_score, away_score, home_team, away_team,"
+          + " pfx_x_in, pfx_z_in, spin_rate_rpm, spin_axis_deg, release_pos_x_in, release_pos_z_in)"
+          + " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
 
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -255,6 +256,13 @@ public class LivePitchesRepository {
             ps.setInt(17, p.awayScore());
             ps.setString(18, homeTeam);
             ps.setString(19, awayTeam);
+            // Derived Tier-4 (see GumboKinematics); null when the live fit was incomplete.
+            setNullableFloat(ps, 20, p.pfxXIn());
+            setNullableFloat(ps, 21, p.pfxZIn());
+            setNullableFloat(ps, 22, p.spinRateRpm());
+            setNullableFloat(ps, 23, p.spinAxisDeg());
+            setNullableFloat(ps, 24, p.releasePosXIn());
+            setNullableFloat(ps, 25, p.releasePosZIn());
           }
 
           @Override

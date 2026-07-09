@@ -42,6 +42,15 @@ public record LivePitch(
     Double releaseSpeedMph,
     Double plateXIn,
     Double plateZIn,
+    // Tier-4 movement + release, DERIVED from the raw 9-param fit (see GumboKinematics), so they
+    // match the pitches-table columns the post head trained on. Null when the live feed's fit is
+    // incomplete (the ~0.2-1% tracking blips); the post leg skips those pitches (F2.1a).
+    Double pfxXIn,
+    Double pfxZIn,
+    Double spinRateRpm,
+    Double spinAxisDeg,
+    Double releasePosXIn,
+    Double releasePosZIn,
     boolean terminal) {
 
   /** Base-occupancy bitmask (1=first, 2=second, 4=third), matching {@code pitches.base_state}. */

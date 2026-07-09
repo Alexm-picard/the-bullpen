@@ -72,6 +72,10 @@ public class LivePollingService {
   private final Map<Long, Instant> lastPollAt = new ConcurrentHashMap<>();
   private final Map<Long, Long> lastCursorByGame = new ConcurrentHashMap<>();
   private final Map<Long, Long> lastPredictedKeyByGame = new ConcurrentHashMap<>();
+  // F2.1a: per-game high-water for the POST head so a completed pitch is post-predicted at most
+  // once
+  // across polls (belt-and-suspenders alongside the cursor high-water that gates the fresh list).
+  private final Map<Long, Long> lastPostPredictedKeyByGame = new ConcurrentHashMap<>();
   private final Map<Long, Long> lastFailedKeyByGame = new ConcurrentHashMap<>();
   private volatile List<ScheduledGame> schedule = List.of();
   private volatile Instant scheduleFetchedAt = Instant.EPOCH;
@@ -183,6 +187,40 @@ public class LivePollingService {
     lastCursorByGame.put(
         gamePk, fresh.stream().mapToLong(LivePollingService::cursor).max().orElse(since));
     refreshIntraDayForm(gamePk, fresh);
+    predictPostForCompletedPitches(gamePk, feed, fresh);
+  }
+
+  /**
+   * F2.1a: after new COMPLETED pitches land, run the {@code pitch_outcome_post} head on each and
+   * enqueue a keyed {@code prediction_log} row. Uses the same containment as {@link
+   * #predictNextPitch} - a model-load / inference failure (or an incomplete-Tier-4 skip) degrades
+   * THIS pitch, logged at warn, and never escapes the poll tick - plus a per-game dedup so a
+   * completed pitch is post-predicted at most once across polls. The park comes from the feed's
+   * {@code nextPitch} (may be null at game end, in which case the predictor's completeness gate
+   * skips the pitch).
+   */
+  private void predictPostForCompletedPitches(
+      long gamePk, LiveGameFeed feed, List<LivePitch> fresh) {
+    if (predictor.isEmpty()) {
+      return;
+    }
+    String parkId = feed.nextPitch() == null ? null : feed.nextPitch().parkId();
+    for (LivePitch pitch : fresh) {
+      long key = (long) pitch.atBatIndex() * 100 + pitch.pitchNumber();
+      if (key == lastPostPredictedKeyByGame.getOrDefault(gamePk, -1L)) {
+        continue; // already post-predicted this completed pitch on an earlier poll
+      }
+      try {
+        predictor.get().predictPostAndLog(pitch, parkId, feed.gameDate());
+        lastPostPredictedKeyByGame.put(gamePk, key);
+      } catch (Exception e) {
+        log.warn(
+            "live post prediction failed for game {} at key {}; skipping this pitch",
+            gamePk,
+            key,
+            e);
+      }
+    }
   }
 
   /**
