@@ -6,7 +6,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.zaxxer.hikari.HikariDataSource;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.Test;
-import org.springframework.test.util.ReflectionTestUtils;
 
 /**
  * S4 - the analytical ClickHouse access used a raw {@code ClickHouseDataSource} (a new connection
@@ -22,17 +21,14 @@ import org.springframework.test.util.ReflectionTestUtils;
 class ClickHouseConfigPoolingTest {
 
   private static ClickHouseConfig configWithDefaults(String password) {
-    ClickHouseConfig cfg = new ClickHouseConfig();
-    ReflectionTestUtils.setField(cfg, "url", "jdbc:ch:http://localhost:8123/default");
-    ReflectionTestUtils.setField(cfg, "user", "default");
-    ReflectionTestUtils.setField(cfg, "password", password);
-    ReflectionTestUtils.setField(cfg, "socketTimeoutMs", 30_000);
-    ReflectionTestUtils.setField(cfg, "connectTimeoutMs", 10_000);
-    ReflectionTestUtils.setField(cfg, "poolMaxSize", 8);
-    ReflectionTestUtils.setField(cfg, "poolConnectionTimeoutMs", 3_000L);
-    ReflectionTestUtils.setField(cfg, "poolValidationTimeoutMs", 2_000L);
-    ReflectionTestUtils.setField(cfg, "poolMaxLifetimeMs", 1_800_000L);
-    return cfg;
+    return new ClickHouseConfig(
+        new ClickHouseProperties(
+            "jdbc:ch:http://localhost:8123/default",
+            "default",
+            password,
+            30_000,
+            10_000,
+            new ClickHouseProperties.Pool(8, 3_000L, 2_000L, 1_800_000L)));
   }
 
   @Test
