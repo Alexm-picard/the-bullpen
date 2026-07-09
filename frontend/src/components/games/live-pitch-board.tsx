@@ -12,31 +12,13 @@
 
 import type { LivePitchRow } from "../../api/games";
 import { colors, typography } from "../../design/broadcast";
+import { outcomeChip } from "./outcome-chip";
 
 export type LivePitchBoardProps = {
   /** Newest-first, as `useLivePitches` returns them. */
   pitches: LivePitchRow[];
   /** Rows rendered (newest N). */
   limit?: number;
-};
-
-/** Outcome chip fills - token-derived, text always ink-on-light or white-on-fill. */
-const OUTCOME_FILL: Record<string, string> = {
-  ball: colors.fieldSubtle,
-  called_strike: colors.viz.categorical[2],
-  swinging_strike: colors.viz.categorical[0],
-  foul: colors.steel,
-  in_play: colors.viz.categorical[1],
-  hit_by_pitch: colors.viz.categorical[4],
-};
-
-const OUTCOME_TEXT_ON_FILL: Record<string, string> = {
-  ball: colors.text,
-  called_strike: colors.textOnChrome,
-  swinging_strike: colors.textOnChrome,
-  foul: colors.textOnChrome,
-  in_play: colors.ink,
-  hit_by_pitch: colors.textOnChrome,
 };
 
 const cell: React.CSSProperties = {
@@ -62,28 +44,6 @@ const headCell: React.CSSProperties = {
   borderBottom: `2px solid ${colors.chrome}`,
   textAlign: "left",
 };
-
-function outcomeChip(description: string) {
-  const fill = OUTCOME_FILL[description] ?? colors.fieldSubtle;
-  const text = OUTCOME_TEXT_ON_FILL[description] ?? colors.text;
-  return (
-    <span
-      style={{
-        display: "inline-block",
-        padding: "2px 8px",
-        backgroundColor: fill,
-        color: text,
-        fontFamily: typography.fonts.display,
-        fontWeight: typography.weights.semibold,
-        fontSize: 12,
-        letterSpacing: "0.05em",
-        textTransform: "uppercase",
-      }}
-    >
-      {description.replace(/_/g, " ")}
-    </span>
-  );
-}
 
 function predictionRead(p: LivePitchRow) {
   if (p.predictedWinner == null) {

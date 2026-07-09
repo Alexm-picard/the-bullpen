@@ -22,6 +22,7 @@ import { useParams } from "react-router-dom";
 import {
   useGame,
   useLivePitches,
+  usePostPredictions,
   type GameSummary,
   type LivePitchRow,
 } from "../api/games";
@@ -39,6 +40,7 @@ import { Scorebug } from "../components/broadcast/scorebug";
 import { TickerStrip } from "../components/broadcast/ticker-strip";
 import { BattedBallExplorer } from "../components/games/batted-ball-explorer";
 import { LivePitchBoard } from "../components/games/live-pitch-board";
+import { PostPredictionPanel } from "../components/games/post-prediction-panel";
 import { estimateLandingDistanceFt } from "../components/parks/estimate-landing";
 import {
   SHOWCASE_BATTED_BALL,
@@ -223,6 +225,10 @@ export function GamePage() {
 
   const game = useGame(valid ? numericId : null);
   const pitches = useLivePitches(valid ? numericId : null, game.data?.status);
+  const postPredictions = usePostPredictions(
+    valid ? numericId : null,
+    game.data?.status,
+  );
   const mostRecent = pitches.pitches[0];
   // Current pitcher + batter (id -> name). Hooks run before the early return; null id disables them.
   const currentPitcher = usePlayer(mostRecent?.pitcherId ?? null);
@@ -435,6 +441,28 @@ export function GamePage() {
           </p>
         ) : (
           <LivePitchBoard pitches={pitches.pitches} />
+        )}
+      </section>
+
+      <section aria-labelledby="game-post-predictions-label">
+        <div style={{ marginBottom: 12 }}>
+          <LowerThird id="game-post-predictions-label" meta="RETROSPECTIVE">
+            Post-Pitch Model Scorecard
+          </LowerThird>
+        </div>
+        {postPredictions.isError ? (
+          <p style={errorTextStyle}>
+            Could not load post-pitch predictions
+            {postPredictions.error instanceof Error
+              ? `: ${postPredictions.error.message}`
+              : ""}
+            .
+          </p>
+        ) : (
+          <PostPredictionPanel
+            rows={postPredictions.data?.rows ?? []}
+            hasNext={postPredictions.data?.hasNext ?? false}
+          />
         )}
       </section>
 
