@@ -1,6 +1,7 @@
 package net.thebullpen.baseball.data;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -16,6 +17,8 @@ import java.util.TimeZone;
 import java.util.UUID;
 import net.thebullpen.baseball.api.dto.GameSummary;
 import net.thebullpen.baseball.api.dto.LivePitchRow;
+import net.thebullpen.baseball.api.dto.PostPredictionRow;
+import net.thebullpen.baseball.api.dto.PostPredictionsPage;
 import net.thebullpen.baseball.ingest.GameStatus;
 import net.thebullpen.baseball.ingest.LiveGameFeed;
 import net.thebullpen.baseball.ingest.MlbFeedParser;
@@ -104,6 +107,12 @@ class LivePitchesRepositoryIT {
 
   private void insertPrediction(
       long gameId, int atBat, int pitch, String modelName, String predictionJson) throws Exception {
+    insertPrediction(gameId, atBat, pitch, modelName, "champion", predictionJson);
+  }
+
+  private void insertPrediction(
+      long gameId, int atBat, int pitch, String modelName, String role, String predictionJson)
+      throws Exception {
     try (var conn = clickhouseDs.getConnection();
         var stmt = conn.createStatement()) {
       stmt.execute(
@@ -111,14 +120,21 @@ class LivePitchesRepositoryIT {
               "INSERT INTO prediction_log (request_id, request_at, model_name, model_version,"
                   + " role, feature_hash, features, prediction, latency_ms, correlation_id,"
                   + " game_id, at_bat_index, pitch_number) VALUES (generateUUIDv4(), now64(3),"
-                  + " '%s', 'v1', 'champion', 'h', '{}', '%s', 1.0, '', %d, %d, %d)",
-              modelName, predictionJson, gameId, atBat, pitch));
+                  + " '%s', 'v1', '%s', 'h', '{}', '%s', 1.0, '', %d, %d, %d)",
+              modelName, role, predictionJson, gameId, atBat, pitch));
     }
   }
 
   private static LivePitchRow pitch(List<LivePitchRow> rows, int atBat, int pitchNumber) {
     return rows.stream()
         .filter(r -> r.atBatIndex() == atBat && r.pitchNumber() == pitchNumber)
+        .findFirst()
+        .orElseThrow();
+  }
+
+  private static PostPredictionRow postRow(List<PostPredictionRow> rows, int atBat, int pitch) {
+    return rows.stream()
+        .filter(r -> r.atBatIndex() == atBat && r.pitchNumber() == pitch)
         .findFirst()
         .orElseThrow();
   }
@@ -406,6 +422,100 @@ class LivePitchesRepositoryIT {
     assertNull(notBackfilled.hitDistanceFt());
     assertNull(notBackfilled.bbType(), "LEFT JOIN miss -> '' -> null");
     assertNull(notBackfilled.event());
+  }
+
+  @Test
+  void findPostPredictions_returns_only_champion_post_rows_joined_to_the_realized_outcome()
+      throws Exception {
+    // F2.1b: the retrospective panel serves the logged pitch_outcome_post CHAMPION predictions for
+    // a
+    // game, joined to each pitch's realized outcome (pitches_live.description).
+    LocalDate date = LocalDate.of(2026, 6, 4);
+    insertPitch(950L, date, 1, 1, "BOS", "NYY", 4);
+    insertPitch(950L, date, 1, 2, "BOS", "NYY", 4);
+    insertPitch(950L, date, 2, 1, "BOS", "NYY", 5);
+
+    insertPrediction(
+        950L,
+        1,
+        1,
+        "pitch_outcome_post",
+        "{\"probabilities\":{\"in_play\":0.7,\"ball\":0.3},\"winner\":\"in_play\"}");
+    insertPrediction(
+        950L, 1, 2, "pitch_outcome_post", "{\"probabilities\":{\"ball\":0.8},\"winner\":\"ball\"}");
+    insertPrediction(
+        950L,
+        2,
+        1,
+        "pitch_outcome_post",
+        "{\"probabilities\":{\"called_strike\":0.6},\"winner\":\"called_strike\"}");
+
+    // Scoping decoys keyed to the SAME (1,1) pitch: a PRE champion (the game page's next-pitch) and
+    // a
+    // POST SHADOW row. Neither may surface here - this is the F2.1a model_name + role discipline.
+    insertPrediction(
+        950L,
+        1,
+        1,
+        "pitch_outcome_pre",
+        "{\"probabilities\":{\"ball\":0.9},\"winner\":\"ball_pre\"}");
+    insertPrediction(
+        950L,
+        1,
+        1,
+        "pitch_outcome_post",
+        "shadow",
+        "{\"probabilities\":{\"in_play\":0.99},\"winner\":\"shadow_win\"}");
+
+    PostPredictionsPage page = repo.findPostPredictions(950L, 0, 50);
+
+    assertEquals(3, page.rows().size(), "only the three champion POST predictions, not the decoys");
+    assertEquals(0, page.page());
+    assertEquals(50, page.size());
+    assertFalse(page.hasNext());
+
+    // at_bat/pitch order.
+    assertEquals(1, page.rows().get(0).atBatIndex());
+    assertEquals(1, page.rows().get(0).pitchNumber());
+    assertEquals(1, page.rows().get(1).atBatIndex());
+    assertEquals(2, page.rows().get(1).pitchNumber());
+    assertEquals(2, page.rows().get(2).atBatIndex());
+    assertEquals(1, page.rows().get(2).pitchNumber());
+
+    PostPredictionRow first = postRow(page.rows(), 1, 1);
+    assertEquals(
+        "in_play",
+        first.postWinner(),
+        "the POST champion winner, NOT the PRE champion or the POST shadow");
+    assertEquals(0.7, first.postClasses().get("in_play"), 1e-9);
+    assertEquals("ball", first.realizedOutcome(), "pitches_live.description via the LEFT JOIN");
+    assertEquals(4, first.inning());
+    assertEquals("v1", first.modelVersion());
+  }
+
+  @Test
+  void findPostPredictions_paginates_with_over_fetch_hasNext() throws Exception {
+    LocalDate date = LocalDate.of(2026, 6, 4);
+    for (int p = 1; p <= 3; p++) {
+      insertPitch(960L, date, 1, p, "BOS", "NYY", 1);
+      insertPrediction(
+          960L,
+          1,
+          p,
+          "pitch_outcome_post",
+          "{\"probabilities\":{\"ball\":0.5},\"winner\":\"ball\"}");
+    }
+
+    PostPredictionsPage p0 = repo.findPostPredictions(960L, 0, 2);
+    assertEquals(2, p0.rows().size(), "page 0 fills to size");
+    assertTrue(p0.hasNext(), "a third row exists -> hasNext");
+    assertEquals(1, p0.rows().get(0).pitchNumber());
+    assertEquals(2, p0.rows().get(1).pitchNumber());
+
+    PostPredictionsPage p1 = repo.findPostPredictions(960L, 1, 2);
+    assertEquals(1, p1.rows().size(), "last page has the remaining row");
+    assertFalse(p1.hasNext(), "no rows beyond the last page");
+    assertEquals(3, p1.rows().get(0).pitchNumber());
   }
 
   @Test

@@ -21,6 +21,8 @@ import java.util.Objects;
 import javax.sql.DataSource;
 import net.thebullpen.baseball.api.dto.GameSummary;
 import net.thebullpen.baseball.api.dto.LivePitchRow;
+import net.thebullpen.baseball.api.dto.PostPredictionRow;
+import net.thebullpen.baseball.api.dto.PostPredictionsPage;
 import net.thebullpen.baseball.ingest.GameStatus;
 import net.thebullpen.baseball.ingest.LiveGameFeed;
 import net.thebullpen.baseball.ingest.LivePitch;
@@ -108,6 +110,57 @@ public class LivePitchesRepository {
           + "    AND ph.pitch_number = pl.pitch_number"
           + " WHERE pl.game_id = ? AND (pl.at_bat_index * 100 + pl.pitch_number) > ?"
           + " ORDER BY cursor ASC LIMIT 500";
+
+  // F2.1b: the logged pitch_outcome_post CHAMPION predictions for a game, joined to each pitch's
+  // realized outcome - backs decision [177]'s retrospective panel. This is the mirror image of
+  // FIND_PITCHES_SINCE: there the pitch table drives and the prediction is the optional join; here
+  // the champion POST prediction DRIVES (one row per logged prediction) and pitches_live is the
+  // optional realized-outcome join.
+  //
+  // The WHERE scoping is LOAD-BEARING (the F2.1a discipline): role = 'champion' AND model_name =
+  // 'pitch_outcome_post'. A pitch_outcome_pre row (the game page's next-pitch) or a POST SHADOW row
+  // keyed to the same pitch must NEVER surface here. argMax(prediction, request_at) collapses the
+  // re-logged rows to the latest by request_at; argMax(model_version, request_at) carries the
+  // version that produced that latest prediction. game_id is pruned inside the subquery (the 1st
+  // outer bind).
+  //
+  // pitches_live is deduped via argMax(col, ingested_at) over its ReplacingMergeTree - NO FINAL,
+  // mirroring the FIND_PITCHES_SINCE ph subquery idiom, game_id-pruned (the 2nd outer bind). A LEFT
+  // JOIN miss (a logged prediction whose pitch has not round-tripped into pitches_live) yields the
+  // LowCardinality '' default for realized_outcome -> null in the mapper, and 0 for the numeric
+  // columns.
+  //
+  // Pagination: LIMIT (size + 1) OFFSET (page * size) - the extra +1 row lets the method report
+  // hasNext without a separate count query, then drops the overflow row. Binds, in SQL order:
+  // prediction_log subquery game_id, pitches_live subquery game_id, LIMIT (size + 1), OFFSET
+  // (page * size).
+  private static final String FIND_POST_PREDICTIONS =
+      "SELECT pred.at_bat_index AS at_bat_index, pred.pitch_number AS pitch_number,"
+          + " pl.inning AS inning, pl.pitcher_id AS pitcher_id, pl.batter_id AS batter_id,"
+          + " pl.description AS realized_outcome, pred.prediction AS prediction_json,"
+          + " pred.model_version AS model_version"
+          + " FROM ("
+          + "   SELECT game_id, at_bat_index, pitch_number,"
+          + "          argMax(prediction, request_at) AS prediction,"
+          + "          argMax(model_version, request_at) AS model_version"
+          + "   FROM prediction_log"
+          + "   WHERE game_id = ? AND role = 'champion' AND model_name = 'pitch_outcome_post'"
+          + "   GROUP BY game_id, at_bat_index, pitch_number"
+          + " ) AS pred"
+          + " LEFT JOIN ("
+          + "   SELECT game_id, at_bat_index, pitch_number,"
+          + "          argMax(description, ingested_at) AS description,"
+          + "          argMax(inning, ingested_at) AS inning,"
+          + "          argMax(pitcher_id, ingested_at) AS pitcher_id,"
+          + "          argMax(batter_id, ingested_at) AS batter_id"
+          + "   FROM pitches_live"
+          + "   WHERE game_id = ?"
+          + "   GROUP BY game_id, at_bat_index, pitch_number"
+          + " ) AS pl"
+          + " ON pl.game_id = pred.game_id AND pl.at_bat_index = pred.at_bat_index"
+          + "    AND pl.pitch_number = pred.pitch_number"
+          + " ORDER BY pred.at_bat_index ASC, pred.pitch_number ASC"
+          + " LIMIT ? OFFSET ?";
 
   // Latest status per game from the poller (step 7b). argMax over the ReplacingMergeTree gives the
   // current status; a LEFT JOIN miss yields '' -> 'UNKNOWN' (the honest pre-poll answer).
@@ -292,6 +345,26 @@ public class LivePitchesRepository {
     // Params, in SQL order: prediction_log subquery game_id, pitches subquery game_id (batted-ball
     // join), outer pl.game_id, cursor.
     return jdbc.query(FIND_PITCHES_SINCE, PITCH_MAPPER, gameId, gameId, gameId, sinceCursor);
+  }
+
+  /**
+   * A page of the logged {@code pitch_outcome_post} champion predictions for a game, each joined to
+   * its pitch's realized outcome (F2.1b). Backs decision [177]'s retrospective panel.
+   *
+   * <p>Over-fetches one row ({@code LIMIT size + 1}) to decide {@code hasNext} without a count
+   * query, then trims the overflow row off the returned page. Binds, in SQL order: the
+   * prediction_log subquery game_id, the pitches_live subquery game_id, then {@code size + 1}
+   * (LIMIT) and {@code page * size} (OFFSET). The {@code page}/{@code size} bounds are validated at
+   * the controller.
+   */
+  public PostPredictionsPage findPostPredictions(long gameId, int page, int size) {
+    int limit = size + 1;
+    long offset = (long) page * size;
+    List<PostPredictionRow> rows =
+        jdbc.query(FIND_POST_PREDICTIONS, POST_PREDICTION_MAPPER, gameId, gameId, limit, offset);
+    boolean hasNext = rows.size() > size;
+    List<PostPredictionRow> pageRows = hasNext ? List.copyOf(rows.subList(0, size)) : rows;
+    return new PostPredictionsPage(pageRows, page, size, hasNext);
   }
 
   /**
@@ -486,6 +559,26 @@ public class LivePitchesRepository {
             nullable(rs, "hit_distance_ft"),
             emptyToNull(rs.getString("bb_type")),
             emptyToNull(rs.getString("events")));
+      };
+
+  private static final RowMapper<PostPredictionRow> POST_PREDICTION_MAPPER =
+      (ResultSet rs, int n) -> {
+        // The logged post-pitch champion distribution, parsed from the same
+        // {"probabilities": {...}, "winner": "..."} shape the PITCH_MAPPER reads.
+        Prediction pred = parsePrediction(rs.getString("prediction_json"));
+        return new PostPredictionRow(
+            rs.getInt("at_bat_index"),
+            rs.getInt("pitch_number"),
+            rs.getInt("inning"),
+            rs.getLong("pitcher_id"),
+            rs.getLong("batter_id"),
+            // Realized outcome from the pitches_live LEFT JOIN: the LowCardinality '' default (a
+            // logged prediction whose pitch has not round-tripped into pitches_live) collapses to
+            // null.
+            emptyToNull(rs.getString("realized_outcome")),
+            pred.classes(),
+            pred.winner(),
+            rs.getString("model_version"));
       };
 
   private static Double nullable(ResultSet rs, String col) throws java.sql.SQLException {
