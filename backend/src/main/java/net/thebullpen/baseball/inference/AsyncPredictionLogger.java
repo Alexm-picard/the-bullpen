@@ -12,9 +12,9 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import net.thebullpen.baseball.config.InferenceProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
@@ -51,11 +51,12 @@ public class AsyncPredictionLogger {
   public AsyncPredictionLogger(
       Optional<PredictionLogWriter> writer,
       MeterRegistry meterRegistry,
-      // 3b.5: bumped 10K → 20K to absorb shadow-mode 2× volume (every dispatch now produces a
-      // CHAMPION row + a SHADOW row when a challenger is registered + routed in shadow mode).
-      @Value("${bullpen.inference.log.queue-capacity:20000}") int capacity) {
+      // 3b.5: default bumped 10K → 20K to absorb shadow-mode 2× volume (every dispatch now
+      // produces a CHAMPION row + a SHADOW row when a challenger is registered + routed in shadow
+      // mode). Capacity lives at bullpen.inference.log.queue-capacity.
+      InferenceProperties props) {
     this.writer = writer;
-    this.queue = new ArrayBlockingQueue<>(capacity);
+    this.queue = new ArrayBlockingQueue<>(props.log().queueCapacity());
     this.enqueuedCounter =
         Counter.builder("thebullpen_prediction_log_enqueued_total").register(meterRegistry);
     this.droppedCounter =

@@ -16,6 +16,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
+import net.thebullpen.baseball.config.InferenceProperties;
 import net.thebullpen.baseball.inference.AsyncPredictionLogger;
 import net.thebullpen.baseball.inference.PredictionLogEvent;
 import net.thebullpen.baseball.inference.PredictionLogWriter;
@@ -76,7 +77,19 @@ class PredictPitchRoutingIT {
     final List<PredictionLogEvent> events = new CopyOnWriteArrayList<>();
 
     CapturingLogger(Optional<PredictionLogWriter> writer, MeterRegistry registry) {
-      super(writer, registry, 20000);
+      super(writer, registry, defaultProps());
+    }
+
+    private static InferenceProperties defaultProps() {
+      return new InferenceProperties(
+          null,
+          500L,
+          new InferenceProperties.Pitch(InferenceProperties.PITCH_ARTIFACTS_DEFAULT, false),
+          new InferenceProperties.PitchPost(
+              "../training/artifacts/pitch_outcome_post/v1",
+              "../contracts/feature_pipeline_post.json"),
+          new InferenceProperties.Toy("../training/artifacts/_toy/v0"),
+          new InferenceProperties.Log(20_000));
     }
 
     @Override

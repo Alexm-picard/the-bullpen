@@ -18,6 +18,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import net.thebullpen.baseball.config.InferenceProperties;
 import net.thebullpen.baseball.inference.routing.Bucketer;
 import net.thebullpen.baseball.inference.routing.Role;
 import net.thebullpen.baseball.inference.routing.RoutingConfig;
@@ -32,6 +33,19 @@ import org.junit.jupiter.api.Test;
  */
 class InferenceRouterTest {
 
+  /** Inference props varying only the shadow timeout this suite exercises; rest are defaults. */
+  private static InferenceProperties props(long shadowTimeoutMs) {
+    return new InferenceProperties(
+        null,
+        shadowTimeoutMs,
+        new InferenceProperties.Pitch(InferenceProperties.PITCH_ARTIFACTS_DEFAULT, false),
+        new InferenceProperties.PitchPost(
+            "../training/artifacts/pitch_outcome_post/v1",
+            "../contracts/feature_pipeline_post.json"),
+        new InferenceProperties.Toy("../training/artifacts/_toy/v0"),
+        new InferenceProperties.Log(20_000));
+  }
+
   private final RoutingService routing = mock(RoutingService.class);
   private final Bucketer bucketer = mock(Bucketer.class);
   private final InferenceRouter router =
@@ -40,7 +54,7 @@ class InferenceRouterTest {
           bucketer,
           Executors.newVirtualThreadPerTaskExecutor(),
           new InferenceMetrics(new SimpleMeterRegistry()),
-          250L);
+          props(250L));
 
   // --- legacy fallback (no routing config) ------------------------------
 
@@ -237,7 +251,7 @@ class InferenceRouterTest {
             bucketer,
             Executors.newVirtualThreadPerTaskExecutor(),
             new InferenceMetrics(new SimpleMeterRegistry()),
-            30_000L);
+            props(30_000L));
     RoutingConfig cfg = abCfg("model_a", 100L, 200L, 0.0, RoutingMode.SHADOW);
     when(routing.findRouting("model_a")).thenReturn(Optional.of(cfg));
     when(bucketer.route(anyLong(), any(), any())).thenReturn(Role.CHAMPION);
@@ -296,7 +310,7 @@ class InferenceRouterTest {
             bucketer,
             Executors.newVirtualThreadPerTaskExecutor(),
             new InferenceMetrics(meterRegistry),
-            50L);
+            props(50L));
     RoutingConfig cfg = abCfg("model_a", 100L, 200L, 0.0, RoutingMode.SHADOW);
     when(routing.findRouting("model_a")).thenReturn(Optional.of(cfg));
     when(bucketer.route(anyLong(), any(), any())).thenReturn(Role.CHAMPION);
@@ -343,7 +357,7 @@ class InferenceRouterTest {
             bucketer,
             Executors.newVirtualThreadPerTaskExecutor(),
             new InferenceMetrics(meterRegistry),
-            30_000L);
+            props(30_000L));
     RoutingConfig cfg = abCfg("model_a", 100L, 200L, 0.0, RoutingMode.SHADOW);
     when(routing.findRouting("model_a")).thenReturn(Optional.of(cfg));
     when(bucketer.route(anyLong(), any(), any())).thenReturn(Role.CHAMPION);
@@ -385,7 +399,7 @@ class InferenceRouterTest {
             bucketer,
             Executors.newVirtualThreadPerTaskExecutor(),
             new InferenceMetrics(meterRegistry),
-            30_000L);
+            props(30_000L));
     RoutingConfig cfg = abCfg("model_a", 100L, 200L, 0.0, RoutingMode.SHADOW);
     when(routing.findRouting("model_a")).thenReturn(Optional.of(cfg));
     when(bucketer.route(anyLong(), any(), any())).thenReturn(Role.CHAMPION);

@@ -12,9 +12,9 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import net.thebullpen.baseball.config.InferenceProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
@@ -41,6 +41,9 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @Profile({"api", "worker"})
+// Bean-existence gate: MUST stay a raw property expression (conditions evaluate before any
+// @ConfigurationProperties bean exists). Its inline default is intentionally duplicated with
+// InferenceProperties.PITCH_ARTIFACTS_DEFAULT; InferencePropertiesTest pins the two equal.
 @ConditionalOnExpression(
     "T(java.nio.file.Files).exists(T(java.nio.file.Path).of('${bullpen.inference.pitch.artifacts-dir:../training/artifacts/pitch_outcome_pre/v1}').resolve('model.onnx'))")
 public class PitchInferenceService {
@@ -70,21 +73,14 @@ public class PitchInferenceService {
   private FeaturePipelinePitchPost postPipeline;
   private IsotonicCalibratorJava postCalibrator;
 
-  public PitchInferenceService(
-      @Value("${bullpen.inference.pitch.artifacts-dir:../training/artifacts/pitch_outcome_pre/v1}")
-          String preArtifactsDir,
-      @Value("${bullpen.inference.contract-path:../contracts/feature_pipeline.json}")
-          String prePipelineContractPath,
-      @Value(
-              "${bullpen.inference.pitch-post.artifacts-dir:../training/artifacts/pitch_outcome_post/v1}")
-          String postArtifactsDir,
-      @Value(
-              "${bullpen.inference.pitch-post.contract-path:../contracts/feature_pipeline_post.json}")
-          String postPipelineContractPath) {
-    this.preArtifactsDir = Path.of(preArtifactsDir).toAbsolutePath().normalize();
-    this.prePipelineContractPath = Path.of(prePipelineContractPath).toAbsolutePath().normalize();
-    this.postArtifactsDir = Path.of(postArtifactsDir).toAbsolutePath().normalize();
-    this.postPipelineContractPath = Path.of(postPipelineContractPath).toAbsolutePath().normalize();
+  public PitchInferenceService(InferenceProperties props) {
+    // pitchContractPath() resolves the legacy shared bullpen.inference.contract-path key with the
+    // pre head's historical default (see InferenceProperties' javadoc on the shared-key wart).
+    this.preArtifactsDir = Path.of(props.pitch().artifactsDir()).toAbsolutePath().normalize();
+    this.prePipelineContractPath = Path.of(props.pitchContractPath()).toAbsolutePath().normalize();
+    this.postArtifactsDir = Path.of(props.pitchPost().artifactsDir()).toAbsolutePath().normalize();
+    this.postPipelineContractPath =
+        Path.of(props.pitchPost().contractPath()).toAbsolutePath().normalize();
   }
 
   @PostConstruct

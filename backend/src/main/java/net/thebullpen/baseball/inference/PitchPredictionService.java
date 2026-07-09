@@ -10,12 +10,12 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 import net.thebullpen.baseball.api.dto.PitchRequest;
+import net.thebullpen.baseball.config.InferenceProperties;
 import net.thebullpen.baseball.inference.routing.Role;
 import net.thebullpen.baseball.registry.RegistryService;
 import net.thebullpen.baseball.registry.dto.ModelVersion;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -58,7 +58,7 @@ public class PitchPredictionService {
       AsyncPredictionLogger logger,
       InferenceMetrics metrics,
       Optional<PitchInferenceService> devInference,
-      @Value("${bullpen.inference.pitch.dev-direct-serving:false}") boolean devDirectServing,
+      InferenceProperties props,
       ObjectMapper objectMapper) {
     this.modelLoader = modelLoader;
     this.router = router;
@@ -66,7 +66,7 @@ public class PitchPredictionService {
     this.logger = logger;
     this.metrics = metrics;
     this.devInference = devInference;
-    this.devDirectServing = devDirectServing;
+    this.devDirectServing = props.pitch().devDirectServing();
     this.objectMapper = objectMapper;
   }
 

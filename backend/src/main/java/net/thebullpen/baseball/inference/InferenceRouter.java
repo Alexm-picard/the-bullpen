@@ -8,6 +8,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
+import net.thebullpen.baseball.config.InferenceProperties;
 import net.thebullpen.baseball.inference.routing.Bucketer;
 import net.thebullpen.baseball.inference.routing.Role;
 import net.thebullpen.baseball.inference.routing.RoutingConfig;
@@ -16,7 +17,6 @@ import net.thebullpen.baseball.inference.routing.RoutingService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
@@ -72,12 +72,12 @@ public class InferenceRouter {
       Bucketer bucketer,
       @Qualifier("inferenceShadowExecutor") ExecutorService executor,
       InferenceMetrics metrics,
-      @Value("${bullpen.inference.shadow-timeout-ms:500}") long shadowTimeoutMs) {
+      InferenceProperties props) {
     this.routingService = routingService;
     this.bucketer = bucketer;
     this.executor = executor;
     this.metrics = metrics;
-    this.shadowTimeoutMs = shadowTimeoutMs;
+    this.shadowTimeoutMs = props.shadowTimeoutMs();
   }
 
   /**
