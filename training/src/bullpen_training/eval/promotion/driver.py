@@ -369,14 +369,13 @@ def _fit_per_park_isotonic(
     MLP's raw prob to the retrodicted-distribution target - the SAME target + method production uses
     (decision [51]). A park with >= _MIN_PARK_VAL_ROWS val rows fits its own grid; smaller + cold
     parks use a pooled grid fit on all val."""
-    from sklearn.isotonic import IsotonicRegression
+    # Imported lazily (sklearn is heavy) - same posture as the inline import it replaces.
+    from bullpen_training.eval.calibration import fit_isotonic
 
     def fit_grid(raw: np.ndarray, retro: np.ndarray) -> list[Any]:
         grid: list[Any] = []
         for c in range(n_classes):
-            iso = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0)
-            iso.fit(raw[:, c], retro[:, c])
-            grid.append(iso)
+            grid.append(fit_isotonic(raw[:, c], retro[:, c], y_min=0.0, y_max=1.0))
         return grid
 
     pooled = fit_grid(raw_val, retro_val)

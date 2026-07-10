@@ -34,6 +34,7 @@ from sklearn.preprocessing import StandardScaler
 from bullpen_training.battedball.features_shared import FEATURE_NAMES, OUTCOME_NAMES
 from bullpen_training.battedball.lgbm_per_park.dataset import LABEL_COLUMN, load_park_lgbm_dataset
 from bullpen_training.battedball.parks.loader import load_all_parks
+from bullpen_training.eval.calibration import fit_isotonic, isotonic_from_dict, isotonic_to_dict
 from bullpen_training.eval.leakage_guards import refuse_holdout
 
 DEFAULT_PER_PARK_LIMIT = 50_000
@@ -142,9 +143,9 @@ def train_lr_baseline(
     raw_cal = np.asarray(pipeline.predict_proba(x_cal), dtype=np.float64)
     calibrators: list[IsotonicRegression] = []
     for c in range(len(OUTCOME_NAMES)):
-        iso = IsotonicRegression(out_of_bounds="clip")
-        iso.fit(raw_cal[:, c], (y_cal == c).astype(np.float64))
-        calibrators.append(iso)
+        # NB: sklearn-default y_min/y_max (no unit clamp) - the LR baseline's
+        # historical fit; do not "align" it with the MLP/LGBM y_min=0/y_max=1.
+        calibrators.append(fit_isotonic(raw_cal[:, c], (y_cal == c).astype(np.float64)))
 
     return LrBaselineBundle(
         pipeline=pipeline,
@@ -163,30 +164,6 @@ def train_lr_baseline(
     )
 
 
-def _calibrator_to_dict(iso: IsotonicRegression, outcome_name: str) -> dict:
-    return {
-        "outcome": outcome_name,
-        "x_thresholds": iso.X_thresholds_.astype(float).tolist(),
-        "y_thresholds": iso.y_thresholds_.astype(float).tolist(),
-        "y_min": float(iso.y_min) if iso.y_min is not None else None,
-        "y_max": float(iso.y_max) if iso.y_max is not None else None,
-        "out_of_bounds": iso.out_of_bounds,
-    }
-
-
-def _calibrator_from_dict(d: dict) -> IsotonicRegression:
-    iso = IsotonicRegression(
-        out_of_bounds=d.get("out_of_bounds", "clip"), y_min=d.get("y_min"), y_max=d.get("y_max")
-    )
-    iso.X_thresholds_ = np.asarray(d["x_thresholds"], dtype=np.float64)
-    iso.y_thresholds_ = np.asarray(d["y_thresholds"], dtype=np.float64)
-    iso.X_min_ = float(iso.X_thresholds_.min()) if iso.X_thresholds_.size else 0.0
-    iso.X_max_ = float(iso.X_thresholds_.max()) if iso.X_thresholds_.size else 1.0
-    iso.increasing_ = True
-    iso._build_f(iso.X_thresholds_, iso.y_thresholds_)
-    return iso
-
-
 def save_lr_baseline_bundle(bundle: LrBaselineBundle, out_dir: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     joblib.dump(bundle.pipeline, out_dir / "pipeline.joblib")
@@ -197,7 +174,7 @@ def save_lr_baseline_bundle(bundle: LrBaselineBundle, out_dir: Path) -> None:
                 "model_name": "lr_baseline_batted_ball",
                 "outcome_order": list(bundle.outcome_names),
                 "classes": [
-                    _calibrator_to_dict(iso, name)
+                    isotonic_to_dict(iso, name)
                     for iso, name in zip(bundle.calibrators, bundle.outcome_names, strict=True)
                 ],
             },
@@ -224,7 +201,7 @@ def save_lr_baseline_bundle(bundle: LrBaselineBundle, out_dir: Path) -> None:
 def load_lr_baseline_bundle(model_dir: Path) -> LrBaselineBundle:
     pipeline = joblib.load(model_dir / "pipeline.joblib")
     cal_payload = json.loads((model_dir / "calibrator.json").read_text())
-    calibrators = [_calibrator_from_dict(c) for c in cal_payload["classes"]]
+    calibrators = [isotonic_from_dict(c) for c in cal_payload["classes"]]
     md = json.loads((model_dir / "metadata.json").read_text())
     return LrBaselineBundle(
         pipeline=pipeline,

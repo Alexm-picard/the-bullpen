@@ -81,14 +81,19 @@ jobs:
         #   tests/pitch/             - W1/W4b pitch ORT fixture, register_snapshot (new)
         #   tests/battedball/lgbm_per_park/ and lr_baseline/ - both now have __init__.py
         #     to resolve the test_export_onnx.py basename collision that breaks default
-        #     (prepend) pytest collection. W5 eval/CV additions land in tests/eval/ and
-        #     tests/battedball/ which are already globbed by this job.
+        #     (prepend) pytest collection.
         #   tests/registry_client/   - feature-hash discipline
         #   tests/retraining/        - trigger/dispatch/run unit tests
+        # NB: tests/eval/ is NOT globbed by either unit job - its files are enumerated
+        # one by one (a new tests/eval/test_*.py must be ADDED here or it never runs in
+        # CI; the M-task-23 audit caught test_calibration.py + test_ece_reconciliation.py
+        # orphaned by exactly this).
         run: |
           uv run python -m pytest -x --ignore=tests/leakage \
             --cov=src/bullpen_training --cov-branch --cov-append --cov-fail-under=0 \
             tests/pitch tests/eval/test_artifact.py \
+            tests/eval/test_calibration.py \
+            tests/eval/test_ece_reconciliation.py \
             tests/battedball/test_train_toy.py \
             tests/battedball/test_python_java_parity.py \
             tests/battedball/lgbm_baseline \

@@ -34,6 +34,12 @@ from bullpen_training.battedball.lgbm_per_park.dataset import (
     load_park_lgbm_dataset,
 )
 from bullpen_training.battedball.parks.loader import load_all_parks
+from bullpen_training.eval.calibration import (
+    apply_per_class_isotonic,
+    fit_isotonic,
+    isotonic_from_dict,
+    isotonic_to_dict,
+)
 from bullpen_training.eval.leakage_guards import refuse_holdout
 
 DEFAULT_LR: Final[float] = 0.05
@@ -120,9 +126,9 @@ def train_single_park_lgbm(
     raw_preds = np.asarray(booster.predict(cal_x), dtype=np.float64)
     calibrators: list[IsotonicRegression] = []
     for c in range(len(OUTCOME_NAMES)):
-        iso = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0)
-        iso.fit(raw_preds[:, c], (cal_y == c).astype(np.float64))
-        calibrators.append(iso)
+        calibrators.append(
+            fit_isotonic(raw_preds[:, c], (cal_y == c).astype(np.float64), y_min=0.0, y_max=1.0)
+        )
 
     summary: dict[str, object] = {
         "park_id": park_id,
@@ -149,38 +155,7 @@ def predict_proba(bundle: LgbmPerParkBundle, df: pd.DataFrame) -> np.ndarray:
 
 
 def predict_proba_calibrated(bundle: LgbmPerParkBundle, df: pd.DataFrame) -> np.ndarray:
-    raw = predict_proba(bundle, df).astype(np.float64)
-    calibrated = np.empty_like(raw)
-    for c in range(raw.shape[1]):
-        calibrated[:, c] = bundle.calibrators[c].transform(raw[:, c])
-    calibrated = np.maximum(calibrated, 1e-9)
-    return (calibrated / calibrated.sum(axis=-1, keepdims=True)).astype(np.float32)
-
-
-def _calibrator_to_dict(iso: IsotonicRegression, outcome_name: str) -> dict:
-    return {
-        "outcome": outcome_name,
-        "x_thresholds": iso.X_thresholds_.astype(float).tolist(),
-        "y_thresholds": iso.y_thresholds_.astype(float).tolist(),
-        "y_min": float(iso.y_min) if iso.y_min is not None else None,
-        "y_max": float(iso.y_max) if iso.y_max is not None else None,
-        "out_of_bounds": iso.out_of_bounds,
-    }
-
-
-def _calibrator_from_dict(d: dict) -> IsotonicRegression:
-    iso = IsotonicRegression(
-        out_of_bounds=d.get("out_of_bounds", "clip"),
-        y_min=d.get("y_min"),
-        y_max=d.get("y_max"),
-    )
-    iso.X_thresholds_ = np.asarray(d["x_thresholds"], dtype=np.float64)
-    iso.y_thresholds_ = np.asarray(d["y_thresholds"], dtype=np.float64)
-    iso.X_min_ = float(iso.X_thresholds_.min()) if iso.X_thresholds_.size else 0.0
-    iso.X_max_ = float(iso.X_thresholds_.max()) if iso.X_thresholds_.size else 1.0
-    iso.increasing_ = True
-    iso._build_f(iso.X_thresholds_, iso.y_thresholds_)
-    return iso
+    return apply_per_class_isotonic(bundle.calibrators, predict_proba(bundle, df))
 
 
 def save_per_park_bundle(bundle: LgbmPerParkBundle, out_dir: Path) -> None:
@@ -193,7 +168,7 @@ def save_per_park_bundle(bundle: LgbmPerParkBundle, out_dir: Path) -> None:
                 "park_id": bundle.park_id,
                 "outcome_order": list(bundle.outcome_names),
                 "classes": [
-                    _calibrator_to_dict(iso, name)
+                    isotonic_to_dict(iso, name)
                     for iso, name in zip(bundle.calibrators, bundle.outcome_names, strict=True)
                 ],
             },
@@ -220,7 +195,7 @@ def save_per_park_bundle(bundle: LgbmPerParkBundle, out_dir: Path) -> None:
 def load_per_park_bundle(park_dir: Path) -> LgbmPerParkBundle:
     booster = lgb.Booster(model_file=str(park_dir / "model.txt"))
     cal_payload = json.loads((park_dir / "calibrator.json").read_text())
-    calibrators = [_calibrator_from_dict(c) for c in cal_payload["classes"]]
+    calibrators = [isotonic_from_dict(c) for c in cal_payload["classes"]]
     md = json.loads((park_dir / "metadata.json").read_text())
     return LgbmPerParkBundle(
         park_id=md["park_id"],
