@@ -34,6 +34,8 @@ from typing import Final
 import numpy as np
 from sklearn.isotonic import IsotonicRegression
 
+from bullpen_training.eval.calibration import fit_isotonic, isotonic_from_dict, isotonic_to_dict
+
 DEFAULT_N_BINS_RELIABILITY: Final[int] = 15
 
 
@@ -105,8 +107,9 @@ def fit_per_park_calibrators(
     for p in range(n_parks):
         per_class: list[IsotonicRegression] = []
         for c in range(n_outcomes):
-            iso = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0)
-            iso.fit(raw_probs[:, p, c], label_distributions[:, p, c])
+            iso = fit_isotonic(
+                raw_probs[:, p, c], label_distributions[:, p, c], y_min=0.0, y_max=1.0
+            )
             per_class.append(iso)
         nested.append(per_class)
     return ParkCalibrators(
@@ -249,20 +252,10 @@ def to_json(calibrators: ParkCalibrators) -> dict:
     for p_idx, park_id in enumerate(calibrators.park_order):
         classes: list[dict] = []
         for c_idx, outcome in enumerate(calibrators.outcome_order):
-            iso = calibrators._nested[p_idx][c_idx]
-            classes.append(
-                {
-                    "outcome": outcome,
-                    # IsotonicRegression stores its breakpoints as float arrays;
-                    # we serialise the X+Y arrays + the out-of-bounds policy
-                    # so the Java side reproduces the same monotone interp.
-                    "x_thresholds": iso.X_thresholds_.astype(float).tolist(),
-                    "y_thresholds": iso.y_thresholds_.astype(float).tolist(),
-                    "y_min": float(iso.y_min) if iso.y_min is not None else None,
-                    "y_max": float(iso.y_max) if iso.y_max is not None else None,
-                    "out_of_bounds": iso.out_of_bounds,
-                }
-            )
+            # isotonic_to_dict serialises the X+Y breakpoint arrays + the
+            # out-of-bounds policy so the Java side reproduces the same
+            # monotone interp; its key order is the byte-level contract.
+            classes.append(isotonic_to_dict(calibrators._nested[p_idx][c_idx], outcome))
         parks_payload[park_id] = classes
     return {
         "schema_version": 2,
@@ -292,25 +285,9 @@ def from_json(payload: dict) -> ParkCalibrators:
             classes = parks[park_id]
         else:  # v1 list of {park_id, classes}
             classes = next(b["classes"] for b in parks if b["park_id"] == park_id)
-        per_class: list[IsotonicRegression] = []
-        for cls in classes:
-            iso = IsotonicRegression(
-                out_of_bounds=cls.get("out_of_bounds", "clip"),
-                y_min=cls.get("y_min"),
-                y_max=cls.get("y_max"),
-            )
-            # Recreate the fitted state by stuffing the breakpoint arrays
-            # into the attributes sklearn looks at on transform.
-            iso.X_thresholds_ = np.asarray(cls["x_thresholds"], dtype=np.float64)
-            iso.y_thresholds_ = np.asarray(cls["y_thresholds"], dtype=np.float64)
-            iso.X_min_ = float(iso.X_thresholds_.min()) if iso.X_thresholds_.size else 0.0
-            iso.X_max_ = float(iso.X_thresholds_.max()) if iso.X_thresholds_.size else 1.0
-            iso.increasing_ = True
-            # Rebuild the interpolator from the breakpoint arrays — sklearn
-            # builds this lazily inside fit() but not on attribute restore,
-            # so we call the private builder explicitly.
-            iso._build_f(iso.X_thresholds_, iso.y_thresholds_)
-            per_class.append(iso)
+        # isotonic_from_dict recreates the fitted state (the one sanctioned
+        # sklearn-privates rebuild, shared in eval.calibration).
+        per_class: list[IsotonicRegression] = [isotonic_from_dict(cls) for cls in classes]
         nested.append(per_class)
     return ParkCalibrators(park_order=park_order, outcome_order=outcome_order, _nested=nested)
 
