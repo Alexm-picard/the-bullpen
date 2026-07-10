@@ -113,7 +113,14 @@ def _query_joined(
 ) -> str:
     """SQL that joins pitches + bbip_retrodicted_labels and emits one
     row per BIP x park, ordered so reshape (-1, n_parks, n_outcomes)
-    gives the right per-park label tensor."""
+    gives the right per-park label tensor.
+
+    join_algorithm='partial_merge' (same fix as #238's export query): the
+    pitches-FINAL x bbip_retrodicted_labels-FINAL default hash join OOMs
+    (ClickHouse exit 241) under the production box's 4 GiB container cap -
+    C-31 attempt #1 died exactly here. partial_merge sort-merges with a
+    bounded footprint and changes only HOW the join executes, never WHICH
+    rows it returns."""
     parks = ", ".join(f"'{p}'" for p in park_order)
     limit_clause = f"LIMIT {limit * len(park_order)}" if limit else ""
     return f"""
@@ -152,6 +159,7 @@ def _query_joined(
     ORDER BY p.game_date, p.game_id, p.at_bat_index, p.pitch_number,
              indexOf([{parks}], r.park_id)
     {limit_clause}
+    SETTINGS join_algorithm = 'partial_merge'
     FORMAT TSV
     """
 
@@ -163,7 +171,13 @@ def _query_count(
     park_order: tuple[str, ...],
     limit: int | None = None,
 ) -> str:
-    """Count the BIPs that the main query will return."""
+    """Count the BIPs that the main query will return.
+
+    NB: this count runs the FULL season-range join in one query (the per-season
+    chunking in load_arrays applies only to the row loads), so it is the single
+    biggest join this module issues - the exact statement that OOM'd C-31
+    attempt #1. The trailing SETTINGS applies query-wide, covering the inner
+    join."""
     parks = ", ".join(f"'{p}'" for p in park_order)
     limit_clause = f"LIMIT {limit}" if limit else ""
     return f"""
@@ -183,6 +197,7 @@ def _query_count(
         AND r.park_id IN ({parks})
       {limit_clause}
     )
+    SETTINGS join_algorithm = 'partial_merge'
     """
 
 
@@ -233,6 +248,7 @@ def _query_joined_chunk(
     ORDER BY p.game_date, p.game_id, p.at_bat_index, p.pitch_number,
              indexOf([{parks}], r.park_id)
     LIMIT {chunk_bips * n_parks} OFFSET {offset_bips * n_parks}
+    SETTINGS join_algorithm = 'partial_merge'
     FORMAT TSV
     """
 
