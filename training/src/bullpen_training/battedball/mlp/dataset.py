@@ -18,6 +18,26 @@ tuples the Torch trainer consumes:
 The class is intentionally light on Torch coupling — `__getitem__`
 returns NumPy arrays, the trainer wraps with `torch.from_numpy` and
 moves to device. That keeps tests Torch-free where they don't need it.
+
+MEMORY DISCIPLINE - every ClickHouse query this module issues in production is
+PER-YEAR, and settings-only rescue of full-range queries is empirically dead.
+Box evidence map (2026-07-13 probes, 4 GiB container cap; C-31 attempts #1-#3):
+
+1. 10-yr DISTINCT count + partial_merge alone: OOM 241 (attempt #3's failure).
+2. 10-yr count + partial_merge + max_bytes_before_external_group_by/sort=1.5e9:
+   completes, 10.4s, 1,077,632 BIPs (the DISTINCT aggregation was the eater).
+3. 10-yr MAIN query + partial_merge + external spills: OOM 241 "While executing
+   FillingRightJoinSide" - the wide labels side materializes ~3 GiB regardless.
+4. 10-yr MAIN + grace_hash (8 buckets) + external sort: OOM 241. Settings exhausted.
+5. The E-1 backfill CLI ran the same join per-year (build_year_query, #238's
+   partial_merge) and completed 1.2M rows on 2026-07-08. Per-year + partial_merge
+   is the proven shape.
+
+Hence: load_arrays row loads are per-year (probe 5's shape); the count is summed
+per-year AND carries the probe-2 spill settings (each per-year count is strictly
+smaller than both probed shapes). Any new query against this table pair must be
+per-year with partial_merge - do not reintroduce a full-range join and try to
+settings your way out; probes 3-4 already buried that.
 """
 
 from __future__ import annotations
@@ -115,12 +135,11 @@ def _query_joined(
     row per BIP x park, ordered so reshape (-1, n_parks, n_outcomes)
     gives the right per-park label tensor.
 
-    join_algorithm='partial_merge' (same fix as #238's export query): the
-    pitches-FINAL x bbip_retrodicted_labels-FINAL default hash join OOMs
-    (ClickHouse exit 241) under the production box's 4 GiB container cap -
-    C-31 attempt #1 died exactly here. partial_merge sort-merges with a
-    bounded footprint and changes only HOW the join executes, never WHICH
-    rows it returns."""
+    Only ever issued PER-YEAR in production (load_arrays' loop) - probe 5's
+    proven shape. The full-range form is settings-unrescuable (probes 3-4:
+    the wide labels side materializes ~3 GiB in FillingRightJoinSide
+    regardless of spills). partial_merge (same fix as #238's export query)
+    changes only HOW the join executes, never WHICH rows it returns."""
     parks = ", ".join(f"'{p}'" for p in park_order)
     limit_clause = f"LIMIT {limit * len(park_order)}" if limit else ""
     return f"""
@@ -171,13 +190,14 @@ def _query_count(
     park_order: tuple[str, ...],
     limit: int | None = None,
 ) -> str:
-    """Count the BIPs that the main query will return.
+    """Count the BIPs the main query will return for the given season range.
 
-    NB: this count runs the FULL season-range join in one query (the per-season
-    chunking in load_arrays applies only to the row loads), so it is the single
-    biggest join this module issues - the exact statement that OOM'd C-31
-    attempt #1. The trailing SETTINGS applies query-wide, covering the inner
-    join."""
+    load_arrays calls this PER-YEAR and sums (see the module docstring's
+    evidence map): the full-range form of this exact query is what OOM'd C-31
+    attempts #1 and #3. The trailing SETTINGS applies query-wide, covering the
+    inner join; the external group-by/sort spills are the probe-2 mitigation
+    (the DISTINCT aggregation was the count's real memory eater), and each
+    per-year count is strictly smaller than both box-probed shapes."""
     parks = ", ".join(f"'{p}'" for p in park_order)
     limit_clause = f"LIMIT {limit}" if limit else ""
     return f"""
@@ -197,7 +217,9 @@ def _query_count(
         AND r.park_id IN ({parks})
       {limit_clause}
     )
-    SETTINGS join_algorithm = 'partial_merge'
+    SETTINGS join_algorithm = 'partial_merge',
+             max_bytes_before_external_group_by = 1500000000,
+             max_bytes_before_external_sort = 1500000000
     """
 
 
@@ -209,7 +231,11 @@ def _query_joined_chunk(
     offset_bips: int,
     chunk_bips: int,
 ) -> str:
-    """SQL for a single chunk of BIPs (LIMIT/OFFSET on the joined rows)."""
+    """SQL for a single chunk of BIPs (LIMIT/OFFSET on the joined rows).
+
+    WARNING: no production callers (superseded by load_arrays' per-year loop);
+    the un-year-filtered join here is the settings-unrescuable full-range shape
+    (module docstring evidence map). Kept only for API compatibility."""
     parks = ", ".join(f"'{p}'" for p in park_order)
     n_parks = len(park_order)
     return f"""
@@ -345,6 +371,11 @@ def load_rows(
     test (~150 K BIPs x 4 KB ~= 600 MB max). Streaming variants for the
     full 2015-2024 backfill belong in the trainer where shuffling
     happens; this function is the simplest correct path.
+
+    WARNING: no production callers, and this issues ONE query for the whole
+    season range - a multi-year range OOMs the box (module docstring evidence
+    map, probes 3-4: settings cannot rescue the full-range join). Single-year
+    smoke use only; production loading is load_arrays (per-year everywhere).
     """
     tsv = _run_clickhouse(
         _query_joined(
@@ -411,25 +442,36 @@ def load_arrays(
       - carry:    (N, n_parks) float32 — per-park carry in feet, NaN where
         carry_ft is still NULL (un-backfilled).
 
-    Each season is small enough for ClickHouse to handle without the
-    OFFSET-based pagination that OOMs at high offsets on the full
-    2015-2024 join.
+    EVERY query is per-year - the counts as well as the row loads (module
+    docstring evidence map; the full-range count OOM'd C-31 attempts #1/#3).
+    Summing per-year DISTINCT counts equals the full-range DISTINCT count
+    because a BIP's (game_id, at_bat_index, pitch_number) belongs to exactly
+    one game_date, hence one year - no BIP can be double-counted across
+    year buckets. Ordering: each year's rows arrive in the query's
+    (game_date, game_id, at_bat_index, pitch_number, park) order and years
+    are concatenated in ascending order, so the global ordering the tensor
+    reshape and rolling-origin date-splitting depend on is identical to the
+    full-range query's - game_date partitions years.
     """
     n_features = len(FEATURE_NAMES)
     n_parks = len(park_order)
     n_outcomes = len(OUTCOME_NAMES)
     park_index = {pid: i for i, pid in enumerate(park_order)}
 
-    count_tsv = _run_clickhouse(
-        _query_count(
-            season_from=season_from,
-            season_to=season_to,
-            park_order=park_order,
-            limit=limit,
-        ),
-        container=container,
-    ).strip()
-    total_bips = int(count_tsv)
+    total_bips = 0
+    for year in range(season_from, season_to + 1):
+        year_count_tsv = _run_clickhouse(
+            _query_count(
+                season_from=year,
+                season_to=year,
+                park_order=park_order,
+                limit=None,
+            ),
+            container=container,
+        ).strip()
+        year_bips = int(year_count_tsv)
+        total_bips += year_bips
+        print(f"  counted season {year}: {year_bips} BIPs (running total {total_bips})")
     if limit is not None:
         total_bips = min(total_bips, limit)
     print(
@@ -470,10 +512,11 @@ def load_arrays(
             written,
         )
         written += n
+        # max(total_bips, 1): an entirely-empty range would otherwise divide by zero here.
         print(
             f"  loaded season {year}: {n} BIPs "
             f"(total {written}/{total_bips}, "
-            f"{100 * written / total_bips:.0f}%)",
+            f"{100 * written / max(total_bips, 1):.0f}%)",
             flush=True,
         )
 

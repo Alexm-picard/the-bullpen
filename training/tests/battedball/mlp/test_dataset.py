@@ -8,6 +8,8 @@ docker dependency.
 
 from __future__ import annotations
 
+import re
+
 import numpy as np
 import pytest
 
@@ -174,3 +176,135 @@ def test_all_features_stacks_rows() -> None:
     rows = [_toy_row(i) for i in range(7)]
     arr = BBIPDataset(rows).all_features()
     assert arr.shape == (7, 15)
+
+
+# --- load_arrays per-year query discipline (C-31 attempts #1-#4) -----------
+#
+# The box evidence map in dataset.py's module docstring is pinned here: EVERY
+# ClickHouse query load_arrays issues must be single-year (the full-range
+# DISTINCT count OOM'd C-31 attempts #1/#3; probes 3-4 proved settings cannot
+# rescue any full-range form), the count must carry the probe-2 external
+# spills, and year-ordered concatenation must preserve the global row order
+# the (N, n_parks, n_outcomes) reshape depends on.
+
+
+def _fake_clickhouse(queries: list[str], year_bips: dict[int, int], parks: tuple[str, ...]):
+    """A _run_clickhouse stand-in: records queries, answers counts and rows."""
+
+    def run(query: str, *, container: str = "unused") -> str:
+        queries.append(query)
+        # Which year does this query target? Per-year discipline means BETWEEN y AND y.
+        year = None
+        for y in year_bips:
+            if f"BETWEEN {y} AND {y}" in query:
+                year = y
+                break
+        assert year is not None, f"query is not single-year:\n{query}"
+        if "count()" in query:
+            return f"{year_bips[year]}\n"
+        # Row query: emit year_bips[year] BIPs x len(parks) rows, 19 TSV cols.
+        # Honor a LIMIT clause like real ClickHouse (LIMIT {bips * n_parks} rows).
+        n_bips = year_bips[year]
+        limit_match = re.search(r"LIMIT (\d+)", query)
+        if limit_match:
+            n_bips = min(n_bips, int(limit_match.group(1)) // len(parks))
+        lines = []
+        for bip in range(n_bips):
+            for park in parks:
+                lines.append(
+                    "\t".join(
+                        [
+                            f"{year}-06-01",  # game_date
+                            str(year * 1000 + bip),  # game_id
+                            "1",  # at_bat_index
+                            "1",  # pitch_number
+                            "100.0",  # launch_speed_mph
+                            "25.0",  # launch_angle_deg
+                            "100.0",  # hc_x
+                            "100.0",  # hc_y
+                            "350.0",  # hit_distance_ft
+                            "R",  # stand
+                            "0",  # base_state
+                            "1",  # outs
+                            park,  # park_id
+                            "0.5",  # prob_out
+                            "0.2",  # prob_1b
+                            "0.1",  # prob_2b
+                            "0.05",  # prob_3b
+                            "0.15",  # prob_hr
+                            str(float(year)),  # carry_ft (year-tagged for order check)
+                        ]
+                    )
+                )
+        return "\n".join(lines) + "\n"
+
+    return run
+
+
+def test_load_arrays_issues_only_single_year_queries(monkeypatch: pytest.MonkeyPatch) -> None:
+    from bullpen_training.battedball.mlp import dataset as ds
+
+    queries: list[str] = []
+    parks = ("AAA", "BBB")
+    monkeypatch.setattr(ds, "_run_clickhouse", _fake_clickhouse(queries, {2015: 2, 2016: 3}, parks))
+
+    features, labels, carry = ds.load_arrays(season_from=2015, season_to=2016, park_order=parks)
+
+    # 2 per-year counts + 2 per-year row loads; nothing spans the range.
+    counts = [q for q in queries if "count()" in q]
+    rows = [q for q in queries if "count()" not in q]
+    assert len(counts) == 2 and len(rows) == 2
+    assert not any("BETWEEN 2015 AND 2016" in q for q in queries)
+    # Per-year counts summed into the allocation.
+    assert features.shape == (5, 15)
+    assert labels.shape == (5, 2, 5)
+    assert carry.shape == (5, 2)
+
+
+def test_load_arrays_count_carries_probe2_spill_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from bullpen_training.battedball.mlp import dataset as ds
+
+    queries: list[str] = []
+    parks = ("AAA",)
+    monkeypatch.setattr(ds, "_run_clickhouse", _fake_clickhouse(queries, {2020: 1}, parks))
+    ds.load_arrays(season_from=2020, season_to=2020, park_order=parks)
+
+    (count_q,) = (q for q in queries if "count()" in q)
+    assert "join_algorithm = 'partial_merge'" in count_q
+    assert "max_bytes_before_external_group_by = 1500000000" in count_q
+    assert "max_bytes_before_external_sort = 1500000000" in count_q
+    (row_q,) = (q for q in queries if "count()" not in q)
+    assert "join_algorithm = 'partial_merge'" in row_q
+
+
+def test_load_arrays_concatenates_years_in_ascending_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # game_date partitions years, so year-ordered concatenation preserves the
+    # global (game_date, game_id, at_bat_index, pitch_number) ordering the
+    # rolling-origin date split depends on. carry is year-tagged by the fake.
+    from bullpen_training.battedball.mlp import dataset as ds
+
+    queries: list[str] = []
+    parks = ("AAA",)
+    monkeypatch.setattr(
+        ds, "_run_clickhouse", _fake_clickhouse(queries, {2018: 2, 2019: 1, 2020: 2}, parks)
+    )
+    _, _, carry = ds.load_arrays(season_from=2018, season_to=2020, park_order=parks)
+
+    np.testing.assert_array_equal(
+        carry[:, 0], np.array([2018.0, 2018.0, 2019.0, 2020.0, 2020.0], dtype=np.float32)
+    )
+
+
+def test_load_arrays_limit_still_caps_allocation(monkeypatch: pytest.MonkeyPatch) -> None:
+    from bullpen_training.battedball.mlp import dataset as ds
+
+    queries: list[str] = []
+    parks = ("AAA",)
+    monkeypatch.setattr(ds, "_run_clickhouse", _fake_clickhouse(queries, {2015: 4, 2016: 4}, parks))
+    features, _, _ = ds.load_arrays(season_from=2015, season_to=2016, park_order=parks, limit=3)
+
+    assert features.shape[0] == 3
