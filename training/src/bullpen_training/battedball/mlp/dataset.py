@@ -34,14 +34,27 @@ Box evidence map (2026-07-13 probes, 4 GiB container cap; C-31 attempts #1-#3):
    is the proven shape.
 
 Hence: load_arrays row loads are per-year (probe 5's shape); the count is summed
-per-year AND carries the probe-2 spill settings (each per-year count is strictly
-smaller than both probed shapes). Any new query against this table pair must be
-per-year with partial_merge - do not reintroduce a full-range join and try to
-settings your way out; probes 3-4 already buried that.
+per-year AND carries the spill settings. Any new query against this table pair
+must be per-year with partial_merge - do not reintroduce a full-range join and
+try to settings your way out; probes 3-4 already buried that.
+
+6. #269's per-year chunking was NECESSARY BUT NOT SUFFICIENT (9 more box
+   failures, 2026-07-14). Two compounding causes: (a) the 1.5 GB spill
+   thresholds were too high - the SAME 2016 count query OOMs at 1.5 GB but
+   completes at 500 MB on a released server (10.5s); (b) jemalloc retention
+   RATCHETS across year-chunks - each year's join retains memory the next
+   year's query piles onto, so failures march later year-by-year (4g cap died
+   at 2015/2016; 6g cap reached 2017; same code). A static threshold cannot
+   outrun a monotonically-growing baseline. Fix: 500 MB spills on EVERY
+   per-year query (count AND rows) + a deterministic `SYSTEM JEMALLOC PURGE`
+   between chunks (a host-side babysitter was tried and races the loader).
+   The purge needs the SYSTEM grant, so it runs as the admin/default user via
+   CH_ADMIN_PASSWORD - no-op with a warning when unset (local/CI).
 """
 
 from __future__ import annotations
 
+import os
 import subprocess
 from dataclasses import dataclass
 
@@ -139,7 +152,9 @@ def _query_joined(
     proven shape. The full-range form is settings-unrescuable (probes 3-4:
     the wide labels side materializes ~3 GiB in FillingRightJoinSide
     regardless of spills). partial_merge (same fix as #238's export query)
-    changes only HOW the join executes, never WHICH rows it returns."""
+    changes only HOW the join executes, never WHICH rows it returns. The
+    500 MB external spills are probe 6's threshold (1.5 GB was too high on
+    a retention-inflated server); execution-only, value-neutral."""
     parks = ", ".join(f"'{p}'" for p in park_order)
     limit_clause = f"LIMIT {limit * len(park_order)}" if limit else ""
     return f"""
@@ -178,7 +193,9 @@ def _query_joined(
     ORDER BY p.game_date, p.game_id, p.at_bat_index, p.pitch_number,
              indexOf([{parks}], r.park_id)
     {limit_clause}
-    SETTINGS join_algorithm = 'partial_merge'
+    SETTINGS join_algorithm = 'partial_merge',
+             max_bytes_before_external_group_by = 500000000,
+             max_bytes_before_external_sort = 500000000
     FORMAT TSV
     """
 
@@ -218,8 +235,8 @@ def _query_count(
       {limit_clause}
     )
     SETTINGS join_algorithm = 'partial_merge',
-             max_bytes_before_external_group_by = 1500000000,
-             max_bytes_before_external_sort = 1500000000
+             max_bytes_before_external_group_by = 500000000,
+             max_bytes_before_external_sort = 500000000
     """
 
 
@@ -287,6 +304,57 @@ def _run_clickhouse(query: str, *, container: str = "bullpen-clickhouse") -> str
         text=True,
     )
     return res.stdout
+
+
+def _purge_jemalloc(*, container: str = "bullpen-clickhouse") -> None:
+    """Release jemalloc-retained server memory between year-chunks.
+
+    Evidence-map probe 6: retention RATCHETS across chunks - each year's join
+    retains memory the next year's query piles onto, so a static memory cap
+    cannot outrun the monotonically-growing baseline (failures marched
+    2015/2016 at a 4g cap to 2017 at 6g, same code). `SYSTEM JEMALLOC PURGE`
+    between chunks is the deterministic release; a host-side babysitter was
+    tried and races the loader.
+
+    Needs the SYSTEM grant, which the bullpen user deliberately lacks - runs
+    as the admin/default user via CH_ADMIN_PASSWORD. When unset (local/CI
+    without a server), warns and no-ops so the loader still runs; when set
+    but wrong, fails LOUD on the first chunk (a cred typo at minute two
+    beats an unexplained OOM at year 2019).
+
+    The password is forwarded via a name-only `docker exec -e` (the docker
+    client reads CLICKHOUSE_PASSWORD from the subprocess env we pass, and
+    clickhouse-client picks it up inside the container) - NEVER as a
+    `--password` argv, which would sit in the box's process table for the
+    life of the call (audit note, 2026-07-14).
+    """
+    password = os.environ.get("CH_ADMIN_PASSWORD")
+    if not password:
+        print(
+            "  WARNING: CH_ADMIN_PASSWORD unset - skipping SYSTEM JEMALLOC PURGE"
+            " (fine locally; on the box this reintroduces the cross-year"
+            " retention ratchet, evidence-map probe 6)",
+            flush=True,
+        )
+        return
+    subprocess.run(
+        [
+            "docker",
+            "exec",
+            "-e",
+            "CLICKHOUSE_PASSWORD",
+            container,
+            "clickhouse-client",
+            "--user",
+            "default",
+            "--query",
+            "SYSTEM JEMALLOC PURGE",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "CLICKHOUSE_PASSWORD": password},
+    )
 
 
 def _row_to_features(
@@ -472,6 +540,10 @@ def load_arrays(
         year_bips = int(year_count_tsv)
         total_bips += year_bips
         print(f"  counted season {year}: {year_bips} BIPs (running total {total_bips})")
+        # Probe 6: release jemalloc retention after EVERY chunk's query, counts
+        # included - the ratchet is per-query, and purging here also validates
+        # the admin creds at minute two instead of mid-row-load.
+        _purge_jemalloc(container=container)
     if limit is not None:
         total_bips = min(total_bips, limit)
     print(
@@ -519,6 +591,8 @@ def load_arrays(
             f"{100 * written / max(total_bips, 1):.0f}%)",
             flush=True,
         )
+        # Probe 6: deterministic jemalloc release between year-chunks.
+        _purge_jemalloc(container=container)
 
     if written < total_bips:
         features = features[:written]
