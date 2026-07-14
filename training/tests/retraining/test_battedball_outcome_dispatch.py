@@ -17,6 +17,7 @@ rows), rather than the degenerate all-NaN outcome-only fallback.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import numpy as np
@@ -103,9 +104,17 @@ def test_real_battedball_outcome_dispatch_end_to_end(
     # SINGLE-FILE family: artifact_path is the model.onnx FILE (the registry copy-list
     # stages calibrator.json from its parent dir), and the artifact dir carries the exact
     # file set LoadedAllParksModel.load expects by their served names.
-    out_dir = tmp_path / "battedball_outcome" / "v9"
+    out_dir = (tmp_path / "battedball_outcome" / "v9").resolve()
     assert reg["artifact_path"] == str(out_dir / "model.onnx")
     assert reg["metadata_path"] == str(out_dir / "metadata.json")
+    # C-31 ledger P1 (attempts #10/#12): every path crossing the process boundary to
+    # the api MUST be absolute (the api's cwd is /opt/bullpen, not the trainer's), and
+    # the feature-pipeline default must be cwd-independent (repo-derived, env-overridable
+    # via BULLPEN_FEATURE_PIPELINE_PATH).
+    assert os.path.isabs(reg["artifact_path"])
+    assert os.path.isabs(reg["metadata_path"])
+    assert os.path.isabs(reg["feature_pipeline_path"])
+    assert reg["feature_pipeline_path"].endswith("contracts/feature_pipeline_battedball.json")
     assert (out_dir / "model.onnx").is_file()  # SnapshotStorage.ARTIFACT_FILE
     assert (out_dir / "metadata.json").is_file()  # SnapshotStorage.METADATA_FILE
     assert (out_dir / "calibrator.json").is_file()  # SnapshotStorage.CALIBRATOR_FILE

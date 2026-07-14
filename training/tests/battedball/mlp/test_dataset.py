@@ -345,6 +345,8 @@ def test_purge_jemalloc_runs_as_default_user_and_keeps_password_out_of_argv(
 
         class _Res:
             stdout = ""
+            stderr = ""
+            returncode = 0
 
         return _Res()
 
@@ -392,3 +394,87 @@ def test_load_arrays_limit_still_caps_allocation(monkeypatch: pytest.MonkeyPatch
     features, _, _ = ds.load_arrays(season_from=2015, season_to=2016, park_order=parks, limit=3)
 
     assert features.shape[0] == 3
+
+
+# --- P0: stderr surfaced (the 15-attempt C-31 ledger, 2026-07-14) -----------
+
+
+class _FakeCompleted:
+    def __init__(self, returncode: int, stdout: str = "", stderr: str = "") -> None:
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+def test_run_clickhouse_surfaces_stderr_on_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Attempts #13-#15 were diagnosed blind because exit-241 arrived with no server
+    # words. The raised error (and hence the queue row's error_message, which run.py
+    # builds from str(e)) must carry clickhouse-client's stderr.
+    from bullpen_training.battedball.mlp import dataset as ds
+
+    monkeypatch.setattr(
+        ds.subprocess,
+        "run",
+        lambda *a, **k: _FakeCompleted(
+            241, stderr="Code: 241. DB::Exception: Memory limit (total) exceeded: would use 6.1 GiB"
+        ),
+    )
+    with pytest.raises(RuntimeError, match="exited 241") as exc:
+        ds._run_clickhouse("SELECT 1")
+    assert "Memory limit (total) exceeded" in str(exc.value)
+
+
+def test_run_clickhouse_truncates_stderr_to_500_chars(monkeypatch: pytest.MonkeyPatch) -> None:
+    from bullpen_training.battedball.mlp import dataset as ds
+
+    monkeypatch.setattr(
+        ds.subprocess, "run", lambda *a, **k: _FakeCompleted(241, stderr="x" * 2000)
+    )
+    with pytest.raises(RuntimeError) as exc:
+        ds._run_clickhouse("SELECT 1")
+    assert len(str(exc.value)) < 600
+
+
+def test_purge_jemalloc_surfaces_stderr_on_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    from bullpen_training.battedball.mlp import dataset as ds
+
+    monkeypatch.setenv("CH_ADMIN_PASSWORD", "s3cret")
+    monkeypatch.setattr(
+        ds.subprocess,
+        "run",
+        lambda *a, **k: _FakeCompleted(194, stderr="Code: 194. DB::Exception: Wrong password"),
+    )
+    with pytest.raises(RuntimeError, match="exited 194") as exc:
+        ds._purge_jemalloc()
+    assert "Wrong password" in str(exc.value)
+    assert "s3cret" not in str(exc.value)  # the secret must never ride the error
+
+
+# --- optional merge-quiet gate ----------------------------------------------
+
+
+def test_merge_quiet_gate_is_off_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    from bullpen_training.battedball.mlp import dataset as ds
+
+    monkeypatch.delenv("BULLPEN_LOADER_MERGE_QUIET", raising=False)
+
+    def _boom(*a: object, **k: object) -> str:
+        raise AssertionError("gate must not query when disabled")
+
+    monkeypatch.setattr(ds, "_run_clickhouse", _boom)
+    ds._wait_for_merge_quiet()  # no query, no raise
+
+
+def test_merge_quiet_gate_returns_when_merges_drained(monkeypatch: pytest.MonkeyPatch) -> None:
+    from bullpen_training.battedball.mlp import dataset as ds
+
+    monkeypatch.setenv("BULLPEN_LOADER_MERGE_QUIET", "1")
+    seen: list[str] = []
+
+    def _fake(query: str, *, container: str = "x") -> str:
+        seen.append(query)
+        return "0\n"
+
+    monkeypatch.setattr(ds, "_run_clickhouse", _fake)
+    ds._wait_for_merge_quiet()
+    assert seen == ["SELECT count() FROM system.merges"]

@@ -24,7 +24,11 @@ public sealed class RegistryException extends RuntimeException
     super(message, cause);
   }
 
-  /** A required artifact file is not on disk at registration time. */
+  /**
+   * A required artifact file is not usable at registration time. The detail-carrying variants
+   * distinguish ENOENT from EACCES: C-31 attempt #11 burned a full GPU training run because "does
+   * not exist" actually meant "exists, but the api user cannot traverse a 750 parent directory".
+   */
   public static final class ArtifactMissing extends RegistryException {
     public ArtifactMissing(String path) {
       super("registry: artifact file does not exist on disk: " + path);
@@ -32,6 +36,15 @@ public sealed class RegistryException extends RuntimeException
 
     public ArtifactMissing(String path, Throwable cause) {
       super("registry: artifact file does not exist on disk: " + path, cause);
+    }
+
+    /** Detail variant - the message says WHICH failure (ENOENT vs EACCES vs other). */
+    public ArtifactMissing(String path, String detail) {
+      super("registry: artifact file " + detail + ": " + path);
+    }
+
+    public ArtifactMissing(String path, String detail, Throwable cause) {
+      super("registry: artifact file " + detail + ": " + path, cause);
     }
   }
 

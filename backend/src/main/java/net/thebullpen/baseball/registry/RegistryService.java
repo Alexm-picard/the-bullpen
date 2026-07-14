@@ -471,22 +471,43 @@ public class RegistryService {
 
   /**
    * Local-filesystem existence + readability check. The artifact paths land here as plain strings
-   * (could be relative or absolute); we resolve them with {@link Path#of(String, String...)} and
-   * fall through to {@link Files#exists(Path, java.nio.file.LinkOption...)}.
+   * (could be relative or absolute); we resolve them with {@link Path#of(String, String...)}.
    *
-   * <p>Once 3a.5 lands, this becomes an S3 HEAD call instead — the swap is local because every
+   * <p>ENOENT vs EACCES matters here: {@code Files.exists()} returns false BOTH for a genuinely
+   * absent file and for one whose parent directory the api process cannot traverse. C-31 attempt
+   * #11 burned a full GPU training run on that ambiguity ("does not exist" actually meant "exists,
+   * unreadable" - /home/&lt;user&gt; is 750). We stat via {@code Files.readAttributes} so the two
+   * failure modes throw distinct, actionable 422 messages; the documented staging default is {@code
+   * /opt/bullpen/retrain-artifacts} (trainer-writable, api-readable).
+   *
+   * <p>Once 3a.5 lands, this becomes an S3 HEAD call instead - the swap is local because every
    * caller goes through this single method.
    */
   private void assertArtifactExists(String pathStr) {
+    Path path;
     try {
-      Path path = Path.of(pathStr);
-      if (!Files.exists(path)) {
-        throw new RegistryException.ArtifactMissing(pathStr);
-      }
-    } catch (RegistryException e) {
-      throw e;
+      path = Path.of(pathStr);
     } catch (RuntimeException e) {
-      throw new RegistryException.ArtifactMissing(pathStr, e);
+      throw new RegistryException.ArtifactMissing(pathStr, "path is not parseable", e);
+    }
+    try {
+      Files.readAttributes(path, java.nio.file.attribute.BasicFileAttributes.class);
+    } catch (java.nio.file.NoSuchFileException e) {
+      throw new RegistryException.ArtifactMissing(pathStr, "does not exist on disk (ENOENT)", e);
+    } catch (java.nio.file.AccessDeniedException e) {
+      throw new RegistryException.ArtifactMissing(
+          pathStr,
+          "is not accessible by the api process (EACCES - a parent directory the service user"
+              + " cannot traverse, e.g. a 750 home dir; stage artifacts under"
+              + " /opt/bullpen/retrain-artifacts)",
+          e);
+    } catch (java.io.IOException e) {
+      throw new RegistryException.ArtifactMissing(
+          pathStr, "could not be checked (" + e.getClass().getSimpleName() + ")", e);
+    }
+    if (!Files.isReadable(path)) {
+      throw new RegistryException.ArtifactMissing(
+          pathStr, "exists but is not readable by the api process (EACCES on the file itself)");
     }
   }
 }
