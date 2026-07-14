@@ -197,7 +197,53 @@ class RegistryServiceIT {
             null,
             null);
     assertThatThrownBy(() -> service.register(req))
-        .isInstanceOf(RegistryException.ArtifactMissing.class);
+        .isInstanceOf(RegistryException.ArtifactMissing.class)
+        // C-31 attempt #11 postmortem: the message must say WHICH failure this is.
+        .hasMessageContaining("ENOENT");
+  }
+
+  @Test
+  void register_with_unreadable_artifact_names_EACCES_not_does_not_exist() throws Exception {
+    // C-31 attempt #11 burned a full GPU training run because "does not exist" actually
+    // meant "exists, but the api user cannot traverse a 750 parent dir". The 422 must
+    // distinguish EACCES from ENOENT.
+    org.junit.jupiter.api.Assumptions.assumeFalse(
+        System.getProperty("os.name").toLowerCase(java.util.Locale.ROOT).contains("win"),
+        "POSIX permissions test");
+    Path lockedDir = artifactDir.resolve("locked-parent");
+    Files.createDirectories(lockedDir);
+    Path artifact = lockedDir.resolve("model.onnx");
+    Files.writeString(artifact, "onnx-bytes");
+    Path metadata = writeArtifact("metadata-unreadable-artifact.json");
+    Path pipeline = writePipeline("unreadable-artifact-pipeline.json", "salt-eacces");
+    java.util.Set<java.nio.file.attribute.PosixFilePermission> original =
+        Files.getPosixFilePermissions(lockedDir);
+    Files.setPosixFilePermissions(lockedDir, java.util.Set.of());
+    // Running as root (never in CI, possibly in odd local setups) can still traverse -
+    // the scenario can't be constructed there, so skip rather than fake it.
+    org.junit.jupiter.api.Assumptions.assumeFalse(
+        Files.isReadable(artifact), "cannot construct EACCES while running as root");
+    try {
+      RegisterRequest req =
+          new RegisterRequest(
+              "pitch_outcome",
+              "v-unreadable-artifact",
+              artifact.toString(),
+              metadata.toString(),
+              pipeline.toString(),
+              "h-train",
+              "[2024-01-01,2024-12-31]",
+              "{}",
+              Instant.now(),
+              null,
+              null);
+      assertThatThrownBy(() -> service.register(req))
+          .isInstanceOf(RegistryException.ArtifactMissing.class)
+          .hasMessageContaining("EACCES")
+          .satisfies(t -> assertThat(t.getMessage()).doesNotContain("does not exist"));
+    } finally {
+      Files.setPosixFilePermissions(lockedDir, original);
+    }
   }
 
   @Test

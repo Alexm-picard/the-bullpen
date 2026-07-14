@@ -165,7 +165,13 @@ def retrain_battedball_outcome(
         n_parks=len(park_order),
     )
 
-    out_base = Path(os.environ.get("BULLPEN_RETRAIN_ARTIFACT_DIR", "artifacts/retrain"))
+    # .resolve(): the RetrainOutput paths cross a PROCESS boundary - the api (cwd
+    # /opt/bullpen, different user) reads them, not this trainer. Attempt #10 of the
+    # C-31 ledger failed on exactly this: a relative default resolved against the
+    # TRAINER's cwd and the api couldn't find it. On the box, set
+    # BULLPEN_RETRAIN_ARTIFACT_DIR=/opt/bullpen/retrain-artifacts (alepic-writable,
+    # bullpen-readable - /home/alepic is 750 and the api user cannot traverse it).
+    out_base = Path(os.environ.get("BULLPEN_RETRAIN_ARTIFACT_DIR", "artifacts/retrain")).resolve()
     out_dir = out_base / "battedball_outcome" / version
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -255,15 +261,28 @@ def retrain_battedball_outcome(
         "calibration": calibration_summary,
     }
 
-    feature_pipeline_path = os.environ.get(
-        "BULLPEN_FEATURE_PIPELINE_PATH", "../contracts/feature_pipeline_battedball.json"
+    # cwd-INDEPENDENT default (attempt #12 failed on the old "../contracts/..." -
+    # the api's world is /opt/bullpen, not the trainer's cwd): derive the repo root
+    # from __file__ so local dev resolves the checkout's contracts copy regardless
+    # of where the runner was launched. On the box, set
+    # BULLPEN_FEATURE_PIPELINE_PATH=/opt/bullpen/contracts/feature_pipeline_battedball.json
+    # (the deploy-staged copy the api user can actually read).
+    repo_root = Path(__file__).resolve().parents[4]
+    feature_pipeline_path = str(
+        Path(
+            os.environ.get(
+                "BULLPEN_FEATURE_PIPELINE_PATH",
+                repo_root / "contracts" / "feature_pipeline_battedball.json",
+            )
+        ).resolve()
     )
 
     return RetrainOutput(
         # Single-file family: the registry's copy-list treats artifact_path as the
         # model.onnx FILE and stages calibrator.json from its parent dir.
-        artifact_path=str(onnx_path),
-        metadata_path=str(metadata_path),
+        # str(...) of resolved Paths: absolute by construction (attempt #10).
+        artifact_path=str(onnx_path.resolve()),
+        metadata_path=str(metadata_path.resolve()),
         feature_pipeline_path=feature_pipeline_path,
         eval_metrics_json=json.dumps(eval_metrics, sort_keys=True),
         training_data_hash=training_data_hash,

@@ -56,6 +56,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import time
 from dataclasses import dataclass
 
 import numpy as np
@@ -297,12 +298,26 @@ def _query_joined_chunk(
 
 
 def _run_clickhouse(query: str, *, container: str = "bullpen-clickhouse") -> str:
+    """Run one query via in-container clickhouse-client, stdout back.
+
+    P0 of the 15-attempt C-31 ledger (2026-07-14): NEVER swallow stderr.
+    check=True's CalledProcessError stringifies to just "exit status 241" -
+    every diagnosis of attempts #13-#15 was an assumption about what that
+    meant. On failure this raises with the server's own words (first 500
+    chars of stderr), which run.py's failure path then lands verbatim in the
+    queue row's error_message.
+    """
     res = subprocess.run(
         ["docker", "exec", container, "clickhouse-client", "--query", query],
-        check=True,
+        check=False,
         capture_output=True,
         text=True,
     )
+    if res.returncode != 0:
+        raise RuntimeError(
+            f"clickhouse-client exited {res.returncode}: "
+            f"{(res.stderr or '<no stderr>').strip()[:500]}"
+        )
     return res.stdout
 
 
@@ -337,7 +352,7 @@ def _purge_jemalloc(*, container: str = "bullpen-clickhouse") -> None:
             flush=True,
         )
         return
-    subprocess.run(
+    res = subprocess.run(
         [
             "docker",
             "exec",
@@ -350,11 +365,43 @@ def _purge_jemalloc(*, container: str = "bullpen-clickhouse") -> None:
             "--query",
             "SYSTEM JEMALLOC PURGE",
         ],
-        check=True,
+        check=False,
         capture_output=True,
         text=True,
         env={**os.environ, "CLICKHOUSE_PASSWORD": password},
     )
+    # P0 stderr discipline, same as _run_clickhouse: fail loud WITH the server's words.
+    if res.returncode != 0:
+        raise RuntimeError(
+            f"SYSTEM JEMALLOC PURGE exited {res.returncode}: "
+            f"{(res.stderr or '<no stderr>').strip()[:500]}"
+        )
+
+
+def _wait_for_merge_quiet(
+    *, container: str = "bullpen-clickhouse", timeout_s: float = 120.0
+) -> None:
+    """Opt-in (BULLPEN_LOADER_MERGE_QUIET=1): wait for system.merges to drain
+    before the year sweep. Background merges compete for the same memory budget
+    as the join (15-attempt C-31 ledger); on a busy server draining them first
+    removes one variable. ADVISORY, not a gate: times out with a warning and
+    proceeds, and stays off unless explicitly enabled."""
+    if os.environ.get("BULLPEN_LOADER_MERGE_QUIET") != "1":
+        return
+    deadline = time.monotonic() + timeout_s
+    while True:
+        n = int(_run_clickhouse("SELECT count() FROM system.merges", container=container).strip())
+        if n == 0:
+            print("  merge-quiet: system.merges drained", flush=True)
+            return
+        if time.monotonic() > deadline:
+            print(
+                f"  WARNING: merge-quiet timed out with {n} merge(s) still running - proceeding",
+                flush=True,
+            )
+            return
+        print(f"  merge-quiet: waiting on {n} running merge(s)...", flush=True)
+        time.sleep(5.0)
 
 
 def _row_to_features(
@@ -525,6 +572,8 @@ def load_arrays(
     n_parks = len(park_order)
     n_outcomes = len(OUTCOME_NAMES)
     park_index = {pid: i for i, pid in enumerate(park_order)}
+
+    _wait_for_merge_quiet(container=container)
 
     total_bips = 0
     for year in range(season_from, season_to + 1):
