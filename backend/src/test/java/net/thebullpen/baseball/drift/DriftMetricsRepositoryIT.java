@@ -119,6 +119,67 @@ class DriftMetricsRepositoryIT {
     assertThat(recent).hasSize(5);
   }
 
+  // --- V027 / decision [175] drill-window tag -------------------------------
+
+  @Test
+  void production_insert_path_writes_empty_tag() throws Exception {
+    // The no-tag insertBatch is what every production drift job calls; every row must land with
+    // tag='' so natural-baseline WHERE tag = '' analyses include them (decision [175]).
+    Instant now = Instant.now();
+    List<DriftMetric> batch = new ArrayList<>();
+    for (int i = 0; i < 10; i++) {
+      batch.add(metric(now.minus(i, ChronoUnit.MINUTES)));
+    }
+    repo.insertBatch(batch);
+
+    assertThat(count("tag = ''")).isEqualTo(10L);
+    assertThat(count("tag != ''")).isZero();
+  }
+
+  @Test
+  void tagged_insert_path_round_trips_the_tag() throws Exception {
+    // The E-2 induced-drift drill tags its synthetic window so it is later excludable.
+    Instant now = Instant.now();
+    List<DriftMetric> batch = new ArrayList<>();
+    for (int i = 0; i < 6; i++) {
+      batch.add(metric(now.minus(i, ChronoUnit.MINUTES)));
+    }
+    repo.insertBatch(batch, "induced-drill");
+
+    assertThat(count("tag = 'induced-drill'")).isEqualTo(6L);
+    assertThat(count("tag = ''")).isZero();
+  }
+
+  @Test
+  void exclusion_predicate_filters_the_tagged_window_out() throws Exception {
+    // decision [175] hygiene: an organic baseline (WHERE tag = '') must see the live/organic rows
+    // but NOT the synthetic drill window written into the same prod table.
+    Instant now = Instant.now();
+    List<DriftMetric> organic = new ArrayList<>();
+    for (int i = 0; i < 4; i++) {
+      organic.add(metric(now.minus(i, ChronoUnit.MINUTES)));
+    }
+    List<DriftMetric> synthetic = new ArrayList<>();
+    for (int i = 0; i < 3; i++) {
+      synthetic.add(metric(now.minus(10 + i, ChronoUnit.MINUTES)));
+    }
+    repo.insertBatch(organic);
+    repo.insertBatch(synthetic, "induced-drill");
+
+    assertThat(count("1 = 1")).isEqualTo(7L); // every row present in the shared table
+    assertThat(count("tag = ''")).isEqualTo(4L); // baseline predicate excludes the drill window
+  }
+
+  /** Scalar {@code count()} over drift_metrics with a raw WHERE predicate, via real ClickHouse. */
+  private long count(String whereClause) throws Exception {
+    try (var conn = clickhouseDs.getConnection();
+        var stmt = conn.createStatement();
+        var rs = stmt.executeQuery("SELECT count() FROM drift_metrics WHERE " + whereClause)) {
+      rs.next();
+      return rs.getLong(1);
+    }
+  }
+
   private static DriftMetric metric(Instant computedAt) {
     return new DriftMetric(
         computedAt,

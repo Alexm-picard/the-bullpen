@@ -1,0 +1,26 @@
+-- V027 - drift_metrics drill-window tag (decision [175] hygiene).
+--
+-- The E-2 induced-drift drill runs its induced window down the LIVE path: the real drift jobs
+-- (CalibrationJob / PsiFeatureJob / PsiPredictionJob / WeeklySegmentJob) write SYNTHETIC drift_metrics
+-- rows into the SAME prod table the live Ops drift panel and any future natural baseline read from.
+-- Decision [175] requires those synthetic rows be tagged/excludable so they never contaminate an
+-- organic baseline.
+--
+-- Convention:
+--   tag = ''    -> live/organic rows. EVERY production writer emits '' (the no-tag
+--                  DriftMetricsRepository.insertBatch overload defaults to it), so all existing and
+--                  future organic rows are '' with no writer behaviour change.
+--   tag != ''   -> synthetic/drill windows (the E-2 run tags 'induced-drill').
+--   exclusion predicate for natural-baseline analyses: WHERE tag = ''.
+--
+-- The paired prediction_log side needs NO migration: the drill scopes its synthetic prediction rows
+-- via the EXISTING prediction_log.correlation_id column (V004) with a 'drill:' prefix. Same
+-- excludability, zero schema change.
+--
+-- Additive, idempotent ALTER (IF NOT EXISTS matches the V026 pattern). drift_metrics is a plain
+-- MergeTree (V013), so no backfill DML is needed - existing rows read back the '' DEFAULT. The
+-- bullpen grant (decision [171]) includes ALTER ADD COLUMN for this boot-time migration path.
+--
+-- Prod-safety (CLAUDE.md hard rule): this ALTER on the prod drift_metrics table MUST be preceded by a
+-- ClickHouse snapshot (infra/backup/clickhouse-snapshot.sh) before deploy.
+ALTER TABLE drift_metrics ADD COLUMN IF NOT EXISTS tag LowCardinality(String) DEFAULT '' AFTER window_end;
