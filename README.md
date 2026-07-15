@@ -26,9 +26,11 @@ pending; a synthetic induced-drift drill stands in for now).
 
 - A **custom ML systems wrapper** - model registry, A/B router (shadow-mode),
   drift detection, retraining queue + triggers (dispatch wired for the served
-  batted-ball head; the rest explicit UnsupportedModel) - written from scratch in
-  Java rather than pulled in via MLflow. The wrapper is the project; the models
-  are the excuse.
+  batted-ball head and **proven end-to-end on real data**: one queued trigger
+  retrained the served model on ~1.2M batted balls and registered the candidate
+  in 96.8 unattended minutes; the other registry names stay explicit
+  UnsupportedModel) - written from scratch in Java rather than pulled in via
+  MLflow. The wrapper is the project; the models are the excuse.
 - **ONNX Runtime in-process** in Java + Spring Boot 3 - no Python
   sidecar, no live RPC. Training is Python; serving is JVM.
 - **Broadcast-graphics design system** (Barlow Condensed / Inter /
@@ -220,19 +222,28 @@ Underlying play-by-play data is not redistributed.**
   [`docs/cross-park-fidelity-plan.md`](docs/cross-park-fidelity-plan.md). The `/parks` heatmap and
   the About page surface this physics-estimate framing (and the rho gap) directly to users rather
   than presenting raw P(HR) as fact (decision [163]).
-- **Automated retraining and per-feature PSI are wired; the box proofs are the
-  remaining gate.** The retraining queue + the three triggers (scheduled / drift /
-  manual) + the systemd timer are real and tested, and the retrain _dispatch_ is
-  wired for the served batted-ball family (`_servable_battedball_outcome`, covered
-  by an end-to-end-on-a-miniature test); the other registry names are explicit
-  `UnsupportedModel`. One real-data box retrain through that path is the remaining
-  proof (promotion stays human-gated regardless, rule 6). On the drift side, all
-  three signals are real and ClickHouse-backed: PSI-on-predictions,
-  calibration-vs-observed-outcome, and per-_feature_ PSI (a real fetcher reads
-  `prediction_log.features` against a training-time baseline the E-1 backfill CLI
-  emits; a champion promoted without one trips a loud `DriftBaselineMissing` alert
-  rather than silently skipping). Live drift rows populate once the box backfills
-  the current champions' baselines.
+- **Automated retraining is wired AND proven on real data** (BOX HAND-OFF #1,
+  2026-07-15). A manually-enqueued trigger drove the full production path
+  unattended: claim -> 11 per-year ClickHouse loads (~1.2M batted balls;
+  train 2015-2024, calibration on held-out 2025, the 2026 holdout untouched)
+  -> GPU training of the served model + carry head -> single-file ONNX export
+  -> per-park isotonic calibration -> registered as `battedball_outcome` v3
+  CANDIDATE, in **96.8 minutes with zero interventions**. Calibration quality
+  on val-2025 (n=123,345): mean per-park ECE 0.00587 -> **0.00058**
+  post-calibration (10x), 30/30 parks improved. The rule-7 schema-hash gate
+  passed at registration and the candidate was NOT promoted - promotion stays
+  human-gated (rule 6). Getting there took 16 attempts across 6 distinct root
+  causes, each fixed in code with regression tests and exercised in the
+  winning run - the full ledger is written up as an ops story in
+  [`docs/postmortems/2026-07-15_c31-retrain-saga.md`](docs/postmortems/2026-07-15_c31-retrain-saga.md).
+  Remaining on this lane: the unattended systemd-timer path (the manual
+  ceremony is the proven one). On the drift side, all three signals are real
+  and ClickHouse-backed: PSI-on-predictions, calibration-vs-observed-outcome,
+  and per-_feature_ PSI (a real fetcher reads `prediction_log.features`
+  against a training-time baseline the E-1 backfill CLI emits; a champion
+  promoted without one trips a loud `DriftBaselineMissing` alert rather than
+  silently skipping) - and the categorical-PSI fix was proven discriminating
+  on live organic traffic 2026-07-10.
 - Live game polling worker (MLB Stats API client + parser + per-game scheduled
   poll on the worker profile, feeding `pitches_live` and the `prediction_log`
   truth-join) is **built, merged, and unit-tested**, and is enabled in prod

@@ -27,6 +27,21 @@ EnvironmentFile=-/etc/default/bullpen
 EnvironmentFile=-/etc/bullpen/secrets.env
 Environment=BULLPEN_ADMIN_BASE_URL=http://127.0.0.1:8080
 
+# The proven working env block (BOX HAND-OFF #1, decision [178] - the 15-attempt
+# ledger burned at least one run on each missing variable; see the retrain-ceremony
+# runbook Step 2 for the annotated list). Non-secrets are set here; the SECRETS
+# (BULLPEN_ADMIN_USER / BULLPEN_ADMIN_PASSWORD derived from THEBULLPEN_ADMIN_BASIC_AUTH,
+# and CH_ADMIN_PASSWORD for the loader's per-chunk SYSTEM JEMALLOC PURGE - without it
+# the purge warn+no-ops and the cross-year retention ratchet returns) MUST live in
+# /etc/bullpen/secrets.env above. Re-arm checklist before `systemctl enable --now
+# bullpen-retrain.timer`: uv at /usr/local/bin/uv, /opt/bullpen/training provisioned,
+# secrets.env carries all three secrets, and the two dirs below exist with
+# alepic-writable/bullpen-readable perms.
+Environment=BULLPEN_RETRAIN_ARTIFACT_DIR=/opt/bullpen/retrain-artifacts
+Environment=BULLPEN_FEATURE_PIPELINE_PATH=/opt/bullpen/contracts/feature_pipeline_battedball.json
+# Optional, advisory (120s timeout then proceed): drain background merges first.
+Environment=BULLPEN_LOADER_MERGE_QUIET=1
+
 # uv resolves the project venv from training/pyproject.toml; the worker module
 # entry point is python -m bullpen_training.retraining.run.
 ExecStart=/usr/local/bin/uv run python -m bullpen_training.retraining.run
