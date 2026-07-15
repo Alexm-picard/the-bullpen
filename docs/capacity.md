@@ -127,6 +127,19 @@ active. `SCENARIO=mixed k6 run infra/k6/capacity.js` drives ~30% reads alongside
 _measure_ this on the box (D-41, needs ClickHouse up + seeded players). The pool size is the single
 knob; it is deliberately small (portfolio scale) and raising it trades memory + CH server load.
 
+**ClickHouse container memory cap.** Separate from the read-pool knob above: the CH Docker
+container carries a hard memory cap, raised **4g -> 6g** (2026-07-15, decision [179]) after the
+C-31 retrain saga. The 4g figure predated measurement of the box's **~2.2 GiB parts-metadata idle
+baseline** - parts metadata on the big `pitches` x `bbip_retrodicted_labels` table pair, which
+grows with the season and does not shrink. At 4g that left only ~1.4 GiB of query headroom, which
+turned every heavy analytical join into a coin flip and drove much of the 16-attempt saga; 6g =
+baseline + the measured retrain working set + margin, and the winning run held comfortable
+headroom through eleven per-year joins plus concurrent api traffic (the full stack + a ~90-minute
+GPU retrain fit inside the box's 11.7 GiB pool with room, swap flat). **Tripwire:** revisit the
+cap when the idle parts-metadata baseline crosses **~3 GiB**, since season growth would compress
+6g's headroom back toward the 4g coin-flip regime. See
+`docs/postmortems/2026-07-15_c31-retrain-saga.md`.
+
 ## 4. Registry write ceiling (analytical)
 
 The SQLite registry (`model_versions`, `model_routing`, `retraining_queue`, `job_locks`,
