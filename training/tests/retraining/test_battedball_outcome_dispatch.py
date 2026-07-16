@@ -135,6 +135,26 @@ def test_real_battedball_outcome_dispatch_end_to_end(
     assert len(top_meta["feature_scaler"]["means"]) == N_FEATURES
     assert top_meta["carry_target"]["units"] == "feet"
 
+    # E-1 part 2 (native emission): every DRIFT-triggered candidate ships the PSI feature
+    # baseline, keyed by the prod-confirmed REQUEST fields (PSI joins observed<->reference by
+    # exact key; a mismatch fails SILENTLY, so the key set is the load-bearing assertion). This
+    # is what keeps a retrained-then-promoted champion from starving the PSI jobs the way the
+    # 2026-07-04 zero-row run did ([175]).
+    dist = top_meta["feature_distributions"]
+    assert set(dist) == {
+        "launchSpeedMph",
+        "launchAngleDeg",
+        "sprayAngleDeg",
+        "hitDistanceFt",
+        "stand",
+        "baseState",
+        "outs",
+    }
+    assert dist["launchSpeedMph"]["kind"] == "continuous"
+    assert len(dist["launchSpeedMph"]["sample"]) > 0
+    assert dist["stand"]["kind"] == "categorical"
+    assert set(dist["stand"]["counts"]) <= {"R", "L"}
+
     # calibrator.json: the schema_version-2 park-keyed map BattedBallCalibrators.load
     # consumes, one entry per park, 5 per-outcome cells each.
     calibrator = json.loads((out_dir / "calibrator.json").read_text())

@@ -164,6 +164,21 @@ def main(argv: list[str] | None = None) -> int:
     cfg = CHAMPIONS[args.model]
     metadata_path = args.metadata or (args.model_dir / "metadata.json")
 
+    # E-1 part 2 interaction (leakage-audit note): battedball trainers now emit
+    # feature_distributions NATIVELY from their exact TRAIN slice. Running this CLI on such a
+    # bundle OVERWRITES that block with THIS run's window (default 2015-2025, calibration season
+    # included), which need not match the champion's actual train slice. Loud, not silent:
+    if metadata_path.exists():
+        existing = json.loads(metadata_path.read_text())
+        if "feature_distributions" in existing:
+            split = existing.get("train_split_seasons")
+            print(
+                "  WARNING: metadata.json already carries a feature_distributions block"
+                + (f" (native emission, train slice {split})" if split else "")
+                + f"; this run OVERWRITES it with the {args.seasons} window."
+                " If they differ, pass --seasons matching the champion's train slice."
+            )
+
     # 1. request-space frame (family source).
     if args.model == "battedball_outcome":
         frame = _load_battedball_frame(_parse_seasons(args.seasons), args.container)

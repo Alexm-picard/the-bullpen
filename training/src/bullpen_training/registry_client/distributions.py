@@ -251,6 +251,35 @@ def decode_pitch_categoricals(
     return out
 
 
+def battedball_feature_block_from_matrix(
+    features: np.ndarray,
+    feature_names: tuple[str, ...] | list[str],
+    *,
+    max_sample: int = DEFAULT_MAX_SAMPLE,
+) -> dict:
+    """``feature_distributions`` for the battedball family straight from the training matrix.
+
+    The NATIVE-TRAINER entry point (E-1 part 2): at metadata-write time a battedball trainer
+    holds the ``(N, 15)`` ``FEATURE_NAMES``-ordered float matrix in memory (the model one-hots,
+    not the request fields), so this wraps matrix -> named frame -> request-space reconstruction
+    -> :func:`build_feature_block` with the prod-confirmed ``battedball_outcome`` request keys.
+    Same code path as the backfill CLI (which goes ``rows_to_frame`` -> the same reconstruction
+    -> the same block builder), so a native emission and a backfill over the same rows are
+    byte-identical.
+
+    The caller passes its TRAIN-slice matrix: the drift reference is the distribution the model
+    LEARNED from; the held-out calibration season ([51]) is deliberately not part of it.
+    """
+    # No dtype coercion: the production matrices are float32 (load_arrays), exactly like the
+    # CLI's rows_to_frame columns, and the per-column float64 cast happens identically inside
+    # _continuous_block on both paths. Forcing float64 here would only double the transient
+    # footprint of the box's ~1.2M-row matrix during a retrain (C-31's memory lessons).
+    frame = reconstruct_battedball_categoricals(
+        pd.DataFrame(np.asarray(features), columns=list(feature_names))
+    )
+    return build_feature_block(frame, CHAMPIONS["battedball_outcome"], max_sample)
+
+
 def emit_distribution_blocks(
     frame: pd.DataFrame,
     cfg: ChampionConfig,

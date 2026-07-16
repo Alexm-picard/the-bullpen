@@ -9,6 +9,7 @@ Assert the emitted shapes match exactly what the Java ``TrainingDistributionLoad
 from __future__ import annotations
 
 import json
+from typing import cast
 
 import numpy as np
 import pandas as pd
@@ -16,6 +17,7 @@ import pytest
 
 from bullpen_training.registry_client.distributions import (
     CHAMPIONS,
+    battedball_feature_block_from_matrix,
     build_feature_block,
     compute_feature_distributions,
     compute_prediction_distribution,
@@ -161,6 +163,47 @@ def test_battedball_feature_block_keys_are_request_fields():
     assert set(block["stand"]["counts"]) == {"L", "R"}
     assert set(block["baseState"]["counts"]) == {str(i) for i in range(8)}  # int-string keys
     assert "parkId" not in block and "releaseSpeedMph" not in block  # the silent-skip trap
+
+
+def test_battedball_feature_block_from_matrix_is_byte_identical_to_the_frame_path():
+    # E-1 part 2 (native trainer emission): a trainer holds the (N, 15) FEATURE_NAMES-ordered
+    # float matrix, not a named frame. The matrix entry point must produce the SAME block the
+    # backfill CLI's frame path produces on the same rows - that byte-identity is the whole
+    # contract (a native emission and a later backfill must not disagree).
+    from bullpen_training.battedball.features_shared import FEATURE_NAMES
+
+    # The matrix side mirrors load_arrays (all-float32); the frame side mirrors the CLI's
+    # rows_to_frame dtypes, INCLUDING its int16 `outs` - the one divergent dtype between the two
+    # production sources. Identity across that divergence proves the convergence is real (the
+    # per-column float64 widening in _continuous_block + the int64 cast in _categorical_block),
+    # not an artifact of feeding both paths identical dtypes.
+    # cast: pandas' __getitem__ overload types a list-selection as DataFrame | Series; the list
+    # key always yields a DataFrame at runtime.
+    frame32 = cast(pd.DataFrame, _battedball_model_frame(80)[list(FEATURE_NAMES)]).astype("float32")
+    matrix = frame32.to_numpy()
+    cli_frame = frame32.copy()
+    cli_frame["outs"] = cli_frame["outs"].astype("int16")  # rows_to_frame's actual outs dtype
+
+    via_matrix = battedball_feature_block_from_matrix(matrix, list(FEATURE_NAMES))
+    via_frame = build_feature_block(
+        reconstruct_battedball_categoricals(cli_frame), CHAMPIONS["battedball_outcome"], 5000
+    )
+
+    assert json.dumps(via_matrix, sort_keys=True) == json.dumps(via_frame, sort_keys=True)
+    # And the block itself is request-keyed with the right kinds (the drift-join contract).
+    assert set(via_matrix) == {
+        "launchSpeedMph",
+        "launchAngleDeg",
+        "sprayAngleDeg",
+        "hitDistanceFt",
+        "stand",
+        "baseState",
+        "outs",
+    }
+    assert via_matrix["launchSpeedMph"]["kind"] == "continuous"
+    assert via_matrix["launchSpeedMph"]["sample"] == sorted(via_matrix["launchSpeedMph"]["sample"])
+    assert via_matrix["outs"]["kind"] == "categorical"
+    assert set(via_matrix["outs"]["counts"]) <= {"0", "1", "2"}  # int-strings, never "1.0"
 
 
 def test_decode_pitch_categoricals_inverts_int_encodings():

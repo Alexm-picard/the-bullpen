@@ -71,6 +71,7 @@ from bullpen_training.battedball.mlp.calibration import (
     transform,
 )
 from bullpen_training.battedball.mlp.dataset import (
+    FEATURE_NAMES,
     OUTCOME_NAMES,
     BBIPDataset,
     FeatureScaler,
@@ -84,6 +85,7 @@ from bullpen_training.battedball.mlp.train import (
 )
 from bullpen_training.battedball.parks.loader import load_all_parks
 from bullpen_training.eval.leakage_guards import refuse_holdout
+from bullpen_training.registry_client.distributions import battedball_feature_block_from_matrix
 from bullpen_training.retraining._dispatch import RetrainOutput
 
 # Rule 13: 2026 is holdout-only. refuse_holdout re-fences below, so even a
@@ -187,6 +189,14 @@ def retrain_battedball_outcome(
         park_order=list(park_order),
         train_summary=summary,
         scaler=scaler,
+        # E-1 part 2 (native emission): every DRIFT-triggered candidate ships the PSI feature
+        # baseline at registration, so a retrained-then-promoted champion never starves the PSI
+        # jobs the way the 2026-07-04 zero-row run did ([175]). Computed from the raw TRAIN
+        # slice only (the distribution the model learned from; the [51] calibration season is
+        # deliberately excluded). The backfill CLI remains the ceremony path for
+        # training_prediction_distribution (needs per-row park identity + a served-inference
+        # pass this adapter's arrays do not carry).
+        feature_distributions=battedball_feature_block_from_matrix(train_feat, list(FEATURE_NAMES)),
     )
 
     # Per-park isotonic calibrators on the held-out val slice - the same forward + fit
