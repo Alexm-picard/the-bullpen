@@ -38,8 +38,11 @@ import org.springframework.stereotype.Component;
  *       emitted into {@code metadata.json}.
  *   <li>{@link AlertSeverity#NOTICE}: any {@link MetricType#PSI_FEATURE} value &gt; {@code
  *       featurePsiNoticeThreshold} (default 0.25) sustained {@code featurePsiNoticeDays}+ (default
- *       7) consecutive days per feature. The lookback window equals that day count, so the E-2 live
- *       drill can set it to 1 to fire on a single injected night (prod stays 7).
+ *       7) consecutive days per feature, counting only rows whose {@code sampleSize} clears {@code
+ *       featurePsiMinSample} (default 300 - below the noise floor a PSI value measures the sample
+ *       size, not drift; see docs/postmortems/2026-07-16_first-organic-psi-triage.md). The lookback
+ *       window equals the day count, so the E-2 live drill can set days to 1 to fire on a single
+ *       injected night (prod stays 7).
  * </ul>
  *
  * <p>Dedup: each alert key is suppressed for 24h after fire (Discord-spam prevention).
@@ -72,6 +75,7 @@ public class DriftAlertEvaluator {
   private final double calibrationPageThreshold;
   private final double featurePsiNoticeThreshold;
   private final int featurePsiNoticeDays;
+  private final long featurePsiMinSample;
 
   public DriftAlertEvaluator(
       RegistryRepository registryRepo,
@@ -89,7 +93,15 @@ public class DriftAlertEvaluator {
       // NOTICE in one 3 AM cycle instead of waiting 7 days. The NOTICE is the TERMINAL leg for
       // this lane: DriftTrigger keys exclusively on 7-day sustained CALIBRATION_ERROR and never
       // on feature PSI (E-2 postmortem GAP 2, 2026-07-16).
-      @Value("${bullpen.drift.alert.feature-psi-notice-days:7}") int featurePsiNoticeDays) {
+      @Value("${bullpen.drift.alert.feature-psi-notice-days:7}") int featurePsiNoticeDays,
+      // Minimum observed sample for a PSI_FEATURE row to COUNT toward the NOTICE (the 2026-07-16
+      // first-organic-triage finding): with 10 reference bins the no-drift noise floor is
+      // E[PSI] ~= (B-1)/n, which crosses the 0.25 threshold on its own below n ~= 36, and PSI is
+      // not usefully stable until n reaches the hundreds - the n=27 break-window rows read 1.62
+      // with ZERO real drift. Rows below this floor still get WRITTEN (the ops grid shows them
+      // with their sample sizes); they just cannot fire an alert. 0 disables the gate (a
+      // deliberate off-switch, e.g. a drill on a miniature window).
+      @Value("${bullpen.drift.alert.feature-psi-min-sample:300}") long featurePsiMinSample) {
     this.registryRepo = registryRepo;
     this.driftRepo = driftRepo;
     this.historyRepo = historyRepo;
@@ -98,6 +110,7 @@ public class DriftAlertEvaluator {
     this.calibrationPageThreshold = calibrationPageThreshold;
     this.featurePsiNoticeThreshold = featurePsiNoticeThreshold;
     this.featurePsiNoticeDays = featurePsiNoticeDays;
+    this.featurePsiMinSample = featurePsiMinSample;
     if (featurePsiNoticeDays < MIN_NOTICE_DAYS) {
       // A typo'd env (e.g. 0 or negative) is coerced up to the most drift-sensitive setting
       // (fire on a single day). Make that visible rather than silently arming it in prod.
@@ -107,6 +120,15 @@ public class DriftAlertEvaluator {
           featurePsiNoticeDays,
           MIN_NOTICE_DAYS,
           MIN_NOTICE_DAYS);
+    }
+    if (featurePsiMinSample < 0) {
+      // 0 is the documented off-switch (silent, deliberate); a NEGATIVE value is an unambiguous
+      // misconfig that silently behaves as disabled (sampleSize is always >= 0) - the exact
+      // failure mode this gate exists to prevent. Loud, mirroring the notice-days guard.
+      log.warn(
+          "bullpen.drift.alert.feature-psi-min-sample={} is negative; behaving as 0 (gate"
+              + " DISABLED). Set 0 explicitly to disable, or a positive floor (default 300).",
+          featurePsiMinSample);
     }
   }
 
@@ -202,6 +224,11 @@ public class DriftAlertEvaluator {
         driftRepo.findAllForModel(champ.modelName()).stream()
             .filter(m -> m.metricType() == MetricType.PSI_FEATURE)
             .filter(m -> m.computedAt().isAfter(cutoff))
+            // Min-sample gate (first-organic-triage, 2026-07-16): a PSI value computed on a tiny
+            // observed window is dominated by the (B-1)/n noise floor, not drift - drop such rows
+            // from ALERT consideration entirely (they neither count toward the sustain days nor
+            // break the allMatch). The rows stay in drift_metrics for visibility.
+            .filter(m -> m.sampleSize() >= featurePsiMinSample)
             .toList();
     if (psiRows.isEmpty()) {
       return 0;

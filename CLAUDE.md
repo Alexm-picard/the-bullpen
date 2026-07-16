@@ -308,6 +308,7 @@ HTTP client).
 - **Drift metrics** — population stability index (PSI) and calibration drift (ECE delta vs training baseline) computed per feature and per model output, written to ClickHouse on a worker-profile schedule.
 - **Retraining queue** — a SQLite table consumed by the worker profile. Triggers are automated (drift, schedule) but downstream promotion remains human-gated (rule 6).
 - **Experiment results row** — a SQLite row capturing the outcome of a rolling-CV evaluation, referenced by `promote-model` as the evidence gate.
+- **Tier-4 `_in` columns store FEET** - `pfx_x_in`/`pfx_z_in`/`release_pos_*_in` (and their camelCase request twins) are straight pass-throughs of Statcast's feet values; the `_in` suffix is a historical misnomer, consistent end-to-end (training, baseline, live derivation, serving). Never "fix" with a x12 - see `docs/postmortems/2026-07-16_first-organic-psi-triage.md`.
 
 ## Working with the user
 

@@ -45,6 +45,9 @@ public record LivePitch(
     // Tier-4 movement + release, DERIVED from the raw 9-param fit (see GumboKinematics), so they
     // match the pitches-table columns the post head trained on. Null when the live feed's fit is
     // incomplete (the ~0.2-1% tracking blips); the post leg skips those pitches (F2.1a).
+    // UNITS TRAP (first-organic triage, 2026-07-16): despite the In suffix these carry FEET -
+    // the training columns (pfx_x_in etc.) are straight pass-throughs of Statcast's feet values,
+    // and consistency with THEM is the contract. Do not "fix" with a x12.
     Double pfxXIn,
     Double pfxZIn,
     Double spinRateRpm,

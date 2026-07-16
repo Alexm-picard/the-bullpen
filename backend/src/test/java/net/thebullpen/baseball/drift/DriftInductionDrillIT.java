@@ -144,7 +144,8 @@ class DriftInductionDrillIT {
             mock(JobLockRepository.class),
             PAGE_ECE_THRESHOLD,
             NOTICE_PSI_THRESHOLD,
-            7); // feature-PSI notice sustain window: prod default (the drill stages 7 days)
+            7, // feature-PSI notice sustain window: prod default (the drill stages 7 days)
+            0L); // min-sample gate OFF: the drill stages synthetic rows on a miniature window
     int alerts = evaluator.runOnce();
     log("DETECT  DriftAlertEvaluator fired " + alerts + " alert(s)");
     ArgumentCaptor<DiscordNotifier.Severity> sev =
