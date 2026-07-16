@@ -27,6 +27,27 @@ repositories {
     mavenCentral()
 }
 
+// F3 supply-chain pinning: every resolvable configuration locks to the committed
+// gradle.lockfile, so a dependency (direct or transitive) can only change through an
+// explicit, reviewable `--write-locks` diff - never silently via a floating version.
+// Regenerate after an intentional bump: ./gradlew resolveAndLockAll --write-locks
+dependencyLocking {
+    lockAllConfigurations()
+}
+
+// The Gradle-docs idiom for (re)writing the lockfile across ALL resolvable
+// configurations in one pass (the `dependencies` task alone does not touch
+// plugin-created configs like spotbugs/errorprone/jmh).
+tasks.register("resolveAndLockAll") {
+    notCompatibleWithConfigurationCache("Filters configurations at execution time")
+    doFirst {
+        require(gradle.startParameter.isWriteDependencyLocks) { "Run with --write-locks" }
+    }
+    doLast {
+        configurations.filter { it.isCanBeResolved }.forEach { it.resolve() }
+    }
+}
+
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
