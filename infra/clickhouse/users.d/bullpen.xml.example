@@ -32,6 +32,12 @@
      DROP TABLE, TRUNCATE, ALTER DROP COLUMN, and mutations (ALTER UPDATE / ALTER DELETE),
      RENAME. New DDL outside this set is a re-decision, not a quiet grant widening.
 
+     Tested by fire (E-2 drill, 2026-07-16 postmortem GAP 1): the drift-drill cleanup endpoint's
+     ALTER DELETE 497'd as this user, exactly as designed. The fix was NOT a grant here - the
+     app runs that one mutation over a separate one-shot connection as the CH admin identity
+     (BULLPEN_DRIFT_CLEANUP_ADMIN_USER/-PASSWORD, armed only for a drill window). This block's
+     mutation absence stands.
+
      Verification (matches the executed B6 ceremony), as user bullpen:
        SELECT 1                   -> ok
        INSERT INTO ...            -> ok

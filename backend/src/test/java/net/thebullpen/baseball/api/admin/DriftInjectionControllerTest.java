@@ -90,6 +90,19 @@ class DriftInjectionControllerTest {
   }
 
   @Test
+  void a_cleanup_refusal_maps_to_400_not_500() throws Exception {
+    // GAP 1 (E-2 postmortem): the unarmed-creds refusal must reach the operator as a 400 carrying
+    // the env-var-naming message - the verify pass caught that cleanup() lacked the try/catch
+    // induce() had, which swallowed the refusal into a generic 500.
+    when(service.cleanup())
+        .thenThrow(
+            new DriftInjectionException(
+                "refusing cleanup: bullpen.drift.cleanup.admin-user is not set."));
+
+    mvc.perform(delete("/v1/admin/drift/synthetic")).andExpect(status().isBadRequest());
+  }
+
+  @Test
   void delete_synthetic_returns_the_cleanup_count() throws Exception {
     when(service.cleanup()).thenReturn(4200L);
 

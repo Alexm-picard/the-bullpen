@@ -342,8 +342,9 @@ class DriftAlertEvaluatorIT {
   @Test
   void feature_psi_single_over_threshold_day_fires_notice_when_notice_days_is_1() {
     // The E-2 live drill: one injected night produces exactly one over-threshold PSI day. With the
-    // sustain window set to 1, that single breach fires the NOTICE (and the DriftTrigger behind it)
-    // in one 3 AM cycle instead of waiting 7 days.
+    // sustain window set to 1, that single breach fires the NOTICE in one 3 AM cycle instead of
+    // waiting 7 days. (The NOTICE is terminal for the feature-PSI lane - DriftTrigger keys on
+    // CALIBRATION_ERROR only; E-2 postmortem GAP 2.)
     ModelVersion champ = champion("battedball_outcome", 1L);
     when(registryRepo.findActiveChampions()).thenReturn(List.of(champ));
     when(driftRepo.findRecent(

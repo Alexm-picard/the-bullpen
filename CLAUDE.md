@@ -70,8 +70,9 @@ honest about its reality gap - decision [163], surfaced as such on `/parks`), pl
 heads with no user-visible prediction yet (`pitch_outcome_post` is champion-STAGE since 2026-06-20
 but UI-held; `pitch_outcome_pre` stays shadow on a failed primary - [154]/ADR-0011/[165]). Solo
 developer, ~8–10 months calendar at 12–15h/week. Built to operate through at least one MLB
-season for a real drift postmortem (the in-season one is pending; a synthetic induced-drift drill
-stands in for now).
+season for a real drift postmortem (delivered 2026-07-16 as the honestly-labeled synthetic
+induced-drill write-up, `docs/postmortems/2026-07-16_induced-drift-drill.md`, per [175]; a
+confirmed natural in-season event would supersede it per [169]).
 
 It is **not** a SaaS product, not a betting tool, not a research contribution. Framing
 matters — see `design.md` §1.

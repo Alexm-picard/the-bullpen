@@ -87,7 +87,16 @@ public class DriftInjectionController {
 
   @DeleteMapping("/synthetic")
   public Map<String, Object> cleanup() {
-    long removed = service.cleanup();
+    long removed;
+    try {
+      removed = service.cleanup();
+    } catch (DriftInjectionException e) {
+      // Same mapping as induce(): operator-fixable (unarmed cleanup admin creds, bad creds) maps
+      // to 400 WITH the message, so the env-var-naming refusal actually reaches the operator
+      // instead of being swallowed into a generic 500 (E-2 postmortem GAP 1; the verify pass
+      // caught that this handler was missing while induce() had one).
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage(), e);
+    }
     return Map.of(
         "deletedRows",
         removed,
