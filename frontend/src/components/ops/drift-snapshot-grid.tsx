@@ -1,19 +1,21 @@
 /**
- * <DriftSnapshotGrid> — two parallel StatTables (PSI by feature | ECE Δ by
- * output). The section heading is the PAGE's responsibility (ops-page renders
+ * <DriftSnapshotGrid> — two parallel StatTables (PSI by feature | ECE by
+ * segment). The section heading is the PAGE's responsibility (ops-page renders
  * the single "Drift Snapshot" LowerThird); the grid is headerless so the
  * heading and its DOM id exist exactly once.
  *
  * Layout (CSS grid via `ops-drift__pair`):
- *   [ PSI BY FEATURE       ] [ ECE Δ BY OUTPUT       ]
+ *   [ PSI BY FEATURE       ] [ ECE BY SEGMENT        ]
  *
  * At <900px the subgrid stacks (PSI on top), matching the matchup-report__pair
  * breakpoint precedent. Stacking is handled by CSS so we never measure the
  * viewport from JS.
  *
- * The ECE table renders an em-dash for `batted_ball` rows other than `in_play`
- * — that's the StatTable default for null values, and it honestly reflects
- * the two-head architecture (batted_ball only emits for in-play outcomes).
+ * The ECE table renders ABSOLUTE Expected Calibration Error - what the live
+ * CALIBRATION_ERROR rows carry (CalibrationJob writes one row per model at
+ * segment "all", pitch-family only). battedball_outcome's cell stays an
+ * em-dash: its calibration is offline by design (the /accuracy scorecard +
+ * the isotonic promotion gate), an honest null, not missing data (E-4).
  */
 
 import type {
@@ -21,7 +23,7 @@ import type {
   DriftOutputRow,
   ModelRegistryRow,
 } from "../../data/ops-fixtures";
-import { ECE_DELTA_METRIC, PSI_METRIC } from "../../data/ops-fixtures";
+import { ECE_METRIC, PSI_METRIC } from "../../data/ops-fixtures";
 import { broadcastStatTablePalette } from "../broadcast/palettes";
 import { StatTable } from "../shared/stat-table";
 import type { StatTableColumn, StatTableRow } from "../shared/stat-table";
@@ -39,7 +41,7 @@ export type DriftSnapshotGridProps = {
  */
 function modelColumns(
   models: ModelRegistryRow[],
-  metricMeta: typeof PSI_METRIC | typeof ECE_DELTA_METRIC,
+  metricMeta: typeof PSI_METRIC | typeof ECE_METRIC,
   formatter: (v: unknown) => string,
 ): StatTableColumn[] {
   // Deduplicate by modelName — there can be two registry rows for the same
@@ -86,8 +88,9 @@ function formatPsi(v: unknown): string {
 function formatEce(v: unknown): string {
   const n = Number(v);
   if (!Number.isFinite(n)) return "—";
-  const sign = n > 0 ? "+" : "";
-  return `${sign}${n.toFixed(3)}`;
+  // Absolute ECE (CALIBRATION_ERROR is 0..1, lower-is-better) - no +sign; a
+  // signed format belonged to the old delta-vs-training fiction (E-4).
+  return n.toFixed(3);
 }
 
 export function DriftSnapshotGrid({
@@ -96,7 +99,7 @@ export function DriftSnapshotGrid({
   eceByOutput,
 }: DriftSnapshotGridProps) {
   const psiCols = modelColumns(models, PSI_METRIC, formatPsi);
-  const eceCols = modelColumns(models, ECE_DELTA_METRIC, formatEce);
+  const eceCols = modelColumns(models, ECE_METRIC, formatEce);
 
   return (
     <div className="ops-drift__pair">
@@ -105,7 +108,7 @@ export function DriftSnapshotGrid({
           palette={broadcastStatTablePalette}
           columns={psiCols}
           rows={psiRows(psiByFeature)}
-          caption="PSI by feature · 0 stable / 0.20 action"
+          caption="PSI by feature · 0.25 notice threshold"
         />
       </div>
       <div>
@@ -113,7 +116,7 @@ export function DriftSnapshotGrid({
           palette={broadcastStatTablePalette}
           columns={eceCols}
           rows={eceRows(eceByOutput)}
-          caption="ECE Δ by output · target 0 / |Δ| > 0.01 action"
+          caption="ECE by segment · 0.10 page threshold"
         />
       </div>
     </div>

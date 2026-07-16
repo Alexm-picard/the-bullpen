@@ -9,8 +9,8 @@ import net.thebullpen.baseball.api.dto.ModelAccuracyScorecard;
 import net.thebullpen.baseball.api.dto.OpsEvent;
 import net.thebullpen.baseball.data.OpsEventsRepository;
 import net.thebullpen.baseball.data.PredictionLogRepository;
-import net.thebullpen.baseball.drift.DriftMetric;
 import net.thebullpen.baseball.drift.DriftMetricsRepository;
+import net.thebullpen.baseball.drift.TaggedDriftMetric;
 import net.thebullpen.baseball.inference.routing.RoutingConfig;
 import net.thebullpen.baseball.inference.routing.RoutingRepository;
 import net.thebullpen.baseball.registry.AccuracyService;
@@ -83,14 +83,16 @@ public class OpsController {
 
   /**
    * Leaf 4e.2: recent drift rows for a model. The repo returns rows ordered newest-first; the UI
-   * sparklines flip back to chronological for plotting.
+   * sparklines flip back to chronological for plotting. E-4: rows carry the V027 {@code tag} (empty
+   * = organic) so the dashboard can label [175] induced-drill evidence rows honestly instead of
+   * rendering a synthetic PSI spike as organic drift - additive field, same row shape.
    */
   @GetMapping("/drift")
-  public List<DriftMetric> drift(@RequestParam("model") String modelName) {
+  public List<TaggedDriftMetric> drift(@RequestParam("model") String modelName) {
     if (driftRepo == null) {
       return List.of();
     }
-    return driftRepo.findAllForModel(modelName);
+    return driftRepo.findAllForModelTagged(modelName);
   }
 
   /** Leaf 4e.3: every A/B routing row, including current traffic split + mode. */

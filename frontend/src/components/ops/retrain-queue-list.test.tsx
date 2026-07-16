@@ -25,7 +25,7 @@ describe("RetrainQueueList", () => {
   it("renders all three queue entries", () => {
     const html = render(<RetrainQueueList entries={RETRAIN_QUEUE} />);
     expect(html).toContain("pitch_outcome_pre v3.3 candidate");
-    expect(html).toContain("PSI release_spin = 0.22 (threshold 0.20)");
+    expect(html).toContain("PSI launchSpeedMph = 0.31 (threshold 0.25)");
     expect(html).toContain("weekly cadence");
   });
 

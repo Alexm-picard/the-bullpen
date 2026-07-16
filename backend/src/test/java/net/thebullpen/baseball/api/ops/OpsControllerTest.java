@@ -16,9 +16,9 @@ import net.thebullpen.baseball.api.dto.OpsEvent;
 import net.thebullpen.baseball.api.dto.OpsEventType;
 import net.thebullpen.baseball.data.OpsEventsRepository;
 import net.thebullpen.baseball.data.PredictionLogRepository;
-import net.thebullpen.baseball.drift.DriftMetric;
 import net.thebullpen.baseball.drift.DriftMetricsRepository;
 import net.thebullpen.baseball.drift.MetricType;
+import net.thebullpen.baseball.drift.TaggedDriftMetric;
 import net.thebullpen.baseball.inference.routing.RoutingConfig;
 import net.thebullpen.baseball.inference.routing.RoutingMode;
 import net.thebullpen.baseball.inference.routing.RoutingRepository;
@@ -91,26 +91,42 @@ class OpsControllerTest {
   }
 
   @Test
-  void drift_returns_repo_rows_for_named_model() throws Exception {
+  void drift_returns_repo_rows_for_named_model_with_the_tag() throws Exception {
+    // E-4: the ops surface reads the tag-carrying variant so [175] induced-drill evidence rows
+    // are labelable on the dashboard; '' = organic. Same row shape plus the additive tag field.
     Instant now = Instant.parse("2026-05-25T12:00:00Z");
-    when(driftRepo.findAllForModel("pitch_outcome_pre"))
+    when(driftRepo.findAllForModelTagged("battedball_outcome"))
         .thenReturn(
             List.of(
-                new DriftMetric(
+                new TaggedDriftMetric(
                     now,
-                    "pitch_outcome_pre",
+                    "battedball_outcome",
                     7L,
                     MetricType.PSI_FEATURE,
-                    "launch_speed_mph",
-                    0.05,
-                    1234L,
-                    now.minusSeconds(7 * 86400),
-                    now)));
+                    "launchSpeedMph",
+                    0.91,
+                    5000L,
+                    now.minusSeconds(86400),
+                    now,
+                    "induced-drill-2026-07"),
+                new TaggedDriftMetric(
+                    now.minusSeconds(3600),
+                    "battedball_outcome",
+                    7L,
+                    MetricType.PSI_FEATURE,
+                    "launchAngleDeg",
+                    0.04,
+                    5000L,
+                    now.minusSeconds(86400),
+                    now,
+                    "")));
 
-    mvc.perform(get("/v1/ops/drift").param("model", "pitch_outcome_pre"))
+    mvc.perform(get("/v1/ops/drift").param("model", "battedball_outcome"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$[0].modelName").value("pitch_outcome_pre"))
-        .andExpect(jsonPath("$[0].metricValue").value(0.05));
+        .andExpect(jsonPath("$[0].modelName").value("battedball_outcome"))
+        .andExpect(jsonPath("$[0].metricValue").value(0.91))
+        .andExpect(jsonPath("$[0].tag").value("induced-drill-2026-07"))
+        .andExpect(jsonPath("$[1].tag").value(""));
   }
 
   @Test

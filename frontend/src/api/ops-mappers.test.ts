@@ -138,6 +138,7 @@ describe("toDriftRows", () => {
       sampleSize: 1000,
       windowStart: "2026-06-04",
       windowEnd: "2026-06-11",
+      tag: "",
       ...over,
     };
   }
@@ -202,6 +203,41 @@ describe("toDriftRows", () => {
       "launch_angle",
       "spray_angle",
     ]);
+  });
+
+  it("reports no drill tags for organic rows", () => {
+    const { drillTags } = toDriftRows(
+      [dm({}), dm({ modelName: "pitch_outcome_post" })],
+      WATCHED_FEATURES,
+      WATCHED_OUTPUTS,
+    );
+    expect(drillTags).toEqual([]);
+  });
+
+  it("surfaces the distinct drill tags so the page can label induced rows", () => {
+    // [175]/E-4: tagged evidence rows stay IN the overlay (visible during a
+    // drill is the drill working) but the page must be able to label them -
+    // a synthetic PSI spike must never present as organic drift.
+    const { psiByFeature, drillTags } = toDriftRows(
+      [
+        dm({ metricValue: 0.91, tag: "induced-drill-2026-07" }),
+        dm({ featureOrSegment: "launch_angle", tag: "" }),
+        dm({
+          featureOrSegment: "launch_angle",
+          modelName: "pitch_outcome_post",
+          tag: "induced-drill-2026-07",
+        }),
+      ],
+      WATCHED_FEATURES,
+      WATCHED_OUTPUTS,
+    );
+    expect(drillTags).toEqual(["induced-drill-2026-07"]); // deduped
+    // The tagged value still overlays - labeled, not hidden.
+    expect(
+      psiByFeature.find((f) => f.feature === "release_speed")?.byModel[
+        "battedball_outcome"
+      ],
+    ).toBe(0.91);
   });
 });
 

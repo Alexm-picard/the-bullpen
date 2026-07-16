@@ -56,6 +56,12 @@ public class DriftMetricsRepository {
       "SELECT computed_at, model_name, model_version_id, metric_type, feature_or_segment,"
           + " metric_value, sample_size, window_start, window_end FROM drift_metrics";
 
+  // Ops-surface variant (E-4): SELECT_ALL plus the V027 tag column, in V027's AFTER window_end
+  // position, matching TaggedDriftMetric's component order.
+  private static final String SELECT_ALL_TAGGED =
+      "SELECT computed_at, model_name, model_version_id, metric_type, feature_or_segment,"
+          + " metric_value, sample_size, window_start, window_end, tag FROM drift_metrics";
+
   private final DataSource clickhouse;
   private final JdbcTemplate jdbc;
   private final String defaultTag;
@@ -180,6 +186,33 @@ public class DriftMetricsRepository {
         DRIFT_METRIC_MAPPER,
         modelName);
   }
+
+  /**
+   * Tag-carrying variant of {@link #findAllForModel} for the ops surface (E-4): same rows plus the
+   * V027 {@code tag} column, so the dashboard can label [175] induced-drill evidence rows instead
+   * of rendering a synthetic PSI spike as organic drift. Deliberately UNFILTERED (the drill being
+   * visible during a drill is the drill working); labeling, not exclusion, is the display contract.
+   */
+  public List<TaggedDriftMetric> findAllForModelTagged(String modelName) {
+    return jdbc.query(
+        SELECT_ALL_TAGGED + " WHERE model_name = ? ORDER BY computed_at DESC",
+        TAGGED_DRIFT_METRIC_MAPPER,
+        modelName);
+  }
+
+  private static final RowMapper<TaggedDriftMetric> TAGGED_DRIFT_METRIC_MAPPER =
+      (ResultSet rs, int n) ->
+          new TaggedDriftMetric(
+              rs.getTimestamp("computed_at").toInstant(),
+              rs.getString("model_name"),
+              rs.getLong("model_version_id"),
+              MetricType.fromDbValue(rs.getString("metric_type")),
+              rs.getString("feature_or_segment"),
+              rs.getDouble("metric_value"),
+              rs.getLong("sample_size"),
+              rs.getTimestamp("window_start").toInstant(),
+              rs.getTimestamp("window_end").toInstant(),
+              rs.getString("tag"));
 
   private static final RowMapper<DriftMetric> DRIFT_METRIC_MAPPER =
       (ResultSet rs, int n) ->

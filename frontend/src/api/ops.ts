@@ -40,6 +40,12 @@ export type DriftMetric = {
   sampleSize: number;
   windowStart: string;
   windowEnd: string;
+  /**
+   * V027 drill tag (E-4): non-empty marks a [175] induced-drill evidence row
+   * (e.g. "induced-drill-2026-07"); "" = organic. The dashboard labels tagged
+   * rows instead of rendering a synthetic PSI spike as organic drift.
+   */
+  tag: string;
 };
 
 export type RoutingConfig = {
