@@ -14,6 +14,8 @@
 #   1. Pre-flight: clean working tree (or --allow-dirty), systemd units present.
 #   2. Build the backend bootJar (no tests — CI is the test gate per [20]).
 #   3. Stage the JAR into /opt/bullpen/releases/<TAG>/app.jar.
+#   3b. Refresh the training clone at /opt/bullpen/repo (git pull + uv sync as
+#       bullpen) so the 02:00 retrain timer never runs stale training code.
 #   4. Atomic symlink swap: /opt/bullpen/app.jar -> releases/<TAG>/app.jar
 #   5. Pre-restart registry backup, then systemctl restart bullpen-api bullpen-worker.
 #   6. Smoke: poll /actuator/health/readiness (waits for champion warmup via
@@ -164,6 +166,37 @@ for f in contracts/*.json contracts/README.md; do
 done
 log "staged canonical contracts -> ${CONTRACTS_DST}"
 
+# --- 3b. Refresh the training clone (the 02:00 retrain's working copy) --------
+
+# STALENESS HAZARD (Wave F item 2): the unattended retrain timer (bullpen-retrain.timer,
+# WorkingDirectory=/opt/bullpen/training inside the /opt/bullpen/repo clone) runs the Python
+# trainer from a SEPARATE clone that this deploy's jar staging never touches. Nothing else
+# updates that clone, so without this step a 02:00 retrain can run WEEKS-old training code
+# against a freshly deployed serving stack - e.g. an old dispatch adapter emitting an outdated
+# metadata shape that the new registry then serves. The refresh runs as the bullpen user (the
+# timer's identity - keeps clone ownership uniform) via the box-provisioned /usr/local/bin/uv
+# (the exact path the retrain unit's ExecStart resolves).
+#
+# Failure posture: WARN loudly + record, but do NOT block the serving deploy (the jar swap is
+# independent). A REFRESH-FAILED in the deploy log means the operator must fix the clone or
+# disarm bullpen-retrain.timer BEFORE the next 02:00 fire - that is the whole hazard this step
+# exists to close. An absent clone is a WARN too (provision per bullpen-retrain.service's
+# prerequisite comment + the retrain-ceremony runbook).
+TRAINING_REPO="${BULLPEN_TRAINING_REPO:-${INSTALL_DIR}/repo}"
+TRAINING_REPO_STATE="absent"
+if [[ -d "${TRAINING_REPO}/.git" ]]; then
+  if sudo -u bullpen git -C "$TRAINING_REPO" pull --ff-only \
+      && sudo -u bullpen bash -c "cd '${TRAINING_REPO}/training' && /usr/local/bin/uv sync"; then
+    TRAINING_REPO_STATE="$(sudo -u bullpen git -C "$TRAINING_REPO" rev-parse --short HEAD)"
+    log "training clone refreshed: ${TRAINING_REPO} @ ${TRAINING_REPO_STATE}"
+  else
+    TRAINING_REPO_STATE="REFRESH-FAILED"
+    log "WARN: training clone refresh FAILED - the next 02:00 retrain would run STALE training code; fix ${TRAINING_REPO} (or disarm bullpen-retrain.timer) before it fires"
+  fi
+else
+  log "WARN: no training clone at ${TRAINING_REPO} - skipping refresh (the retrain timer runs from it; provision per bullpen-retrain.service + the retrain-ceremony runbook)"
+fi
+
 # --- 4. Atomic symlink swap --------------------------------------------------
 
 PREVIOUS_TARGET=""
@@ -238,6 +271,7 @@ mkdir -p docs/deploys
   echo "- smoke: $([[ "$SKIP_SMOKE" == "true" ]] && echo skipped || echo passed)"
   echo "- flags: allow_dirty=${ALLOW_DIRTY} skip_smoke=${SKIP_SMOKE} allow_game_window=${ALLOW_GAME_WINDOW}"
   echo "- registry_backup: ${REGISTRY_BACKUP}"
+  echo "- training_repo: ${TRAINING_REPO_STATE}"
   if command -v systemctl >/dev/null; then
     echo
     echo "## Unit status (post-restart)"
