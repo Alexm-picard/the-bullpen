@@ -78,15 +78,21 @@ class DriftAlertEvaluatorIT {
     registryRepo = mock(RegistryRepository.class);
     driftRepo = mock(DriftMetricsRepository.class);
     discord = mock(DiscordNotifier.class);
-    evaluator =
-        new DriftAlertEvaluator(
-            registryRepo,
-            driftRepo,
-            historyRepo,
-            discord,
-            mock(JobLockRepository.class),
-            0.10,
-            0.25);
+    // Default evaluator: feature-PSI notice at the prod 7-day sustain window.
+    evaluator = evaluatorWithNoticeDays(7);
+  }
+
+  /** Build an evaluator with a specific feature-PSI notice sustain window (the E-2 drill knob). */
+  private DriftAlertEvaluator evaluatorWithNoticeDays(int noticeDays) {
+    return new DriftAlertEvaluator(
+        registryRepo,
+        driftRepo,
+        historyRepo,
+        discord,
+        mock(JobLockRepository.class),
+        0.10,
+        0.25,
+        noticeDays);
   }
 
   // --- PAGE: calibration ------------------------------------------------
@@ -329,6 +335,104 @@ class DriftAlertEvaluatorIT {
     when(driftRepo.findAllForModel("model_a")).thenReturn(rows);
 
     assertThat(evaluator.runOnce()).isEqualTo(0);
+  }
+
+  // --- NOTICE: configurable sustain window (E-2 drill knob) -------------
+
+  @Test
+  void feature_psi_single_over_threshold_day_fires_notice_when_notice_days_is_1() {
+    // The E-2 live drill: one injected night produces exactly one over-threshold PSI day. With the
+    // sustain window set to 1, that single breach fires the NOTICE (and the DriftTrigger behind it)
+    // in one 3 AM cycle instead of waiting 7 days.
+    ModelVersion champ = champion("battedball_outcome", 1L);
+    when(registryRepo.findActiveChampions()).thenReturn(List.of(champ));
+    when(driftRepo.findRecent(
+            eq("battedball_outcome"),
+            eq(MetricType.CALIBRATION_ERROR),
+            eq("all"),
+            any(Duration.class)))
+        .thenReturn(List.of());
+    when(driftRepo.findAllForModel("battedball_outcome"))
+        .thenReturn(
+            List.of(
+                metric(
+                    "battedball_outcome",
+                    MetricType.PSI_FEATURE,
+                    "launchSpeedMph",
+                    0.90,
+                    Instant.now())));
+
+    int fired = evaluatorWithNoticeDays(1).runOnce();
+
+    assertThat(fired).isEqualTo(1);
+    verify(discord)
+        .send(
+            eq(DiscordNotifier.Severity.NOTICE),
+            eq("NOTICE: battedball_outcome feature drift on launchSpeedMph"),
+            any());
+  }
+
+  @Test
+  void feature_psi_single_over_threshold_day_does_not_fire_with_default_7_days() {
+    // Prod semantics preserved: with the default 7-day sustain window, a single over-threshold day
+    // must NOT fire. This is the guard that the drill knob does not weaken normal operation.
+    ModelVersion champ = champion("battedball_outcome", 1L);
+    when(registryRepo.findActiveChampions()).thenReturn(List.of(champ));
+    when(driftRepo.findRecent(
+            eq("battedball_outcome"),
+            eq(MetricType.CALIBRATION_ERROR),
+            eq("all"),
+            any(Duration.class)))
+        .thenReturn(List.of());
+    when(driftRepo.findAllForModel("battedball_outcome"))
+        .thenReturn(
+            List.of(
+                metric(
+                    "battedball_outcome",
+                    MetricType.PSI_FEATURE,
+                    "launchSpeedMph",
+                    0.90,
+                    Instant.now())));
+
+    // evaluator (from setUp) uses the default 7-day window.
+    assertThat(evaluator.runOnce()).isEqualTo(0);
+    verify(discord, never()).send(any(), any(), any());
+  }
+
+  @Test
+  void feature_psi_same_day_reruns_do_not_inflate_the_day_count() {
+    // DEF-M3 collapse still holds under a configurable window: 3 same-day PSI reruns, all over
+    // threshold, count as ONE day, not 3. With the window set to 3, the collapse keeps daily.size()
+    // below 3, so it must NOT fire (row-counting would have fired). Three instants within a ~2h
+    // span
+    // cannot straddle more than one ET midnight, so this stays under 3 days either way.
+    ModelVersion champ = champion("model_a", 1L);
+    when(registryRepo.findActiveChampions()).thenReturn(List.of(champ));
+    when(driftRepo.findRecent(
+            eq("model_a"), eq(MetricType.CALIBRATION_ERROR), eq("all"), any(Duration.class)))
+        .thenReturn(List.of());
+    Instant now = Instant.now();
+    List<DriftMetric> sameDay =
+        List.of(
+            metric("model_a", MetricType.PSI_FEATURE, "launch_speed", 0.30, now),
+            metric(
+                "model_a",
+                MetricType.PSI_FEATURE,
+                "launch_speed",
+                0.30,
+                now.minus(1, ChronoUnit.HOURS)),
+            metric(
+                "model_a",
+                MetricType.PSI_FEATURE,
+                "launch_speed",
+                0.30,
+                now.minus(2, ChronoUnit.HOURS)));
+    when(driftRepo.findAllForModel("model_a")).thenReturn(sameDay);
+
+    assertThat(evaluatorWithNoticeDays(3).runOnce())
+        .as("3 same-day reruns are 1 day, not 3 - must not fire a 3-day NOTICE")
+        .isEqualTo(0);
+    verify(discord, never()).send(any(), any(), any());
   }
 
   // --- helpers ----------------------------------------------------------

@@ -79,16 +79,27 @@ signal and is sufficient for the [175] postmortem.
 
 Set the env in `/etc/default/bullpen` (the shared EnvironmentFile both units
 read). `BULLPEN_DRIFT_INJECT_ENABLED` only affects the api (the injector bean),
-but the tag must reach both:
+the tag must reach both, and the notice-days knob is worker-consumed:
 
 ```
 BULLPEN_DRIFT_TAG=induced-drill-2026-07
 BULLPEN_DRIFT_INJECT_ENABLED=true
+BULLPEN_DRIFT_ALERT_FEATURE_PSI_NOTICE_DAYS=1
 ```
 
 ```bash
 sudo systemctl restart bullpen-api bullpen-worker
 ```
+
+> **Why the notice-days knob is mandatory for a one-night drill.**
+> `DriftAlertEvaluator` requires the feature PSI to sustain over threshold for
+> `bullpen.drift.alert.feature-psi-notice-days` CONSECUTIVE calendar days
+> (default 7) before it fires the NOTICE (and the `DriftTrigger` retrain enqueue
+> behind it). A single injected night is exactly ONE over-threshold day, so at
+> the default 7 the NOTICE would NOT fire until seven nights of sustained drift.
+> Setting it to 1 (worker unit) fires the full detect -> NOTICE -> trigger chain
+> in the very next 3 AM cycle. The alternative is a genuine 7-night run at the
+> default. Prod behavior is unchanged when this is unset.
 
 `BULLPEN_DRIFT_TAG` is the [175] choke point: every drift job's output is now
 tagged `induced-drill-2026-07` at `DriftMetricsRepository`, so the induced
@@ -139,15 +150,21 @@ docker compose -f infra/docker-compose.yml exec clickhouse clickhouse-client -q 
 Both counts should match (every injected row is prefixed; organic break traffic
 is ~zero).
 
-### 3. Let the 2 AM ET cron detect it (or force it)
+### 3. Let the overnight crons detect + alert
 
-Wait for the next `PsiFeatureJob` run (2 AM ET, worker profile). To avoid an
-overnight wait, force one cycle from the worker (off-window):
+Two worker jobs run in sequence:
 
-```bash
-# Optional: force an immediate PSI + alert cycle rather than waiting for 02:00 ET.
-# (runOnce is @VisibleForTesting; the operator path is simply to wait for the cron.)
-```
+1. **`PsiFeatureJob` at 2:00 AM ET** computes PSI over the injected 24h window and
+   writes the tagged `PSI_FEATURE` row into `drift_metrics`.
+2. **`DriftAlertEvaluator` at 3:00 AM ET** reads that row and, IF the feature has
+   sustained over threshold for `feature-psi-notice-days` consecutive days, fires
+   the Discord NOTICE and enqueues the `DriftTrigger` retrain.
+
+With `BULLPEN_DRIFT_ALERT_FEATURE_PSI_NOTICE_DAYS=1` set in step 1, the single
+injected night satisfies the sustain window, so the NOTICE fires on the first
+3 AM cycle after injection. Without it (default 7), only the `drift_metrics` PSI
+row appears - the NOTICE would wait for seven sustained nights. So inject within
+the ~20h before a 2 AM run, then let both crons run overnight.
 
 ### 4. Verify detection + alert
 
@@ -201,12 +218,14 @@ them separately only if you want a clean metrics table.
 
 ### 6. Disarm both units + restart
 
-Only after cleanup confirms zero drill rows: remove both lines from
+Only after cleanup confirms zero drill rows: remove all three lines from
 `/etc/default/bullpen` (or set them empty) and restart both units so the injector
-bean disappears and organic rows go back to untagged:
+bean disappears, organic rows go back to untagged, and the notice window returns
+to the prod 7-day default:
 
 ```bash
 # /etc/default/bullpen: delete BULLPEN_DRIFT_TAG + BULLPEN_DRIFT_INJECT_ENABLED
+#                       + BULLPEN_DRIFT_ALERT_FEATURE_PSI_NOTICE_DAYS
 sudo systemctl restart bullpen-api bullpen-worker
 ```
 

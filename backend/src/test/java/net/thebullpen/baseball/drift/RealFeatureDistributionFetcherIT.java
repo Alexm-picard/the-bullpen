@@ -241,7 +241,8 @@ class RealFeatureDistributionFetcherIT {
             discord,
             mock(JobLockRepository.class),
             0.10,
-            0.25);
+            0.25,
+            7); // feature-PSI notice sustain window: prod default (7 days)
     int fired = evaluator.runOnce();
 
     assertThat(fired).as("feature-drift NOTICE fired from job-written rows").isGreaterThan(0);
