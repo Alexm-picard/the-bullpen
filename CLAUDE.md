@@ -34,9 +34,11 @@ session and most "obvious" alternatives have already been considered and rejecte
   player lookup + `/players/:id` profile, the `/parks` HR-probability-by-park heatmap, the home
   page's tonight slate, and the Ops dashboard's Model Fleet / latency / retrain queue / ops log
   (live via `/v1/ops/*`, with a fixture fallback when those return empty or the backend is
-  offline - so Ops is live-wired, not "fixtures"). Still pure fixtures from
-  `frontend/src/data/*-fixtures.ts`: the `/parks` factor table, the `/about` methodology page,
-  and the Ops drift-snapshot skeleton (no drift endpoint yet).
+  offline - so Ops is live-wired, not "fixtures"). The Ops drift snapshot is ALSO live-wired
+  (`/v1/ops/drift` + a skeleton-overlay: the watched-surface rows render em-dashes until live
+  `drift_metrics` values land; E-4 keyed the watchlist by the real request-DTO feature names and
+  labels [175] induced-drill rows via the V027 tag). Still pure fixtures from
+  `frontend/src/data/*-fixtures.ts`: the `/parks` factor table and the `/about` methodology page.
 - **Live game poller is enabled ingest-only; no user-visible pitch prediction (POST is champion-stage but UI-held).**
   The full producer chain (MLB Stats API client + parser + per-game poll + `pitches_live` writer +
   the `prediction_log` truth-join) is merged, unit-tested, and enabled in prod behind

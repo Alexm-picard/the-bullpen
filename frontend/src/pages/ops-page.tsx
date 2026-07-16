@@ -156,8 +156,9 @@ export default function OpsPage() {
 
   // Drift snapshot: live values overlaid on the watched-surface skeleton.
   // While drift_metrics is empty (no traffic yet) this renders the same
-  // honest em-dash grid the skeleton did.
-  const { psiByFeature, eceByOutput } = toDriftRows(
+  // honest em-dash grid the skeleton did. drillTags labels [175] induced-drill
+  // evidence rows so a synthetic PSI spike is never presented as organic (E-4).
+  const { psiByFeature, eceByOutput, drillTags } = toDriftRows(
     drift.metrics,
     PSI_SKELETON,
     ECE_SKELETON,
@@ -206,7 +207,7 @@ export default function OpsPage() {
         <div style={{ marginBottom: 12 }}>
           <LowerThird
             id="ops-drift-section-label"
-            meta="PSI | ECE Δ · LAST 24H WINDOW"
+            meta="PSI | ECE · NIGHTLY WINDOWS"
           >
             Drift Snapshot
           </LowerThird>
@@ -215,6 +216,20 @@ export default function OpsPage() {
           Monitored surface shown; cells fill from the nightly drift jobs
           (champions and shadows both watched) as predictions accumulate.
         </p>
+        {drillTags.length > 0 && (
+          // role="status": announced to screen readers when a drill tag appears
+          // mid-session (the 30s poll can flip this on). goldInk + 600 weight
+          // out-ranks the neutral note above - during a drill this is the most
+          // important sentence on the panel (frontend-reviewer, E-4).
+          <p
+            role="status"
+            style={{ ...noteStyle, color: colors.goldInk, fontWeight: 600 }}
+          >
+            Includes induced-drill evidence rows (deliberate synthetic drift,
+            decision [175]; tag: {drillTags.join(", ")}) - not organic
+            production drift.
+          </p>
+        )}
         <DriftSnapshotGrid
           models={fleet}
           psiByFeature={psiByFeature}
