@@ -3,7 +3,10 @@ package net.thebullpen.baseball.drift;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.DriverManager;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -13,6 +16,7 @@ import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
 import javax.sql.DataSource;
+import net.thebullpen.baseball.config.ClickHouseProperties;
 import net.thebullpen.baseball.drift.TrainingDistributionLoader.ReferenceDistributions;
 import net.thebullpen.baseball.inference.PredictionLogEvent;
 import net.thebullpen.baseball.inference.PredictionLogWriter;
@@ -32,11 +36,12 @@ import org.springframework.stereotype.Service;
  * synthetic {@code prediction_log} rows so the REAL detection chain - {@link
  * RealFeatureDistributionFetcher} -&gt; {@link net.thebullpen.baseball.drift.jobs.PsiFeatureJob}
  * -&gt; {@code drift_metrics} -&gt; {@link
- * net.thebullpen.baseball.drift.alerting.DriftAlertEvaluator} NOTICE -&gt; {@link
- * net.thebullpen.baseball.retraining.triggers.DriftTrigger} - fires end-to-end on production
- * ClickHouse. This is the live-path counterpart to {@code DriftInductionDrillIT}, which proves the
- * math + alert chain but MOCKS every ClickHouse read (so it never exercises the prediction_log
- * observed-side that E-2 needs).
+ * net.thebullpen.baseball.drift.alerting.DriftAlertEvaluator} NOTICE - fires end-to-end on
+ * production ClickHouse. The NOTICE is the TERMINAL leg for this lane: {@link
+ * net.thebullpen.baseball.retraining.triggers.DriftTrigger} keys exclusively on 7-day sustained
+ * CALIBRATION_ERROR, never on feature PSI (E-2 postmortem GAP 2). This is the live-path counterpart
+ * to {@code DriftInductionDrillIT}, which proves the math + alert chain but MOCKS every ClickHouse
+ * read (so it never exercises the prediction_log observed-side that E-2 needs).
  *
  * <p><b>Scope: feature-PSI only.</b> The drill's second lane (over-confidence -&gt; calibration
  * ECE) is NOT inducible for {@code battedball_outcome} via prediction_log injection: {@link
@@ -91,7 +96,10 @@ public class DriftInjectionService {
   private final TrainingDistributionLoader baselineLoader;
   private final PredictionLogWriter writer;
   private final JdbcTemplate clickhouse;
+  private final String clickhouseUrl;
   private final String driftTag;
+  private final String cleanupAdminUser;
+  private final String cleanupAdminPassword;
   private final ObjectMapper mapper = new ObjectMapper();
 
   public DriftInjectionService(
@@ -99,15 +107,27 @@ public class DriftInjectionService {
       TrainingDistributionLoader baselineLoader,
       PredictionLogWriter writer,
       @Qualifier("clickhouseDataSource") DataSource clickhouse,
+      ClickHouseProperties clickhouseProperties,
       // The [175] hygiene guard: the injector refuses to run unless the box has armed
       // BULLPEN_DRIFT_TAG (so the drift_metrics side is tagged in lockstep). Read from the SAME
       // property DriftMetricsRepository tags with, so api + worker agree on the single box env.
-      @Value("${bullpen.drift.tag:}") String driftTag) {
+      @Value("${bullpen.drift.tag:}") String driftTag,
+      // GAP 1 (E-2 postmortem, 2026-07-16): the cleanup ALTER DELETE cannot run as the app's
+      // least-privilege CH user - mutations are DELIBERATELY absent from its grants
+      // (infra/clickhouse/users.d/bullpen.xml.example, [171]) and the live drill 497'd here.
+      // Rather than widen that grant (the template itself calls widening a re-decision), the
+      // mutation runs over a one-shot connection as the CH ADMIN identity, armed via env only
+      // for the drill window and disarmed with the other drill vars.
+      @Value("${bullpen.drift.cleanup.admin-user:}") String cleanupAdminUser,
+      @Value("${bullpen.drift.cleanup.admin-password:}") String cleanupAdminPassword) {
     this.registry = registry;
     this.baselineLoader = baselineLoader;
     this.writer = writer;
     this.clickhouse = new JdbcTemplate(clickhouse);
+    this.clickhouseUrl = clickhouseProperties.url();
     this.driftTag = driftTag == null ? "" : driftTag;
+    this.cleanupAdminUser = cleanupAdminUser == null ? "" : cleanupAdminUser;
+    this.cleanupAdminPassword = cleanupAdminPassword == null ? "" : cleanupAdminPassword;
   }
 
   /**
@@ -241,11 +261,35 @@ public class DriftInjectionService {
    * Cleanup: {@code ALTER TABLE prediction_log DELETE WHERE correlation_id LIKE 'drill:%'}. Returns
    * the count of drill rows present at call time (the mutation itself is async in ClickHouse and
    * settles within seconds). Idempotent - safe to call more than once.
+   *
+   * <p>The mutation runs over a SEPARATE one-shot connection as the CH admin identity ({@code
+   * bullpen.drift.cleanup.admin-user} / {@code -password}): the app's least-privilege {@code
+   * bullpen} user deliberately carries NO mutation grants ([171]), and the E-2 live drill hit Code
+   * 497 ACCESS_DENIED here (GAP 1, 2026-07-16 postmortem) rather than have that gap widened.
+   * Refuses loudly when the admin creds are not armed, so the endpoint never advertises a cleanup
+   * it cannot perform.
    */
   public long cleanup() {
+    if (cleanupAdminUser.isBlank()) {
+      throw new DriftInjectionException(
+          "refusing cleanup: bullpen.drift.cleanup.admin-user is not set. The app's least-privilege"
+              + " ClickHouse user deliberately has no ALTER DELETE grant ([171]), so the cleanup"
+              + " mutation needs the CH admin identity: arm BULLPEN_DRIFT_CLEANUP_ADMIN_USER +"
+              + " BULLPEN_DRIFT_CLEANUP_ADMIN_PASSWORD for the drill window + restart the api,"
+              + " then retry.");
+    }
     Long present = clickhouse.queryForObject(COUNT_DRILL_SQL, Long.class);
     long count = present == null ? 0L : present;
-    clickhouse.execute(CLEANUP_SQL);
+    // One-shot admin connection for the mutation only; the count SELECT above stays on the app
+    // user (SELECT is granted). Opened, one statement, closed - never pooled, never held.
+    try (Connection admin =
+            DriverManager.getConnection(clickhouseUrl, cleanupAdminUser, cleanupAdminPassword);
+        Statement stmt = admin.createStatement()) {
+      stmt.execute(CLEANUP_SQL);
+    } catch (SQLException e) {
+      throw new DriftInjectionException(
+          "cleanup mutation failed as CH user '" + cleanupAdminUser + "': " + rootMessage(e), e);
+    }
     log.warn(
         "DRIFT INJECTION CLEANUP: issued DELETE for {} drill-tagged prediction_log row(s) (async"
             + " mutation; settles in seconds). drift_metrics drill rows are excluded separately via"

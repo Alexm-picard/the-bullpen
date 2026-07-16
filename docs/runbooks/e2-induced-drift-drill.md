@@ -1,6 +1,6 @@
 # Runbook - E-2 induced-drift drill (controlled injection)
 
-**Owner:** alex · **Last reviewed:** 2026-07-15 · **Phase:** 6 (drift postmortem) · **Decision:** [175]
+**Owner:** alex · **Last reviewed:** 2026-07-16 · **Phase:** 6 (drift postmortem) · **Decision:** [175]
 
 > **Scope:** deliberately inject a known distribution shift into the live
 > `prediction_log`, let the real 2 AM drift chain detect + alert on it, verify,
@@ -38,6 +38,12 @@ served `battedball_outcome` champion has no live truth-join, and the All-Star
 break has no live pitch traffic to join against. So the over-confident-output /
 ECE leg of the original `DriftInductionDrillIT` design is **not reproducible on
 the live battedball path** and is deliberately out of scope for this drill.
+
+It also does **NOT** exercise the automated retrain leg (E-2 postmortem GAP 2,
+2026-07-16): `DriftTrigger` (4 AM ET) keys **exclusively** on 7-day sustained
+`CALIBRATION_ERROR` and never on feature PSI, so for this drill's lane **the
+NOTICE is the terminal signal** - no retrain is enqueued, by design. The retrain
+control plane itself is proven separately (BOX HAND-OFF #1, decision [178]).
 
 If a full feature-PSI-**and**-calibration induction is wanted later, it needs a
 pitch-family variant run during live games (post-season follow-up, tracked
@@ -79,13 +85,26 @@ signal and is sufficient for the [175] postmortem.
 
 Set the env in `/etc/default/bullpen` (the shared EnvironmentFile both units
 read). `BULLPEN_DRIFT_INJECT_ENABLED` only affects the api (the injector bean),
-the tag must reach both, and the notice-days knob is worker-consumed:
+the tag must reach both, the notice-days knob is worker-consumed, and the
+cleanup admin creds are api-consumed:
 
 ```
 BULLPEN_DRIFT_TAG=induced-drill-2026-07
 BULLPEN_DRIFT_INJECT_ENABLED=true
 BULLPEN_DRIFT_ALERT_FEATURE_PSI_NOTICE_DAYS=1
+BULLPEN_DRIFT_CLEANUP_ADMIN_USER=default
+BULLPEN_DRIFT_CLEANUP_ADMIN_PASSWORD=<the CH admin password>
 ```
+
+> **Why cleanup needs the admin identity (E-2 postmortem GAP 1).** The app's
+> least-privilege `bullpen` CH user deliberately carries NO mutation grants
+> ([171], `infra/clickhouse/users.d/bullpen.xml.example`), so the cleanup
+> endpoint's `ALTER TABLE ... DELETE` gets Code 497 ACCESS_DENIED as that user
+> (this is the grants file working as designed - the 2026-07-16 drill hit it).
+> The service therefore runs that one mutation over a separate one-shot
+> connection as the CH admin identity (`default`), armed via these two vars for
+> the drill window only. If they are unarmed, the cleanup endpoint refuses with
+> a 400 naming them rather than 500ing.
 
 ```bash
 sudo systemctl restart bullpen-api bullpen-worker
@@ -94,12 +113,13 @@ sudo systemctl restart bullpen-api bullpen-worker
 > **Why the notice-days knob is mandatory for a one-night drill.**
 > `DriftAlertEvaluator` requires the feature PSI to sustain over threshold for
 > `bullpen.drift.alert.feature-psi-notice-days` CONSECUTIVE calendar days
-> (default 7) before it fires the NOTICE (and the `DriftTrigger` retrain enqueue
-> behind it). A single injected night is exactly ONE over-threshold day, so at
-> the default 7 the NOTICE would NOT fire until seven nights of sustained drift.
-> Setting it to 1 (worker unit) fires the full detect -> NOTICE -> trigger chain
-> in the very next 3 AM cycle. The alternative is a genuine 7-night run at the
-> default. Prod behavior is unchanged when this is unset.
+> (default 7) before it fires the NOTICE. A single injected night is exactly ONE
+> over-threshold day, so at the default 7 the NOTICE would NOT fire until seven
+> nights of sustained drift. Setting it to 1 (worker unit) fires the detect ->
+> NOTICE chain in the very next 3 AM cycle. The alternative is a genuine
+> 7-night run at the default. Prod behavior is unchanged when this is unset.
+> (The NOTICE is the terminal leg for this lane - no retrain enqueue; see "What
+> this drill can and cannot induce".)
 
 `BULLPEN_DRIFT_TAG` is the [175] choke point: every drift job's output is now
 tagged `induced-drill-2026-07` at `DriftMetricsRepository`, so the induced
@@ -111,9 +131,10 @@ tag after the drill is caught). Confirm the tag is live on both:
 sudo systemctl show -p Environment bullpen-api bullpen-worker | grep -o 'BULLPEN_DRIFT_TAG=[^ ]*'
 ```
 
-**Keep the tag armed on both units until step 6 (cleanup) completes** - not just
-until detection. Any 2 AM job that runs over still-present `drill:` rows while
-the tag is disarmed would mis-tag them as organic.
+**Keep the tag armed on both units until step 5 (cleanup) confirms zero drill
+rows; step 6 is where you disarm** - not just until detection. Any 2 AM job that
+runs over still-present `drill:` rows while the tag is disarmed would mis-tag
+them as organic.
 
 ### 2. Inject
 
@@ -158,7 +179,9 @@ Two worker jobs run in sequence:
    writes the tagged `PSI_FEATURE` row into `drift_metrics`.
 2. **`DriftAlertEvaluator` at 3:00 AM ET** reads that row and, IF the feature has
    sustained over threshold for `feature-psi-notice-days` consecutive days, fires
-   the Discord NOTICE and enqueues the `DriftTrigger` retrain.
+   the Discord NOTICE and records the `alert_history` row. That NOTICE is the
+   drill's terminal signal: `DriftTrigger` (4 AM ET) is calibration-driven and
+   does not key on feature PSI (GAP 2).
 
 With `BULLPEN_DRIFT_ALERT_FEATURE_PSI_NOTICE_DAYS=1` set in step 1, the single
 injected night satisfies the sustain window, so the NOTICE fires on the first
@@ -202,10 +225,13 @@ curl -sS -u admin:<pw> -X DELETE https://thebullpen.net/v1/admin/drift/synthetic
 ```
 
 The DELETE issues an async ClickHouse mutation
-(`ALTER TABLE prediction_log DELETE WHERE correlation_id LIKE 'drill:%'`) and
-returns the matched count. It is tightly scoped - only `drill:`-prefixed rows can
-ever match, so the blast radius is bounded to the injected rows. It settles in
-seconds on a small window. Confirm:
+(`ALTER TABLE prediction_log DELETE WHERE correlation_id LIKE 'drill:%'`) over
+the separate admin-identity connection armed in step 1 (GAP 1: the app user has
+no ALTER DELETE by design). A 400 naming `BULLPEN_DRIFT_CLEANUP_ADMIN_USER`
+means those creds are not armed; a failure naming Code 497 means the supplied
+identity is not actually a CH admin. It is tightly scoped - only
+`drill:`-prefixed rows can ever match, so the blast radius is bounded to the
+injected rows. It settles in seconds on a small window. Confirm:
 
 ```bash
 docker compose -f infra/docker-compose.yml exec clickhouse clickhouse-client -q \
@@ -218,14 +244,15 @@ them separately only if you want a clean metrics table.
 
 ### 6. Disarm both units + restart
 
-Only after cleanup confirms zero drill rows: remove all three lines from
+Only after cleanup confirms zero drill rows: remove all five drill lines from
 `/etc/default/bullpen` (or set them empty) and restart both units so the injector
-bean disappears, organic rows go back to untagged, and the notice window returns
-to the prod 7-day default:
+bean disappears, organic rows go back to untagged, the notice window returns to
+the prod 7-day default, and the admin CH creds leave the app env:
 
 ```bash
 # /etc/default/bullpen: delete BULLPEN_DRIFT_TAG + BULLPEN_DRIFT_INJECT_ENABLED
 #                       + BULLPEN_DRIFT_ALERT_FEATURE_PSI_NOTICE_DAYS
+#                       + BULLPEN_DRIFT_CLEANUP_ADMIN_USER + BULLPEN_DRIFT_CLEANUP_ADMIN_PASSWORD
 sudo systemctl restart bullpen-api bullpen-worker
 ```
 
@@ -240,6 +267,10 @@ With the induced NOTICE captured and triaged, write
 (feature, sigma, N, window), the detection latency (inject -> NOTICE), the triage
 walk-through, and - honestly and prominently - that the drift was **synthetic
 and induced**, feature-PSI only, per [175]. Cross-link ADR-0013 and this runbook.
+
+Executed instance: `docs/postmortems/2026-07-16_induced-drift-drill.md` (the
+2026-07-15/16 drill; its GAP 1 and GAP 2 findings produced the cleanup-admin-cred
+step and the terminal-NOTICE corrections in this runbook).
 
 ---
 

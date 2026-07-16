@@ -33,7 +33,7 @@ import org.springframework.stereotype.Component;
  * <ul>
  *   <li>{@link AlertSeverity#PAGE}: champion {@link MetricType#CALIBRATION_ERROR} (segment="all")
  *       sustained &gt; {@code calibrationPageThreshold} (default 0.10) for 3+ consecutive days. The
- *       leaf body says "1.5× training calibration sustained 3 days" — we fall back to an absolute
+ *       leaf body says "1.5x training calibration sustained 3 days" - we fall back to an absolute
  *       threshold per leaf "Known edge cases" because {@code training_calibration} is not yet
  *       emitted into {@code metadata.json}.
  *   <li>{@link AlertSeverity#NOTICE}: any {@link MetricType#PSI_FEATURE} value &gt; {@code
@@ -85,8 +85,10 @@ public class DriftAlertEvaluator {
           double featurePsiNoticeThreshold,
       // Consecutive-days sustain window for the feature-PSI NOTICE. Default 7 = current prod
       // semantics, unchanged. The E-2 live drill sets this to 1 (BULLPEN_DRIFT_ALERT_FEATURE_PSI
-      // _NOTICE_DAYS=1 on the worker) so a single night of injected drift fires the full
-      // detect -> NOTICE -> DriftTrigger chain in one 3 AM cycle instead of waiting 7 days.
+      // _NOTICE_DAYS=1 on the worker) so a single night of injected drift fires the feature-PSI
+      // NOTICE in one 3 AM cycle instead of waiting 7 days. The NOTICE is the TERMINAL leg for
+      // this lane: DriftTrigger keys exclusively on 7-day sustained CALIBRATION_ERROR and never
+      // on feature PSI (E-2 postmortem GAP 2, 2026-07-16).
       @Value("${bullpen.drift.alert.feature-psi-notice-days:7}") int featurePsiNoticeDays) {
     this.registryRepo = registryRepo;
     this.driftRepo = driftRepo;
@@ -191,10 +193,10 @@ public class DriftAlertEvaluator {
     // Group recent PSI_FEATURE rows by feature_or_segment then check sustained-over-threshold.
     List<DriftMetric> recent =
         driftRepo.findRecent(champ.modelName(), MetricType.PSI_FEATURE, "", noticeLookback);
-    // The repository's findRecent filters by exact featureOrSegment value — querying "" matches
+    // The repository's findRecent filters by exact featureOrSegment value - querying "" matches
     // only rows that intentionally use empty segment, which would NEVER match PSI_FEATURE rows
     // (those carry the feature name). For per-feature evaluation we need a different lookup;
-    // we use findAllForModel + filter in memory. At the volumes 3c.2 writes (~30 features × 7
+    // we use findAllForModel + filter in memory. At the volumes 3c.2 writes (~30 features x 7
     // days = 210 rows per model per week), the in-memory filter is fine.
     List<DriftMetric> psiRows =
         driftRepo.findAllForModel(champ.modelName()).stream()

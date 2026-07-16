@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Random;
 import java.util.UUID;
 import javax.sql.DataSource;
+import net.thebullpen.baseball.config.ClickHouseProperties;
 import net.thebullpen.baseball.data.JobLockRepository;
 import net.thebullpen.baseball.drift.DriftInjectionService.InjectionResult;
 import net.thebullpen.baseball.drift.jobs.PsiFeatureJob;
@@ -108,7 +109,23 @@ class DriftInjectionServiceIT {
 
     DriftInjectionService injector =
         new DriftInjectionService(
-            registry, trainingLoader, predictionLogWriter, clickhouseDs, "induced-drill-it");
+            registry,
+            trainingLoader,
+            predictionLogWriter,
+            clickhouseDs,
+            new ClickHouseProperties(
+                CH.getJdbcUrl(),
+                CH.getUsername(),
+                CH.getPassword(),
+                30_000,
+                10_000,
+                new ClickHouseProperties.Pool(8, 3_000, 2_000, 1_800_000)),
+            "induced-drill-it",
+            // Cleanup admin creds (GAP 1): the mutation runs over a SEPARATE one-shot connection
+            // as the CH admin identity - here the container's user, which is admin; on the box it
+            // is `default`, never the least-priv app user (no ALTER DELETE by design, [171]).
+            CH.getUsername(),
+            CH.getPassword());
 
     // --- inject ---
     InjectionResult result = injector.induce("battedball_outcome", 3000, 1.0, 20, "launchSpeedMph");

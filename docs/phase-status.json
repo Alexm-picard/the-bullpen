@@ -480,8 +480,8 @@
         },
         {
           "label": "Mid-season drift postmortem WRITTEN (the centerpiece artifact)",
-          "done": false,
-          "details": "Protected by rule 4 (no-cut). Decision [169] (2026-07-02) sets a dated fallback tripwire: if no natural drift alert has fired AND been confirmed real by EOD 2026-08-15 ET (checked against the alert_history table), run the controlled induced-drift path off-window the week of 2026-08-17..2026-08-23 on the proven 2026-05-30 drill machinery and commit a draft postmortem, honestly labeled synthetic, by 2026-08-31. FLOOR not ceiling: a natural drift event confirmed later supersedes the induced write-up, which then reclassifies as a drill report."
+          "done": true,
+          "details": "DONE (synthetic, honestly labeled) - docs/postmortems/2026-07-16_induced-drift-drill.md: the [175] PRIMARY-path induced drill ran on the LIVE PSI pipeline 2026-07-15/16 (All-Star break), a month ahead of [169]'s 2026-08-15 tripwire. Injector #276 + notice-days knob #277 + tagging #275; real PsiFeatureJob detection row + real DriftAlertEvaluator NOTICE (alert_history + Discord) on prod tables; tagged drift_metrics rows retained as evidence, synthetic prediction_log rows cleaned up. Feature-PSI lane only (battedball has no live calibration truth-join; DriftTrigger is calibration-driven, so the NOTICE is terminal - the retrain control plane is separately proven by [178]/C-31, the companion postmortem). Two real defects found + fixed: GAP 1 (cleanup ALTER DELETE 497'd under the [171] least-priv user; now a one-shot CH-admin connection) and GAP 2 (docs implied a retrain leg). [169]'s natural-supersedes clause STANDS: a confirmed real in-season event gets its own write-up and this one reclassifies as a drill report."
         },
         {
           "label": "Nightly k6 load test gating on SLA (p99 prediction latency < 50ms, error rate < 0.1%)",

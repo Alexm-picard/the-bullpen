@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import javax.sql.DataSource;
+import net.thebullpen.baseball.config.ClickHouseProperties;
 import net.thebullpen.baseball.drift.DriftInjectionService.DriftInjectionException;
 import net.thebullpen.baseball.drift.DriftInjectionService.InjectionResult;
 import net.thebullpen.baseball.drift.algorithms.Psi;
@@ -96,10 +97,30 @@ class DriftInjectionServiceTest {
         now);
   }
 
+  /** A syntactically valid CH properties record; nothing in the unit tests ever connects to it. */
+  private static ClickHouseProperties chProps() {
+    return new ClickHouseProperties(
+        "jdbc:ch:http://localhost:8123/default",
+        "default",
+        "",
+        30_000,
+        10_000,
+        new ClickHouseProperties.Pool(8, 3_000, 2_000, 1_800_000));
+  }
+
   private DriftInjectionService service(
       RegistryRepository registry, PredictionLogWriter writer, String tag) {
+    // Cleanup admin creds deliberately blank: the unit tests exercise induce() + the cleanup
+    // refusal guard; the real admin-connection mutation path is covered by the docker IT.
     return new DriftInjectionService(
-        registry, new TrainingDistributionLoader(), writer, mock(DataSource.class), tag);
+        registry,
+        new TrainingDistributionLoader(),
+        writer,
+        mock(DataSource.class),
+        chProps(),
+        tag,
+        "",
+        "");
   }
 
   @Test
@@ -219,6 +240,19 @@ class DriftInjectionServiceTest {
             () -> svc.induce(MODEL, 100, 1.0, 20, "stand")) // categorical, not continuous
         .isInstanceOf(DriftInjectionException.class)
         .hasMessageContaining("not a continuous baseline feature");
+  }
+
+  @Test
+  void refuses_cleanup_when_the_admin_credentials_are_not_armed() {
+    // GAP 1 (E-2 postmortem, 2026-07-16): the app's least-priv CH user has no ALTER DELETE, so
+    // cleanup needs the admin identity over a separate connection. With the admin creds unarmed
+    // the endpoint must refuse loudly (400 naming the env vars) instead of 500ing on Code 497.
+    DriftInjectionService svc =
+        service(mock(RegistryRepository.class), mock(PredictionLogWriter.class), "tag");
+
+    assertThatThrownBy(svc::cleanup)
+        .isInstanceOf(DriftInjectionException.class)
+        .hasMessageContaining("BULLPEN_DRIFT_CLEANUP_ADMIN_USER");
   }
 
   @Test
