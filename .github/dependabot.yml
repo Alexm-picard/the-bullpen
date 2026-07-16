@@ -59,3 +59,30 @@ updates:
       day: monday
     commit-message:
       prefix: "ci(deps)"
+
+  # Backend container image (eclipse-temurin base in backend/Dockerfile).
+  - package-ecosystem: docker
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "chore(deps)"
+
+  # The infra stack's pinned images (Prometheus / Grafana / Alertmanager /
+  # node-exporter / GlitchTip / Postgres / Redis). Every bump here is a BOX ops
+  # event (the stack restarts on the next compose up), so each arrives as its
+  # own reviewable PR rather than a hand refresh. ClickHouse is EXCLUDED: the
+  # 24.12 pin is deliberate - the Testcontainers ITs pin the same tag for
+  # prod-parity, and the [179] 6g memory-cap tuning is version-specific; a CH
+  # bump is a /decide + drill-adjacent ceremony, not a dependency PR.
+  - package-ecosystem: docker-compose
+    directory: /infra
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: "clickhouse/clickhouse-server"
+    commit-message:
+      prefix: "chore(deps)"
