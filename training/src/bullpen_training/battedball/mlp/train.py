@@ -339,8 +339,18 @@ def write_metadata(
     outcome_names: list[str] | None = None,
     train_summary: TrainSummary | None = None,
     scaler: FeatureScaler | None = None,
+    feature_distributions: dict | None = None,
 ) -> None:
-    """Persist a JSON metadata sidecar mirroring the registry contract."""
+    """Persist a JSON metadata sidecar mirroring the registry contract.
+
+    ``feature_distributions`` (E-1 part 2, native emission): the drift feature baseline the Java
+    ``TrainingDistributionLoader`` consumes, computed from the TRAIN slice via
+    ``registry_client.distributions.battedball_feature_block_from_matrix``. Passing it here means
+    every produced bundle is PSI-ready at registration instead of needing the backfill CLI
+    (``scripts/backfill_training_distributions.py``, which remains the ceremony path for
+    ``training_prediction_distribution`` - that block needs per-row park identity + a full
+    served-inference pass this trainer does not have). Additive key; rule-7 hash unaffected.
+    """
     payload: dict[str, object] = {
         "schema_version": 1,
         "model_name": "battedball_outcome",
@@ -361,6 +371,8 @@ def write_metadata(
     }
     if scaler is not None:
         payload["feature_scaler"] = scaler.to_dict()
+    if feature_distributions is not None:
+        payload["feature_distributions"] = feature_distributions
     if train_summary is not None:
         payload["train_summary"] = {
             "n_train": train_summary.n_train,
@@ -373,6 +385,20 @@ def write_metadata(
         }
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(payload, indent=2))
+
+
+def _train_feature_distributions(train_feat: np.ndarray) -> dict:
+    """E-1 part 2: the drift feature baseline from the raw (unscaled) TRAIN matrix.
+
+    Lazy import: defers the pandas-side reconstruction cost (shared with the backfill CLI via
+    ``registry_client.distributions``) to the one place that needs it - importing this trainer
+    module stays cheap.
+    """
+    from bullpen_training.registry_client.distributions import (
+        battedball_feature_block_from_matrix,
+    )
+
+    return battedball_feature_block_from_matrix(train_feat, list(FEATURE_NAMES))
 
 
 # --- main -----------------------------------------------------------------
@@ -470,6 +496,10 @@ def main() -> None:
         park_order=list(park_order),
         train_summary=summary,
         scaler=scaler,
+        # E-1 part 2: native drift-baseline emission from the (unscaled) TRAIN matrix, so the
+        # bundle is PSI-ready at registration. Lazy import keeps the pandas-side reconstruction
+        # out of this torch module's import path.
+        feature_distributions=_train_feature_distributions(train_feat),
     )
     print("== summary ==")
     print(f"  device:           {summary.device}")
