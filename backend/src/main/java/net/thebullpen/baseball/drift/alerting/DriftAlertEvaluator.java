@@ -1,6 +1,7 @@
 package net.thebullpen.baseball.drift.alerting;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -36,7 +37,9 @@ import org.springframework.stereotype.Component;
  *       threshold per leaf "Known edge cases" because {@code training_calibration} is not yet
  *       emitted into {@code metadata.json}.
  *   <li>{@link AlertSeverity#NOTICE}: any {@link MetricType#PSI_FEATURE} value &gt; {@code
- *       featurePsiNoticeThreshold} (default 0.25) sustained 7+ consecutive days per feature.
+ *       featurePsiNoticeThreshold} (default 0.25) sustained {@code featurePsiNoticeDays}+ (default
+ *       7) consecutive days per feature. The lookback window equals that day count, so the E-2 live
+ *       drill can set it to 1 to fire on a single injected night (prod stays 7).
  * </ul>
  *
  * <p>Dedup: each alert key is suppressed for 24h after fire (Discord-spam prevention).
@@ -53,7 +56,9 @@ public class DriftAlertEvaluator {
 
   private static final Duration DEDUP_WINDOW = Duration.ofHours(24);
   private static final Duration PAGE_LOOKBACK = Duration.ofDays(3);
-  private static final Duration NOTICE_LOOKBACK = Duration.ofDays(7);
+  // A NOTICE needs at least one over-threshold day; the sustain window is otherwise configurable
+  // (default 7, see featurePsiNoticeDays) so the E-2 live drill can fire on a single night.
+  private static final int MIN_NOTICE_DAYS = 1;
   // "Consecutive days" is measured in calendar days in this zone (matches the 3 AM ET schedule).
   private static final ZoneId ALERT_ZONE = ZoneId.of("America/New_York");
 
@@ -66,6 +71,7 @@ public class DriftAlertEvaluator {
   private final JobLockRepository jobLocks;
   private final double calibrationPageThreshold;
   private final double featurePsiNoticeThreshold;
+  private final int featurePsiNoticeDays;
 
   public DriftAlertEvaluator(
       RegistryRepository registryRepo,
@@ -76,7 +82,12 @@ public class DriftAlertEvaluator {
       @Value("${bullpen.drift.alert.calibration-page-threshold:0.10}")
           double calibrationPageThreshold,
       @Value("${bullpen.drift.alert.feature-psi-notice-threshold:0.25}")
-          double featurePsiNoticeThreshold) {
+          double featurePsiNoticeThreshold,
+      // Consecutive-days sustain window for the feature-PSI NOTICE. Default 7 = current prod
+      // semantics, unchanged. The E-2 live drill sets this to 1 (BULLPEN_DRIFT_ALERT_FEATURE_PSI
+      // _NOTICE_DAYS=1 on the worker) so a single night of injected drift fires the full
+      // detect -> NOTICE -> DriftTrigger chain in one 3 AM cycle instead of waiting 7 days.
+      @Value("${bullpen.drift.alert.feature-psi-notice-days:7}") int featurePsiNoticeDays) {
     this.registryRepo = registryRepo;
     this.driftRepo = driftRepo;
     this.historyRepo = historyRepo;
@@ -84,6 +95,17 @@ public class DriftAlertEvaluator {
     this.jobLocks = jobLocks;
     this.calibrationPageThreshold = calibrationPageThreshold;
     this.featurePsiNoticeThreshold = featurePsiNoticeThreshold;
+    this.featurePsiNoticeDays = featurePsiNoticeDays;
+    if (featurePsiNoticeDays < MIN_NOTICE_DAYS) {
+      // A typo'd env (e.g. 0 or negative) is coerced up to the most drift-sensitive setting
+      // (fire on a single day). Make that visible rather than silently arming it in prod.
+      log.warn(
+          "bullpen.drift.alert.feature-psi-notice-days={} is below the {}-day floor; coercing to"
+              + " {} (fires on a single over-threshold day). Set it to 7 for prod semantics.",
+          featurePsiNoticeDays,
+          MIN_NOTICE_DAYS,
+          MIN_NOTICE_DAYS);
+    }
   }
 
   @Scheduled(cron = "0 0 3 * * *", zone = "America/New_York")
@@ -159,9 +181,16 @@ public class DriftAlertEvaluator {
 
   private int evaluateFeaturePsi(ModelVersion champ) {
     int fired = 0;
+    // Sustain window (days) and lookback are the SAME window by construction: the gate below
+    // requires EVERY day in the window to be over threshold, so a lookback wider than the required
+    // days would pull in organic below-threshold days and block an otherwise-valid NOTICE. Coupling
+    // them means the default 7 reproduces prod exactly, and the drill's 1 narrows both together.
+    int noticeDays = Math.max(featurePsiNoticeDays, MIN_NOTICE_DAYS);
+    Duration noticeLookback = Duration.ofDays(noticeDays);
+    Instant cutoff = Instant.now().minus(noticeLookback);
     // Group recent PSI_FEATURE rows by feature_or_segment then check sustained-over-threshold.
     List<DriftMetric> recent =
-        driftRepo.findRecent(champ.modelName(), MetricType.PSI_FEATURE, "", NOTICE_LOOKBACK);
+        driftRepo.findRecent(champ.modelName(), MetricType.PSI_FEATURE, "", noticeLookback);
     // The repository's findRecent filters by exact featureOrSegment value — querying "" matches
     // only rows that intentionally use empty segment, which would NEVER match PSI_FEATURE rows
     // (those carry the feature name). For per-feature evaluation we need a different lookup;
@@ -170,7 +199,7 @@ public class DriftAlertEvaluator {
     List<DriftMetric> psiRows =
         driftRepo.findAllForModel(champ.modelName()).stream()
             .filter(m -> m.metricType() == MetricType.PSI_FEATURE)
-            .filter(m -> m.computedAt().isAfter(java.time.Instant.now().minus(NOTICE_LOOKBACK)))
+            .filter(m -> m.computedAt().isAfter(cutoff))
             .toList();
     if (psiRows.isEmpty()) {
       return 0;
@@ -181,10 +210,10 @@ public class DriftAlertEvaluator {
     }
     for (var entry : byFeature.entrySet()) {
       String feature = entry.getKey();
-      // Same calendar-day collapse as calibration: 7 distinct days over threshold, not 7 rows
-      // (a same-day PSI rerun must not count twice toward the 7-day sustain) (DEF-M3).
+      // Same calendar-day collapse as calibration: N distinct days over threshold, not N rows
+      // (a same-day PSI rerun must not count twice toward the sustain window) (DEF-M3).
       List<Double> daily = DriftWindows.dailyCanonical(entry.getValue(), ALERT_ZONE);
-      if (daily.size() < 7) {
+      if (daily.size() < noticeDays) {
         continue;
       }
       if (!daily.stream().allMatch(v -> v > featurePsiNoticeThreshold)) {
