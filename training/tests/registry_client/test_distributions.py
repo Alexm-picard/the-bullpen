@@ -9,6 +9,7 @@ Assert the emitted shapes match exactly what the Java ``TrainingDistributionLoad
 from __future__ import annotations
 
 import json
+from typing import cast
 
 import numpy as np
 import pandas as pd
@@ -176,7 +177,9 @@ def test_battedball_feature_block_from_matrix_is_byte_identical_to_the_frame_pat
     # production sources. Identity across that divergence proves the convergence is real (the
     # per-column float64 widening in _continuous_block + the int64 cast in _categorical_block),
     # not an artifact of feeding both paths identical dtypes.
-    frame32 = _battedball_model_frame(80)[list(FEATURE_NAMES)].astype("float32")
+    # cast: pandas' __getitem__ overload types a list-selection as DataFrame | Series; the list
+    # key always yields a DataFrame at runtime.
+    frame32 = cast(pd.DataFrame, _battedball_model_frame(80)[list(FEATURE_NAMES)]).astype("float32")
     matrix = frame32.to_numpy()
     cli_frame = frame32.copy()
     cli_frame["outs"] = cli_frame["outs"].astype("int16")  # rows_to_frame's actual outs dtype
