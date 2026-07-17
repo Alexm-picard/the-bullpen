@@ -22,20 +22,15 @@ check_contract() {
     return 1
   fi
 
-  # Recompute schema hash (over the file content WITH the schema_hash field zeroed out,
-  # to make the hash stable across self-updates).
+  # Recompute the schema hash via the canonical hasher - the single source of truth,
+  # shared with the JVM registry parity contract (FeatureSchemaHasher / CanonicalJson).
+  # It is stdlib-only, so it runs under the hook's bare python3; its algorithm is the one
+  # this hook used to inline, proven byte-identical across every contracts/feature_pipeline*.json
+  # before the dedup (hashes the content with the top-level schema_hash field zeroed out).
   local computed declared
-  computed=$(python3 - "$fp" <<'PY'
-import hashlib, json, sys, copy
-path = sys.argv[1]
-with open(path) as f:
-    data = json.load(f)
-canonical = copy.deepcopy(data)
-canonical["schema_hash"] = ""  # exclude from hash
-blob = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()
-print(hashlib.sha256(blob).hexdigest())
-PY
-  )
+  computed=$(PYTHONPATH="${REPO_ROOT}/training/src" python3 -c \
+    "import sys; from bullpen_training.registry_client.feature_hasher import compute; print(compute(sys.argv[1]))" \
+    "$fp")
   declared=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('schema_hash',''))" "$fp")
 
   if [[ "$computed" != "$declared" ]]; then
@@ -44,8 +39,10 @@ PY
     echo "  declared: $declared" >&2
     echo "  computed: $computed" >&2
     echo "" >&2
-    echo "Update the schema_hash field to the computed value:" >&2
-    echo "  python3 -c \"import json,hashlib,copy; d=json.load(open('$fp')); c=copy.deepcopy(d); c['schema_hash']=''; d['schema_hash']=hashlib.sha256(json.dumps(c,sort_keys=True,separators=(',',':')).encode()).hexdigest(); json.dump(d,open('$fp','w'),indent=2)\"" >&2
+    echo "Set the schema_hash field to the computed value above:" >&2
+    echo "  $computed" >&2
+    echo "" >&2
+    echo "  (or run: PYTHONPATH=\"${REPO_ROOT}/training/src\" python3 -c \"import json; from bullpen_training.registry_client.feature_hasher import compute; d=json.load(open('$fp')); d['schema_hash']=compute('$fp'); json.dump(d,open('$fp','w'),indent=2)\")" >&2
     echo "" >&2
     echo "Then bump pipeline_version and re-stage." >&2
     return 1

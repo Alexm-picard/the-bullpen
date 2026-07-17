@@ -16,8 +16,9 @@ Algorithm:
 
 1. Parse the JSON.
 2. Replace the top-level ``schema_hash`` field with ``""`` so the hash
-   stays stable across self-updates of that field (same trick used by
-   ``.githooks/pre-commit``).
+   stays stable across self-updates of that field. ``.githooks/pre-commit``
+   calls ``compute`` directly (stdlib-only, so it runs under the hook's bare
+   ``python3``), so this is the sole Python copy of the algorithm.
 3. Serialize via ``json.dumps(sort_keys=True, separators=(",", ":"))``.
    This produces deterministic UTF-8 bytes (``ensure_ascii=True`` is
    the default, so non-ASCII becomes ``\\uXXXX`` escapes).
