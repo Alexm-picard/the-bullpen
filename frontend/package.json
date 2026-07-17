@@ -20,7 +20,7 @@
     "@mantine/core": "^9.2.1",
     "@mantine/hooks": "^9.2.1",
     "@sentry/react": "^10.55.0",
-    "@tanstack/react-query": "^5.100.11",
+    "@tanstack/react-query": "^5.101.2",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-router-dom": "^7.15.1"
