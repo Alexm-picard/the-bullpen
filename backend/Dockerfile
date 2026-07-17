@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 # ---------- builder ----------
-FROM eclipse-temurin:21-jdk-alpine AS builder
+FROM eclipse-temurin:25-jdk-alpine AS builder
 WORKDIR /workspace
 
 # Cache Gradle wrapper + deps first
@@ -15,7 +15,7 @@ RUN ./gradlew --no-daemon bootJar -x test \
     && cp build/libs/*.jar /workspace/app.jar
 
 # ---------- runtime ----------
-FROM eclipse-temurin:21-jre-alpine AS runtime
+FROM eclipse-temurin:25-jre-alpine AS runtime
 RUN apk add --no-cache curl tini \
     && addgroup -S -g 1001 appgroup \
     && adduser  -S -G appgroup -u 1001 appuser
