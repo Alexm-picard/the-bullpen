@@ -95,7 +95,7 @@ public class SimulateController {
           elapsedNanos / 1_000L,
           MDC.get("correlation_id"));
     } catch (Exception e) {
-      metrics.incrementError(PitchInferenceService.MODEL_NAME, e.getClass().getSimpleName());
+      metrics.incrementError(PitchInferenceService.MODEL_NAME, ROLE, e.getClass().getSimpleName());
       throw e;
     }
   }
@@ -127,7 +127,7 @@ public class SimulateController {
           elapsedNanos / 1_000L,
           MDC.get("correlation_id"));
     } catch (Exception e) {
-      metrics.incrementError(PitchInferenceService.MODEL_NAME, e.getClass().getSimpleName());
+      metrics.incrementError(PitchInferenceService.MODEL_NAME, ROLE, e.getClass().getSimpleName());
       throw e;
     }
   }

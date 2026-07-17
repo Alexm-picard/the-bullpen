@@ -130,6 +130,9 @@ public class PredictionOrchestrator {
     String modelName = family.modelName();
     Timer.Sample sample = metrics.startTimer();
     Instant requestAt = Instant.now();
+    // Serving role for the error counter: stays "unknown" until routing resolves it, so an error
+    // before then (e.g. a non-503 routing failure) is attributed honestly rather than mislabeled.
+    String role = "unknown";
 
     try {
       RoutedPrediction<R> routed =
@@ -151,8 +154,11 @@ public class PredictionOrchestrator {
                 }
               });
 
+      // Set the moment routing resolves, so an error after this point carries the real serving role
+      // while anything before it stays "unknown" (an honest pre-routing bucket).
+      role = routed.servingRole().name().toLowerCase(Locale.ROOT);
       long elapsedNanos = sample.stop(metrics.timer(modelName));
-      metrics.incrementPrediction(modelName, routed.servingRole().name().toLowerCase(Locale.ROOT));
+      metrics.incrementPrediction(modelName, role);
       float elapsedMs = elapsedNanos / 1_000_000.0f;
 
       Identity identity =
@@ -218,7 +224,7 @@ public class PredictionOrchestrator {
     } catch (ResponseStatusException e) {
       throw e; // 503 (no champion) / client errors are routing outcomes, not inference errors
     } catch (Exception e) {
-      metrics.incrementError(modelName, e.getClass().getSimpleName());
+      metrics.incrementError(modelName, role, e.getClass().getSimpleName());
       throw e;
     }
   }
