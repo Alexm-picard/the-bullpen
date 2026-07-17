@@ -15,7 +15,7 @@ import org.springframework.stereotype.Component;
  * <ul>
  *   <li>{@code thebullpen_inference_prediction_latency_seconds{model_name}} — histogram
  *   <li>{@code thebullpen_inference_prediction_total{model_name,role}} — counter
- *   <li>{@code thebullpen_inference_prediction_errors_total{model_name,error_class}} — counter
+ *   <li>{@code thebullpen_inference_prediction_errors_total{model_name,role,error_class}} — counter
  * </ul>
  *
  * <p>One timer/counter per (model_name[, label]) combo is cached so we don't allocate per request.
@@ -149,13 +149,20 @@ public class InferenceMetrics {
         .increment();
   }
 
-  public void incrementError(String modelName, String errorClass) {
+  /**
+   * Count an inference-path error, dimensioned by the serving {@code role} (mirroring {@link
+   * #incrementPrediction}) so a per-role error RATE is computable - a champion erroring is
+   * page-worthy, a shadow/simulator erroring is not. {@code role} is {@code "unknown"} when the
+   * error fired before routing resolved a serving role (e.g. a non-503 routing failure).
+   */
+  public void incrementError(String modelName, String role, String errorClass) {
     errors
         .computeIfAbsent(
-            modelName + "|" + errorClass,
+            modelName + "|" + role + "|" + errorClass,
             key ->
                 Counter.builder(ERROR_METRIC)
                     .tag("model_name", modelName)
+                    .tag("role", role)
                     .tag("error_class", errorClass)
                     .register(registry))
         .increment();

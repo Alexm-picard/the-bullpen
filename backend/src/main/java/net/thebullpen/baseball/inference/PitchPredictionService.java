@@ -91,6 +91,9 @@ public class PitchPredictionService {
     Timer.Sample sample = metrics.startTimer();
     Instant requestAt = Instant.now();
     long gameId = ThreadLocalRandom.current().nextLong();
+    // Serving role for the error counter: stays "unknown" until routing resolves it, so an error
+    // before then (e.g. a non-503 routing failure) is attributed honestly rather than mislabeled.
+    String role = "unknown";
 
     try {
       RoutedPrediction<Map<String, Double>> routed =
@@ -100,8 +103,11 @@ public class PitchPredictionService {
               versionId -> predict(head, versionId, req),
               () -> legacyFallback(head, req));
 
+      // Set the moment routing resolves, so an error after this point carries the real serving role
+      // while anything before it stays "unknown" (an honest pre-routing bucket).
+      role = routed.servingRole().name().toLowerCase(Locale.ROOT);
       long elapsedNanos = sample.stop(metrics.timer(modelName));
-      metrics.incrementPrediction(modelName, routed.servingRole().name().toLowerCase(Locale.ROOT));
+      metrics.incrementPrediction(modelName, role);
       float elapsedMs = elapsedNanos / 1_000_000.0f;
 
       Map<String, Double> probs = routed.servingResponse();
@@ -181,7 +187,7 @@ public class PitchPredictionService {
     } catch (ResponseStatusException e) {
       throw e; // 503 (no champion) / client errors pass through untouched
     } catch (Exception e) {
-      metrics.incrementError(modelName, e.getClass().getSimpleName());
+      metrics.incrementError(modelName, role, e.getClass().getSimpleName());
       throw e;
     }
   }
