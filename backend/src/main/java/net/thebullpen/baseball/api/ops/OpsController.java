@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Map;
 import net.thebullpen.baseball.api.dto.LatencyStat;
 import net.thebullpen.baseball.api.dto.ModelAccuracyScorecard;
-import net.thebullpen.baseball.api.dto.OpsEvent;
+import net.thebullpen.baseball.api.dto.OpsEventsPage;
 import net.thebullpen.baseball.data.OpsEventsRepository;
 import net.thebullpen.baseball.data.PredictionLogRepository;
 import net.thebullpen.baseball.drift.DriftMetricsRepository;
@@ -19,11 +19,13 @@ import net.thebullpen.baseball.retraining.RetrainingQueueService;
 import net.thebullpen.baseball.retraining.dto.RetrainingTrigger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * Public Ops dashboard read API (leaves 4e.2 + 4e.3 + 4e.4). Single controller because each
@@ -55,6 +57,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/v1/ops")
 @Profile("api")
 public class OpsController {
+
+  private static final int OPS_EVENTS_MIN_SIZE = 1;
+  private static final int OPS_EVENTS_MAX_SIZE = 200;
 
   private final DriftMetricsRepository driftRepo;
   private final RoutingRepository routingRepo;
@@ -118,13 +123,26 @@ public class OpsController {
 
   /**
    * B3: most-recent ops events (registrations, promotions, deploys, drift alerts, retrain
-   * completions, restore drills) for the dashboard's Ops Log. {@code limit} defaults to 20, capped
-   * at 200 by the repository. Empty list on a fresh DB — the UI then falls back to its showcase
-   * fixtures.
+   * completions, restore drills) for the dashboard's Ops Log, newest first. Offset-paginated
+   * ({@code page} 0-based, {@code size} 1..200, defaulting to the newest 20) so a caller can page
+   * past the newest {@code size} events instead of being stuck at a hard cap; {@code hasNext} comes
+   * from a size+1 over-fetch, mirroring {@code GET /v1/games/{id}/post-predictions}. An empty page
+   * on a fresh DB is a legitimate "no events yet" state - the UI shows its own empty path, NOT the
+   * showcase fixtures (those appear only when the query fails to resolve).
    */
   @GetMapping("/events")
-  public List<OpsEvent> events(@RequestParam(name = "limit", defaultValue = "20") int limit) {
-    return opsEvents.findRecent(limit);
+  public OpsEventsPage events(
+      @RequestParam(name = "page", defaultValue = "0") int page,
+      @RequestParam(name = "size", defaultValue = "20") int size) {
+    if (page < 0) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "page must be >= 0");
+    }
+    if (size < OPS_EVENTS_MIN_SIZE || size > OPS_EVENTS_MAX_SIZE) {
+      throw new ResponseStatusException(
+          HttpStatus.BAD_REQUEST,
+          "size must be between " + OPS_EVENTS_MIN_SIZE + " and " + OPS_EVENTS_MAX_SIZE);
+    }
+    return opsEvents.findRecentPage(page, size);
   }
 
   /**

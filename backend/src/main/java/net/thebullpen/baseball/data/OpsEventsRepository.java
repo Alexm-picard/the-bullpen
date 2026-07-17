@@ -4,6 +4,7 @@ import java.sql.ResultSet;
 import java.util.List;
 import net.thebullpen.baseball.api.dto.OpsEvent;
 import net.thebullpen.baseball.api.dto.OpsEventType;
+import net.thebullpen.baseball.api.dto.OpsEventsPage;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -45,13 +46,28 @@ public class OpsEventsRepository {
     jdbc.update("INSERT INTO ops_events (type, detail) VALUES (?, ?)", type.name(), trimmed);
   }
 
-  /** Most-recent {@code limit} events, newest first. */
+  private static final String SELECT_RECENT =
+      "SELECT id, occurred_at, type, detail FROM ops_events ORDER BY occurred_at DESC, id DESC"
+          + " LIMIT ? OFFSET ?";
+
+  /** Most-recent {@code limit} events, newest first (convenience over {@link #findRecentPage}). */
   public List<OpsEvent> findRecent(int limit) {
     int capped = Math.max(1, Math.min(limit, 200));
-    return jdbc.query(
-        "SELECT id, occurred_at, type, detail FROM ops_events ORDER BY occurred_at DESC, id DESC"
-            + " LIMIT ?",
-        MAPPER,
-        capped);
+    return findRecentPage(0, capped).rows();
+  }
+
+  /**
+   * A newest-first page of events. Over-fetches one row ({@code LIMIT size + 1}) to decide {@code
+   * hasNext} without a count query, then trims the overflow row - the same offset-pagination idiom
+   * as {@link LivePitchesRepository#findPostPredictions}. {@code page}/{@code size} bounds are
+   * validated at the controller.
+   */
+  public OpsEventsPage findRecentPage(int page, int size) {
+    int limit = size + 1;
+    long offset = (long) page * size;
+    List<OpsEvent> rows = jdbc.query(SELECT_RECENT, MAPPER, limit, offset);
+    boolean hasNext = rows.size() > size;
+    List<OpsEvent> pageRows = hasNext ? List.copyOf(rows.subList(0, size)) : rows;
+    return new OpsEventsPage(pageRows, page, size, hasNext);
   }
 }
