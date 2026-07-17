@@ -37,21 +37,21 @@ import {
   useOpsEvents,
   useRetrainQueue,
   useRouting,
-} from "../api/ops";
+} from "../../api/ops";
 import {
   toDriftRows,
   toFleetRows,
   toLatencyRows,
   toRetrainEntries,
-} from "../api/ops-mappers";
-import { LowerThird } from "../components/broadcast/lower-third";
-import { DriftSnapshotGrid } from "../components/ops/drift-snapshot-grid";
-import { InfraRibbon } from "../components/ops/infra-ribbon";
-import { LatencyDetailTable } from "../components/ops/latency-detail-table";
-import { ModelFleetTable } from "../components/ops/model-fleet-table";
-import { OpsHeader } from "../components/ops/ops-header";
-import { OpsLogTable } from "../components/ops/ops-log-table";
-import { RetrainQueueList } from "../components/ops/retrain-queue-list";
+} from "../../api/ops-mappers";
+import { LowerThird } from "../../components/broadcast/lower-third";
+import { DriftSnapshotGrid } from "../../components/ops/drift-snapshot-grid";
+import { InfraRibbon } from "../../components/ops/infra-ribbon";
+import { LatencyDetailTable } from "../../components/ops/latency-detail-table";
+import { ModelFleetTable } from "../../components/ops/model-fleet-table";
+import { OpsHeader } from "../../components/ops/ops-header";
+import { OpsLogTable } from "../../components/ops/ops-log-table";
+import { RetrainQueueList } from "../../components/ops/retrain-queue-list";
 import {
   ECE_BY_OUTPUT,
   INFRA_SERVICES,
@@ -61,12 +61,15 @@ import {
   OPS_META,
   PSI_BY_FEATURE,
   RETRAIN_QUEUE,
-} from "../data/ops-fixtures";
-import type { DriftFeatureRow, DriftOutputRow } from "../data/ops-fixtures";
-import { BroadcastFooter, PageChrome } from "../components/shared/page-chrome";
-import { colors, typography } from "../design/broadcast";
+} from "../../data/ops-fixtures";
+import type { DriftFeatureRow, DriftOutputRow } from "../../data/ops-fixtures";
+import {
+  BroadcastFooter,
+  PageChrome,
+} from "../../components/shared/page-chrome";
+import { colors, typography } from "../../design/broadcast";
 
-import "./ops/ops.css";
+import "./ops.css";
 
 const ET_TIME = new Intl.DateTimeFormat("en-US", {
   hour: "numeric",
