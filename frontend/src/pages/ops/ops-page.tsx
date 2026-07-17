@@ -154,7 +154,7 @@ export default function OpsPage() {
   // "no events yet" state (the table has its own empty path), never the fixture.
   const opsLogIsLive = opsEvents.data !== undefined;
   const opsLog = opsLogIsLive
-    ? opsEvents.data.map(opsEventToLogEntry)
+    ? opsEvents.data.rows.map(opsEventToLogEntry)
     : OPS_LOG;
 
   // Drift snapshot: live values overlaid on the watched-surface skeleton.

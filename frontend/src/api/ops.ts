@@ -236,13 +236,21 @@ export type OpsEvent = {
   detail: string;
 };
 
-export const fetchOpsEvents = (limit = 20) =>
-  get<OpsEvent[]>(`/v1/ops/events?limit=${limit}`);
+/** A page of {@link OpsEvent} from `GET /v1/ops/events` (offset pagination, newest first). */
+export type OpsEventsPage = {
+  rows: OpsEvent[];
+  page: number;
+  size: number;
+  hasNext: boolean;
+};
 
-export function useOpsEvents(limit = 20) {
-  return useQuery<OpsEvent[], OpsApiError>({
-    queryKey: ["ops", "events", limit],
-    queryFn: () => fetchOpsEvents(limit),
+export const fetchOpsEvents = (page = 0, size = 20) =>
+  get<OpsEventsPage>(`/v1/ops/events?page=${page}&size=${size}`);
+
+export function useOpsEvents(page = 0, size = 20) {
+  return useQuery<OpsEventsPage, OpsApiError>({
+    queryKey: ["ops", "events", page, size],
+    queryFn: () => fetchOpsEvents(page, size),
     staleTime: 30_000,
     refetchInterval: 30_000,
   });
