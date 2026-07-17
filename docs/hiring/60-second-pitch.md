@@ -80,7 +80,7 @@ Read aloud. Time yourself. Target: 50–60 seconds, no pauses to think.
 
 **What's in the postmortem?**
 
-> Pull up the template in `ops/runbooks/drift-postmortem-template.md`
+> Pull up the template in `docs/runbooks/drift-postmortem-template.md`
 > — timeline, dashboards, drift metrics that fired, hypotheses-tested,
 > 5-Whys root cause, what changed in the system. Real SRE format, not
 > blog format.

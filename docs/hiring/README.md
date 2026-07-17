@@ -10,7 +10,7 @@ hiring audience. Different work, separate time block.
 | README (interview opener)   | shipped  | [`README.md`](../../README.md) — rewritten in Phase 5.6                                        |
 | /about page (methodology)   | shipped  | live at https://thebullpen.net/about (Phase 4f)                                                |
 | Ops dashboard (recruiter)   | shipped  | live at https://thebullpen.net/ops (Phase 4e)                                                  |
-| Drift postmortem (template) | shipped  | [`ops/runbooks/drift-postmortem-template.md`](../../ops/runbooks/drift-postmortem-template.md) |
+| Drift postmortem (template) | shipped  | [`docs/runbooks/drift-postmortem-template.md`](../runbooks/drift-postmortem-template.md) |
 | Drift postmortem (real)     | gated    | first real one lands mid-season under `docs/postmortems/`                                      |
 | Hardening sweep             | gated    | [`docs/hardening/`](../hardening/) — first sweep mid- or end-of-season                         |
 | Lessons-learned             | skeleton | [`lessons-learned.md`](lessons-learned.md) — fills during operation                            |

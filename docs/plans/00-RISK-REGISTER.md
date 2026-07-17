@@ -148,7 +148,7 @@ HTTP basic credential, ClickHouse password, Discord webhook URL, Cloudflare toke
 
 - **Owning phase**: Phase 0.3.
 - **Status**: 🔵 open.
-- **Resolution proposal**: systemd `EnvironmentFile=/etc/thebullpen/secrets.env` (root:root, mode 0600). Documented in [`00-DEPLOYMENT-STRATEGY.md`](00-DEPLOYMENT-STRATEGY.md). Never in git. Rotation runbook in `ops/runbooks/secret-rotation.md`.
+- **Resolution proposal**: systemd `EnvironmentFile=/etc/thebullpen/secrets.env` (root:root, mode 0600). Documented in [`00-DEPLOYMENT-STRATEGY.md`](00-DEPLOYMENT-STRATEGY.md). Never in git. Rotation runbook in `docs/runbooks/secret-rotation.md`.
 
 ### I5 🟢 Testing framework choices
 
