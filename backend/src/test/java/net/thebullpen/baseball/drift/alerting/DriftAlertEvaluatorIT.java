@@ -84,6 +84,12 @@ class DriftAlertEvaluatorIT {
 
   /** Build an evaluator with a specific feature-PSI notice sustain window (the E-2 drill knob). */
   private DriftAlertEvaluator evaluatorWithNoticeDays(int noticeDays) {
+    // Min-sample 300 = the prod default; the metric() helper stamps sampleSize=1000, so the
+    // pre-existing tests exercise the over-the-floor path unchanged.
+    return evaluatorWith(noticeDays, 300L);
+  }
+
+  private DriftAlertEvaluator evaluatorWith(int noticeDays, long minSample) {
     return new DriftAlertEvaluator(
         registryRepo,
         driftRepo,
@@ -92,7 +98,8 @@ class DriftAlertEvaluatorIT {
         mock(JobLockRepository.class),
         0.10,
         0.25,
-        noticeDays);
+        noticeDays,
+        minSample);
   }
 
   // --- PAGE: calibration ------------------------------------------------
@@ -398,6 +405,116 @@ class DriftAlertEvaluatorIT {
     // evaluator (from setUp) uses the default 7-day window.
     assertThat(evaluator.runOnce()).isEqualTo(0);
     verify(discord, never()).send(any(), any(), any());
+  }
+
+  @Test
+  void feature_psi_rows_below_the_min_sample_floor_cannot_fire_even_at_days_1() {
+    // The 2026-07-16 first-organic-triage scenario, reproduced: n=27 break-window rows read PSI
+    // 1.62 with ZERO real drift (the (B-1)/n noise floor alone is 0.33 at that n). With the
+    // days=1 drill knob armed AND the value far over threshold, the min-sample gate (default 300)
+    // must still suppress the NOTICE - a tiny-window PSI measures the sample size, not drift.
+    ModelVersion champ = champion("pitch_outcome_post", 1L);
+    when(registryRepo.findActiveChampions()).thenReturn(List.of(champ));
+    when(driftRepo.findRecent(
+            eq("pitch_outcome_post"),
+            eq(MetricType.CALIBRATION_ERROR),
+            eq("all"),
+            any(Duration.class)))
+        .thenReturn(List.of());
+    Instant now = Instant.now();
+    when(driftRepo.findAllForModel("pitch_outcome_post"))
+        .thenReturn(
+            List.of(
+                new DriftMetric(
+                    now,
+                    "pitch_outcome_post",
+                    1L,
+                    MetricType.PSI_FEATURE,
+                    "pfxZIn",
+                    1.62,
+                    27L, // the real triage sample size - far below the 300 floor
+                    now.minus(24, ChronoUnit.HOURS),
+                    now)));
+
+    assertThat(evaluatorWithNoticeDays(1).runOnce()).isEqualTo(0);
+    verify(discord, never()).send(any(), any(), any());
+  }
+
+  @Test
+  void min_sample_boundary_is_inclusive_at_exactly_the_floor() {
+    // Pins the >= operator (easy to regress to >): a row at EXACTLY the floor counts; one below
+    // does not. Two features on the same model, one at 300 and one at 299, days=1.
+    ModelVersion champ = champion("battedball_outcome", 1L);
+    when(registryRepo.findActiveChampions()).thenReturn(List.of(champ));
+    when(driftRepo.findRecent(
+            eq("battedball_outcome"),
+            eq(MetricType.CALIBRATION_ERROR),
+            eq("all"),
+            any(Duration.class)))
+        .thenReturn(List.of());
+    Instant now = Instant.now();
+    when(driftRepo.findAllForModel("battedball_outcome"))
+        .thenReturn(
+            List.of(
+                new DriftMetric(
+                    now,
+                    "battedball_outcome",
+                    1L,
+                    MetricType.PSI_FEATURE,
+                    "launchSpeedMph",
+                    0.90,
+                    300L, // exactly at the floor: counts
+                    now.minus(24, ChronoUnit.HOURS),
+                    now),
+                new DriftMetric(
+                    now,
+                    "battedball_outcome",
+                    1L,
+                    MetricType.PSI_FEATURE,
+                    "launchAngleDeg",
+                    0.90,
+                    299L, // one below: gated out
+                    now.minus(24, ChronoUnit.HOURS),
+                    now)));
+
+    int fired = evaluatorWith(1, 300L).runOnce();
+
+    assertThat(fired).as("only the at-floor feature fires").isEqualTo(1);
+    verify(discord)
+        .send(
+            eq(DiscordNotifier.Severity.NOTICE),
+            eq("NOTICE: battedball_outcome feature drift on launchSpeedMph"),
+            any());
+  }
+
+  @Test
+  void min_sample_zero_disables_the_gate() {
+    // 0 is the deliberate off-switch (e.g. a drill on a miniature window): the same n=27 row
+    // fires when the gate is disabled and days=1 is armed.
+    ModelVersion champ = champion("pitch_outcome_post", 1L);
+    when(registryRepo.findActiveChampions()).thenReturn(List.of(champ));
+    when(driftRepo.findRecent(
+            eq("pitch_outcome_post"),
+            eq(MetricType.CALIBRATION_ERROR),
+            eq("all"),
+            any(Duration.class)))
+        .thenReturn(List.of());
+    Instant now = Instant.now();
+    when(driftRepo.findAllForModel("pitch_outcome_post"))
+        .thenReturn(
+            List.of(
+                new DriftMetric(
+                    now,
+                    "pitch_outcome_post",
+                    1L,
+                    MetricType.PSI_FEATURE,
+                    "pfxZIn",
+                    1.62,
+                    27L,
+                    now.minus(24, ChronoUnit.HOURS),
+                    now)));
+
+    assertThat(evaluatorWith(1, 0L).runOnce()).isEqualTo(1);
   }
 
   @Test

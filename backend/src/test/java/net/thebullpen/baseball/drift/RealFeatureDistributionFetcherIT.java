@@ -242,7 +242,8 @@ class RealFeatureDistributionFetcherIT {
             mock(JobLockRepository.class),
             0.10,
             0.25,
-            7); // feature-PSI notice sustain window: prod default (7 days)
+            7, // feature-PSI notice sustain window: prod default (7 days)
+            0L); // min-sample gate OFF: this IT's observed windows are 8-row miniatures
     int fired = evaluator.runOnce();
 
     assertThat(fired).as("feature-drift NOTICE fired from job-written rows").isGreaterThan(0);

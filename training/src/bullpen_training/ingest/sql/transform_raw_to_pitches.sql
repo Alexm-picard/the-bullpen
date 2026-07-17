@@ -53,6 +53,15 @@ SELECT
     -- 2b.1 — Tier 4 (post-pitch) movement / spin / release position. NULL for
     -- rows ingested before V008 added these columns to raw_statcast (i.e. the
     -- 2015-2023 partitions); LightGBM handles the NULLs natively.
+    --
+    -- UNITS TRAP (first-organic triage, 2026-07-16): the _in suffix is a
+    -- MISNOMER for the movement/release columns - these are straight
+    -- pass-throughs of Statcast's pfx_x/pfx_z/release_pos_*, which are FEET.
+    -- Everything downstream is consistent (the model trained on feet, the E-1
+    -- baseline encodes feet, the live GumboKinematics derivation feeds feet),
+    -- so do NOT "fix" this with a x12 - a rescale/rename would churn the
+    -- served contract for zero numeric effect. The suffix lies; the values
+    -- do not. (V009/V010 carry the same misnomer and are checksum-frozen.)
     pfx_x                                      AS pfx_x_in,
     pfx_z                                      AS pfx_z_in,
     release_spin_rate                          AS spin_rate_rpm,
