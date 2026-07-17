@@ -15,7 +15,7 @@ import {
   installMantineShims,
   renderWithProviders,
   stubFetchRoutes,
-} from "../test-support/behavioral";
+} from "../../test-support/behavioral";
 
 import OpsPage from "./ops-page";
 
