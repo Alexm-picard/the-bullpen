@@ -161,6 +161,45 @@
           "refId": "C"
         }
       ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Simulate latency (p50 / p95 / p99, fleet)",
+      "description": "Forward-simulator (/v1/simulate/*) wall time - ~12 per-state ONNX calls plus a Markov/MC solve, so it is deliberately NOT a served single-prediction latency and lives on its own metric (F1.6, thebullpen_inference_simulate_latency_seconds). Wider band than the served p99, no 50ms SLO.",
+      "id": 9,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 20
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum(rate(thebullpen_inference_simulate_latency_seconds_bucket{job=~\"thebullpen.*\"}[5m])) by (le, model_name))",
+          "legendFormat": "{{model_name}} p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(thebullpen_inference_simulate_latency_seconds_bucket{job=~\"thebullpen.*\"}[5m])) by (le, model_name))",
+          "legendFormat": "{{model_name}} p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(thebullpen_inference_simulate_latency_seconds_bucket{job=~\"thebullpen.*\"}[5m])) by (le, model_name))",
+          "legendFormat": "{{model_name}} p99",
+          "refId": "C"
+        }
+      ]
     }
   ]
 }
