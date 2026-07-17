@@ -67,6 +67,14 @@ bullpen:
     # Required in prod (sourced from secrets.env / systemd EnvironmentFile);
     # tests override via @DynamicPropertySource. Decision [29], leaf 3a.4.
     basicauth: ${THEBULLPEN_ADMIN_BASIC_AUTH:}
+  metrics:
+    # OPTIONAL metrics-only HTTP-Basic credential for the Prometheus scrape of
+    # /actuator/prometheus, in the form "user:password". When set it gets the
+    # METRICS role (scrape endpoint ONLY - never /actuator/env|heapdump|... or
+    # /v1/admin), so a leaked scrape secret cannot reach the write/JVM surface.
+    # When UNSET the scrape falls back to the ADMIN credential (current behavior),
+    # so this is safe to ship before the box provisions the split secret.
+    basicauth: ${THEBULLPEN_METRICS_BASIC_AUTH:}
 
   # ADR-0007: S3-compatible client. Prod = Cloudflare R2; offline dev = MinIO on
   # localhost:9000; tests = a Testcontainers MinIO with @DynamicPropertySource.

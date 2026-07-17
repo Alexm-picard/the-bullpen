@@ -1,5 +1,7 @@
 package net.thebullpen.baseball.config;
 
+import java.util.ArrayList;
+import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -7,6 +9,7 @@ import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
@@ -24,12 +27,16 @@ import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWrite
  *   <li>{@code /actuator/health/**} + {@code /actuator/info} — public. These are the probes
  *       Cloudflare / Uptime Robot hit; health uses {@code show-details: when-authorized} so no
  *       internals leak to an anonymous caller.
- *   <li>{@code /actuator/**} (everything else: {@code prometheus}, {@code metrics}, …) — HTTP
- *       Basic, role {@code ADMIN} (M5). These leak queue depths, per-model prediction counts, and
- *       JVM internals, so they must not be reachable unauthenticated from a public-fronted host.
- *       Prometheus scrapes {@code /actuator/prometheus} with basic auth (see {@code
- *       infra/prometheus/prometheus.yml}); a Cloudflare edge deny on {@code /actuator/*} is the
- *       defense-in-depth layer (see {@code infra/cloudflared/config.yml.example}).
+ *   <li>{@code /actuator/prometheus} - HTTP Basic, role {@code METRICS} or {@code ADMIN} (F3). The
+ *       ONE actuator endpoint Prometheus scrapes; giving it a metrics-only role means a leaked
+ *       scrape secret cannot reach the write / JVM surface below. Prometheus reads it via basic
+ *       auth (see {@code infra/prometheus/prometheus.yml}); when {@code bullpen.metrics.basicauth}
+ *       is unset the scrape falls back to the ADMIN credential ({@code mk-metrics-secrets.sh}).
+ *   <li>{@code /actuator/**} (everything else: {@code metrics}, {@code env}, {@code loggers}, …) —
+ *       HTTP Basic, role {@code ADMIN} (M5). These leak queue depths, per-model prediction counts,
+ *       and JVM internals, so they must not be reachable unauthenticated from a public-fronted
+ *       host. A Cloudflare edge deny on {@code /actuator/*} is the defense-in-depth layer (see
+ *       {@code infra/cloudflared/config.yml.example}).
  *   <li>everything else — public. Prediction APIs (decision [56] portfolio framing: no per-user
  *       auth), the public Ops read view at {@code /v1/ops/**}, and the static frontend assets.
  * </ul>
@@ -70,9 +77,14 @@ public class SecurityConfig {
             authz ->
                 authz
                     // Order matters (first match wins): keep the public liveness/readiness probes
-                    // open, then gate every other actuator endpoint, then the admin write surface.
+                    // open, allow the Prometheus scrape endpoint for the METRICS role (or ADMIN),
+                    // then gate every OTHER actuator endpoint (env, heapdump, loggers, metrics,
+                    // ...)
+                    // to ADMIN, then the admin write surface.
                     .requestMatchers("/actuator/health/**", "/actuator/info")
                     .permitAll()
+                    .requestMatchers("/actuator/prometheus")
+                    .hasAnyRole("METRICS", "ADMIN")
                     .requestMatchers("/actuator/**")
                     .hasRole("ADMIN")
                     .requestMatchers("/v1/admin/**")
@@ -113,20 +125,45 @@ public class SecurityConfig {
   }
 
   @Bean
-  public UserDetailsService adminUser(@Value("${bullpen.admin.basicauth:}") String creds) {
+  public UserDetailsService userDetailsService(
+      @Value("${bullpen.admin.basicauth:}") String adminCreds,
+      @Value("${bullpen.metrics.basicauth:}") String metricsCreds) {
+    List<UserDetails> users = new ArrayList<>();
+    users.add(
+        basicUser("bullpen.admin.basicauth", "THEBULLPEN_ADMIN_BASIC_AUTH", adminCreds, "ADMIN"));
+    // Optional metrics-only identity: present -> Prometheus can scrape /actuator/prometheus without
+    // the ADMIN credential; absent -> the scrape keeps using ADMIN (mk-metrics-secrets.sh falls
+    // back), so this is safe to ship before the box provisions THEBULLPEN_METRICS_BASIC_AUTH.
+    if (metricsCreds != null && !metricsCreds.isBlank()) {
+      users.add(
+          basicUser(
+              "bullpen.metrics.basicauth",
+              "THEBULLPEN_METRICS_BASIC_AUTH",
+              metricsCreds,
+              "METRICS"));
+    }
+    return new InMemoryUserDetailsManager(users);
+  }
+
+  /**
+   * Parse a {@code "user:password"} credential into a {@code {noop}}-plaintext {@link UserDetails}
+   * with the given role. Split on the FIRST colon only, so a password may itself contain colons.
+   * Fails loud (rather than accepting an empty password) if the value is blank or malformed.
+   */
+  private static UserDetails basicUser(String prop, String envVar, String creds, String role) {
     if (creds == null || creds.isBlank()) {
       throw new IllegalStateException(
-          "bullpen.admin.basicauth is unset — set THEBULLPEN_ADMIN_BASIC_AUTH=<user>:<password>"
-              + " in the runtime environment (or override @DynamicPropertySource in tests)");
+          prop
+              + " is unset - set "
+              + envVar
+              + "=<user>:<password> in the runtime environment (or override @DynamicPropertySource"
+              + " in tests)");
     }
     String[] parts = creds.split(":", 2);
     if (parts.length != 2 || parts[0].isBlank() || parts[1].isBlank()) {
       throw new IllegalStateException(
-          "bullpen.admin.basicauth must be in the form 'user:password' — got "
-              + parts.length
-              + " parts");
+          prop + " must be in the form 'user:password' - got " + parts.length + " parts");
     }
-    return new InMemoryUserDetailsManager(
-        User.withUsername(parts[0]).password("{noop}" + parts[1]).roles("ADMIN").build());
+    return User.withUsername(parts[0]).password("{noop}" + parts[1]).roles(role).build();
   }
 }
