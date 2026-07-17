@@ -118,7 +118,7 @@ Risk Register I4.
   - `B2_ACCOUNT_ID`, `B2_APPLICATION_KEY`
   - `BETTER_STACK_HEARTBEAT_URL`, `HEALTHCHECKS_IO_PING_URL`
   - `OPEN_METEO_API_KEY` (if rate-limited tier needed)
-- **Rotation runbook**: `ops/runbooks/secret-rotation.md`. Steps: generate new value → update `secrets.env` → `systemctl restart` services → verify with curl probe.
+- **Rotation runbook**: `docs/runbooks/secret-rotation.md`. Steps: generate new value → update `secrets.env` → `systemctl restart` services → verify with curl probe.
 - **Never in git.** Never in environment dumps. Never in log lines (Logback filters defined in `00-OBSERVABILITY-STRATEGY.md`).
 
 ---
@@ -147,8 +147,8 @@ Risk Register I4.
 ## Operational rules (verbatim)
 
 1. **No deploys during live games.** Decision [21]. Evenings April–October ET. Enforced by `scripts/check-no-live-games.sh` reading the day's MLB schedule.
-2. **Reboot drill required before season.** Decision [15]. `sudo reboot` and verify all health checks green. Documented in `ops/runbooks/reboot-drill.md`.
-3. **Restore drill required before season.** Decision [14]. Pull latest R2 backup → restore to a fresh ClickHouse → run `SELECT count(*) FROM pitches` and verify count matches expected. Documented in `ops/runbooks/restore-drill.md`.
+2. **Reboot drill required before season.** Decision [15]. `sudo reboot` and verify all health checks green. Documented in `docs/runbooks/reboot-drill.md`.
+3. **Restore drill required before season.** Decision [14]. Pull latest R2 backup → restore to a fresh ClickHouse → run `SELECT count(*) FROM pitches` and verify count matches expected. Documented in `docs/runbooks/restore-drill.md`.
 
 ---
 

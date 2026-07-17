@@ -15,7 +15,7 @@
 > push is the off-machine copy that makes Layer 1 durable.
 >
 > **References:** `infra/backup/README.md` (backup architecture, both layers),
-> `infra/backup/clickhouse-snapshot.sh`, `ops/scripts/restore-drill.sh`,
+> `infra/backup/clickhouse-snapshot.sh`, `infra/backup/restore-drill.sh`,
 > `docs/drills/2026-05-23_restore.md` (last drill - PASS, local-only),
 > ADR-0007 (S3-compatible storage abstraction), decisions [13] [14] [128].
 
@@ -108,12 +108,12 @@ rclone lsd bullpen-r2:bullpen-prod --config ~/.config/rclone/rclone.conf
 ### A4 - Verify the restore-from-R2 path (extend restore-drill.sh)
 
 The 2026-05-23 drill explicitly noted "R2 round-trip not proven" as a follow-up.
-Once A2/A3 are done, extend `ops/scripts/restore-drill.sh` with a `--from-r2`
+Once A2/A3 are done, extend `infra/backup/restore-drill.sh` with a `--from-r2`
 mode on the Mac, deploy, and run:
 
 ```bash
 # On the box (after the --from-r2 mode is merged and deployed)
-bash ops/scripts/restore-drill.sh --from-r2
+bash infra/backup/restore-drill.sh --from-r2
 # Should: rclone copy the latest snapshot from R2, then run the local restore loop
 ```
 
@@ -150,7 +150,7 @@ docker ps --format '{{.Names}}\t{{.Status}}' | grep bullpen-clickhouse
 
 ```bash
 cd ~/code/the-bullpen
-bash ops/scripts/restore-drill.sh
+bash infra/backup/restore-drill.sh
 ```
 
 Expected output (last block):
@@ -220,7 +220,7 @@ After a PASS, write the drill report to `docs/drills/` and update
 
 ```bash
 # On the box: capture the output and bring it back to the Mac for commit (ADR-0006)
-bash ops/scripts/restore-drill.sh 2>&1 | tee /tmp/restore-drill-$(date +%Y-%m-%d).log
+bash infra/backup/restore-drill.sh 2>&1 | tee /tmp/restore-drill-$(date +%Y-%m-%d).log
 # scp the log to Mac, then commit to docs/drills/<date>_restore.md
 ```
 

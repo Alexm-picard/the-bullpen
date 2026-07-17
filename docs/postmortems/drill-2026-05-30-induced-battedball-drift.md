@@ -144,4 +144,4 @@ out. Better to find that now than mid-incident.
   `drift/alerting/DriftAlertEvaluatorIT.java`
 - Related decisions: `[64]` (synthetic drift tests), `[78]` (alert thresholds),
   `[82]` (operate-for-a-postmortem), rule 6 (human-gated promotion)
-- Template: `ops/runbooks/drift-postmortem-template.md`
+- Template: `docs/runbooks/drift-postmortem-template.md`

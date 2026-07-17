@@ -32,21 +32,29 @@ jobs:
           set -euo pipefail
           echo "ci-gate: aggregating checks for $HEAD_SHA"
 
-          # Retry wrapper: a transient GitHub API blip (502/503) must NOT red the gate. A bare
-          # `gh api` under `set -e` did exactly that on 2026-07-07 (run 28832926418). Retry a few
-          # times with linear backoff before giving up.
-          gh_api() {
-            local attempt out
-            for attempt in 1 2 3 4 5; do
-              if out=$(gh api "$@" 2>/tmp/gh_api_err); then printf '%s' "$out"; return 0; fi
-              echo "ci-gate: gh api attempt ${attempt}/5 failed: $(cat /tmp/gh_api_err)" >&2
-              sleep $(( attempt * 3 ))
-            done
-            echo "::error::ci-gate: gh api failed after 5 attempts: $*" >&2
-            return 1
-          }
+          deadline=$(( $(date +%s) + 1800 ))   # 30-minute ceiling (shared: loops AND gh_api)
 
-          deadline=$(( $(date +%s) + 1800 ))   # 30-minute ceiling
+          # Retry wrapper: a transient GitHub API blip must NOT red the gate. Two incidents shaped
+          # this: a bare `gh api` under `set -e` redded the gate on 2026-07-07 (run 28832926418),
+          # and the 5-attempt/45s linear budget that replaced it redded THREE runs on 2026-07-16
+          # (29541456257, 29541699973 + its rerun) during a sustained Actions-API degradation that
+          # returned HTML error pages ("invalid character '<'" from --jq) for well over 45s - while
+          # the gate's own deadline had ~28 minutes left. An API call has no business giving up
+          # before the gate itself would: retry with capped exponential backoff (5s..60s) until the
+          # SHARED 30-minute deadline; only a failure that outlives the deadline is fatal.
+          gh_api() {
+            local backoff=5 out
+            while true; do
+              if out=$(gh api "$@" 2>/tmp/gh_api_err); then printf '%s' "$out"; return 0; fi
+              if [ "$(date +%s)" -ge "$deadline" ]; then
+                echo "::error::ci-gate: gh api still failing at the 30m deadline: $* -> $(head -c 300 /tmp/gh_api_err)" >&2
+                return 1
+              fi
+              echo "ci-gate: gh api failed (retrying in ${backoff}s): $(head -c 200 /tmp/gh_api_err)" >&2
+              sleep "$backoff"
+              backoff=$(( backoff * 2 )); [ "$backoff" -gt 60 ] && backoff=60
+            done
+          }
 
           # Phase 1 - reconcile against the workflow RUNS actually TRIGGERED for this SHA (the
           # authoritative expected set), instead of a blind sleep that could poll BEFORE the

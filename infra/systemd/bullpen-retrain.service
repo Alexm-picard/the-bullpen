@@ -17,7 +17,9 @@ Group=bullpen
 #      there so the ExecStart below resolves - the box previously had no uv at that path).
 #   2. The training PROJECT present at WorkingDirectory below. deploy.sh stages only app.jar
 #      to /opt/bullpen, NOT training/, so /opt/bullpen/training must be provisioned separately
-#      (checkout / clone / a deploy step) for `uv run` to find pyproject.toml + src.
+#      (a clone at /opt/bullpen/repo) for `uv run` to find pyproject.toml + src. Once
+#      provisioned, deploy.sh step 3b REFRESHES that clone on every deploy (git pull --ff-only
+#      + uv sync as bullpen), so the timer never runs training code staler than the last deploy.
 # Re-arm after both: sudo systemctl enable --now bullpen-retrain.timer
 WorkingDirectory=/opt/bullpen/training
 

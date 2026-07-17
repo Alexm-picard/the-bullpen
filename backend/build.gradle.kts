@@ -3,7 +3,7 @@ import net.ltgt.gradle.errorprone.errorprone
 plugins {
     java
     jacoco
-    id("org.springframework.boot") version "3.5.4"
+    id("org.springframework.boot") version "3.5.16"
     id("io.spring.dependency-management") version "1.1.7"
     id("com.diffplug.spotless") version "7.0.2"
     id("com.github.spotbugs") version "6.0.27"
@@ -25,6 +25,27 @@ java {
 
 repositories {
     mavenCentral()
+}
+
+// F3 supply-chain pinning: every resolvable configuration locks to the committed
+// gradle.lockfile, so a dependency (direct or transitive) can only change through an
+// explicit, reviewable `--write-locks` diff - never silently via a floating version.
+// Regenerate after an intentional bump: ./gradlew resolveAndLockAll --write-locks
+dependencyLocking {
+    lockAllConfigurations()
+}
+
+// The Gradle-docs idiom for (re)writing the lockfile across ALL resolvable
+// configurations in one pass (the `dependencies` task alone does not touch
+// plugin-created configs like spotbugs/errorprone/jmh).
+tasks.register("resolveAndLockAll") {
+    notCompatibleWithConfigurationCache("Filters configurations at execution time")
+    doFirst {
+        require(gradle.startParameter.isWriteDependencyLocks) { "Run with --write-locks" }
+    }
+    doLast {
+        configurations.filter { it.isCanBeResolved }.forEach { it.resolve() }
+    }
 }
 
 dependencies {
@@ -62,7 +83,7 @@ dependencies {
     implementation("org.ejml:ejml-simple:0.43.1")
     implementation("com.clickhouse:clickhouse-jdbc:0.7.2")
     implementation("com.clickhouse:clickhouse-http-client:0.7.2")
-    implementation("org.apache.httpcomponents.client5:httpclient5:5.4.1")
+    implementation("org.apache.httpcomponents.client5:httpclient5:5.4.3")
 
     // springdoc: auto-generate the OpenAPI 3 spec from the @RestController surface,
     // served at /v3/api-docs (+ Swagger UI at /swagger-ui.html). The spec is the
