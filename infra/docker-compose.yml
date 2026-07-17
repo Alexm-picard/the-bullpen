@@ -16,11 +16,16 @@ services:
     restart: unless-stopped
     logging: *bullpen-logging
     ports:
-      - "8123:8123"   # HTTP
-      - "9000:9000"   # native
+      # All published ports bind to 127.0.0.1 (loopback) only - never 0.0.0.0. The bare-metal app
+      # reaches ClickHouse via jdbc:ch:http://localhost:8123 (same host), the Cloudflare Tunnel
+      # connects from the same host, and container-to-container scraping uses the compose network
+      # (not these host ports), so loopback binding breaks nothing while removing LAN exposure of
+      # the analytics DB / dashboards / metrics. See ADR-0006 (single-host) + the Tunnel-only ingress.
+      - "127.0.0.1:8123:8123"   # HTTP
+      - "127.0.0.1:9000:9000"   # native
       # M1 task 6: ClickHouse's native Prometheus endpoint (config.d/prometheus.xml mount below)
       # so ClickHouseDown can fire - the api survives a dead CH, so ApiDown never covers this.
-      - "9363:9363"   # prometheus /metrics
+      - "127.0.0.1:9363:9363"   # prometheus /metrics
     environment:
       CLICKHOUSE_USER: "${CLICKHOUSE_USER:-default}"
       # Fail-closed: the container refuses to start without the rotated secret (no known default).
@@ -61,7 +66,7 @@ services:
     logging: *bullpen-logging
     restart: unless-stopped
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     # On native dockerd (the WSL2 box), host.docker.internal does not resolve by default
     # (Docker Desktop magic only) - map it to the docker gateway so the api/worker JVM
     # scrape targets in prometheus.yml reach the host. No-op on Docker Desktop (Mac dev).
@@ -94,7 +99,7 @@ services:
     logging: *bullpen-logging
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER:-admin}"
       # Fail-closed like ClickHouse above: no admin/admin default on the dashboard that owns
@@ -137,7 +142,7 @@ services:
       - "/:/host:ro,rslave"
       - "/var/lib/node_exporter:/var/lib/node_exporter:ro"
     ports:
-      - "9100:9100"
+      - "127.0.0.1:9100:9100"
     deploy:
       resources:
         limits:
@@ -160,7 +165,7 @@ services:
     profiles: ["monitoring"]
     restart: unless-stopped
     ports:
-      - "9093:9093"
+      - "127.0.0.1:9093:9093"
     volumes:
       - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - ./alertmanager/secrets:/etc/alertmanager/secrets:ro
@@ -234,7 +239,7 @@ services:
     profiles: ["errortracking"]
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment: &glitchtip-env
       DATABASE_URL: "postgres://${GLITCHTIP_DB_USER:-postgres}:${GLITCHTIP_DB_PASSWORD:-postgres}@glitchtip-postgres:5432/glitchtip"
       REDIS_URL: redis://glitchtip-redis:6379/0

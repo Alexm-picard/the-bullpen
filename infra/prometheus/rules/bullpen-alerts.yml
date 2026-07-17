@@ -62,6 +62,23 @@ groups:
           summary: "ClickHouse/registry snapshot is stale (> 26h)"
           description: "No successful snapshot in over 26h (last success {{ $value | humanizeDuration }} ago). The daily 03:00 timer has missed a cycle - backups are not current. Check `systemctl status bullpen-snapshot.timer` and the last clickhouse-snapshot.sh run."
 
+      # Layer-2 (air-gapped USB) freshness. usb-backup.sh writes
+      # bullpen_usb_backup_last_success_timestamp_seconds to the node_exporter textfile collector on
+      # success. Unlike the daily Layer-1 snapshot this backup is MANUAL (recommended weekly during
+      # build, daily during season - see infra/backup/README.md), so it has no SLA: warning severity
+      # + a generous 9-day threshold means a normal weekly cadence with slack never false-fires, but a
+      # silently-lapsed or forgotten backup (the failure mode a manual dead-man exists to catch)
+      # surfaces before it is a month gone. Before the first-ever USB backup the metric is absent and
+      # the rule stays quiet by design (matches SnapshotStale - no absent() check, to avoid noise).
+      - alert: UsbBackupStale
+        expr: time() - bullpen_usb_backup_last_success_timestamp_seconds > 9 * 24 * 3600
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Air-gapped USB (Layer-2) backup is stale (> 9d)"
+          description: "No successful USB backup in over 9 days (last success {{ $value | humanizeDuration }} ago). Layer-2 is the hardware-contingency copy and is run by hand - plug in BULLPEN_BAK and run infra/backup/usb-backup.sh. Layer-1 snapshots + offsite R2 are unaffected; this is the air-gapped copy only."
+
       # --- M1 task 6 additions ------------------------------------------------
 
       # Disk: the WSL2 virtual disk filling is a slow-motion outage (ClickHouse parts, docker
