@@ -29,7 +29,7 @@ import { colors, typography } from "./design/broadcast";
  */
 const AboutPage = lazy(() => import("./pages/about-page"));
 const ParksPage = lazy(() => import("./pages/parks-page"));
-const OpsPage = lazy(() => import("./pages/ops-page"));
+const OpsPage = lazy(() => import("./pages/ops/ops-page"));
 const AccuracyPage = lazy(() => import("./pages/accuracy-page"));
 
 const PlayersPage = lazy(() => import("./pages/players-page"));
