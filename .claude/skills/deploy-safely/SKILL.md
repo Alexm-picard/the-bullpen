@@ -30,10 +30,11 @@ Print this and confirm each:
 2. **Run deploy**:
    - `./deploy.sh` (on the WSL2 host)
    - Capture stdout to a deploy log file: `./deploy.sh 2>&1 | tee docs/deploys/$(date +%Y-%m-%d-%H%M).log`
-3. **Smoke check** (in order, must all pass):
-   - `curl -fsS https://thebullpen.net/actuator/health` (via Cloudflare Tunnel)
-   - `curl -fsS https://thebullpen.net/v1/predict/pitch -X POST -H 'Content-Type: application/json' -d '{"countBalls":1,"countStrikes":2,"outs":1,"inning":5,"baseState":0,"scoreDiff":0,"dow":3,"pitcherThrows":"R","batterStand":"L","parkId":"BOS","pitcherId":1,"batterId":2}'`
+3. **Smoke check** (in order, must all pass). Two separate deploy targets: the **backend** is served at `api.thebullpen.net` (Cloudflare Tunnel -> `localhost:8080`); the **apex `thebullpen.net` is the Vercel-hosted frontend**. Hit each at its real host - `thebullpen.net/actuator/*` returns Vercel's SPA index with HTTP 200 on _any_ path (the catch-all rewrite in `frontend/vercel.json`), which would silently FALSE-PASS a backend check even with the backend down.
+   - Backend liveness (grep the body, not just the status, so a stray 200 can't pass): `curl -fsS https://api.thebullpen.net/actuator/health | grep -q '"status":"UP"'`
+   - Backend prediction - the **batted-ball champion** serves live (`/v1/predict/pitch` defaults to the PRE head, which has no champion, so it is NOT a reliable smoke): `curl -fsS -X POST https://api.thebullpen.net/v1/predict/batted-ball -H 'Content-Type: application/json' -d '{"launchSpeedMph":104.5,"launchAngleDeg":28.0,"releaseSpeedMph":92.0,"parkId":"COL","stand":"R"}' | grep -q '"probHr"'`
    - Confirm last prediction logged in ClickHouse: `SELECT count() FROM prediction_log WHERE request_at > now() - INTERVAL 1 MINUTE`
+   - **Frontend (Vercel) smoke** - the frontend auto-deploys on push to `main` _separately_ from `./deploy.sh`, so a red Vercel build otherwise goes unnoticed. Confirm the apex serves the real SPA, not an error page: `curl -fsS https://thebullpen.net/ | grep -qE 'id="root"|The Bullpen'`
 4. **Post-deploy ping**:
    - Discord webhook: "Deployed <tag>. Smoke OK. Watching Grafana for 10 min."
 5. **Watch**:
