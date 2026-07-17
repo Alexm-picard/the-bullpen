@@ -87,7 +87,7 @@ from Phases 0 – 5.
 
 > Pre-season note: there is no other path to api.thebullpen.net. When
 > the tunnel flaps, the app is down regardless of host health. Worth
-> a runbook in `ops/runbooks/` documenting the symptoms + recovery
+> a runbook in `docs/runbooks/` documenting the symptoms + recovery
 > before it happens for real (already in `observations.md` as a
 > hardening candidate).
 

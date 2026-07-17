@@ -29,7 +29,7 @@ This is the CLAUDE.md rule 8 forcing function — untested backups don't count.
 ## Run
 
 ```bash
-bash ops/scripts/restore-drill.sh
+bash infra/backup/restore-drill.sh
 ```
 
 Expected runtime: 3–10 seconds. Exits 0 on PASS, 1 on FAIL.
@@ -117,7 +117,7 @@ that can't recover from a corrupted disk.
 
 ## Cross-references
 
-- Script: `ops/scripts/restore-drill.sh`
+- Script: `infra/backup/restore-drill.sh`
 - Patched snapshot script: `infra/backup/clickhouse-snapshot.sh`
 - Plan spec: `docs/plans/phase-0-foundation/0.10-backup-restore-drill.md`
 - First successful drill: `docs/drills/2026-05-23_restore.md`
