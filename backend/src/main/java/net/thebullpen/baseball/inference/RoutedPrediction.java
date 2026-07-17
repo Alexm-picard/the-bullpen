@@ -9,11 +9,20 @@ import net.thebullpen.baseball.inference.routing.Role;
  * shadow-mode dispatch ran) a FUTURE for the parallel shadow prediction the caller should log.
  *
  * <p>{@code servingVersionId} is the {@code model_versions.id} of the version that produced {@link
- * #servingResponse()} - used by the caller to construct the prediction-log row's {@code model_name
- * + model_version} fields by re-resolving against the registry, OR just stamped on the response if
- * the controller has the version string cached. The sentinel value {@code -1L} means "no routing
- * config existed; the legacy fallback served this prediction" - the caller substitutes its
- * hardcoded version string in that case.
+ * #servingResponse()}. The sentinel value {@code -1L} means EXACTLY ONE thing here: "no routing
+ * config existed; the legacy fallback closure served" - nothing more. What that implies for the
+ * LOGGED identity is a PER-CALLER policy (the M5 orchestrator's {@code Family.legacyIdentity()});
+ * enumerated because the divergence is a data contract per leg:
+ *
+ * <ul>
+ *   <li>Single-park batted-ball: the toy bean served - hardcoded {@code v0} label + NULL FK
+ *       (reconciliation depends on legacy rows being NULL; -1 is never persisted).
+ *   <li>All-parks batted-ball: the fallback served the registry LIVE champion - the caller
+ *       RE-RESOLVES the champion for a real FK (503 when none is live).
+ *   <li>Pitch HTTP ({@code PitchPredictionService}): dev-direct bean label + NULL FK.
+ *   <li>Live-ingest ({@code LivePitchPredictor}): champion re-resolved to a real FK; no champion
+ *       means no row at all.
+ * </ul>
  *
  * <p>{@code shadowFuture} is present iff a separate shadow-row log entry should be written with
  * {@link Role#SHADOW}. Since F1.4 the shadow challenger runs FIRE-AND-FORGET off the request path:
