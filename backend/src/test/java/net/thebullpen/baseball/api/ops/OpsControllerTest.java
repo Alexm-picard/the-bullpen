@@ -14,6 +14,7 @@ import net.thebullpen.baseball.api.ApiErrorAdvice;
 import net.thebullpen.baseball.api.dto.LatencyStat;
 import net.thebullpen.baseball.api.dto.OpsEvent;
 import net.thebullpen.baseball.api.dto.OpsEventType;
+import net.thebullpen.baseball.api.dto.OpsEventsPage;
 import net.thebullpen.baseball.data.OpsEventsRepository;
 import net.thebullpen.baseball.data.PredictionLogRepository;
 import net.thebullpen.baseball.drift.DriftMetricsRepository;
@@ -148,25 +149,43 @@ class OpsControllerTest {
 
   @Test
   void events_returns_recent_ops_log_newest_first() throws Exception {
-    when(opsEvents.findRecent(20))
+    when(opsEvents.findRecentPage(0, 20))
         .thenReturn(
-            List.of(
-                new OpsEvent(
-                    2L,
-                    Instant.parse("2026-05-30T19:00:00Z"),
-                    OpsEventType.PROMOTE,
-                    "pitch_outcome_pre v3.3 SHADOW → CHAMPION"),
-                new OpsEvent(
-                    1L,
-                    Instant.parse("2026-05-30T14:00:00Z"),
-                    OpsEventType.REGISTER,
-                    "batted_ball v1.5 registered as SHADOW")));
+            new OpsEventsPage(
+                List.of(
+                    new OpsEvent(
+                        2L,
+                        Instant.parse("2026-05-30T19:00:00Z"),
+                        OpsEventType.PROMOTE,
+                        "pitch_outcome_pre v3.3 SHADOW → CHAMPION"),
+                    new OpsEvent(
+                        1L,
+                        Instant.parse("2026-05-30T14:00:00Z"),
+                        OpsEventType.REGISTER,
+                        "batted_ball v1.5 registered as SHADOW")),
+                0,
+                20,
+                false));
 
     mvc.perform(get("/v1/ops/events"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$[0].type").value("PROMOTE"))
-        .andExpect(jsonPath("$[0].detail").value("pitch_outcome_pre v3.3 SHADOW → CHAMPION"))
-        .andExpect(jsonPath("$[1].type").value("REGISTER"));
+        .andExpect(jsonPath("$.page").value(0))
+        .andExpect(jsonPath("$.size").value(20))
+        .andExpect(jsonPath("$.hasNext").value(false))
+        .andExpect(jsonPath("$.rows[0].type").value("PROMOTE"))
+        .andExpect(jsonPath("$.rows[0].detail").value("pitch_outcome_pre v3.3 SHADOW → CHAMPION"))
+        .andExpect(jsonPath("$.rows[1].type").value("REGISTER"));
+  }
+
+  @Test
+  void events_rejects_a_negative_page() throws Exception {
+    mvc.perform(get("/v1/ops/events").param("page", "-1")).andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void events_rejects_a_size_outside_1_to_200() throws Exception {
+    mvc.perform(get("/v1/ops/events").param("size", "0")).andExpect(status().isBadRequest());
+    mvc.perform(get("/v1/ops/events").param("size", "201")).andExpect(status().isBadRequest());
   }
 
   @Test

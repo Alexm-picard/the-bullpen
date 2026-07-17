@@ -191,7 +191,11 @@ async function mockOps(page: Page, registry: unknown[] = []) {
   await page.route("**/v1/ops/latency*", (route) => json(route, []));
   await page.route("**/v1/ops/drift*", (route) => json(route, []));
   await page.route("**/v1/ops/retrain*", (route) => json(route, []));
-  await page.route("**/v1/ops/events*", (route) => json(route, []));
+  // /v1/ops/events is a page object ({rows, page, size, hasNext}), not a bare list - an empty page
+  // is a legitimate live "no events yet" state (the ops-log reads data.rows).
+  await page.route("**/v1/ops/events*", (route) =>
+    json(route, { rows: [], page: 0, size: 20, hasNext: false }),
+  );
   await page.route("**/v1/ops/calibration-summary", (route) => json(route, {}));
   // model-names list (used to fan out drift queries) - keep it empty so no extra calls.
   await page.route("**/v1/ops/registry", (route) => json(route, []));

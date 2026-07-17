@@ -31,7 +31,16 @@ describe("OpsPage (fixture fallback)", () => {
   it("falls back to showcase data with an honest caption when the live ops endpoints return empty", async () => {
     // One substring catch-all: every /v1/ops/* GET resolves to an empty list -> every section
     // takes its fixture fallback.
-    stubFetchRoutes([{ match: "/v1/ops", body: [] }]);
+    stubFetchRoutes([
+      // /v1/ops/events returns a page object (not a bare list); an empty page is a legitimate live
+      // "no events yet" state, so the ops-log shows its empty path while the OTHER sections fall
+      // back to fixtures on their empty lists (first-match-wins, so this precedes the catch-all).
+      {
+        match: "/v1/ops/events",
+        body: { rows: [], page: 0, size: 20, hasNext: false },
+      },
+      { match: "/v1/ops", body: [] },
+    ]);
     renderWithProviders(<OpsPage />);
 
     const fallbackCaptions = await screen.findAllByText(
