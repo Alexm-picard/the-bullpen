@@ -45,12 +45,15 @@ pending; a synthetic induced-drift drill stands in for now).
   decision [44] / rule 6), validated end-to-end by a synthetic induced-drift
   drill; the first real in-season postmortem is pending.
 - **Measured test coverage**, not a vibe: 700+ backend test methods, 600+ Python
-  tests (including the four required temporal-leakage tests, mutation-checked),
-  and 400+ frontend tests. Line/branch coverage is published every CI run and
-  gated on a regression floor (backend JaCoCo under the Docker ITs; frontend
-  vitest v8; training coverage.py) - read the current numbers from the latest run
-  rather than figures pasted here, which drift (the thresholds live in
-  `build.gradle.kts`, `vite.config.ts`, and `pyproject.toml`).
+  tests (including the four required temporal-leakage tests, checked by fault
+  injection - shuffled-target, future-contamination, calendar-date trace,
+  id-consistency), and 400+ frontend tests. Line/branch coverage is published
+  every CI run and gated on a regression floor (backend JaCoCo under the Docker
+  ITs; frontend vitest v8; training coverage.py) - read the current numbers from
+  the latest run rather than figures pasted here, which drift. The enforced floors
+  live in `backend/build.gradle.kts`, `frontend/vite.config.ts`, and the
+  `.github/workflows/training.yml` workflow (the higher `pyproject.toml` figure is
+  aspirational / warning-only, not the gate).
   Every commit also gates on lint, hex-codes, bundle-budget, a real axe-core a11y
   gate, and a Schemathesis API-contract check.
 
@@ -98,8 +101,9 @@ the self-hosted box workflow (ADR-0006), not the local quickstart.
 ## Training the models
 
 Five registry artifacts - three outcome models (pre-pitch head, post-pitch
-head, batted-ball MLP; the batted-ball head serves live, the two pitch heads
-are shadow) plus their two baselines (pitch LR, batted-ball LGBM). Training runs on the self-hosted desktop only (ADR-0006: it needs
+head, batted-ball MLP; the batted-ball head serves live, post-pitch is
+champion-stage but UI-held, pre-pitch stays shadow) plus their two baselines
+(pitch LR, batted-ball LGBM). Training runs on the self-hosted desktop only (ADR-0006: it needs
 the full 2015–2025 ClickHouse dataset and the GPU); the Mac runs a sampled
 iteration loop. **2026 is holdout-only** (rule 13).
 
@@ -136,7 +140,7 @@ check before re-litigating:
   context.
 - [Numbered decisions log](docs/decisions.md) - chronological append-only
   flat log.
-- [Phased build plan](docs/plan.md) - Phase 0 → Phase 5, soft-cut
+- [Phased build plan](docs/plan.md) - Phase 0 → Phase 6, soft-cut
   priority list, two-week review cadence.
 - [`CLAUDE.md`](CLAUDE.md) - non-negotiable discipline rules.
 - ADRs (long-form, top ~15 % of decisions): [`docs/adr/`](docs/adr/)
@@ -213,7 +217,10 @@ Underlying play-by-play data is not redistributed.**
   -0.14 ft, 93 % of fixtures within tolerance) - but that is **still-air carry
   reconstruction**, not real-weather cross-park fidelity. The cross-park HR-ordering
   sanity gate does **not** pass yet: predicted per-park HR rates correlate only
-  Spearman rho ~0.29 with the known park-factor ordering (gate target 0.80). The
+  Spearman rho ~0.29 with the observed park-factor ordering (interim gate target
+  observed-normalized rho >= 0.65 per decision [140]; and it is now a non-blocking
+  diagnostic, not a registration blocker - registration gates on per-park outcome
+  ECE instead, [141]). The
   away-park counterfactual currently uses ADR-0010's **still-air interim**
   (destination seasonal temp/density + altitude, **no wind**); the real per-date
   weather + wind backfill (`park_daily_weather`) that should lift the ordering is
@@ -262,8 +269,9 @@ at_bat_index, pitch_number)` is implemented and feeds the nightly calibration
 
 ## What's next (v1.5)
 
-- Cross-park batted-ball fidelity: get the per-park HR-ordering sanity gate
-  green (Spearman rho >= 0.80) - see `docs/cross-park-fidelity-plan.md`
+- Cross-park batted-ball fidelity: get the per-park HR-ordering diagnostic
+  green (observed-normalized Spearman rho >= 0.65, interim per decision [140]) -
+  see `docs/cross-park-fidelity-plan.md`
 - First-feed operating evidence for the live poller against the real MLB feed
   ([#1](https://github.com/Alexm-picard/the-bullpen/issues/1) ·
   [runbook](docs/runbooks/live-data-setup.md))
@@ -276,13 +284,18 @@ at_bat_index, pitch_number)` is implemented and feeds the nightly calibration
 
 - **Drift postmortems** land under
   [`docs/postmortems/`](docs/postmortems/) when a model degrades and the
-  human review writes one up. First one is a pre-season **induced-drift
-  drill** -
-  [`drill-2026-05-30-induced-battedball-drift.md`](docs/postmortems/drill-2026-05-30-induced-battedball-drift.md)
-  - that injected a 1σ feature shift + over-confidence and walked the real
-    detect → PAGE/NOTICE → human-gated retrain chain end-to-end (PSI 0.912,
-    ECE 0.188). Explicitly synthetic; proves the detector has teeth before
-    the first real in-season event.
+  human review writes one up. The flagship Phase-6 artifact is the
+  honestly-labeled synthetic **induced-drift drill** (decision [175]) -
+  [`2026-07-16_induced-drift-drill.md`](docs/postmortems/2026-07-16_induced-drift-drill.md)
+  - which injected a known shift, watched detection fire, and walked the real
+    detect → PAGE/NOTICE → human-gated response chain end-to-end. Explicitly
+    synthetic; it proves the detector has teeth before the first real in-season
+    event (a confirmed natural event supersedes it, [169]). An earlier pre-season
+    drill
+    [`drill-2026-05-30-induced-battedball-drift.md`](docs/postmortems/drill-2026-05-30-induced-battedball-drift.md)
+    (PSI 0.912, ECE 0.188) and the first-organic-PSI triage
+    [`2026-07-16_first-organic-psi-triage.md`](docs/postmortems/2026-07-16_first-organic-psi-triage.md)
+    round out the drift ledger.
 - **Restore + reboot drill reports** under
   [`docs/drills/`](docs/drills/) (rule 8).
 - **Hardening sweeps** (Phase 5.5) - running observations in
