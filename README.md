@@ -144,6 +144,10 @@ check before re-litigating:
   priority list, two-week review cadence.
 - [`CLAUDE.md`](CLAUDE.md) - non-negotiable discipline rules.
 - ADRs (long-form, top ~15 % of decisions): [`docs/adr/`](docs/adr/)
+- [API reference](docs/api/README.md) + the committed
+  [OpenAPI snapshot](docs/api/openapi.json) (38 operations; the live spec at
+  [`/v3/api-docs`](https://api.thebullpen.net/v3/api-docs) is Schemathesis-fuzzed
+  every CI run).
 
 ### Architecture
 
