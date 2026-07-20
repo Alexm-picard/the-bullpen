@@ -148,6 +148,15 @@ test("live game page renders the pitch log when the feed has pitches", async ({
       pitch(1, 2, "swinging_strike", "SL"),
     ]),
   );
+  // A6: the newest fixture pitch is strike three (at-bat over) -> the next-pitch query is GATED
+  // off. This route is a safety net so a future fixture change can never leak a real request.
+  await page.route(`**/v1/predict/pitch*`, (route) =>
+    route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: "null",
+    }),
+  );
 
   await page.goto(`/games/${GAME_ID}`);
 
@@ -158,6 +167,8 @@ test("live game page renders the pitch log when the feed has pitches", async ({
   await expect(
     page.locator('[aria-labelledby="game-pitch-log-label"]'),
   ).toBeVisible();
+  // A6: the Next-Pitch Model section renders its GATED state (strike three ended the at-bat).
+  await expect(page.getByText(/Awaiting a settled at-bat/i)).toBeVisible();
   await expect(
     page.getByText("Pitches", { exact: false }).first(),
   ).toBeVisible();

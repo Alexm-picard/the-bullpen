@@ -105,7 +105,11 @@ afterEach(() => {
 describe("GamePage (interaction)", () => {
   it("renders the live pitch board from the game + pitches queries for an in-progress game", async () => {
     // "/pitches" ordered first so the pitches URL matches it before the broader "/v1/games/" route.
+    // The fixture is a settled at-bat on a live game, so the A6 next-pitch query FIRES - stub it
+    // with the honest current-prod reality (503, PRE not yet promoted) and assert the panel shows
+    // the CLEAN not-promoted state rather than an error (ADR-0014 / rule 6).
     stubFetchRoutes([
+      { match: "/v1/predict/pitch", status: 503, body: null },
       { match: "/pitches", body: [pitch()] },
       { match: "/v1/games/", body: GAME },
     ]);
@@ -114,6 +118,10 @@ describe("GamePage (interaction)", () => {
     expect(await screen.findByText(/Live Pitch Log/i)).toBeInTheDocument();
     // The board rendered the polled pitch (its distinctive velo), not the empty waiting state.
     expect(await screen.findByText("97.3")).toBeInTheDocument();
+    // A6: the gated query fired (live + settled) and the 503 renders the clean unpromoted line.
+    expect(
+      await screen.findByTestId("next-pitch-unpromoted"),
+    ).toHaveTextContent(/not yet promoted/i);
   });
 
   it("shows the invalid-id contract message for a non-numeric id", () => {

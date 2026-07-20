@@ -48,7 +48,14 @@ public record PitchRequest(
         @Min(-30)
         @Max(30)
         Integer scoreDiff,
-    @Schema(example = "3", description = "Day of week, 0 (Sun) - 6 (Sat).") @NotNull @Min(0) @Max(6)
+    // ISO day-of-week, matching the TRAINED feature domain (ClickHouse toDayOfWeek and the live
+    // path's gameDate.getDayOfWeek().getValue() both emit 1=Mon..7=Sun). The old 0..6 bounds were
+    // never exercised (the live path bypasses @Valid in-process); A6 is the first bean-validated
+    // caller, and 0..6 would have rejected every Sunday request with a 400.
+    @Schema(example = "3", description = "ISO day of week, 1 (Mon) - 7 (Sun).")
+        @NotNull
+        @Min(1)
+        @Max(7)
         Integer dow,
     @Schema(example = "R", description = "Pitcher throwing hand: L or R.")
         @NotBlank
