@@ -43,17 +43,18 @@ describe("HomePage (broadcast)", () => {
     expect(html).toContain("Slate");
   });
 
-  it("renders the matchups board and the featured matchup", () => {
+  it("renders loading-first on a cold load - never the showcase flash (D3)", () => {
+    // A static render leaves every query in-flight: the fleet strip and the matchups board must
+    // read as LOADING, and no section may claim "showcase data (backend unreachable)" yet. The
+    // settled-empty showcase fallback (with its honest captions) is unchanged and exercised by the
+    // interaction path once queries resolve empty.
     const html = render(<HomePage />);
     expect(html).toContain("Matchups");
-    expect(html).toContain("Featured Matchup");
-  });
-
-  it("keeps the honest showcase captions on the fixture sections", () => {
-    const html = render(<HomePage />);
-    expect((html.match(/showcase data/g) ?? []).length).toBeGreaterThanOrEqual(
-      2,
-    );
+    expect(html).toContain("Model fleet · loading");
+    expect(html).toMatch(/Loading tonight.s matchups/);
+    expect(html).toContain("LOADING");
+    expect(html).not.toContain("showcase data");
+    expect(html).not.toContain("Featured Matchup"); // no fixture flash mid-load
   });
 
   it("renders the chrome footer", () => {
