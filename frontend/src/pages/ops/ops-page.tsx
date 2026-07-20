@@ -134,6 +134,14 @@ export default function OpsPage() {
       : null;
   const fleet = liveFleet ?? MODEL_FLEET;
   const fleetIsLive = liveFleet !== null;
+  // D3: three-state caption - a cold-load in-flight registry query reads "loading", never
+  // "backend unreachable" (the table keeps its rows to avoid hero-table layout jank; the caption
+  // carries the honesty, matching the drift section's skeleton-in-place convention).
+  const fleetSuffix = fleetIsLive
+    ? ""
+    : registry.isLoading
+      ? " · loading"
+      : " · showcase data (backend unreachable)";
 
   const liveLatency =
     latency7d.data && latency7d.data.length > 0
@@ -202,7 +210,7 @@ export default function OpsPage() {
         </div>
         <ModelFleetTable
           rows={fleet}
-          caption={`Registry · state, traffic, 24h drift + p99 latency${showcaseSuffix(fleetIsLive)}`}
+          caption={`Registry · state, traffic, 24h drift + p99 latency${fleetSuffix}`}
         />
       </section>
 
