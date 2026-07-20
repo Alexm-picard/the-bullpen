@@ -122,9 +122,14 @@ describe("GamePage (broadcast identity)", () => {
     expect(html).toContain("Live Pitch Log");
   });
 
-  it("keeps the honest champion-less context line ([154])", () => {
+  it("renders the honest next-pitch gated state (ADR-0014 supersedes the [154] pending line)", () => {
+    // A6: the old "pitch model pending" header line is replaced by the Next-Pitch Model section.
+    // With no pitches loaded the at-bat is not settled, so the panel renders its GATED state - the
+    // honest champion-less/context-less surface, and no request ever fires from a static render.
     const html = render(<GamePage />, "/games/12345");
-    expect(html).toContain("pitch model pending");
+    expect(html).toContain("Next-Pitch Model");
+    expect(html).toContain("Awaiting a settled at-bat");
+    expect(html).not.toContain("pitch model pending");
   });
 
   it("renders the chrome footer", () => {

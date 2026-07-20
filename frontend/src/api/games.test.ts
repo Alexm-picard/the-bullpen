@@ -6,6 +6,7 @@ import {
   fetchLivePitchesSince,
   fetchTodaysGames,
   mergePitchesNewestFirst,
+  nextPitchRequest,
   statusPollIntervalMs,
   type GameSummary,
   type LivePitchRow,
@@ -184,5 +185,87 @@ describe("mergePitchesNewestFirst", () => {
     const out = mergePitchesNewestFirst(new Map(), many);
     expect(out[0]?.cursor).toBe(159); // most recent, not the opener
     expect(out.slice(0, 50)[0]?.cursor).toBe(159); // slice keeps the newest, never cuts it
+  });
+});
+
+describe("nextPitchRequest (A6 settled-at-bat gate)", () => {
+  // 2026-07-20 is a Monday -> ISO dow 1.
+  const GAME_DATE = "2026-07-20";
+
+  function row(over: Partial<LivePitchRow> = {}): LivePitchRow {
+    return {
+      ...PITCH,
+      description: "ball",
+      balls: 1,
+      strikes: 1,
+      pitcherThrows: "R",
+      batterStand: "L",
+      baseState: 5,
+      parkId: "BOS",
+      scoreDiff: 0,
+      ...over,
+    };
+  }
+
+  it("advances the count from the row's PRE-pitch state ([143]) and carries the A5 context", () => {
+    const req = nextPitchRequest(row(), GAME_DATE);
+    expect(req).toEqual({
+      countBalls: 2, // 1-1 + ball -> 2-1
+      countStrikes: 1,
+      outs: PITCH.outs,
+      inning: PITCH.inning,
+      baseState: 5,
+      scoreDiff: 0,
+      dow: 1, // Monday
+      pitcherThrows: "R",
+      batterStand: "L",
+      parkId: "BOS",
+      pitcherId: PITCH.pitcherId,
+      batterId: PITCH.batterId,
+    });
+  });
+
+  it("withholds on a walk (ball four) - the at-bat is over", () => {
+    expect(nextPitchRequest(row({ balls: 3 }), GAME_DATE)).toBeNull();
+  });
+
+  it("withholds on a strikeout (strike three)", () => {
+    expect(
+      nextPitchRequest(
+        row({ description: "swinging_strike", strikes: 2 }),
+        GAME_DATE,
+      ),
+    ).toBeNull();
+  });
+
+  it("caps a two-strike foul at two strikes (at-bat continues)", () => {
+    const req = nextPitchRequest(
+      row({ description: "foul", strikes: 2 }),
+      GAME_DATE,
+    );
+    expect(req?.countStrikes).toBe(2);
+  });
+
+  it("withholds on terminal or untrusted outcomes (in_play / hit_by_pitch / unknown)", () => {
+    for (const d of ["in_play", "hit_by_pitch", "unknown"]) {
+      expect(nextPitchRequest(row({ description: d }), GAME_DATE)).toBeNull();
+    }
+  });
+
+  it("resolves a switch hitter to the opposite of the pitcher's hand (server convention)", () => {
+    expect(
+      nextPitchRequest(row({ batterStand: "S", pitcherThrows: "R" }), GAME_DATE)
+        ?.batterStand,
+    ).toBe("L");
+    expect(
+      nextPitchRequest(row({ batterStand: "S", pitcherThrows: "L" }), GAME_DATE)
+        ?.batterStand,
+    ).toBe("R");
+  });
+
+  it("withholds on pre-V028 rows (blank hands / null baseState = unknown, not empty)", () => {
+    expect(nextPitchRequest(row({ pitcherThrows: "" }), GAME_DATE)).toBeNull();
+    expect(nextPitchRequest(row({ batterStand: "" }), GAME_DATE)).toBeNull();
+    expect(nextPitchRequest(row({ baseState: null }), GAME_DATE)).toBeNull();
   });
 });
