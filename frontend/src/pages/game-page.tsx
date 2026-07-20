@@ -20,8 +20,10 @@ import { useMemo } from "react";
 import { useParams } from "react-router-dom";
 
 import {
+  nextPitchRequest,
   useGame,
   useLivePitches,
+  usePitchPrediction,
   usePostPredictions,
   type GameSummary,
   type LivePitchRow,
@@ -40,6 +42,7 @@ import { Scorebug } from "../components/broadcast/scorebug";
 import { TickerStrip } from "../components/broadcast/ticker-strip";
 import { BattedBallExplorer } from "../components/games/batted-ball-explorer";
 import { LivePitchBoard } from "../components/games/live-pitch-board";
+import { NextPitchPanel } from "../components/games/next-pitch-panel";
 import { PostPredictionPanel } from "../components/games/post-prediction-panel";
 import { estimateLandingDistanceFt } from "../components/parks/estimate-landing";
 import {
@@ -234,6 +237,16 @@ export function GamePage() {
   const currentPitcher = usePlayer(mostRecent?.pitcherId ?? null);
   const currentBatter = usePlayer(mostRecent?.batterId ?? null);
 
+  // A6: the forward-looking next-pitch estimate (ADR-0014). nextPitchRequest returns null unless
+  // the at-bat is settled (mid-at-bat, full V028 context), and the query additionally gates on the
+  // game being live - both required, because every fired request logs to prediction_log.
+  const nextReq =
+    mostRecent && game.data
+      ? nextPitchRequest(mostRecent, game.data.gameDate)
+      : null;
+  const nextPitchEnabled = isLive(game.data) && nextReq != null;
+  const nextPitch = usePitchPrediction(nextReq, { enabled: nextPitchEnabled });
+
   // Phase 1.2: the most recent in-play batted ball carrying launch physics. The
   // pitch store is newest-first, so .find() yields the LATEST qualifying BIP.
   const inPlay = pitches.pitches.find(
@@ -337,7 +350,7 @@ export function GamePage() {
             color: colors.textMuted,
           }}
         >
-          {todayIssueDate()} · live ingest · pitch model pending
+          {todayIssueDate()} · live ingest
         </p>
         <Scorebug
           awayTeam={summary?.awayTeam ?? "—"}
@@ -388,6 +401,23 @@ export function GamePage() {
           />
         </div>
       </BroadcastPanel>
+
+      <section aria-labelledby="next-pitch-label">
+        <div style={{ marginBottom: 12 }}>
+          <LowerThird
+            id="next-pitch-label"
+            meta={nextPitchEnabled ? "LIVE ESTIMATE" : "GATED"}
+          >
+            Next-Pitch Model
+          </LowerThird>
+        </div>
+        <NextPitchPanel
+          prediction={nextPitch.data}
+          isLoading={nextPitch.isLoading}
+          error={nextPitch.error}
+          enabled={nextPitchEnabled}
+        />
+      </section>
 
       <section aria-labelledby="batted-ball-label">
         <div style={{ marginBottom: 12 }}>

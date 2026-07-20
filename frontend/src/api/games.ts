@@ -256,3 +256,147 @@ export function usePostPredictions(
     },
   });
 }
+
+// --- A6: user-visible next-pitch prediction (ADR-0014 / decision [180]) ------
+
+/**
+ * Tier-1/2 pre-pitch prediction request for {@code POST /v1/predict/pitch?head=pre}. Tier-3 form
+ * and Tier-4 flight fields are deliberately OMITTED: the browser has no {@code
+ * pitcher_form_current} access, and omitting them matches the ingest path's null -> NaN
+ * convention (LivePitchPredictor.toRequest's pre-A3 behavior), so a user-triggered request stays
+ * comparable to the ingest-side logged request for the same state.
+ */
+export type PitchPredictionRequest = {
+  countBalls: number;
+  countStrikes: number;
+  outs: number;
+  inning: number;
+  baseState: number;
+  scoreDiff: number;
+  dow: number;
+  pitcherThrows: string;
+  batterStand: string;
+  parkId: string;
+  pitcherId: number;
+  batterId: number;
+};
+
+/** Response of {@code POST /v1/predict/pitch} - the calibrated 5-class distribution. */
+export type PitchPredictionResponse = {
+  probabilities: Record<string, number>;
+  winner: string;
+  modelName: string;
+  modelVersion: string;
+  latencyMicros: number;
+  correlationId: string;
+};
+
+/** ISO day-of-week (1=Mon..7=Sun) of a YYYY-MM-DD date, UTC-safe - mirrors
+ * LivePitchPredictor.toRequest's {@code gameDate.getDayOfWeek().getValue()}. */
+function isoDow(gameDate: string): number {
+  return ((new Date(`${gameDate}T00:00:00Z`).getUTCDay() + 6) % 7) + 1;
+}
+
+/**
+ * Build the next-pitch prediction request from the most recent pitch row, or return null when the
+ * at-bat is NOT settled - the A6 gate that keeps throwaway predictions out of prediction_log.
+ *
+ * A row's balls/strikes are the PRE-pitch count of THAT pitch (decision [143]), so the next
+ * pitch's count is derived by applying the row's outcome. Terminal outcomes (walk, strikeout,
+ * in_play, hit_by_pitch) end the at-bat - the due batter is unknowable from row data alone, so
+ * the request is withheld rather than guessed. Pre-V028 rows (blank hands / null baseState) are
+ * also withheld: their occupancy is unknown, not empty. Switch hitters resolve S -> the opposite
+ * of the pitcher's hand, exactly as the server's resolveBatSide does. scoreDiff forwards the
+ * row's serving-path constant verbatim (see LivePitchRow.scoreDiff).
+ */
+export function nextPitchRequest(
+  row: LivePitchRow,
+  gameDate: string,
+): PitchPredictionRequest | null {
+  if (row.baseState == null || row.parkId === "") return null;
+  const throws = row.pitcherThrows;
+  if (throws !== "R" && throws !== "L") return null; // "" = pre-V028 row
+  let stand = row.batterStand;
+  if (stand === "S") stand = throws === "R" ? "L" : "R";
+  if (stand !== "R" && stand !== "L") return null;
+
+  let balls = row.balls;
+  let strikes = row.strikes;
+  switch (row.description) {
+    case "ball":
+      balls += 1;
+      if (balls >= 4) return null; // walk - at-bat over
+      break;
+    case "called_strike":
+    case "swinging_strike":
+      strikes += 1;
+      if (strikes >= 3) return null; // strikeout - at-bat over
+      break;
+    case "foul":
+      // A foul never strikes out - with one KNOWN LEAK: the parser collapses foul-TIP call codes
+      // to "foul" too, so a caught foul tip on strike three (an at-bat-ending K) is indistinguishable
+      // from a live foul here and yields one throwaway request for a pitch that is never thrown.
+      // Accepted: rare, one logged row, and unguardable from a single row (the next poll's
+      // atBatIndex advance self-corrects the panel).
+      if (strikes < 2) strikes += 1;
+      break;
+    default:
+      return null; // in_play / hit_by_pitch / unknown - at-bat over or untrusted
+  }
+
+  return {
+    countBalls: balls,
+    countStrikes: strikes,
+    outs: row.outs,
+    inning: row.inning,
+    baseState: row.baseState,
+    scoreDiff: row.scoreDiff,
+    dow: isoDow(gameDate),
+    pitcherThrows: throws,
+    batterStand: stand,
+    parkId: row.parkId,
+    pitcherId: row.pitcherId,
+    batterId: row.batterId,
+  };
+}
+
+export async function predictPitch(
+  req: PitchPredictionRequest,
+  head: "pre" = "pre",
+): Promise<PitchPredictionResponse> {
+  const res = await fetch(`${API_BASE}/v1/predict/pitch?head=${head}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    throw new GameApiError(
+      res.status,
+      `pitch predict failed: HTTP ${res.status}`,
+    );
+  }
+  return (await res.json()) as PitchPredictionResponse;
+}
+
+/**
+ * Gated next-pitch prediction, mirroring useAllParksPrediction's pattern exactly: POST
+ * /v1/predict/pitch logs EVERY request to prediction_log (the drift baseline source), so the
+ * enabled gate is REQUIRED - callers fire only when the prediction will actually be shown
+ * (live game + settled at-bat), never as a throwaway. retry is off: until the TD promotes PRE
+ * the endpoint 503s by design (no live champion), and hammering it would log nothing but noise.
+ */
+export function usePitchPrediction(
+  req: PitchPredictionRequest | null,
+  opts: { enabled?: boolean } = {},
+) {
+  return useQuery<PitchPredictionResponse, GameApiError>({
+    queryKey: ["games", "next-pitch", req],
+    staleTime: 30_000,
+    retry: false,
+    enabled: (opts.enabled ?? true) && req != null,
+    queryFn: () => {
+      if (req == null) throw new Error("request required");
+      return predictPitch(req, "pre");
+    },
+  });
+}
