@@ -46,6 +46,20 @@ export type LivePitchRow = {
   inning: number;
   homeScore: number;
   awayScore: number;
+  /**
+   * Pre-pitch context for assembling the A6 next-pitch prediction request, mirroring the serving
+   * path's LivePitchPredictor.toRequest conventions (ADR-0014 / decision [180]). pitcherThrows /
+   * batterStand are "" on rows ingested before the V028 migration; batterStand may be "S" (switch) -
+   * resolve S -> the opposite of pitcherThrows before predicting, as the server does. baseState is
+   * the 1/2/4 occupancy bitmask (null = pre-V028 row, occupancy unknown - do NOT treat as empty).
+   * scoreDiff is the serving path's CONSTANT 0 placeholder - forward it verbatim so a user-triggered
+   * request matches the ingest-side logged request for the same state bit-for-bit.
+   */
+  pitcherThrows: string;
+  batterStand: string;
+  baseState: number | null;
+  parkId: string;
+  scoreDiff: number;
   /** Per-pitch model prediction at release (leaf 4d.2). Null if no prediction logged. */
   predictedClasses: Record<string, number> | null;
   predictedWinner: string | null;

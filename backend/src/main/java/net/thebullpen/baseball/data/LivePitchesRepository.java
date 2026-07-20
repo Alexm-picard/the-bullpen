@@ -63,6 +63,13 @@ public class LivePitchesRepository {
           + " pl.plate_x_in AS plate_x_in, pl.plate_z_in AS plate_z_in,"
           + " pl.balls AS balls, pl.strikes AS strikes, pl.outs AS outs,"
           + " pl.inning AS inning, pl.home_score AS home_score, pl.away_score AS away_score,"
+          // A5 pre-pitch context (V028): the frontend forwards these into the A6 next-pitch request
+          // to mirror LivePitchPredictor.toRequest bit-for-bit. park_id reuses home_team (home_team
+          // IS the park id by project convention; == the serving path's ctx.parkId()) - no DDL.
+          // pitch_hand/bat_side default '' on a pre-V028 row; base_state is Nullable (NULL on a
+          // pre-V028 row - unknown occupancy, never a false bases-empty 0).
+          + " pl.pitch_hand AS pitch_hand, pl.bat_side AS bat_side, pl.base_state AS base_state,"
+          + " pl.home_team AS park_id,"
           // Realized batted-ball outcome (Phase 1.2). pitches_live carries no such columns (the
           // live feed is pre-Statcast), so LEFT JOIN the canonical pitches table (V003) on the
           // natural pitch key. Null on non-in-play pitches and on any pitch the overnight handoff
@@ -258,8 +265,10 @@ public class LivePitchesRepository {
           + " (game_id, at_bat_index, pitch_number, game_date, pitcher_id, batter_id,"
           + " description, pitch_type, release_speed_mph, plate_x_in, plate_z_in,"
           + " balls, strikes, outs, inning, home_score, away_score, home_team, away_team,"
-          + " pfx_x_in, pfx_z_in, spin_rate_rpm, spin_axis_deg, release_pos_x_in, release_pos_z_in)"
-          + " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+          + " pfx_x_in, pfx_z_in, spin_rate_rpm, spin_axis_deg, release_pos_x_in, release_pos_z_in,"
+          // A5 (V028): the pre-pitch context the frontend forwards into the A6 next-pitch request.
+          + " pitch_hand, bat_side, base_state)"
+          + " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
 
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -322,6 +331,12 @@ public class LivePitchesRepository {
             setNullableFloat(ps, 23, p.spinAxisDeg());
             setNullableFloat(ps, 24, p.releasePosXIn());
             setNullableFloat(ps, 25, p.releasePosZIn());
+            // A5 pre-pitch context (V028). pitch_hand/bat_side are LowCardinality DEFAULT '', so
+            // coalesce null -> '' (the pitch_type idiom above); base_state is Nullable(UInt8) but
+            // the parser always resolves it (the 1/2/4 bitmask off LivePitch.baseState()).
+            ps.setString(26, p.pitchHand() == null ? "" : p.pitchHand());
+            ps.setString(27, p.batSide() == null ? "" : p.batSide());
+            ps.setInt(28, p.baseState());
           }
 
           @Override
@@ -558,7 +573,20 @@ public class LivePitchesRepository {
             nullable(rs, "launch_angle_deg"),
             nullable(rs, "hit_distance_ft"),
             emptyToNull(rs.getString("bb_type")),
-            emptyToNull(rs.getString("events")));
+            emptyToNull(rs.getString("events")),
+            // A5 pre-pitch context (V028). pitch_hand/bat_side are LowCardinality(String) DEFAULT
+            // '' -> '' (NOT null) on a pre-V028 row; the frontend forwards them verbatim ('S'
+            // resolves L|R downstream). base_state is Nullable(UInt8) -> null on a pre-V028 row
+            // (unknown occupancy), an Integer otherwise. park_id is home_team (the park id).
+            // score_diff
+            // is NOT a column: it is the serving-path constant 0 (LivePitchPredictor.toRequest
+            // sends
+            // score_diff=0), forwarded verbatim so the A6 request matches the ingest-side request.
+            rs.getString("pitch_hand"),
+            rs.getString("bat_side"),
+            nullableInt(rs, "base_state"),
+            rs.getString("park_id"),
+            0);
       };
 
   private static final RowMapper<PostPredictionRow> POST_PREDICTION_MAPPER =
@@ -583,6 +611,12 @@ public class LivePitchesRepository {
 
   private static Double nullable(ResultSet rs, String col) throws java.sql.SQLException {
     double v = rs.getDouble(col);
+    return rs.wasNull() ? null : v;
+  }
+
+  /** Read a Nullable(UInt8) as a boxed Integer: null for a NULL (pre-V028 base_state) column. */
+  private static Integer nullableInt(ResultSet rs, String col) throws java.sql.SQLException {
+    int v = rs.getInt(col);
     return rs.wasNull() ? null : v;
   }
 

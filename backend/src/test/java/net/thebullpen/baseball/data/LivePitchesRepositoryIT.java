@@ -21,6 +21,7 @@ import net.thebullpen.baseball.api.dto.PostPredictionRow;
 import net.thebullpen.baseball.api.dto.PostPredictionsPage;
 import net.thebullpen.baseball.ingest.GameStatus;
 import net.thebullpen.baseball.ingest.LiveGameFeed;
+import net.thebullpen.baseball.ingest.LivePitch;
 import net.thebullpen.baseball.ingest.MlbFeedParser;
 import net.thebullpen.baseball.ingest.ScheduledGame;
 import org.junit.jupiter.api.BeforeEach;
@@ -123,6 +124,52 @@ class LivePitchesRepositoryIT {
                   + " '%s', 'v1', '%s', 'h', '{}', '%s', 1.0, '', %d, %d, %d)",
               modelName, role, predictionJson, gameId, atBat, pitch));
     }
+  }
+
+  /**
+   * Build a minimal {@link LivePitch} carrying the A5 pre-pitch context (V028) plus enough of the
+   * base pre-pitch state to round-trip through {@code insertPitches}. Tier-4 physics is left null
+   * (irrelevant to this context); {@code terminal} is false.
+   */
+  private static LivePitch livePitch(
+      long gameId,
+      int atBatIndex,
+      int pitchNumber,
+      String pitchHand,
+      String batSide,
+      boolean onFirst,
+      boolean onSecond,
+      boolean onThird) {
+    return new LivePitch(
+        gameId,
+        atBatIndex,
+        pitchNumber,
+        /* inning= */ 1,
+        /* topInning= */ true,
+        /* pitcherId= */ 1L,
+        /* batterId= */ 2L,
+        pitchHand,
+        batSide,
+        /* preBalls= */ 0,
+        /* preStrikes= */ 0,
+        /* outs= */ 0,
+        onFirst,
+        onSecond,
+        onThird,
+        /* homeScore= */ 0,
+        /* awayScore= */ 0,
+        /* description= */ "ball",
+        /* pitchType= */ "FF",
+        /* releaseSpeedMph= */ null,
+        /* plateXIn= */ null,
+        /* plateZIn= */ null,
+        /* pfxXIn= */ null,
+        /* pfxZIn= */ null,
+        /* spinRateRpm= */ null,
+        /* spinAxisDeg= */ null,
+        /* releasePosXIn= */ null,
+        /* releasePosZIn= */ null,
+        /* terminal= */ false);
   }
 
   private static LivePitchRow pitch(List<LivePitchRow> rows, int atBat, int pitchNumber) {
@@ -328,6 +375,65 @@ class LivePitchesRepositoryIT {
 
     // FINAL collapses duplicate (game_id, at_bat_index, pitch_number) keys back to one row each.
     assertEquals(300, repo.findPitchesSince(824753L, 0L).size());
+  }
+
+  @Test
+  void insertPitches_round_trips_the_A5_pre_pitch_context() throws Exception {
+    // A5 (V028): the writer now persists the pre-pitch context (pitch_hand / bat_side / base_state)
+    // MlbFeedParser already extracted, and the games DTO surfaces it (+ parkId from home_team, +
+    // the serving-path constant scoreDiff=0) so the frontend can assemble the A6 next-pitch request
+    // mirroring LivePitchPredictor.toRequest. Round-trip a LivePitch with a known handed matchup
+    // and
+    // a runners-on-corners base state (first + third -> bitmask 1|4 = 5) through real ClickHouse.
+    LivePitch p =
+        livePitch(
+            /* gameId= */ 555L,
+            /* atBatIndex= */ 1,
+            /* pitchNumber= */ 1,
+            /* pitchHand= */ "L",
+            /* batSide= */ "S", // switch hitter; resolved L|R downstream (resolveBatSide precedent)
+            /* onFirst= */ true,
+            /* onSecond= */ false,
+            /* onThird= */ true);
+    LiveGameFeed feed =
+        new LiveGameFeed(
+            555L,
+            GameStatus.IN_PROGRESS,
+            LocalDate.of(2026, 6, 4),
+            111,
+            222,
+            "BOS",
+            "NYY",
+            List.of(p),
+            null);
+
+    assertEquals(1, repo.insertPitches(feed));
+
+    LivePitchRow row = pitch(repo.findPitchesSince(555L, 0L), 1, 1);
+    assertEquals("L", row.pitcherThrows(), "pitch_hand round-trips");
+    assertEquals(
+        "S", row.batterStand(), "bat_side round-trips, 'S' preserved for downstream resolve");
+    assertEquals(5, row.baseState(), "base occupancy bitmask first(1)|third(4) = 5");
+    assertEquals("BOS", row.parkId(), "parkId is home_team (the park id by project convention)");
+    assertEquals(0, row.scoreDiff(), "serving-path constant 0, forwarded verbatim (not a column)");
+  }
+
+  @Test
+  void findPitchesSince_returns_the_DDL_defaults_for_a_pre_migration_shaped_row() throws Exception {
+    // A pre-V028 row never set pitch_hand / bat_side / base_state. The V028 DEFAULT '' (pitch_hand,
+    // bat_side, LowCardinality) and Nullable-without-default (base_state) contract must read back
+    // as
+    // '' and NULL respectively - NOT a false bases-empty 0. insertPitch(...) inserts exactly such a
+    // row (its column list omits the three new columns), so it exercises the DDL defaults directly.
+    insertPitch(556L, LocalDate.of(2026, 6, 4), 1, 1, "LAD", "SF", 3);
+
+    LivePitchRow row = pitch(repo.findPitchesSince(556L, 0L), 1, 1);
+    assertEquals("", row.pitcherThrows(), "LowCardinality DEFAULT '' on a pre-V028 row");
+    assertEquals("", row.batterStand(), "LowCardinality DEFAULT '' on a pre-V028 row");
+    assertNull(
+        row.baseState(), "Nullable(UInt8) with NO default -> NULL, never a false bases-empty 0");
+    assertEquals("LAD", row.parkId(), "parkId still resolves from home_team");
+    assertEquals(0, row.scoreDiff());
   }
 
   @Test
