@@ -92,6 +92,9 @@ dependencies {
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
+    // C1 (audit remediation): architecture boundary rules. FreezingArchRule baselines the 8 known
+    // data/ -> api.dto violations (src/test/resources/archunit-store); C2 drains the baseline.
+    testImplementation("com.tngtech.archunit:archunit-junit5:1.4.1")
     testImplementation("org.testcontainers:junit-jupiter:1.20.6")
     testImplementation("org.testcontainers:clickhouse:1.20.6")
     testImplementation("org.testcontainers:minio:1.20.6")
