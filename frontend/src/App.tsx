@@ -1,11 +1,15 @@
 import {
   Anchor,
   AppShell,
+  Burger,
   Container,
+  Drawer,
   Group,
   Loader,
+  Stack,
   Title,
 } from "@mantine/core";
+import { useDisclosure } from "@mantine/hooks";
 import { lazy, Suspense, type ReactNode } from "react";
 import {
   BrowserRouter,
@@ -60,7 +64,22 @@ const navLinkStyle: React.CSSProperties = {
   textDecoration: "none",
 };
 
+// One nav source for both surfaces (horizontal bar >= sm, drawer below sm - D1 mobile nav).
+const NAV_ITEMS: ReadonlyArray<{ to: string; label: string; end?: boolean }> = [
+  { to: "/", label: "home", end: true },
+  { to: "/parks", label: "parks" },
+  { to: "/players", label: "players" },
+  { to: "/games", label: "games" },
+  { to: "/ops", label: "ops" },
+  { to: "/accuracy", label: "accuracy" },
+  { to: "/about", label: "about" },
+];
+
 function Layout() {
+  // D1: below the `sm` breakpoint the 7-link bar cannot fit the 56px header, so the horizontal
+  // group swaps for a burger + chrome drawer (Mantine visibleFrom/hiddenFrom - no JS media logic).
+  const [navOpen, { toggle: toggleNav, close: closeNav }] =
+    useDisclosure(false);
   return (
     <AppShell header={{ height: 56 }} padding={0}>
       <AppShell.Header
@@ -95,32 +114,69 @@ function Layout() {
                 The Bullpen
               </Title>
             </Group>
-            <Group gap="md">
-              <Anchor component={NavLink} to="/" end style={navLinkStyle}>
-                home
-              </Anchor>
-              <Anchor component={NavLink} to="/parks" style={navLinkStyle}>
-                parks
-              </Anchor>
-              <Anchor component={NavLink} to="/players" style={navLinkStyle}>
-                players
-              </Anchor>
-              <Anchor component={NavLink} to="/games" style={navLinkStyle}>
-                games
-              </Anchor>
-              <Anchor component={NavLink} to="/ops" style={navLinkStyle}>
-                ops
-              </Anchor>
-              <Anchor component={NavLink} to="/accuracy" style={navLinkStyle}>
-                accuracy
-              </Anchor>
-              <Anchor component={NavLink} to="/about" style={navLinkStyle}>
-                about
-              </Anchor>
+            <Group gap="md" visibleFrom="sm">
+              {NAV_ITEMS.map((item) => (
+                <Anchor
+                  key={item.to}
+                  component={NavLink}
+                  to={item.to}
+                  end={item.end}
+                  style={navLinkStyle}
+                >
+                  {item.label}
+                </Anchor>
+              ))}
             </Group>
+            <Burger
+              hiddenFrom="sm"
+              opened={navOpen}
+              onClick={toggleNav}
+              aria-label="Toggle navigation"
+              color={colors.textOnChrome}
+              size="sm"
+            />
           </Group>
         </Container>
       </AppShell.Header>
+      <Drawer
+        opened={navOpen}
+        onClose={closeNav}
+        position="right"
+        size="xs"
+        hiddenFrom="sm"
+        title="The Bullpen"
+        styles={{
+          content: { backgroundColor: colors.chrome },
+          header: {
+            backgroundColor: colors.chrome,
+            borderBottom: `2px solid ${colors.gold}`,
+          },
+          title: {
+            fontFamily: typography.fonts.display,
+            fontStyle: "italic",
+            fontWeight: typography.weights.heavy,
+            letterSpacing: "0.04em",
+            textTransform: "uppercase",
+            color: colors.textOnChrome,
+          },
+          close: { color: colors.textOnChrome },
+        }}
+      >
+        <Stack gap="sm" pt="sm">
+          {NAV_ITEMS.map((item) => (
+            <Anchor
+              key={item.to}
+              component={NavLink}
+              to={item.to}
+              end={item.end}
+              onClick={closeNav}
+              style={{ ...navLinkStyle, fontSize: 20, padding: "6px 0" }}
+            >
+              {item.label}
+            </Anchor>
+          ))}
+        </Stack>
+      </Drawer>
       <AppShell.Main>
         <RouteBoundary>
           <Suspense fallback={<RoutePending />}>
