@@ -29,7 +29,7 @@
 
   /* ── Accent ── */
   --color-gold: #f2a900;
-  --color-goldInk: #9a6b00;
+  --color-goldInk: #8a5f00;
 
   /* ── Text ── */
   --color-ink: #10141b;
@@ -48,7 +48,7 @@
   --color-bgSheet: #ffffff;
   --color-bgSubtle: #edf0f4;
   --color-bgEmphasis: #d9dee7;
-  --color-scarlet: #9a6b00; /* alias -> goldInk: legacy accent reads as the broadcast accent */
+  --color-scarlet: #8a5f00; /* alias -> goldInk: legacy accent reads as the broadcast accent */
   --color-textStrong: #10141b;
   --color-textDefault: #272d38;
   --color-textOnNavy: #f4f6fa;

@@ -198,6 +198,21 @@ export default function OpsPage() {
       />
 
       <InfraRibbon services={INFRA_SERVICES} />
+      {/* D4 disclosure: the ribbon's statuses are invented showcase chrome - there is no service
+          status endpoint yet, and an operator page must never imply one. */}
+      <p
+        role="note"
+        style={{
+          margin: "-16px 0 0",
+          fontFamily: typography.fonts.mono,
+          fontSize: 11,
+          fontStyle: "italic",
+          letterSpacing: "0.02em",
+          color: colors.textMuted,
+        }}
+      >
+        Service status · showcase chrome (no status endpoint yet)
+      </p>
 
       <section aria-labelledby="ops-fleet-section-label">
         <div style={{ marginBottom: 12 }}>
@@ -261,6 +276,26 @@ export default function OpsPage() {
       </section>
 
       <RetrainQueueList entries={retrainEntries} />
+      {/* D4 disclosure: the fixture fallback (query never resolved) must say so - an empty
+          RESOLVED queue is the honest live state and needs no caption. */}
+      {!retrainIsLive && (
+        <p
+          role="note"
+          style={{
+            margin: "-12px 0 0",
+            fontFamily: typography.fonts.mono,
+            fontSize: 11,
+            fontStyle: "italic",
+            letterSpacing: "0.02em",
+            color: colors.textMuted,
+          }}
+        >
+          Retrain queue ·{" "}
+          {retrain.isLoading
+            ? "loading"
+            : "showcase data (backend unreachable)"}
+        </p>
+      )}
 
       <section aria-labelledby="ops-log-section-label">
         <div style={{ marginBottom: 12 }}>

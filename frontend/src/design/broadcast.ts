@@ -43,7 +43,7 @@ export const colors = {
   /** Broadcast gold - LIVE states, emphasis FILLS, marks on chrome. */
   gold: "#F2A900",
   /** Darkened gold for TEXT/links on the light field (contrast-safe). */
-  goldInk: "#9A6B00",
+  goldInk: "#8A5F00",
 
   // ── Text ───────────────────────────────────────────────────────────────────
   /** Near-black ink - headlines, high-emphasis. */
@@ -61,11 +61,11 @@ export const colors = {
   // Hues carried over from v1 so cellColor() reads identically; only the
   // neutral retunes from warm cream to the cool field tone.
   condFormat: {
-    good3: "#2E8B57",
+    good3: "#39A568",
     good1: "#BFE3C6",
     neutral: "#EBEEF2",
     bad1: "#F6C9C2",
-    bad3: "#D8483A",
+    bad3: "#E05A4C",
   },
 
   // ── Sequential ramps (D3 / SVG) ────────────────────────────────────────────

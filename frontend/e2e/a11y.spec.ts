@@ -13,7 +13,20 @@ import { expect, test } from "@playwright/test";
  * defects that actually lock a user out, not minor/moderate best-practice nits (which can be
  * ratcheted in later).
  */
-const ROUTES = ["/", "/parks", "/ops", "/about", "/games"];
+// D4: extended to the parameterized + remaining public routes. The ids are arbitrary - with no
+// backend behind the preview server the pages render their error/empty states, which must be
+// accessible too (that IS the common cold state).
+const ROUTES = [
+  "/",
+  "/parks",
+  "/ops",
+  "/about",
+  "/games",
+  "/players",
+  "/players/592450",
+  "/games/745804",
+  "/accuracy",
+];
 
 for (const route of ROUTES) {
   test(`no critical or serious a11y violations on ${route}`, async ({
@@ -23,14 +36,11 @@ for (const route of ROUTES) {
     // Wait for the page's first heading so axe audits the rendered view, not a loading shell.
     await page.locator("h1").first().waitFor();
 
+    // color-contrast is ENFORCED since D4 (the dedicated contrast pass the earlier exclusion
+    // deferred to): the broadcast palette's conditional-format cells were brought to AA, so the
+    // rule now guards regressions instead of being waived wholesale.
     const results = await new AxeBuilder({ page })
       .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
-      // color-contrast is excluded on purpose: the broadcast-graphics dark identity (decision
-      // [160]) sets the palette, so contrast ratios are a design-token concern owned by that locked
-      // decision - not something a CI a11y gate should force-change from a test PR. Structural a11y
-      // (labels, ARIA, name-role-value, landmark/heading order, link distinction) IS enforced here;
-      // a dedicated contrast pass against the tokens is tracked separately.
-      .disableRules(["color-contrast"])
       .analyze();
 
     const blocking = results.violations.filter(

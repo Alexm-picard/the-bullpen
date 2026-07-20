@@ -351,6 +351,22 @@ export default function PlayerProfilePage() {
         </>
       ) : (
         <>
+          {/* D4 disclosure: the slug demo is a SHOWCASE scouting card, and must say so in the UI -
+              its stats are illustrative fixture data, not live scouting. */}
+          <p
+            role="note"
+            style={{
+              margin: "0 0 4px",
+              fontFamily: typography.fonts.mono,
+              fontSize: 11,
+              fontStyle: "italic",
+              letterSpacing: "0.02em",
+              color: colors.textMuted,
+            }}
+          >
+            Showcase scouting card · demonstration matchup with illustrative
+            data (the live scouting card is Phase 2)
+          </p>
           <MatchupHeader
             primary={report.primary}
             opponent={report.opponent}
