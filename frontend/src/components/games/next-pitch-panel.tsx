@@ -60,7 +60,7 @@ export function NextPitchPanel({
     return (
       <p style={mutedMono}>
         Awaiting a settled at-bat &mdash; the next-pitch estimate fires only
-        mid&#8209;at&#8209;bat, on live pitches with full context.
+        mid-at-bat, on live pitches with full context.
       </p>
     );
   }
