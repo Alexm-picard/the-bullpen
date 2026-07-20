@@ -128,7 +128,15 @@ class GameControllerTest {
                     28.0,
                     412.0,
                     "fly_ball",
-                    "home_run")));
+                    "home_run",
+                    // A5 pre-pitch context (V028): serialized through the games DTO so the frontend
+                    // can build the A6 next-pitch request. scoreDiff is the serving-path constant
+                    // 0.
+                    "R",
+                    "L",
+                    1,
+                    "BOS",
+                    0)));
 
     mvc.perform(get("/v1/games/777001/pitches"))
         .andExpect(status().isOk())
@@ -138,7 +146,12 @@ class GameControllerTest {
         .andExpect(jsonPath("$[0].launchAngleDeg").value(28.0))
         .andExpect(jsonPath("$[0].hitDistanceFt").value(412.0))
         .andExpect(jsonPath("$[0].bbType").value("fly_ball"))
-        .andExpect(jsonPath("$[0].event").value("home_run"));
+        .andExpect(jsonPath("$[0].event").value("home_run"))
+        .andExpect(jsonPath("$[0].pitcherThrows").value("R"))
+        .andExpect(jsonPath("$[0].batterStand").value("L"))
+        .andExpect(jsonPath("$[0].baseState").value(1))
+        .andExpect(jsonPath("$[0].parkId").value("BOS"))
+        .andExpect(jsonPath("$[0].scoreDiff").value(0));
     verify(repo).findPitchesSince(777001L, 0L);
   }
 

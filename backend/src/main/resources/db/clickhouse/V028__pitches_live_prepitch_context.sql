@@ -1,0 +1,33 @@
+-- V028 - pre-pitch context on the live-pitch table (Phase-1 audit item A5; decisions [143] [180];
+-- ADR-0014).
+--
+-- The user-visible next-pitch request the frontend will assemble (audit item A6) must mirror the
+-- ingest-side LivePitchPredictor.toRequest conventions so a user-triggered prediction for a given
+-- state matches the LOGGED ingest-side request bit-for-bit; any divergence would inject avoidable
+-- drift noise into the same prediction_log surface [180]/ADR-0014 enables an honest next-pitch
+-- prediction against. MlbFeedParser already extracts pitcher handedness, batter side, and base
+-- occupancy into LivePitch (decision [143]'s pre-pitch state); the writer dropped them until now.
+-- This adds the three columns so the games DTO can surface pitcherThrows / batterStand / baseState.
+-- (parkId is NOT a new column - home_team IS the park id by project convention, matching the
+-- serving path's ctx.parkId(); scoreDiff is the serving-path constant 0, also not a column.)
+--
+-- pitch_hand / bat_side mirror the pitch_type DEFAULT '' idiom: '' marks a pre-migration row (the
+-- LowCardinality default), which the row mapper leaves as ''. bat_side may be 'S' (switch hitter),
+-- resolved to L|R downstream (resolveBatSide precedent, per the LivePitch javadoc). base_state is
+-- Nullable, NOT DEFAULT 0, because a pre-migration row's base occupancy is genuinely UNKNOWN and
+-- DEFAULT 0 would falsely assert bases-empty; NULL reads back honestly. It carries the 1/2/4
+-- (first/second/third) bitmask, matching pitches.base_state.
+--
+-- Additive ALTER; pitches_live is a ReplacingMergeTree on (game_id, at_bat_index, pitch_number),
+-- so re-polled/corrected pitches overwrite on FINAL reads - no backfill DML needed. The bullpen
+-- grant (decision [171]) includes ALTER ADD COLUMN for exactly this boot-time migration path.
+--
+-- SNAPSHOT PRECONDITION (CLAUDE.md hard rule): any DROP/ALTER against prod ClickHouse must be
+-- preceded by a snapshot. This migration is additive ALTER ADD COLUMN only, but the snapshot
+-- precondition still applies before it first runs against the prod box.
+--
+-- ClickHouseMigrationRunner keys applied migrations by filename and checksums them; this is a NEW
+-- V*.sql file (never an edit to an applied one).
+ALTER TABLE pitches_live ADD COLUMN IF NOT EXISTS pitch_hand LowCardinality(String) DEFAULT '' AFTER batter_id;
+ALTER TABLE pitches_live ADD COLUMN IF NOT EXISTS bat_side LowCardinality(String) DEFAULT '' AFTER pitch_hand;
+ALTER TABLE pitches_live ADD COLUMN IF NOT EXISTS base_state Nullable(UInt8) AFTER bat_side;

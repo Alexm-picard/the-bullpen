@@ -120,6 +120,12 @@ function pitch(atBat: number, n: number, desc: string, type: string) {
     inning: 6,
     homeScore: 2,
     awayScore: 1,
+    // A5 pre-pitch context (V028): mirrors the LivePitchRow DTO shape.
+    pitcherThrows: "R",
+    batterStand: "L",
+    baseState: 0,
+    parkId: "TOR",
+    scoreDiff: 0,
     predictedClasses: {
       ball: 0.2,
       called_strike: 0.2,

@@ -25,6 +25,39 @@ import java.util.Map;
  * Statcast outcome, so it is non-null for ANY backfilled terminal pitch (a strikeout/walk has a
  * non-null {@code event} but null measurements); the game page only reads it for the in-play BIP it
  * selects. All are null on any pitch not yet backfilled into {@code pitches} (the LEFT JOIN miss).
+ *
+ * <p>{@code pitcherThrows}, {@code batterStand}, {@code baseState}, {@code parkId}, and {@code
+ * scoreDiff} (Phase-1 audit item A5; V028) carry the PRE-pitch context the frontend needs to
+ * assemble a trustworthy user-triggered next-pitch request (audit item A6). They exist so the A6
+ * request MIRRORS the ingest-side {@code LivePitchPredictor.toRequest} conventions exactly: a
+ * user-triggered prediction for a given state must match the ingest-side request the worker already
+ * logged for the same state bit-for-bit, or the divergence adds avoidable noise to the drift
+ * surface {@code prediction_log} feeds (decisions [143] [180], ADR-0014). The frontend must forward
+ * these verbatim; it does NOT recompute them.
+ *
+ * <ul>
+ *   <li>{@code pitcherThrows} - pitcher handedness (R/L), from {@code pitches_live.pitch_hand}.
+ *       {@code ""} on a pre-migration (pre-V028) row (the LowCardinality default, left as-is).
+ *   <li>{@code batterStand} - batter side, from {@code pitches_live.bat_side}. May be {@code "S"}
+ *       (switch hitter); resolve S -> L|R downstream against the matchup ({@code resolveBatSide}
+ *       precedent, per the {@link net.thebullpen.baseball.ingest.LivePitch} javadoc). {@code ""} on
+ *       a pre-migration row.
+ *   <li>{@code baseState} - base-occupancy bitmask (1=first, 2=second, 4=third), matching {@code
+ *       pitches.base_state}. Nullable: {@code null} on a pre-migration row, whose occupancy is
+ *       genuinely UNKNOWN (V028 stores {@code Nullable(UInt8)}, NOT {@code DEFAULT 0}, so an old
+ *       row does not falsely claim bases-empty). Per the {@link
+ *       net.thebullpen.baseball.ingest.LivePitch} javadoc's documented v1 approximation, base/outs
+ *       are entering-at-bat values and mid-at-bat steals are ignored, so this is constant across an
+ *       at-bat's pitches.
+ *   <li>{@code parkId} - the park id, projected from {@code pitches_live.home_team} (home_team IS
+ *       the park id by project convention; it equals the serving path's {@code ctx.parkId()}). No
+ *       DDL: the writer binds {@code home_team = feed.homeAbbrev()}.
+ *   <li>{@code scoreDiff} - always {@code 0}. This is NOT a stored column: it is the SERVING-PATH
+ *       CONVENTION - {@code LivePitchPredictor.toRequest} sends {@code score_diff = 0} (the
+ *       training placeholder is a constant 0). The frontend MUST forward this {@code 0} verbatim so
+ *       a user-triggered request matches the ingest-side request for the same state bit-for-bit; do
+ *       NOT compute a real home-away differential.
+ * </ul>
  */
 public record LivePitchRow(
     long gameId,
@@ -51,4 +84,9 @@ public record LivePitchRow(
     Double launchAngleDeg,
     Double hitDistanceFt,
     String bbType,
-    String event) {}
+    String event,
+    String pitcherThrows,
+    String batterStand,
+    Integer baseState,
+    String parkId,
+    int scoreDiff) {}
