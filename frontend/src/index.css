@@ -36,3 +36,22 @@ samp,
 pre {
   font-family: var(--font-data);
 }
+
+/* D4 (a11y): skip-to-content - visually hidden until keyboard focus, then a
+   chrome-styled pill above the header so keyboard users can bypass the nav. */
+.skip-link {
+  position: absolute;
+  left: 8px;
+  top: -48px;
+  z-index: 1000;
+  padding: 8px 14px;
+  background-color: var(--color-chrome);
+  color: var(--color-textOnChrome);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  text-decoration: none;
+  transition: top 150ms ease;
+}
+.skip-link:focus {
+  top: 8px;
+}

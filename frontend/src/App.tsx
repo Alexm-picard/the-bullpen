@@ -82,6 +82,10 @@ function Layout() {
     useDisclosure(false);
   return (
     <AppShell header={{ height: 56 }} padding={0}>
+      {/* D4 (a11y): first focusable element - keyboard users bypass the nav chrome. */}
+      <a href="#main-content" className="skip-link">
+        Skip to content
+      </a>
       <AppShell.Header
         style={{
           backgroundColor: colors.chrome,
@@ -177,7 +181,7 @@ function Layout() {
           ))}
         </Stack>
       </Drawer>
-      <AppShell.Main>
+      <AppShell.Main id="main-content">
         <RouteBoundary>
           <Suspense fallback={<RoutePending />}>
             <Outlet />

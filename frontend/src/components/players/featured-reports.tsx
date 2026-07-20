@@ -25,7 +25,9 @@ function chipStyle(tone: ReportChip["tone"]): React.CSSProperties {
     fontWeight: typography.weights.medium,
     fontSize: 12,
     backgroundColor: colors.condFormat[tone],
-    color: tone === "good3" ? colors.textOnChrome : colors.ink,
+    // D4 (AA contrast): ink on the retuned good3 token reads at 5.9:1; the old
+    // light-on-green pairing sat at 3.9:1.
+    color: colors.ink,
   };
 }
 
