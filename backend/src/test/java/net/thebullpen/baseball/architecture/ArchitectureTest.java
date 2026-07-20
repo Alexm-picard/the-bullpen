@@ -56,15 +56,14 @@ class ArchitectureTest {
           .resideInAPackage("..baseball.domain..")
           .should()
           .dependOnClassesThat()
-          .resideInAnyPackage(
-              "org.springframework..",
-              "java.sql..",
-              "javax.sql..",
-              "jakarta..",
-              "com.fasterxml.jackson..",
-              "ai.onnxruntime..",
-              "org.slf4j..")
-          .because("the domain core is pure data - no framework, persistence, or logging coupling");
+          // ALLOWLIST (review note N2): domain may depend only on itself and the JDK - stricter
+          // than enumerating forbidden frameworks, and it also blocks domain -> data/inference/api
+          // reach-ins (java.sql/javax.sql are excluded by NOT being allowlisted).
+          .resideOutsideOfPackages(
+              "..baseball.domain..", "java.lang..", "java.util..", "java.time..")
+          .because(
+              "the domain core is pure data - JDK-only records, no framework, persistence,"
+                  + " logging, or app-module coupling");
 
   /**
    * Freeze the layer graph, expressed as its load-bearing direction: the web layer ({@code api/})
