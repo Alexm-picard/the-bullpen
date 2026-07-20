@@ -124,10 +124,25 @@ export default function HomePage() {
   const chips = liveChips ?? MODEL_CHIPS;
   const ribbonIsLive = liveChips !== null;
 
+  // D3: loading-first (the games-board shape) - never flash showcase content captioned
+  // "backend unreachable" while the query is simply still in flight on a cold load.
+  const ribbonSettled = !registry.isLoading;
+  const ribbonLoading = liveChips === null && !ribbonSettled;
+
   const matchupsAreLive = !!matchups.data && matchups.data.length > 0;
-  const slate = matchupsAreLive ? matchups.data : SHOWCASE_MATCHUPS;
+  const matchupsSettled = !matchups.isLoading;
+  const matchupsLoading = !matchupsAreLive && !matchupsSettled;
+  const slate = matchupsAreLive
+    ? matchups.data
+    : matchupsSettled
+      ? SHOWCASE_MATCHUPS
+      : [];
   const { featured, board } = splitSlate(slate);
-  const matchupSource = matchupsAreLive ? "live slate" : "showcase";
+  const matchupSource = matchupsAreLive
+    ? "live slate"
+    : matchupsLoading
+      ? "loading"
+      : "showcase";
 
   const now = new Date();
   const issuedAt = `${ET_TIME.format(now)} ET`;
@@ -166,13 +181,21 @@ export default function HomePage() {
         </p>
       </header>
 
-      {/* Fleet strip: live from the registry when the backend is reachable */}
+      {/* Fleet strip: live from the registry when the backend is reachable. Loading-first (D3):
+          the cold-load in-flight state renders a loading line, never showcase chips captioned
+          "backend unreachable". */}
       <div>
-        <BroadcastFleetStrip chips={chips} />
-        {!ribbonIsLive && (
-          <p style={captionStyle}>
-            Model fleet · showcase data (backend unreachable)
-          </p>
+        {ribbonLoading ? (
+          <p style={captionStyle}>Model fleet · loading&hellip;</p>
+        ) : (
+          <>
+            <BroadcastFleetStrip chips={chips} />
+            {!ribbonIsLive && (
+              <p style={captionStyle}>
+                Model fleet · showcase data (backend unreachable)
+              </p>
+            )}
+          </>
         )}
       </div>
 
@@ -227,12 +250,20 @@ export default function HomePage() {
         <div style={{ marginBottom: 12 }}>
           <LowerThird
             id="slate-section-label"
-            meta={matchupsAreLive ? `LIVE · ${board.length} GAMES` : "SHOWCASE"}
+            meta={
+              matchupsAreLive
+                ? `LIVE · ${board.length} GAMES`
+                : matchupsLoading
+                  ? "LOADING"
+                  : "SHOWCASE"
+            }
           >
             Tonight&rsquo;s Matchups
           </LowerThird>
         </div>
-        {board.length > 0 ? (
+        {matchupsLoading ? (
+          <p style={captionStyle}>Loading tonight&rsquo;s matchups&hellip;</p>
+        ) : board.length > 0 ? (
           <TonightsMatchupsBoard
             rows={board}
             caption={
