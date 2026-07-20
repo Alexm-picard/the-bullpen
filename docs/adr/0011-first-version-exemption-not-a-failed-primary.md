@@ -170,3 +170,9 @@ and 9 themselves are unchanged.
   the research program). Status stays Accepted; only the SCOPE of "no
   user-visible pitch prediction" is clarified, not the discipline. See decision
   [177].
+
+- **2026-07-20** - ADR-0014 (decision [180]) is the "defensible re-aim" this
+  ADR's Decision section anticipated: PRE's DECLARED primary moves to absolute
+  calibration ECE < 0.02 (the [141] batted-ball precedent), guardrailed on
+  beating the LR baseline in Brier + log-loss. This ADR's bar on the
+  FAILED-primary path is unchanged; Status stays Accepted. See ADR-0014.
