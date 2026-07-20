@@ -206,6 +206,15 @@ def test_criteria_are_pre_declared_with_required_rule5_fields() -> None:
             # margin (the challenger may be up to |threshold| WORSE than the champion). Bounded so
             # it can never silently admit a large outcome regression.
             assert -0.01 <= c.primary_threshold < 0.0
+        elif name == "pitch_outcome_pre":
+            # ADR-0014 (decision [180]): PRE's gating primary is the ABSOLUTE ECE bar; the
+            # negative threshold is the [166] non-inferiority idiom making the relative ECE
+            # lane vacuous whenever the bar passes (chal_ece - |threshold| <= base_ece for any
+            # base_ece >= 0). Pin threshold == -bar exactly so the vacuousness is guaranteed
+            # by construction, and the bar itself must be declared.
+            assert c.primary_metric is PrimaryMetric.ECE
+            assert c.absolute_ece_bar is not None
+            assert c.primary_threshold == -c.absolute_ece_bar
         else:
             assert c.primary_threshold >= 0.0  # superiority margin in metric units
         assert c.sample_size_target > 0
