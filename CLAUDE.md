@@ -47,10 +47,16 @@ session and most "obvious" alternatives have already been considered and rejecte
   SHADOW->CHAMPION at the registry STAGE level on 2026-06-20 (box-verified: `ops_events` #18;
   decisions [164] then corrected by [165]). It is still NOT user-visible: `POST /v1/predict/pitch?head=post`
   WOULD serve post v1 to a direct API caller (in SHADOW routing the champion serves, exactly as
-  `/parks` serves the batted-ball champion), but NO frontend surface calls the pitch prediction
-  endpoint, and the live game page's next-pitch is PRE-head-only ([143]) with PRE having no champion
-  (failed primary). So the [154]/ADR-0011 "no user-visible pitch prediction" guarantee holds via the
-  absent UI caller, NOT routing mode.
+  `/parks` serves the batted-ball champion). SUPERSEDED AS OF PHASE-1 A5/A6 (PRs #315/#316): the
+  live game page's NextPitchPanel now DOES call `POST /v1/predict/pitch?head=pre`
+  (`frontend/src/api/games.ts` -> `usePitchPrediction`), so the old "absent UI caller" argument no
+  longer holds. What holds the guarantee now is PROMOTION STATE: PRE has no champion, so that call
+  503s by design and the panel renders an explicit "model not yet promoted" state (rule 6,
+  human-gated). PRE's declared primary was re-aimed by [180]/ADR-0014 from a Brier edge to absolute
+  calibration (ECE < 0.02, passing at 0.0036), so "failed primary" no longer describes its gate
+  either. The post head is separately surfaced RETROSPECTIVELY on the same page ([177]): logged
+  champion predictions replayed against realized outcomes, which is a read of `prediction_log`, not
+  a live prediction call.
 - **Coverage is measured everywhere; backend, training, and frontend now gate.** Backend
   JaCoCo (in `backend/build.gradle.kts` and `backend.yml`) gates on a regression floor (LINE >= 82%,
   BRANCH >= 70%, re-baselined 2026-07-08 when F2.3 un-skipped the pitch + simulate web tests; a few

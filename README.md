@@ -2,10 +2,13 @@
 
 A self-hosted baseball-analytics platform built primarily as an ML-systems +
 serving wrapper (registry, shadow-mode A/B routing, drift jobs, retraining queue) around three
-calibrated models, of which one reaches a browser today: a batted-ball champion serving live (a
+calibrated models, two of which reach a browser today: a batted-ball champion serving live (a
 per-park calibrated physics estimate, honest about its reality gap - see the cross-park limitation
-below), with two pitch-outcome heads not yet serving any user-visible prediction (post is
-champion-stage but UI-held, pre stays shadow on a failed primary - decisions [154]/[165]). Built to
+below), and the post-pitch champion, whose logged predictions are replayed against realized
+outcomes on the game page (decision [177]). The pre-pitch head now has its own next-pitch panel
+there; its declared primary was re-aimed from Brier edge to absolute calibration (ECE < 0.02,
+passing at 0.0036 - decision [180] / ADR-0014, amending the [154] / ADR-0011 hold), and the panel
+renders a clean "model not yet promoted" state until the human-gated promotion lands (rule 6). Built to
 operate through at least one MLB season for a real drift postmortem (the in-season postmortem is
 pending; a synthetic induced-drift drill stands in for now).
 
@@ -19,7 +22,10 @@ pending; a synthetic induced-drift drill stands in for now).
 > profile, the `/parks` HR-by-park heatmap, the home tonight slate, and the Ops dashboard's
 > Model Fleet / latency / retrain queue / ops log (live via `/v1/ops/*`, with a committed-fixture
 > fallback when those are empty or offline). Still pure showcase from `*-fixtures.ts`: the
-> `/parks` factor table, the About methodology page, and the Ops drift-snapshot skeleton.
+> `/parks` factor table, the About methodology page, the `/players` landing's Featured Reports +
+> Model Standouts, the `/players/:id` slug showcase matchup, and the Ops infra ribbon. The Ops
+> drift snapshot is live-wired to `/v1/ops/drift` and renders an honest em-dash skeleton until
+> `drift_metrics` fills in.
 > See _Known limitations_ for the honest caveats.
 
 ## What's interesting about it
@@ -54,8 +60,10 @@ pending; a synthetic induced-drift drill stands in for now).
   live in `backend/build.gradle.kts`, `frontend/vite.config.ts`, and the
   `.github/workflows/training.yml` workflow (the higher `pyproject.toml` figure is
   aspirational / warning-only, not the gate).
-  Every commit also gates on lint, hex-codes, bundle-budget, a real axe-core a11y
-  gate, and a Schemathesis API-contract check.
+  Each surface also gates on lint, hex-codes, bundle-budget, a real axe-core a11y
+  gate (color-contrast included since the D4 pass), and a Schemathesis
+  API-contract check. These are path-filtered workflows: the frontend gates fire
+  on `frontend/**`, the contract fuzz on `backend/**` + `contracts/**`.
 
 ## Screenshots
 
@@ -100,10 +108,11 @@ the self-hosted box workflow (ADR-0006), not the local quickstart.
 
 ## Training the models
 
-Five registry artifacts - three outcome models (pre-pitch head, post-pitch
-head, batted-ball MLP; the batted-ball head serves live, post-pitch is
-champion-stage but UI-held, pre-pitch stays shadow) plus their two baselines
-(pitch LR, batted-ball LGBM). Training runs on the self-hosted desktop only (ADR-0006: it needs
+Six registry artifacts - three outcome models (pre-pitch head, post-pitch head,
+batted-ball MLP; the batted-ball head serves live, the post-pitch champion is
+surfaced retrospectively on the game page, the pre-pitch head has a next-pitch
+panel awaiting its human-gated promotion) plus three baselines (pitch LR,
+batted-ball LGBM per park, batted-ball LR). Training runs on the self-hosted desktop only (ADR-0006: it needs
 the full 2015–2025 ClickHouse dataset and the GPU); the Mac runs a sampled
 iteration loop. **2026 is holdout-only** (rule 13).
 
@@ -111,10 +120,9 @@ iteration loop. **2026 is holdout-only** (rule 13).
 pitch heads + baselines → batted-ball pipeline):
 
 ```bash
-# 0. Feature table
-uv run python -m bullpen_training.features.tier_1_2   --min-year 2015 --max-year 2025
+# 0. Feature table - SINGLE STAGE: tier_3_form is a standalone full build that subsumes tier_1_2
 uv run python -m bullpen_training.features.tier_3_form --min-year 2015 --max-year 2025
-# 1–3. Pitch heads + LR baseline (+ ONNX export for the LightGBM heads)
+# 1–3. Pitch heads + LR baseline (ONNX export is a separate step per head - see the runbook)
 uv run python -m bullpen_training.pitch.production --model lightgbm   # → pitch_outcome_pre
 uv run python -m bullpen_training.pitch.production --model post       # → pitch_outcome_post
 uv run python -m bullpen_training.pitch.production --model lr         # → LR baseline
@@ -145,11 +153,16 @@ check before re-litigating:
 - [`CLAUDE.md`](CLAUDE.md) - non-negotiable discipline rules.
 - ADRs (long-form, top ~15 % of decisions): [`docs/adr/`](docs/adr/)
 - [API reference](docs/api/README.md) + the committed
-  [OpenAPI snapshot](docs/api/openapi.json) (38 operations; the live spec at
+  [OpenAPI snapshot](docs/api/openapi.json) (38 paths / 41 operations; the live spec at
   [`/v3/api-docs`](https://api.thebullpen.net/v3/api-docs) is Schemathesis-fuzzed
   every CI run).
 
 ### Architecture
+
+Two views of the ML-systems wrapper. Both are drawn from the code, and both are
+deliberately labeled where a lane is gated, partial, or drop-tolerant - a
+diagram that implies more than the system does is the same defect as a stale
+README claim.
 
 ```mermaid
 flowchart TD
@@ -168,24 +181,73 @@ flowchart TD
     API --> FE
 ```
 
-A single prediction request (the serving hot path is ClickHouse-free; logging is
-async, off the response path):
+### A predict request
 
 ```mermaid
-sequenceDiagram
-    participant FE as React SPA
-    participant API as Spring API
-    participant R as A/B router
-    participant M as ONNX Runtime + calibrator
-    participant CH as ClickHouse
-    FE->>API: POST /v1/predict/...
-    API->>R: route(gameId, modelName)
-    R-->>API: champion (+ any shadows)
-    API->>M: in-process infer, then calibrate
-    M-->>API: calibrated probabilities
-    API-->>FE: prediction
-    API-)CH: async log to prediction_log
+flowchart LR
+  B["Browser (SPA)"] --> CF["Cloudflare Tunnel"]
+  CF --> F1["CorrelationIdFilter<br/>MDC + echo header"]
+  F1 --> F2["RateLimitFilter<br/>per-IP token bucket, in-memory"]
+  F2 --> C["PredictAllParksController<br/>POST /v1/predict/batted-ball/all-parks"]
+  C --> O["PredictionOrchestrator"]
+  O --> R["InferenceRouter<br/>+ RoutingService (30s cache)"]
+  R --> BK["Bucketer<br/>murmur3(gameId, modelName)"]
+  BK -->|CHAMPION| M["ModelLoader -> LoadedAllParksModel<br/>ONNX Runtime, in-process"]
+  BK -.->|"CHALLENGER / SHADOW<br/>(virtual-thread executor)"| M
+  M --> CAL["Per-park isotonic calibrators"]
+  CAL --> RESP["JSON response"]
+  O -.->|"async, non-blocking offer"| AL["AsyncPredictionLogger<br/>bounded queue, drops counted"]
+  AL -.-> PLW["PredictionLogWriter"]
+  PLW -.-> CH[("ClickHouse<br/>prediction_log")]
+  R --> SQ[("SQLite<br/>model_routing")]
+
+  classDef gated stroke-dasharray: 4 3
+  class AL,PLW,CH gated
 ```
+
+The pitch lane (`POST /v1/predict/pitch?head=pre|post`) is the same shape
+through `PitchPredictionService`, which is a deliberately separate copy of that
+skeleton rather than a shared orchestrator. `POST /v1/simulate/**` is neither
+routed nor logged: it pins one artifact on purpose as an unrouted diagnostic
+(decision [176]). Prediction logging is best-effort by design - the queue drops
+under saturation rather than adding latency to the response, and the writer bean
+does not exist at all when ClickHouse is disabled.
+
+### The model lifecycle
+
+```mermaid
+flowchart TD
+  T["Python training<br/>LightGBM / MLP + LR baseline"] --> EV["Rolling-origin CV<br/>4 folds, never random splits"]
+  EV --> EVD["Promotion evidence JSON<br/>pre-declared criteria (rule 5)"]
+  T --> SNAP["Snapshot: model.onnx + metadata.json<br/>+ feature_pipeline.json + parquet"]
+  SNAP --> REG["POST /v1/admin/registry/.../register<br/>ROLE_ADMIN"]
+  REG --> HASH{"Feature schema hash<br/>matches /contracts? (rule 7)"}
+  HASH -->|no| FAIL["HARD FAIL"]
+  HASH -->|yes| SHADOW["Registry stage: SHADOW<br/>(SQLite)"]
+  EVD --> GATE
+  SHADOW --> GATE{"Promotion gate<br/>evidence row + guardrails"}
+  GATE -->|"operator POST, human-gated (rule 6)"| CHAMP["CHAMPION - serves users"]
+  CHAMP --> PL[("prediction_log")]
+  PL --> DJ["Nightly drift jobs<br/>PSI feature / PSI prediction / calibration"]
+  DJ --> DM[("drift_metrics")]
+  DM --> AL2["DriftAlertEvaluator -> Discord"]
+  DM --> DT{"DriftTrigger<br/>CALIBRATION_ERROR only"}
+  DT --> Q["Retraining queue (SQLite)"]
+  Q --> DISP["Dispatch adapter"]
+  DISP -->|"battedball_outcome"| T
+  DISP -.->|"other 5 names"| UNS["UnsupportedModel<br/>(explicit, not silent)"]
+
+  classDef stop fill:none,stroke-dasharray: 4 3
+  class UNS,AL2 stop
+```
+
+Two honest details the diagram encodes rather than hides. **Feature PSI is
+terminal at the alert**: only calibration error can enqueue a retrain, so a PSI
+spike pages a human and stops there. And **dispatch is one model deep** -
+`battedball_outcome` retrains end-to-end (proven once, unattended, in 96.8
+minutes), while the other five registry names raise an explicit
+`UnsupportedModel` rather than pretending to be wired. Promotion is never
+automated: the only path to CHAMPION is an authenticated operator call.
 
 ## Data sources + licensing
 
@@ -212,16 +274,20 @@ Underlying play-by-play data is not redistributed.**
   (live via `/v1/ops/*`, falling back to committed fixtures only when those return
   empty or the backend is offline). Still pure showcase from
   `frontend/src/data/*-fixtures.ts`: the `/parks` factor table, the About
-  methodology page, and the Ops drift-snapshot panel (fixtures - the drift-detection
-  jobs that write `drift_metrics` are real, see below, but no user-facing drift-read
-  endpoint feeds this panel yet).
+  methodology page, the `/players` Featured Reports + Model Standouts, the
+  `/players/:id` slug showcase matchup, and the Ops infra ribbon. The Ops drift
+  snapshot is NOT in that list: it is live-wired to `GET /v1/ops/drift`, its
+  watched-surface rows render em-dashes until real `drift_metrics` values land,
+  and drill-tagged rows are labeled so a synthetic PSI spike is never shown as
+  organic.
 - **Cross-park batted-ball fidelity is a known limitation.**
   `/v1/predict/batted-ball/all-parks` is served by the registered batted-ball
   champion across the 30 parks. The ball-flight physics validation passes (bias
   -0.14 ft, 93 % of fixtures within tolerance) - but that is **still-air carry
   reconstruction**, not real-weather cross-park fidelity. The cross-park HR-ordering
   sanity gate does **not** pass yet: predicted per-park HR rates correlate only
-  Spearman rho ~0.29 with the observed park-factor ordering (interim gate target
+  Spearman rho 0.333 with the observed park-factor ordering (the physics labels
+  themselves only reach ~0.30, so the model faithfully reproduces weak labels - decision [141]) (interim gate target
   observed-normalized rho >= 0.65 per decision [140]; and it is now a non-blocking
   diagnostic, not a registration blocker - registration gates on per-park outcome
   ECE instead, [141]). The
@@ -324,7 +390,8 @@ thebullpen/
 ├── infra/          docker-compose, Prometheus + Grafana, backup scripts
 ├── docs/           design.md, plan.md, decisions.md, adr/, drills/, etc.
 ├── .githooks/      pre-commit (schema_hash discipline)
-└── deploy.sh       Phase 0 deploy stub - prefer the deploy-safely skill
+└── deploy.sh       real WSL2 deploy (clean-tree guard, atomic symlink swap,
+                    health smoke + rollback, release tag) - prefer deploy-safely
 ```
 
 ## Contact

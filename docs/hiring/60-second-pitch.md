@@ -6,8 +6,9 @@ Read aloud. Time yourself. Target: 50–60 seconds, no pauses to think.
 
 ## Pitch (≈ 55 seconds spoken)
 
-> The Bullpen is a self-hosted baseball-prediction service I built over
-> about eight months. The interesting thing isn't the predictions — it's
+> The Bullpen is a self-hosted baseball-prediction service I have been
+> building for about two months, on a plan that runs through a full MLB
+> season. The interesting thing isn't the predictions — it's
 > the ML systems wrapper around them.
 >
 > I wrote, from scratch, a model registry, an A/B router, drift
@@ -24,9 +25,11 @@ Read aloud. Time yourself. Target: 50–60 seconds, no pauses to think.
 > eval artifact — so the lift is always visible.
 >
 > The site runs from my desktop in WSL2 through a Cloudflare Tunnel.
-> Public Ops dashboard at thebullpen.net/ops shows the registry, drift
-> sparklines, A/B routing, retrain queue, calibration summaries —
-> everything an SRE would actually want to see.
+> Public Ops dashboard at thebullpen.net/ops shows the model fleet and
+> registry state, A/B routing shares, a PSI and ECE drift snapshot, the
+> retrain queue, and the ops event log - wired to live endpoints, with the
+> drift cells staying honest em-dashes until the nightly jobs have data to
+> put in them.
 >
 > The point of operating it through an MLB season is to write a real
 > drift postmortem when a model degrades. That's the centerpiece resume
@@ -63,7 +66,8 @@ Read aloud. Time yourself. Target: 50–60 seconds, no pauses to think.
 > what owning the registry surface looks like in a JVM serving layer
 > where the same registry row gates the A/B router and the drift
 > evaluator. Writing it myself was the educational point. The wrapper
-> is ~3000 lines of Java; the surface area I get back is tight.
+> is about 10,000 lines of Java across 108 files in registry, inference, drift,
+> and retraining; the surface area I get back is tight.
 
 **Why ONNX in-process instead of a Python sidecar?**
 
