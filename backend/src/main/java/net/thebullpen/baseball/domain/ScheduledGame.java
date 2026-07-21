@@ -1,4 +1,4 @@
-package net.thebullpen.baseball.ingest;
+package net.thebullpen.baseball.domain;
 
 import java.time.Instant;
 

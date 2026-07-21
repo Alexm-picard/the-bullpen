@@ -1,4 +1,4 @@
-package net.thebullpen.baseball.api.dto;
+package net.thebullpen.baseball.domain;
 
 /**
  * Row returned from {@code GET /v1/players/search} (leaf 4b.1).

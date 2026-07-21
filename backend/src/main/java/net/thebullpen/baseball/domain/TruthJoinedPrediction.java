@@ -1,4 +1,4 @@
-package net.thebullpen.baseball.api.dto;
+package net.thebullpen.baseball.domain;
 
 /**
  * One live-game prediction reconciled against its real pitch (W3, issue #1 truth-join).

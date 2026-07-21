@@ -3,7 +3,7 @@ package net.thebullpen.baseball.data;
 import java.util.ArrayList;
 import java.util.List;
 import javax.sql.DataSource;
-import net.thebullpen.baseball.api.dto.ArsenalPitch;
+import net.thebullpen.baseball.domain.ArsenalPitch;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;

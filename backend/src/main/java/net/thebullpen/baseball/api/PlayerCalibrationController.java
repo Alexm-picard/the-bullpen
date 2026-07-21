@@ -2,9 +2,9 @@ package net.thebullpen.baseball.api;
 
 import java.util.List;
 import java.util.Set;
-import net.thebullpen.baseball.api.dto.CalibrationBin;
 import net.thebullpen.baseball.data.CalibrationRepository;
 import net.thebullpen.baseball.data.PlayerRepository;
+import net.thebullpen.baseball.domain.CalibrationBin;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;

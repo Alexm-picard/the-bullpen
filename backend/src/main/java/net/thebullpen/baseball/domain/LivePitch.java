@@ -1,4 +1,4 @@
-package net.thebullpen.baseball.ingest;
+package net.thebullpen.baseball.domain;
 
 /**
  * One pitch parsed from the MLB Stats API GUMBO live feed, carrying the PRE-pitch state the

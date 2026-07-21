@@ -9,7 +9,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import javax.sql.DataSource;
-import net.thebullpen.baseball.api.dto.PlayerPredictionRow;
+import net.thebullpen.baseball.domain.PlayerPredictionRow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;

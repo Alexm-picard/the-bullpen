@@ -1,4 +1,4 @@
-package net.thebullpen.baseball.api.dto;
+package net.thebullpen.baseball.domain;
 
 /**
  * One pitch type in a pitcher's arsenal (Phase 2.1): how often it is thrown plus the velocity RANGE

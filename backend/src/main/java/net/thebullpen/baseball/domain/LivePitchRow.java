@@ -1,4 +1,4 @@
-package net.thebullpen.baseball.api.dto;
+package net.thebullpen.baseball.domain;
 
 import java.time.Instant;
 import java.util.Map;
@@ -40,13 +40,13 @@ import java.util.Map;
  *       {@code ""} on a pre-migration (pre-V028) row (the LowCardinality default, left as-is).
  *   <li>{@code batterStand} - batter side, from {@code pitches_live.bat_side}. May be {@code "S"}
  *       (switch hitter); resolve S -> L|R downstream against the matchup ({@code resolveBatSide}
- *       precedent, per the {@link net.thebullpen.baseball.ingest.LivePitch} javadoc). {@code ""} on
+ *       precedent, per the {@link net.thebullpen.baseball.domain.LivePitch} javadoc). {@code ""} on
  *       a pre-migration row.
  *   <li>{@code baseState} - base-occupancy bitmask (1=first, 2=second, 4=third), matching {@code
  *       pitches.base_state}. Nullable: {@code null} on a pre-migration row, whose occupancy is
  *       genuinely UNKNOWN (V028 stores {@code Nullable(UInt8)}, NOT {@code DEFAULT 0}, so an old
  *       row does not falsely claim bases-empty). Per the {@link
- *       net.thebullpen.baseball.ingest.LivePitch} javadoc's documented v1 approximation, base/outs
+ *       net.thebullpen.baseball.domain.LivePitch} javadoc's documented v1 approximation, base/outs
  *       are entering-at-bat values and mid-at-bat steals are ignored, so this is constant across an
  *       at-bat's pitches.
  *   <li>{@code parkId} - the park id, projected from {@code pitches_live.home_team} (home_team IS
