@@ -26,22 +26,23 @@ import com.tngtech.archunit.library.freeze.FreezingArchRule;
 class ArchitectureTest {
 
   /**
-   * data/ must not depend on the web layer's DTOs. FROZEN: 8 known repositories currently return
-   * api.dto types (PredictionLog, LivePitches, OpsEvents, PlayerPredictions, BatterBattedBalls,
-   * PitcherArsenal, Calibration, Player) - baselined, drained by C2's boundary mappers.
+   * The persistence boundary, STRICT since C2. Repositories under {@code data/} must not depend on
+   * {@code api/dto} types. This started as a FROZEN rule with 41 baselined violations across 8
+   * repositories; C2 moved the 17 row/value records those repositories actually return into {@code
+   * domain/}, which drained the baseline to zero, so the rule is now enforced outright and carries
+   * no store entry. A new web-DTO reach-in from {@code data/} fails immediately.
    */
   @ArchTest
   static final ArchRule dataMustNotDependOnApiDtos =
-      FreezingArchRule.freeze(
-          ArchRuleDefinition.noClasses()
-              .that()
-              .resideInAPackage("..baseball.data..")
-              .should()
-              .dependOnClassesThat()
-              .resideInAPackage("..baseball.api.dto..")
-              .because(
-                  "repositories are the persistence boundary; returning web DTOs couples SQL row"
-                      + " shapes to the HTTP contract (C2 introduces mapping at the api boundary)"));
+      ArchRuleDefinition.noClasses()
+          .that()
+          .resideInAPackage("..baseball.data..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAPackage("..baseball.api.dto..")
+          .because(
+              "repositories are the persistence boundary; returning web DTOs couples SQL row"
+                  + " shapes to the HTTP contract");
 
   /**
    * domain/ purity, STRICT: the shared core must be plain Java records - no Spring, no SQL/JDBC, no
@@ -64,6 +65,40 @@ class ArchitectureTest {
           .because(
               "the domain core is pure data - JDK-only records, no framework, persistence,"
                   + " logging, or app-module coupling");
+
+  /**
+   * N4 (C1 review follow-up): the other half of the design.md section-6 boundary set. Both are
+   * STRICT because both are already clean - {@code simulation/} touches neither persistence nor
+   * ingest, and {@code inference/} never reaches into the live-poll pipeline. Locking them now
+   * keeps a future convenience import from quietly inverting the layering.
+   *
+   * <p>Deliberately NOT ruled: {@code inference/routing/RoutingRepository -> data.JdbcTimes}. That
+   * class IS a repository (JdbcTemplate over {@code model_routing}) that happens to live beside the
+   * router it serves; sharing the JDBC time helper is correct reuse, not a layering break.
+   */
+  @ArchTest
+  static final ArchRule simulationMustNotDependOnPersistenceOrIngest =
+      ArchRuleDefinition.noClasses()
+          .that()
+          .resideInAPackage("..baseball.simulation..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAnyPackage("..baseball.data..", "..baseball.ingest..")
+          .because(
+              "the forward simulator is pure computation over the domain core; it must not acquire"
+                  + " SQL or live-feed coupling");
+
+  @ArchTest
+  static final ArchRule inferenceMustNotDependOnIngest =
+      ArchRuleDefinition.noClasses()
+          .that()
+          .resideInAPackage("..baseball.inference..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAPackage("..baseball.ingest..")
+          .because(
+              "serving must not depend on the ingest pipeline; ingest feeds inference through the"
+                  + " domain core and the database, never by direct import");
 
   /**
    * Freeze the layer graph, expressed as its load-bearing direction: the web layer ({@code api/})

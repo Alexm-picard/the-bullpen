@@ -10,7 +10,7 @@ import net.thebullpen.baseball.api.dto.MatchupSummary;
 import net.thebullpen.baseball.data.GameMatchupsRepository;
 import net.thebullpen.baseball.data.LivePitchesRepository;
 import net.thebullpen.baseball.domain.GameMatchup;
-import net.thebullpen.baseball.ingest.ScheduledGame;
+import net.thebullpen.baseball.domain.ScheduledGame;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.web.bind.annotation.GetMapping;

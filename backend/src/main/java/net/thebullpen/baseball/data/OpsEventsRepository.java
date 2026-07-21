@@ -2,9 +2,9 @@ package net.thebullpen.baseball.data;
 
 import java.sql.ResultSet;
 import java.util.List;
-import net.thebullpen.baseball.api.dto.OpsEvent;
-import net.thebullpen.baseball.api.dto.OpsEventType;
-import net.thebullpen.baseball.api.dto.OpsEventsPage;
+import net.thebullpen.baseball.domain.OpsEvent;
+import net.thebullpen.baseball.domain.OpsEventType;
+import net.thebullpen.baseball.domain.OpsEventsPage;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;

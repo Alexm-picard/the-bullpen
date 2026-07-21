@@ -2,8 +2,8 @@ package net.thebullpen.baseball.data;
 
 import java.util.List;
 import javax.sql.DataSource;
-import net.thebullpen.baseball.api.dto.LatencyStat;
-import net.thebullpen.baseball.api.dto.TruthJoinedPrediction;
+import net.thebullpen.baseball.domain.LatencyStat;
+import net.thebullpen.baseball.domain.TruthJoinedPrediction;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.jdbc.core.JdbcTemplate;

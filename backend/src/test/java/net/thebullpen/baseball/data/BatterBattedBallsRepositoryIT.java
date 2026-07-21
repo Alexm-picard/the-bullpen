@@ -6,7 +6,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 import javax.sql.DataSource;
-import net.thebullpen.baseball.api.dto.BattedBallRow;
+import net.thebullpen.baseball.domain.BattedBallRow;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;

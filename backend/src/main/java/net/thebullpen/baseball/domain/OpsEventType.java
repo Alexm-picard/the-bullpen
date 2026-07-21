@@ -1,4 +1,4 @@
-package net.thebullpen.baseball.api.dto;
+package net.thebullpen.baseball.domain;
 
 /**
  * Operationally-meaningful event types written to {@code ops_events} (V015) and surfaced on the Ops

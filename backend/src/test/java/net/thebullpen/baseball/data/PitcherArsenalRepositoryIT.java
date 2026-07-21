@@ -6,7 +6,7 @@ import static org.assertj.core.api.Assertions.within;
 import java.util.List;
 import java.util.UUID;
 import javax.sql.DataSource;
-import net.thebullpen.baseball.api.dto.ArsenalPitch;
+import net.thebullpen.baseball.domain.ArsenalPitch;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
