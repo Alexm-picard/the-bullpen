@@ -9,7 +9,8 @@ import java.time.Instant;
  * each is pollable - {@link GameStatus#shouldPoll()}); everything else is persisted to {@code
  * scheduled_games} so {@code /v1/games/today} can surface the full day's card BEFORE first pitch
  * and the matchup classification can read the probables. Per-pitch detail comes from the GUMBO feed
- * ({@link LiveGameFeed}), not from here.
+ * ({@code LiveGameFeed} in {@code ingest/}; deliberately NOT a {@link} - domain must not import an
+ * app module to satisfy a javadoc reference), not from here.
  *
  * <p>{@code homeAbbr} / {@code awayAbbr} are populated only when the schedule fetch hydrates the
  * team node ({@code &hydrate=team}); they fall back to {@code null} otherwise (the read path then

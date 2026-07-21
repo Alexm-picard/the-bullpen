@@ -167,11 +167,17 @@ net.thebullpen.baseball/
 └── config/      # Spring configuration
 ```
 
-Domain models in `domain/` stay pure (records, no JPA annotations). Today `domain/` holds only
-`GameMatchup`; most value types still live alongside their use in `api/dto`, `data/`, and
-`inference/`. The hexagonal-lite end state - a shared pure core (e.g. a `Pitch` record) that
-`inference/` and `simulation/` reason about without SQL coupling - is the intended direction, not
-yet fully extracted.
+Domain models in `domain/` stay pure (records, no JPA annotations), enforced by an ArchUnit
+JDK-only allowlist. Since C2 (PR #323) `domain/` holds 18 types: `GameMatchup` plus the 17
+row/value records the repositories actually return, moved out of `api/dto` and `ingest/` so
+`data/` no longer imports web types (that boundary rule is now STRICT, baseline drained to zero).
+NOTE the shape this took: C2 did NOT introduce boundary mappers - it moved shared types into a
+common core, so several `*Row` records are still returned directly as JSON by controllers. That is
+a shared-kernel choice rather than a mapping-at-the-boundary choice, and it is deliberate (17
+mapper pairs would be ceremony this codebase does not need), but it means SQL row shape and wire
+shape remain coupled for those types. The hexagonal-lite end state - a shared pure core (e.g. a
+`Pitch` record) that `inference/` and `simulation/` reason about without SQL coupling - is the
+intended direction, now substantially closer but not complete.
 
 ## Repository layout (monorepo)
 
