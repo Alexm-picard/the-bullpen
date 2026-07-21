@@ -3,10 +3,10 @@ package net.thebullpen.baseball.api;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
+import net.thebullpen.baseball.api.dto.PostPredictionsPage;
 import net.thebullpen.baseball.data.LivePitchesRepository;
 import net.thebullpen.baseball.domain.GameSummary;
 import net.thebullpen.baseball.domain.LivePitchRow;
-import net.thebullpen.baseball.domain.PostPredictionsPage;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
@@ -91,6 +91,7 @@ public class GameController {
               + " and "
               + POST_PREDICTIONS_MAX_SIZE);
     }
-    return repo.findPostPredictions(id, page, size);
+    var preds = repo.findPostPredictions(id, page, size);
+    return new PostPredictionsPage(preds.rows(), page, size, preds.hasNext());
   }
 }

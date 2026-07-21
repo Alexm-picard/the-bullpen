@@ -5,10 +5,10 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
 import java.util.Map;
 import net.thebullpen.baseball.api.dto.ModelAccuracyScorecard;
+import net.thebullpen.baseball.api.dto.OpsEventsPage;
 import net.thebullpen.baseball.data.OpsEventsRepository;
 import net.thebullpen.baseball.data.PredictionLogRepository;
 import net.thebullpen.baseball.domain.LatencyStat;
-import net.thebullpen.baseball.domain.OpsEventsPage;
 import net.thebullpen.baseball.drift.DriftMetricsRepository;
 import net.thebullpen.baseball.drift.TaggedDriftMetric;
 import net.thebullpen.baseball.inference.routing.RoutingConfig;
@@ -142,7 +142,8 @@ public class OpsController {
           HttpStatus.BAD_REQUEST,
           "size must be between " + OPS_EVENTS_MIN_SIZE + " and " + OPS_EVENTS_MAX_SIZE);
     }
-    return opsEvents.findRecentPage(page, size);
+    var events = opsEvents.findRecentPage(page, size);
+    return new OpsEventsPage(events.rows(), page, size, events.hasNext());
   }
 
   /**
