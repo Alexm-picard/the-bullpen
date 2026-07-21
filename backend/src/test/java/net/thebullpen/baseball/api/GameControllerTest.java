@@ -17,8 +17,8 @@ import java.util.Optional;
 import net.thebullpen.baseball.data.LivePitchesRepository;
 import net.thebullpen.baseball.domain.GameSummary;
 import net.thebullpen.baseball.domain.LivePitchRow;
+import net.thebullpen.baseball.domain.PagedRows;
 import net.thebullpen.baseball.domain.PostPredictionRow;
-import net.thebullpen.baseball.domain.PostPredictionsPage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
@@ -173,7 +173,7 @@ class GameControllerTest {
   void postPredictions_defaults_return_the_page() throws Exception {
     when(repo.findPostPredictions(777001L, 0, 50))
         .thenReturn(
-            new PostPredictionsPage(
+            new PagedRows<>(
                 List.of(
                     new PostPredictionRow(
                         1,
@@ -185,8 +185,6 @@ class GameControllerTest {
                         Map.of("in_play", 0.7, "ball", 0.3),
                         "in_play",
                         "v1")),
-                0,
-                50,
                 false));
 
     mvc.perform(get("/v1/games/777001/post-predictions"))
@@ -204,7 +202,7 @@ class GameControllerTest {
   @Test
   void postPredictions_forwards_page_and_size_parameters() throws Exception {
     when(repo.findPostPredictions(eq(777001L), eq(2), eq(10)))
-        .thenReturn(new PostPredictionsPage(List.of(), 2, 10, false));
+        .thenReturn(new PagedRows<>(List.of(), false));
 
     mvc.perform(get("/v1/games/777001/post-predictions").param("page", "2").param("size", "10"))
         .andExpect(status().isOk());

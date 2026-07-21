@@ -16,7 +16,7 @@ import net.thebullpen.baseball.data.PredictionLogRepository;
 import net.thebullpen.baseball.domain.LatencyStat;
 import net.thebullpen.baseball.domain.OpsEvent;
 import net.thebullpen.baseball.domain.OpsEventType;
-import net.thebullpen.baseball.domain.OpsEventsPage;
+import net.thebullpen.baseball.domain.PagedRows;
 import net.thebullpen.baseball.drift.DriftMetricsRepository;
 import net.thebullpen.baseball.drift.MetricType;
 import net.thebullpen.baseball.drift.TaggedDriftMetric;
@@ -151,7 +151,7 @@ class OpsControllerTest {
   void events_returns_recent_ops_log_newest_first() throws Exception {
     when(opsEvents.findRecentPage(0, 20))
         .thenReturn(
-            new OpsEventsPage(
+            new PagedRows<>(
                 List.of(
                     new OpsEvent(
                         2L,
@@ -163,8 +163,6 @@ class OpsControllerTest {
                         Instant.parse("2026-05-30T14:00:00Z"),
                         OpsEventType.REGISTER,
                         "batted_ball v1.5 registered as SHADOW")),
-                0,
-                20,
                 false));
 
     mvc.perform(get("/v1/ops/events"))

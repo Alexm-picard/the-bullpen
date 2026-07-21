@@ -4,7 +4,7 @@ import java.sql.ResultSet;
 import java.util.List;
 import net.thebullpen.baseball.domain.OpsEvent;
 import net.thebullpen.baseball.domain.OpsEventType;
-import net.thebullpen.baseball.domain.OpsEventsPage;
+import net.thebullpen.baseball.domain.PagedRows;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -60,14 +60,15 @@ public class OpsEventsRepository {
    * A newest-first page of events. Over-fetches one row ({@code LIMIT size + 1}) to decide {@code
    * hasNext} without a count query, then trims the overflow row - the same offset-pagination idiom
    * as {@link LivePitchesRepository#findPostPredictions}. {@code page}/{@code size} bounds are
-   * validated at the controller.
+   * validated at the controller, which also assembles the {@code api/dto/OpsEventsPage} wire
+   * envelope from this carrier plus the request's page/size (ADR-0015).
    */
-  public OpsEventsPage findRecentPage(int page, int size) {
+  public PagedRows<OpsEvent> findRecentPage(int page, int size) {
     int limit = size + 1;
     long offset = (long) page * size;
     List<OpsEvent> rows = jdbc.query(SELECT_RECENT, MAPPER, limit, offset);
     boolean hasNext = rows.size() > size;
     List<OpsEvent> pageRows = hasNext ? List.copyOf(rows.subList(0, size)) : rows;
-    return new OpsEventsPage(pageRows, page, size, hasNext);
+    return new PagedRows<>(pageRows, hasNext);
   }
 }
