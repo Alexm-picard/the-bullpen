@@ -7,8 +7,8 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import net.thebullpen.baseball.domain.GameMatchup;
-import net.thebullpen.baseball.ingest.GameStatus;
-import net.thebullpen.baseball.ingest.ScheduledGame;
+import net.thebullpen.baseball.domain.GameStatus;
+import net.thebullpen.baseball.domain.ScheduledGame;
 import org.junit.jupiter.api.Test;
 
 class MatchupClassifierTest {

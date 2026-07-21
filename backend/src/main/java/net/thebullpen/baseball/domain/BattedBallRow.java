@@ -1,4 +1,4 @@
-package net.thebullpen.baseball.api.dto;
+package net.thebullpen.baseball.domain;
 
 /**
  * One in-play batted ball for a batter (Phase 2.2/2.3): the Statcast contact + at-bat outcome.

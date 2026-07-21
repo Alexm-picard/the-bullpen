@@ -1,4 +1,4 @@
-package net.thebullpen.baseball.api.dto;
+package net.thebullpen.baseball.domain;
 
 /**
  * Per-model serving-latency summary, served by {@code GET /v1/ops/latency} and read from the

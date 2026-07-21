@@ -1,4 +1,3 @@
 #
 #Mon Jul 20 17:30:09 EDT 2026
-no\ classes\ that\ reside\ in\ a\ package\ '..baseball.data..'\ should\ depend\ on\ classes\ that\ reside\ in\ a\ package\ '..baseball.api.dto..',\ because\ repositories\ are\ the\ persistence\ boundary;\ returning\ web\ DTOs\ couples\ SQL\ row\ shapes\ to\ the\ HTTP\ contract\ (C2\ introduces\ mapping\ at\ the\ api\ boundary)=73993585-ab41-4098-ab6a-c40a5b20d988
 no\ classes\ that\ reside\ outside\ of\ package\ '..baseball.api..'\ should\ depend\ on\ classes\ that\ reside\ in\ a\ package\ '..baseball.api..',\ because\ controllers\ +\ DTOs\ are\ the\ outermost\ layer\ (design.md\ section\ 6);\ inward\ dependencies\ invert\ the\ layering\ and\ couple\ services\ to\ the\ HTTP\ contract=bc15b81c-c00c-49fc-b047-937b95085217

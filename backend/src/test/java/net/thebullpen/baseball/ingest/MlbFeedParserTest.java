@@ -15,6 +15,9 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
+import net.thebullpen.baseball.domain.GameStatus;
+import net.thebullpen.baseball.domain.LivePitch;
+import net.thebullpen.baseball.domain.ScheduledGame;
 import org.junit.jupiter.api.Test;
 
 /**

@@ -10,10 +10,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.util.List;
 import java.util.Optional;
-import net.thebullpen.baseball.api.dto.CalibrationBin;
-import net.thebullpen.baseball.api.dto.PlayerSearchResult;
 import net.thebullpen.baseball.data.CalibrationRepository;
 import net.thebullpen.baseball.data.PlayerRepository;
+import net.thebullpen.baseball.domain.CalibrationBin;
+import net.thebullpen.baseball.domain.PlayerSearchResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;

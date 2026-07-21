@@ -19,6 +19,9 @@ import java.util.Optional;
 import net.thebullpen.baseball.config.IngestProperties;
 import net.thebullpen.baseball.data.JobLeaseRepository;
 import net.thebullpen.baseball.data.LivePitchesRepository;
+import net.thebullpen.baseball.domain.GameStatus;
+import net.thebullpen.baseball.domain.LivePitch;
+import net.thebullpen.baseball.domain.ScheduledGame;
 import net.thebullpen.baseball.inference.ModelUnavailableException;
 import org.junit.jupiter.api.Test;
 

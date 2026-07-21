@@ -17,11 +17,11 @@ import net.thebullpen.baseball.data.GameMatchupsRepository;
 import net.thebullpen.baseball.data.LivePitchesRepository;
 import net.thebullpen.baseball.data.PlayerSeasonStatsRepository;
 import net.thebullpen.baseball.domain.GameMatchup;
-import net.thebullpen.baseball.ingest.GameStatus;
+import net.thebullpen.baseball.domain.GameStatus;
+import net.thebullpen.baseball.domain.ScheduledGame;
 import net.thebullpen.baseball.ingest.Lineup;
 import net.thebullpen.baseball.ingest.MlbStatsApiClient;
 import net.thebullpen.baseball.ingest.PlayerSeasonStat;
-import net.thebullpen.baseball.ingest.ScheduledGame;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 

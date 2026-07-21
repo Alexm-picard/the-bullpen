@@ -2,6 +2,8 @@ package net.thebullpen.baseball.ingest;
 
 import java.time.LocalDate;
 import java.util.List;
+import net.thebullpen.baseball.domain.GameStatus;
+import net.thebullpen.baseball.domain.LivePitch;
 
 /**
  * A parsed MLB GUMBO live feed ({@code /api/v1.1/game/{pk}/feed/live}) for one game: the current
