@@ -233,7 +233,7 @@ services:
       start_period: 10s
 
   glitchtip-web:
-    image: glitchtip/glitchtip:v4.1.1
+    image: glitchtip/glitchtip:6.2.2
     container_name: bullpen-glitchtip-web
     logging: *bullpen-logging
     profiles: ["errortracking"]
@@ -278,7 +278,7 @@ services:
       start_period: 60s
 
   glitchtip-worker:
-    image: glitchtip/glitchtip:v4.1.1
+    image: glitchtip/glitchtip:6.2.2
     container_name: bullpen-glitchtip-worker
     logging: *bullpen-logging
     profiles: ["errortracking"]
@@ -298,7 +298,7 @@ services:
     # `restart: unless-stopped` + the boot-check (infra/check-stack.sh) verifying it is running.
 
   glitchtip-migrate:
-    image: glitchtip/glitchtip:v4.1.1
+    image: glitchtip/glitchtip:6.2.2
     container_name: bullpen-glitchtip-migrate
     logging: *bullpen-logging
     profiles: ["errortracking"]
