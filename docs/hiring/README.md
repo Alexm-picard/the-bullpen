@@ -11,12 +11,13 @@ hiring audience. Different work, separate time block.
 | /about page (methodology)   | shipped  | live at https://thebullpen.net/about (Phase 4f)                                                |
 | Ops dashboard (recruiter)   | shipped  | live at https://thebullpen.net/ops (Phase 4e)                                                  |
 | Drift postmortem (template) | shipped  | [`docs/runbooks/drift-postmortem-template.md`](../runbooks/drift-postmortem-template.md) |
-| Drift postmortem (real)     | gated    | first real one lands mid-season under `docs/postmortems/`                                      |
-| Hardening sweep             | gated    | [`docs/hardening/`](../hardening/) — first sweep mid- or end-of-season                         |
+| Drift postmortem (induced)  | shipped  | [`2026-07-16_induced-drift-drill.md`](../postmortems/2026-07-16_induced-drift-drill.md) - live-path drill, labeled synthetic (decision [175]) |
+| Drift postmortem (natural)  | gated    | a confirmed organic in-season event supersedes the drill (decision [169])                       |
+| Hardening sweep             | shipped  | [`2026-05-30_sweep.md`](../hardening/2026-05-30_sweep.md) - 18 observations triaged, 11 fixed, 7 deferred |
 | Lessons-learned             | skeleton | [`lessons-learned.md`](lessons-learned.md) — fills during operation                            |
 | 60-second verbal pitch      | drafted  | [`60-second-pitch.md`](60-second-pitch.md)                                                     |
 | OSS PR (≥ 1 merged)         | pending  | [`oss-contribution-targets.md`](oss-contribution-targets.md) — candidates identified           |
-| Hero screenshot of /parks   | gated    | needs browser harness — captured during Phase 5.x Playwright bootstrap                         |
+| Hero screenshot of /parks   | shipped  | [`docs/screenshots/parks-full.jpeg`](../screenshots/parks-full.jpeg) - in the root README grid  |
 | Recruiter-time-test         | pending  | non-baseball friend reads README in 60 s and gets it                                           |
 
 ## Gated vs author-now
