@@ -19,8 +19,8 @@ import net.thebullpen.baseball.domain.GameStatus;
 import net.thebullpen.baseball.domain.GameSummary;
 import net.thebullpen.baseball.domain.LivePitch;
 import net.thebullpen.baseball.domain.LivePitchRow;
+import net.thebullpen.baseball.domain.PagedRows;
 import net.thebullpen.baseball.domain.PostPredictionRow;
-import net.thebullpen.baseball.domain.PostPredictionsPage;
 import net.thebullpen.baseball.domain.ScheduledGame;
 import net.thebullpen.baseball.ingest.LiveGameFeed;
 import net.thebullpen.baseball.ingest.MlbFeedParser;
@@ -573,11 +573,9 @@ class LivePitchesRepositoryIT {
         "shadow",
         "{\"probabilities\":{\"in_play\":0.99},\"winner\":\"shadow_win\"}");
 
-    PostPredictionsPage page = repo.findPostPredictions(950L, 0, 50);
+    PagedRows<PostPredictionRow> page = repo.findPostPredictions(950L, 0, 50);
 
     assertEquals(3, page.rows().size(), "only the three champion POST predictions, not the decoys");
-    assertEquals(0, page.page());
-    assertEquals(50, page.size());
     assertFalse(page.hasNext());
 
     // at_bat/pitch order.
@@ -612,13 +610,13 @@ class LivePitchesRepositoryIT {
           "{\"probabilities\":{\"ball\":0.5},\"winner\":\"ball\"}");
     }
 
-    PostPredictionsPage p0 = repo.findPostPredictions(960L, 0, 2);
+    PagedRows<PostPredictionRow> p0 = repo.findPostPredictions(960L, 0, 2);
     assertEquals(2, p0.rows().size(), "page 0 fills to size");
     assertTrue(p0.hasNext(), "a third row exists -> hasNext");
     assertEquals(1, p0.rows().get(0).pitchNumber());
     assertEquals(2, p0.rows().get(1).pitchNumber());
 
-    PostPredictionsPage p1 = repo.findPostPredictions(960L, 1, 2);
+    PagedRows<PostPredictionRow> p1 = repo.findPostPredictions(960L, 1, 2);
     assertEquals(1, p1.rows().size(), "last page has the remaining row");
     assertFalse(p1.hasNext(), "no rows beyond the last page");
     assertEquals(3, p1.rows().get(0).pitchNumber());

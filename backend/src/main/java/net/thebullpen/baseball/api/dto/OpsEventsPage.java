@@ -1,6 +1,7 @@
-package net.thebullpen.baseball.domain;
+package net.thebullpen.baseball.api.dto;
 
 import java.util.List;
+import net.thebullpen.baseball.domain.OpsEvent;
 
 /**
  * A page of {@link OpsEvent} for {@code GET /v1/ops/events}.

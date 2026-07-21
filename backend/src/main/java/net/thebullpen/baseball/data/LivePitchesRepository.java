@@ -23,8 +23,8 @@ import net.thebullpen.baseball.domain.GameStatus;
 import net.thebullpen.baseball.domain.GameSummary;
 import net.thebullpen.baseball.domain.LivePitch;
 import net.thebullpen.baseball.domain.LivePitchRow;
+import net.thebullpen.baseball.domain.PagedRows;
 import net.thebullpen.baseball.domain.PostPredictionRow;
-import net.thebullpen.baseball.domain.PostPredictionsPage;
 import net.thebullpen.baseball.domain.ScheduledGame;
 import net.thebullpen.baseball.ingest.LiveGameFeed;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -370,16 +370,17 @@ public class LivePitchesRepository {
    * query, then trims the overflow row off the returned page. Binds, in SQL order: the
    * prediction_log subquery game_id, the pitches_live subquery game_id, then {@code size + 1}
    * (LIMIT) and {@code page * size} (OFFSET). The {@code page}/{@code size} bounds are validated at
-   * the controller.
+   * the controller, which also assembles the {@code api/dto/PostPredictionsPage} wire envelope from
+   * this carrier plus the request's page/size (ADR-0015).
    */
-  public PostPredictionsPage findPostPredictions(long gameId, int page, int size) {
+  public PagedRows<PostPredictionRow> findPostPredictions(long gameId, int page, int size) {
     int limit = size + 1;
     long offset = (long) page * size;
     List<PostPredictionRow> rows =
         jdbc.query(FIND_POST_PREDICTIONS, POST_PREDICTION_MAPPER, gameId, gameId, limit, offset);
     boolean hasNext = rows.size() > size;
     List<PostPredictionRow> pageRows = hasNext ? List.copyOf(rows.subList(0, size)) : rows;
-    return new PostPredictionsPage(pageRows, page, size, hasNext);
+    return new PagedRows<>(pageRows, hasNext);
   }
 
   /**
