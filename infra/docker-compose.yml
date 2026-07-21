@@ -159,7 +159,7 @@ services:
     # v0.28.1: discord_configs.webhook_url_file needs v0.28+ - v0.27.0 crash-loops at server
     # load with "no discord webhook URL provided" (amtool check-config passes; its validation
     # is laxer than the server's). Box-found 2026-06-11.
-    image: prom/alertmanager:v0.28.1
+    image: prom/alertmanager:v0.33.1
     container_name: bullpen-alertmanager
     logging: *bullpen-logging
     profiles: ["monitoring"]
