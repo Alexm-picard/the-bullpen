@@ -110,7 +110,7 @@ from Phases 0 – 5.
 
 > Pre-season note: zero re-litigation cost. The git hook enforces it;
 > reversals are new entries referencing the original. Keeps a clean
-> audit trail through the 130+ decisions logged.
+> audit trail through the 180 decisions logged.
 
 ### `docs/phase-status.json` drifted out of sync
 
