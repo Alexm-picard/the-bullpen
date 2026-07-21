@@ -12,13 +12,14 @@ import com.tngtech.archunit.library.freeze.FreezingArchRule;
  *
  * <p><b>Frozen rules</b> use {@link FreezingArchRule}: the CURRENT violations are baselined in
  * {@code src/test/resources/archunit-store} (committed), so the build stays green on the known debt
- * while any NEW violation fails immediately. C2 removes the baselined violations (the 8 {@code
- * data/} repositories returning {@code api.dto} types get boundary mappers) and drains the store;
- * once a store file is empty the rule is effectively strict.
+ * while any NEW violation fails immediately. C2 removed the baselined violations - NOT by adding
+ * boundary mappers, but by moving the 17 row/value records those repositories return into {@code
+ * domain/}, where they always belonged - which drained that store to empty and let the rule
+ * graduate to strict.
  *
  * <p><b>Strict rules</b> (no baseline): {@code domain/} purity - the hexagonal-lite core must stay
- * a plain-records module (today it holds only {@code GameMatchup}; keeping the rule strict stops
- * the first impurity from ever landing).
+ * a plain-records module (18 types since C2; keeping the rule strict stops the first impurity from
+ * ever landing).
  */
 @AnalyzeClasses(
     packages = "net.thebullpen.baseball",
@@ -72,9 +73,9 @@ class ArchitectureTest {
    * ingest, and {@code inference/} never reaches into the live-poll pipeline. Locking them now
    * keeps a future convenience import from quietly inverting the layering.
    *
-   * <p>Deliberately NOT ruled: {@code inference/routing/RoutingRepository -> data.JdbcTimes}. That
-   * class IS a repository (JdbcTemplate over {@code model_routing}) that happens to live beside the
-   * router it serves; sharing the JDBC time helper is correct reuse, not a layering break.
+   * <p>The one real {@code inference -> data} edge ({@code RoutingRepository -> data.JdbcTimes}) is
+   * carved out BY NAME in the rule below rather than left unruled, so the exception is enforced as
+   * an exception instead of being a hole.
    */
   @ArchTest
   static final ArchRule simulationMustNotDependOnPersistenceOrIngest =
@@ -87,6 +88,28 @@ class ArchitectureTest {
           .because(
               "the forward simulator is pure computation over the domain core; it must not acquire"
                   + " SQL or live-feed coupling");
+
+  /**
+   * The C1-review follow-up's own gap, closed: the carve-out below used to be documented in prose
+   * with no rule behind it, which left the comment doing enforcement's job - nothing stopped a
+   * future {@code PitchPredictionService -> LivePitchesRepository} import. The exception is named
+   * explicitly so it is the ONLY one; the edge count really is exactly one.
+   */
+  @ArchTest
+  static final ArchRule inferenceMustNotDependOnPersistenceExceptItsOwnRepository =
+      ArchRuleDefinition.noClasses()
+          .that()
+          .resideInAPackage("..baseball.inference..")
+          .and()
+          .doNotHaveFullyQualifiedName(
+              "net.thebullpen.baseball.inference.routing.RoutingRepository")
+          .should()
+          .dependOnClassesThat()
+          .resideInAPackage("..baseball.data..")
+          .because(
+              "serving reads models and routing, not application tables; RoutingRepository is"
+                  + " exempt because it IS a repository (JdbcTemplate over model_routing) that"
+                  + " happens to sit beside the router it serves");
 
   @ArchTest
   static final ArchRule inferenceMustNotDependOnIngest =
