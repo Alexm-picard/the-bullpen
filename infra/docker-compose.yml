@@ -250,6 +250,14 @@ services:
       EMAIL_URL: "${GLITCHTIP_EMAIL_URL:-consolemail://}"
       # Single-operator instance: open registration off after the first superuser exists.
       ENABLE_OPEN_USER_REGISTRATION: "${GLITCHTIP_OPEN_REGISTRATION:-false}"
+      # Bound Celery worker concurrency. The default scales with CPU count, which on this box
+      # forked ~13 celery children inside the worker's 768m cap - they pinned both the memory and
+      # swap limits (failcnt in the thousands) and the container was OOM-killed roughly every 10s
+      # under `restart: unless-stopped`, indefinitely. That relentless fork + swap-thrash loop
+      # correlated with WSL2-host instability (evidence: the kernel OOM dump + the VM-uptime test).
+      # A single-operator error-tracking instance has trivial task volume, so 1 child is plenty.
+      # Inert on the web/migrate services that share this anchor (they run no Celery worker).
+      CELERY_WORKER_CONCURRENCY: "${BULLPEN_GLITCHTIP_CONCURRENCY:-1}"
     depends_on:
       glitchtip-postgres:
         condition: service_healthy
