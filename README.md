@@ -249,6 +249,44 @@ minutes), while the other five registry names raise an explicit
 `UnsupportedModel` rather than pretending to be wired. Promotion is never
 automated: the only path to CHAMPION is an authenticated operator call.
 
+## How this was built
+
+The Bullpen is a solo project, built with AI assistance, and I want to be exact
+about what that means - because "AI-assisted" covers everything from "it wrote my
+README" to "it made every decision for me," and this is neither.
+
+**What I owned.** Every architectural decision on this project is mine, and every
+one is written down. The 15 ADRs and 181 numbered decision-log entries aren't
+documentation I generated after the fact - they're the actual record of choices I
+made and defended: why ONNX Runtime in-process instead of a Python sidecar, why a
+shared-kernel read model instead of boundary mappers, why the pre-pitch head's
+promotion gate is calibration and not accuracy, why the model registry enforces
+promotion criteria at both the service and database level. Each entry captures a
+real fork, the alternatives I rejected, and the reason. When I changed my mind
+(the storage vendor, a promotion metric) I recorded the reversal rather than
+editing history. That log is the thinking, and it's mine.
+
+**How the AI was used.** I worked with Claude as a pair - an implementer and a
+reviewer I directed. It wrote code under my design, drafted docs I rewrote, and
+ran the review agents I built (a leakage auditor for the training code, a registry
+guard for promotion discipline). I reviewed what it produced the way I'd review a
+teammate's PR: I caught the bugs, I rejected the ceremony, I made the calls it
+deferred to me. The Co-Authored-By trailers in the git history are honest - the AI
+co-authored the code. It did not co-author the judgment.
+
+**Why I'm telling you this instead of hiding it.** Because the interesting
+engineering in 2026 isn't "did a human type every line" - it's "can you direct
+this kind of collaboration and stay in control of the outcome." The discipline
+artifacts on this project are the evidence that I did: the append-only decision
+log, the CI gates I can't override, the leakage tests that fail the build, the
+promotion gate no model skips, the failure ledgers (there's a 16-attempt retrain
+saga written up honestly, not sanded down). Those exist because I insisted on
+them, and they're what kept an AI-accelerated build from becoming an AI-shaped
+mess.
+
+If you want to probe this, open the decision log and ask me about any entry. I can
+tell you what I was choosing between and why - because I chose it.
+
 ## Data sources + licensing
 
 The code in this repository is released under the [MIT License](LICENSE). That
