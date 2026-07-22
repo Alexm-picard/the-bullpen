@@ -14,7 +14,7 @@ separately satisfied (0.000895) and already shipped in the /accuracy scorecard. 
 [181]/[145] (first-champion baseline binding).
 
 Deterministic: reads the committed scorecard, writes the gate. No CV re-run. Run from training/:
-    uv run python -m scripts.emit_pre_promotion_gate     (or: python training/scripts/emit_pre_promotion_gate.py)
+    python scripts/emit_pre_promotion_gate.py
 """
 
 from __future__ import annotations
@@ -39,13 +39,14 @@ def build_gate(scorecard: dict) -> dict:
         "artifact_name": "pitch_outcome_pre_promotion_gate",
         "data_source": "full",
         "data_source_note": (
-            "FULL-data first-champion gate for pitch_outcome_pre. Import-shaped (OfflineGateEvidence):"
-            " a RELATIVE ECE non-inferiority-to-baseline check (threshold 0.0, PRE ECE <= LR ECE) the"
-            " anti-bypass can verify. The declared absolute ECE < 0.02 bar (ADR-0014) is separately"
-            " satisfied (0.000895) and shipped in the /accuracy scorecard. No promotion here (rule 6)."
+            "FULL-data first-champion gate for pitch_outcome_pre. Import-shaped"
+            " (OfflineGateEvidence): a RELATIVE ECE non-inferiority-to-baseline check (threshold"
+            " 0.0, PRE ECE <= LR ECE) the anti-bypass can verify. The declared absolute ECE < 0.02"
+            " bar (ADR-0014) is separately satisfied (0.000895) and shipped in the /accuracy"
+            " scorecard. No promotion here (rule 6)."
         ),
         "model_name": "pitch_outcome_pre",
-        # MUST equal the rule-9 baseline model name - the importer's first-champion branch checks it.
+        # MUST equal the rule-9 baseline name - the importer's first-champion branch checks it.
         "champion_model_name": _BASELINE_MODEL,
         "challenger_model_name": "pitch_outcome_pre",
         "primary_metric": "ece",
@@ -54,7 +55,7 @@ def build_gate(scorecard: dict) -> dict:
         "challenger_metric": chal["ece"],  # PRE ECE
         "sample_size_target": scorecard["sample_size_target"],
         "sample_size_observed": scorecard["sample_size_observed"],
-        # criteria.py guardrails: PRE may not regress vs LR on Brier or log-loss at all (max_delta 0).
+        # criteria.py guardrails: PRE may not regress vs LR on Brier or log-loss (max_delta 0).
         "guardrails": {"brier": 0.0, "log-loss": 0.0},
         "guardrails_observed": {"brier": brier_delta, "log-loss": logloss_delta},
         "guardrails_violated": {},
@@ -88,13 +89,13 @@ def main() -> None:
     scorecard = json.loads(_SCORECARD.read_text())
     gate = build_gate(scorecard)
     # Fail loud if the import invariants would not hold - never emit a gate that can't self-verify.
-    assert (
-        gate["challenger_metric"] + gate["primary_threshold"] <= gate["champion_metric"]
-    ), "primary not met: PRE ECE is not <= LR ECE"
+    assert gate["challenger_metric"] + gate["primary_threshold"] <= gate["champion_metric"], (
+        "primary not met: PRE ECE is not <= LR ECE"
+    )
     for k, obs in gate["guardrails_observed"].items():
-        assert (
-            obs <= gate["guardrails"][k]
-        ), f"guardrail {k} regressed: {obs} > {gate['guardrails'][k]}"
+        assert obs <= gate["guardrails"][k], (
+            f"guardrail {k} regressed: {obs} > {gate['guardrails'][k]}"
+        )
     assert gate["sample_size_observed"] >= gate["sample_size_target"]
     _OUT.write_text(json.dumps(gate, indent=2) + "\n")
     print(f"wrote {_OUT}")
