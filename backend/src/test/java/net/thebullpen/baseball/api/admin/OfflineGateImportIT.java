@@ -83,7 +83,23 @@ class OfflineGateImportIT {
   @Autowired private ExperimentResultsRepository experiments;
   @Autowired private OfflineGateImportService offlineImport;
   @Autowired private ObjectMapper mapper;
+  @Autowired private org.springframework.jdbc.core.JdbcTemplate jdbc;
+  @Autowired private org.springframework.cache.CacheManager cacheManager;
   @TempDir Path artifactDir;
+
+  /**
+   * The first-champion tests both register pitch_outcome_pre and must start with NO champion; the
+   * class's @DirtiesContext does not reliably isolate them from each other, so reset explicitly.
+   */
+  private void resetRegistry() {
+    jdbc.update("DELETE FROM experiment_results");
+    jdbc.update("DELETE FROM model_routing");
+    jdbc.update("DELETE FROM model_versions");
+    var routing = cacheManager.getCache("routing");
+    if (routing != null) {
+      routing.clear();
+    }
+  }
 
   @Test
   void imported_offline_gate_row_satisfies_the_promote_gate_end_to_end() throws Exception {
@@ -159,6 +175,95 @@ class OfflineGateImportIT {
                 offlineImport.importGate(MODEL, v2.id(), v1.id(), "test_promotion_gate.json", "IT"))
         .isInstanceOf(ExperimentException.OfflineGateInvalid.class)
         .hasMessageContaining("not the CURRENT champion");
+  }
+
+  // --- first-champion binding (decision [181]/[145]): a no-champion, multi-version, negative-
+  // threshold model binds its gate row to the rule-9 co-registered LR baseline. Imports the REAL
+  // pitch_outcome_pre_promotion_gate.json end-to-end.
+
+  private static final String PRE = "pitch_outcome_pre";
+  private static final String PRE_BASELINE = "pitch_outcome_lr_baseline";
+  private static final Path PITCH_CONTRACT =
+      Path.of(System.getProperty("user.dir"))
+          .getParent()
+          .resolve("contracts/feature_pipeline.json");
+
+  @Test
+  void first_champion_gate_binds_to_the_rule9_baseline_and_promotes() throws Exception {
+    resetRegistry();
+    // pitch_outcome_pre: rule-9 baseline registered first, then TWO pre versions and NO champion,
+    // so
+    // the bootstrap exemption is gone and it needs a passing row - which its negative-threshold ECE
+    // primary can't create online. The committed first-champion gate is the row-creation path.
+    ModelVersion baseline = service.register(realStub(PRE_BASELINE, "v1"));
+    service.register(realStub(PRE, "v1"));
+    ModelVersion preV2 = service.register(realStub(PRE, "v2"));
+    assertThat(service.findChampion(PRE)).isEmpty();
+
+    ExperimentResult row =
+        offlineImport.importGate(
+            PRE,
+            baseline.id(),
+            preV2.id(),
+            "pitch_outcome_pre_promotion_gate.json",
+            "first-champ IT");
+    assertThat(row.status()).isEqualTo(ExperimentResult.Status.PASSED);
+    assertThat(row.championVersionId())
+        .isEqualTo(baseline.id()); // bound to the LR baseline, not a pre version
+    assertThat(row.challengerVersionId()).isEqualTo(preV2.id());
+
+    // The EXACT query assertPromotionCriteriaMet runs for a no-champion model finds the row.
+    assertThat(
+            experiments.findLatestPassingAnyChampion(
+                PRE, preV2.id(), Instant.now().minusSeconds(3600)))
+        .isPresent();
+
+    // End-to-end: promoting pre v2 through the REAL gate now SUCCEEDS.
+    mvc.perform(
+            post("/v1/admin/registry/" + PRE + "/promote/" + preV2.id())
+                .header("Authorization", BASIC)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    mapper.writeValueAsString(
+                        Map.of("targetStage", "champion", "reason", "first-champion IT"))))
+        .andExpect(status().isOk());
+    assertThat(service.findChampion(PRE).orElseThrow().id()).isEqualTo(preV2.id());
+  }
+
+  @Test
+  void first_champion_import_rejects_a_champion_binding_that_is_not_the_rule9_baseline()
+      throws Exception {
+    resetRegistry();
+    service.register(realStub(PRE_BASELINE, "v1"));
+    ModelVersion preV1 = service.register(realStub(PRE, "v1"));
+    ModelVersion preV2 = service.register(realStub(PRE, "v2"));
+    // championVersionId = a pitch_outcome_pre version, NOT the rule-9 baseline -> rejected.
+    assertThatThrownBy(
+            () ->
+                offlineImport.importGate(
+                    PRE, preV1.id(), preV2.id(), "pitch_outcome_pre_promotion_gate.json", "IT"))
+        .isInstanceOf(ExperimentException.OfflineGateInvalid.class)
+        .hasMessageContaining("rule-9 baseline");
+  }
+
+  /**
+   * Register a real rule-9-mapped model with the real canonical contract so the schema hash pins.
+   */
+  private RegisterRequest realStub(String model, String version) throws Exception {
+    Path artifact = write(model + "-" + version + "-model.onnx", "stub-not-a-real-onnx");
+    Path metadata = write(model + "-" + version + "-meta.json", "{}");
+    return new RegisterRequest(
+        model,
+        version,
+        artifact.toString(),
+        metadata.toString(),
+        PITCH_CONTRACT.toString(),
+        "train-h-" + model + "-" + version,
+        "[2024-01-01,2024-12-31]",
+        "{\"ece\":0.001}",
+        Instant.now(),
+        "offline-gate-it",
+        "first-champion IT");
   }
 
   // --- helpers ----------------------------------------------------------

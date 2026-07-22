@@ -5,12 +5,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import net.thebullpen.baseball.registry.ExperimentResultsRepository;
 import net.thebullpen.baseball.registry.OfflineGateEvidenceRepository;
+import net.thebullpen.baseball.registry.RegistryBaselines;
 import net.thebullpen.baseball.registry.RegistryRepository;
 import net.thebullpen.baseball.registry.dto.ExperimentResult;
 import net.thebullpen.baseball.registry.dto.ModelVersion;
 import net.thebullpen.baseball.registry.dto.OfflineGateEvidence;
+import net.thebullpen.baseball.registry.dto.Stage;
 import net.thebullpen.baseball.registry.experiment.dto.PrimaryMetric;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,8 +36,11 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>Anti-bypass (so this does not become a way to wave anything through): it can only import a
  * BUNDLED artifact (an operator cannot post arbitrary JSON); it RE-DERIVES the pass from the
  * verdict + guardrails + carry gate (never trusts the JSON's {@code status} blindly); and it binds
- * the row to the CURRENT champion. ADMIN-only at the controller. NO promotion is performed here
- * (rule 6) - it only creates the evidence row that the separate, human-gated promote then reads.
+ * the row to the CURRENT champion - or, for a model with no champion yet, to its rule-9
+ * co-registered LR baseline (the FIRST-CHAMPION binding, decision [181]/[145]), validated
+ * non-archived and name-matched to the artifact's {@code champion_model_name}. ADMIN-only at the
+ * controller. NO promotion is performed here (rule 6) - it only creates the evidence row the
+ * human-gated promote reads.
  */
 @Service
 @Profile("api")
@@ -156,28 +162,81 @@ public class OfflineGateImportService {
               + " < target "
               + ev.sampleSizeTarget());
     }
-    // 4. the row must bind the CURRENT champion (a stale-champion row would not satisfy the strict
-    // promote gate), the challenger must be a registered version, and they must differ.
+    // 4. Bind the champion. The row must differ from the challenger, and the binding must be one
+    // the strict promote gate will accept.
     if (championVersionId == challengerVersionId) {
       throw new ExperimentException.OfflineGateInvalid(
           "champion and challenger version ids must differ; got " + championVersionId);
     }
-    ModelVersion champion =
-        registry
-            .findChampion(modelName)
-            .orElseThrow(
-                () ->
-                    new ExperimentException.OfflineGateInvalid(
-                        modelName + " has no current champion to bind the evidence row to"));
-    if (champion.id() != championVersionId) {
-      throw new ExperimentException.OfflineGateInvalid(
-          "championVersionId "
-              + championVersionId
-              + " is not the CURRENT champion of "
-              + modelName
-              + " (current="
-              + champion.id()
-              + "); a row against a stale champion would not satisfy the promote gate");
+    Optional<ModelVersion> currentChampion = registry.findChampion(modelName);
+    if (currentChampion.isPresent()) {
+      // Normal case: bind the CURRENT champion (a stale-champion row would not satisfy the gate).
+      if (currentChampion.get().id() != championVersionId) {
+        throw new ExperimentException.OfflineGateInvalid(
+            "championVersionId "
+                + championVersionId
+                + " is not the CURRENT champion of "
+                + modelName
+                + " (current="
+                + currentChampion.get().id()
+                + "); a row against a stale champion would not satisfy the promote gate");
+      }
+    } else {
+      // FIRST-CHAMPION binding (decision [181]/[145]): a model with NO champion (e.g.
+      // pitch_outcome_pre, whose declared primary is a NEGATIVE-threshold ECE bar the online
+      // experiment path cannot create) binds its offline-gate row to the rule-9 co-registered LR
+      // BASELINE version - the natural comparison, and the promote gate's
+      // findLatestPassingAnyChampion accepts any champion_version_id. The baseline version must be
+      // NON-ARCHIVED and its model name must match both the rule-9 mapping AND the artifact's
+      // declared champion_model_name (so the imported row honestly names what it was scored
+      // against).
+      String expectedBaseline =
+          RegistryBaselines.baselineFor(modelName)
+              .orElseThrow(
+                  () ->
+                      new ExperimentException.OfflineGateInvalid(
+                          modelName
+                              + " has no current champion and no rule-9 baseline to bind a"
+                              + " first-champion gate row to"));
+      ModelVersion baselineVersion =
+          registry
+              .findById(championVersionId)
+              .orElseThrow(
+                  () ->
+                      new ExperimentException.OfflineGateInvalid(
+                          "championVersionId "
+                              + championVersionId
+                              + " is not a registered version"));
+      if (!expectedBaseline.equals(baselineVersion.modelName())) {
+        throw new ExperimentException.OfflineGateInvalid(
+            "first-champion binding: championVersionId "
+                + championVersionId
+                + " belongs to '"
+                + baselineVersion.modelName()
+                + "', not the rule-9 baseline '"
+                + expectedBaseline
+                + "' of '"
+                + modelName
+                + "'");
+      }
+      if (baselineVersion.stage() == Stage.ARCHIVED) {
+        throw new ExperimentException.OfflineGateInvalid(
+            "first-champion binding requires a non-archived "
+                + expectedBaseline
+                + " version; "
+                + championVersionId
+                + " is ARCHIVED");
+      }
+      if (!expectedBaseline.equals(ev.championModelName())) {
+        throw new ExperimentException.OfflineGateInvalid(
+            "first-champion binding: artifact champion_model_name '"
+                + ev.championModelName()
+                + "' != the rule-9 baseline '"
+                + expectedBaseline
+                + "' of '"
+                + modelName
+                + "'");
+      }
     }
     ModelVersion challenger =
         registry
