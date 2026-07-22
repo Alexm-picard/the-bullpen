@@ -37,13 +37,12 @@ import org.springframework.web.server.ResponseStatusException;
  * by family and each meaning is a data contract:
  *
  * <ul>
- *   <li><b>Single-park toy</b> ({@code _toy_batted_ball}): the toy bean served - no registry row
- *       backs the serve. Identity = hardcoded {@code v0} + the ctor-cached toy pipeline schema hash
- *       + <b>null</b> FK. Reconciliation joins {@code prediction_log.model_version_id} against the
- *       registry and depends on legacy rows being NULL (never -1; the sentinel is never persisted).
- *   <li><b>All-parks</b> ({@code battedball_outcome}): the fallback served the registry LIVE
- *       champion (503 when none) - a real registry row DID serve. Identity = the re-resolved
- *       champion's real id/version/hash; the FK is never null on this family.
+ *   <li><b>Both batted-ball families</b> ({@code battedball_outcome}, single-park AND all-parks):
+ *       the fallback serves the registry LIVE champion (503 when none) - a real registry row DID
+ *       serve. Identity = the re-resolved champion's real id/version/hash; the FK is never null on
+ *       these families. Single-park used to be the toy bean (hardcoded {@code v0} + <b>null</b>
+ *       FK); "retire the toy" removed that leg, so single-park now mirrors all-parks and no null-FK
+ *       legacy row is written here anymore. The {@code -1L} sentinel itself is never persisted.
  * </ul>
  *
  * <p><b>Other preserved data-contract details</b> (do not "fix" without a /decide): the {@code

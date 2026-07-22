@@ -22,6 +22,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.cache.CacheManager;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -73,7 +74,7 @@ class PredictBattedBallControllerTest {
   @Autowired private RegistryService service;
   @Autowired private JdbcTemplate jdbc;
   @Autowired private ObjectMapper mapper;
-  @Autowired private org.springframework.cache.CacheManager cacheManager;
+  @Autowired private CacheManager cacheManager;
 
   @TempDir Path artifactDir;
 
