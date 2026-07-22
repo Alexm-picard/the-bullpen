@@ -8,7 +8,9 @@ import java.util.Objects;
  * Input to the {@code POST /v1/admin/experiments/import-offline} admin endpoint: ingest a committed
  * OFFLINE promotion-gate artifact ({@code artifactName}, bundled per {@code
  * OfflineGateEvidenceRepository}) as a terminal {@code passed} experiment_results row binding
- * {@code championVersionId} (which must be the CURRENT champion) to {@code challengerVersionId}.
+ * {@code championVersionId} to {@code challengerVersionId}. {@code championVersionId} must be the
+ * CURRENT champion - or, for a model with no champion yet, its rule-9 co-registered LR baseline
+ * version (the FIRST-CHAMPION binding, decision [181]/[145]).
  *
  * <p>The criteria + metrics come from the committed ARTIFACT, never from this request - this only
  * declares WHICH committed evidence and WHICH registered versions. See ADR-0012 / decision [166].

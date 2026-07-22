@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "artifact_name": "pitch_outcome_pre_promotion_gate",
+  "data_source": "full",
+  "data_source_note": "FULL-data first-champion gate for pitch_outcome_pre. Import-shaped (OfflineGateEvidence): a RELATIVE ECE non-inferiority-to-baseline check (threshold 0.0, PRE ECE <= LR ECE) the anti-bypass can verify. The declared absolute ECE < 0.02 bar (ADR-0014) is separately satisfied (0.000895) and shipped in the /accuracy scorecard. No promotion here (rule 6).",
+  "model_name": "pitch_outcome_pre",
+  "champion_model_name": "pitch_outcome_lr_baseline",
+  "challenger_model_name": "pitch_outcome_pre",
+  "primary_metric": "ece",
+  "primary_threshold": 0.0,
+  "champion_metric": 0.001606452165607009,
+  "challenger_metric": 0.0008948517749292956,
+  "sample_size_target": 2000,
+  "sample_size_observed": 710600,
+  "guardrails": {
+    "brier": 0.0,
+    "log-loss": 0.0
+  },
+  "guardrails_observed": {
+    "brier": -0.000876076448082852,
+    "log-loss": -0.010521032380395257
+  },
+  "guardrails_violated": {},
+  "status": "passed",
+  "verdict": {
+    "outcome": "would_pass",
+    "passed": true,
+    "sample_size_met": true,
+    "primary_margin_required": 0.0,
+    "primary_margin_observed": -0.0007116003906777133
+  },
+  "supplementary_checks": [
+    {
+      "name": "absolute_ece_bar",
+      "metric": "ece",
+      "max_allowed": 0.02,
+      "observed": 0.0008948517749292956,
+      "passed": true,
+      "rationale": "The ADR-0014 declared primary (absolute ECE < 0.02). NON-GATING in this import (the re-derivation gates on the relative check above); recorded because it is the declared criterion and it passes at 0.000895."
+    }
+  ],
+  "provenance": {
+    "git_commit": "1d90fb550c8b0d04637003dda10826663e50a924",
+    "generated_at": "2026-07-22T00:01:22+00:00",
+    "sample_root": "/Users/alexpicard/thebullpen/data/fold_export/v2-clean",
+    "loader": "fold_export",
+    "rows_per_year": null,
+    "segment_cols": [
+      "count_strikes",
+      "batter_stand_int"
+    ],
+    "rule_13_holdout": "2026 excluded from every split (sample mirror is 2015-2025 only)",
+    "split_discipline": "rolling-origin temporal CV; no random_state on any split",
+    "mlp_calibration": "isotonic"
+  }
+}

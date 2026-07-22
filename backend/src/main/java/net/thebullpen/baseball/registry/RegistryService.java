@@ -3,7 +3,6 @@ package net.thebullpen.baseball.registry;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import net.thebullpen.baseball.registry.dto.ModelVersion;
 import net.thebullpen.baseball.registry.dto.RegisterRequest;
@@ -52,19 +51,8 @@ public class RegistryService {
    */
   static final java.time.Duration PROMOTION_EVIDENCE_MAX_AGE = java.time.Duration.ofDays(30);
 
-  /**
-   * B4 / rule 9: each primary head's partner LR baseline. Promotion of a key to CHAMPION requires
-   * at least one non-archived registered version of the value. Hardcoded (vs a baseline_model_name
-   * column) deliberately: the pairing is a design-time fact from decision [37]/[46], the map is
-   * tiny, and it avoids a migration into the L5-noted duplicate-numbering minefield. Baseline model
-   * names themselves are absent from the map, so baselines promote without self-reference.
-   */
-  private static final Map<String, String> BASELINE_FOR_PRIMARY =
-      Map.of(
-          "pitch_outcome_pre", "pitch_outcome_lr_baseline",
-          "pitch_outcome_post", "pitch_outcome_lr_baseline",
-          "battedball_outcome", "lr_baseline_batted_ball",
-          "battedball_lgbm_per_park", "lr_baseline_batted_ball");
+  // B4 / rule 9 primary -> LR baseline mapping now lives in RegistryBaselines (single source of
+  // truth, shared with OfflineGateImportService's first-champion binding).
 
   private final RegistryRepository repo;
   private final FeatureSchemaHasher hasher;
@@ -425,12 +413,12 @@ public class RegistryService {
 
   /**
    * B4 / rule 9: a primary head cannot reach CHAMPION while its partner LR baseline (decision
-   * [37]/[46], {@link #BASELINE_FOR_PRIMARY}) has never been registered. Any non-archived stage
-   * counts - the baseline only has to EXIST in the registry, not serve. Until now this rule lived
-   * only in the Python dry-run gate; nothing in the JVM enforced it.
+   * [37]/[46], {@link RegistryBaselines}) has never been registered. Any non-archived stage counts
+   * - the baseline only has to EXIST in the registry, not serve. Until now this rule lived only in
+   * the Python dry-run gate; nothing in the JVM enforced it.
    */
   private void assertBaselineRegistered(ModelVersion incoming) {
-    String baseline = BASELINE_FOR_PRIMARY.get(incoming.modelName());
+    String baseline = RegistryBaselines.baselineFor(incoming.modelName()).orElse(null);
     if (baseline == null) {
       return; // not a mapped primary (baselines themselves land here)
     }
