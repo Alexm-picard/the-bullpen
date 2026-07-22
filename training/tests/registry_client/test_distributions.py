@@ -224,6 +224,75 @@ def test_decode_pitch_categoricals_inverts_int_encodings():
     assert list(out["batter_stand"]) == ["R", "L", "R"]
 
 
+def test_decode_pitch_categoricals_skips_pitch_type_when_absent():
+    # A pre-head parquet carries no Tier-4 pitch_type_int - the decode must skip pitch_type (and
+    # tolerate an empty ptype map) rather than KeyError, still decoding park / throws / stand.
+    df = pd.DataFrame(
+        {
+            "park_id_int": [0, 1, 0],
+            "pitcher_throws_int": [0, 1, 1],
+            "batter_stand_int": [1, 0, 1],
+        }
+    )
+    out = decode_pitch_categoricals(df, park_by_int={0: "ATL", 1: "AZ"}, ptype_by_int={})
+    assert list(out["park_id"]) == ["ATL", "AZ", "ATL"]
+    assert list(out["pitcher_throws"]) == ["L", "R", "R"]
+    assert list(out["batter_stand"]) == ["R", "L", "R"]
+    assert "pitch_type" not in out.columns  # Tier-4, absent from the pre head
+
+
+def _pitch_pre_frame(n: int = 30) -> pd.DataFrame:
+    """A request-space pre-head frame: the Tier-1 direct ints + decoded park/throws/stand.
+
+    Mirrors what ``_load_pitch_frame`` yields for a pre bundle (no Tier-4 pitch_type column).
+    """
+    parks = np.array(["NYY", "BOS", "COL"])[np.arange(n) % 3]
+    throws = np.array(["L", "R"])[np.arange(n) % 2]
+    stand = np.array(["R", "L"])[np.arange(n) % 2]
+    return pd.DataFrame(
+        {
+            "count_balls": np.arange(n) % 4,
+            "count_strikes": np.arange(n) % 3,
+            "outs": np.arange(n) % 3,
+            "inning": (np.arange(n) % 9) + 1,
+            "base_state": np.arange(n) % 8,
+            "score_diff": (np.arange(n) % 5) - 2,
+            "dow": np.arange(n) % 7,
+            "park_id": parks,
+            "pitcher_throws": throws,
+            "batter_stand": stand,
+        }
+    )
+
+
+def test_pitch_pre_champion_config_is_categorical_only():
+    cfg = CHAMPIONS["pitch_outcome_pre"]
+    assert cfg.continuous == {}  # the pre head carries no Tier-4 request-space continuous features
+    # Post's Tier-1 request keys, minus pitchType (a Tier-4 categorical).
+    assert set(cfg.categorical) == {
+        "pitcherThrows",
+        "batterStand",
+        "parkId",
+        "countBalls",
+        "countStrikes",
+        "outs",
+        "inning",
+        "baseState",
+        "scoreDiff",
+        "dow",
+    }
+    assert "pitchType" not in cfg.categorical
+    assert cfg.class_labels == CHAMPIONS["pitch_outcome_post"].class_labels  # same 5 outcomes
+
+
+def test_pitch_pre_feature_block_is_all_categorical_request_keys():
+    block = build_feature_block(_pitch_pre_frame(60), CHAMPIONS["pitch_outcome_pre"], 5000)
+    assert set(block) == set(CHAMPIONS["pitch_outcome_pre"].categorical)  # request-keyed
+    assert all(v["kind"] == "categorical" for v in block.values())  # no continuous on the pre head
+    assert set(block["parkId"]["counts"]) == {"NYY", "BOS", "COL"}
+    assert set(block["baseState"]["counts"]) == {str(i) for i in range(8)}  # int-string keys
+
+
 def test_build_feature_block_raises_on_missing_source_column():
     df = reconstruct_battedball_categoricals(_battedball_model_frame(24)).drop(
         columns=["spray_angle_deg"]

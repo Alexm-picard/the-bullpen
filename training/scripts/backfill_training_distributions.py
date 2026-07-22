@@ -15,8 +15,9 @@ The prod-confirmed request-key config (``CHAMPIONS``) + the source-space decoder
 ``registry_client.distributions`` and are shared with the native trainer emission (E-1 part 2), so a
 backfill and a retrain produce byte-identical blocks. SOURCE modes: ``battedball_outcome`` derives
 from ClickHouse over 2015-2025 (build_year_query + rows_to_frame; ``stand``/``baseState``
-reconstructed from the model one-hots); ``pitch_outcome_post`` reads the on-box parquet and DECODES
-its ``_int`` categoricals back to request space. The served prediction distribution is computed
+reconstructed from the model one-hots); the pitch heads (``pitch_outcome_pre`` /
+``pitch_outcome_post``) read the on-box parquet and DECODE its ``_int`` categoricals back to request
+space (pre carries no Tier-4 pitch_type). The served prediction distribution is computed
 in-CLI via each family's real ONNX + calibrator (``--proba-npy`` is an escape hatch).
 """
 
@@ -90,17 +91,35 @@ def _load_battedball_frame(seasons: range, container: str) -> pd.DataFrame:
 
 
 def _load_pitch_frame(parquet: Path, model_dir: Path) -> pd.DataFrame:
-    """Read the pitch-post parquet (already the 41-vector) and decode its _int categoricals.
+    """Read a pitch parquet (post = 41-vector, pre = 31-vector) and decode its _int categoricals.
 
     The operator MUST pass the champion's REGISTERED training snapshot (``training_data.parquet`` in
     the bundle dir), not an ad-hoc parquet: the parquet carries no season/date column, so rule-13 is
     enforced upstream at snapshot registration, not here.
+
+    pitch_type is a Tier-4 categorical the pre head does not carry, so its mapping file is absent
+    from a pre bundle - read it only when present; ``decode_pitch_categoricals`` skips the
+    pitch_type decode in step with that.
     """
     park = json.loads((model_dir / "park_id_mapping.json").read_text())["park_id"]
-    ptype = json.loads((model_dir / "pitch_type_mapping.json").read_text())["pitch_type"]
     park_by_int = {int(v): k for k, v in park.items()}
-    ptype_by_int = {int(v): k for k, v in ptype.items()}
+    ptype_path = model_dir / "pitch_type_mapping.json"
+    ptype_by_int: dict[int, str] = {}
+    if ptype_path.exists():
+        ptype = json.loads(ptype_path.read_text())["pitch_type"]
+        ptype_by_int = {int(v): k for k, v in ptype.items()}
     return decode_pitch_categoricals(pd.read_parquet(parquet), park_by_int, ptype_by_int)
+
+
+def _pitch_feature_cols(model: str) -> tuple[str, ...]:
+    """The ONNX input feature order for a pitch head: pre = 31-vector, post = 41-vector.
+
+    Pure (import-light: the pitch package's column tuples are plain constants, no torch/onnx), so
+    the 31-vs-41 selection is unit-testable without a real ONNX session.
+    """
+    from bullpen_training.pitch import PITCH_FEATURE_COLUMNS, PITCH_FEATURE_COLUMNS_POST
+
+    return PITCH_FEATURE_COLUMNS if model == "pitch_outcome_pre" else PITCH_FEATURE_COLUMNS_POST
 
 
 def _served_proba(model: str, model_dir: Path, frame: pd.DataFrame) -> np.ndarray:
@@ -112,12 +131,12 @@ def _served_proba(model: str, model_dir: Path, frame: pd.DataFrame) -> np.ndarra
 
     import onnxruntime as ort
 
-    from bullpen_training.pitch import PITCH_FEATURE_COLUMNS_POST
     from bullpen_training.pitch.eval._shared import onnx_probabilities
     from bullpen_training.pitch.isotonic import IsotonicCalibrator
 
+    # pre consumes the 31-vector, post the 41-vector; same served chain (LightGBM ONNX + isotonic).
     session = ort.InferenceSession(str(model_dir / "model.onnx"))
-    mat = frame[list(PITCH_FEATURE_COLUMNS_POST)].to_numpy(np.float32)
+    mat = frame[list(_pitch_feature_cols(model))].to_numpy(np.float32)
     raw = onnx_probabilities(session, mat, input_name=session.get_inputs()[0].name)
     return IsotonicCalibrator.from_json(model_dir / "calibrator.json").transform(raw)
 
@@ -135,7 +154,7 @@ def main(argv: list[str] | None = None) -> int:
         "--training-parquet",
         type=Path,
         default=None,
-        help="pitch_outcome_post: the on-box training_data.parquet (battedball uses ClickHouse)",
+        help="pitch heads (pre/post): on-box training_data.parquet (battedball uses ClickHouse)",
     )
     ap.add_argument(
         "--seasons", default="2015-2025", help="battedball CH training seasons, inclusive (<= 2025)"
@@ -184,7 +203,7 @@ def main(argv: list[str] | None = None) -> int:
         frame = _load_battedball_frame(_parse_seasons(args.seasons), args.container)
     else:
         if args.training_parquet is None:
-            ap.error("pitch_outcome_post requires --training-parquet")
+            ap.error(f"{args.model} requires --training-parquet")
         frame = _load_pitch_frame(args.training_parquet, args.model_dir)
 
     # 2. feature_distributions (request keys) + 3. training_prediction_distribution (served probs).

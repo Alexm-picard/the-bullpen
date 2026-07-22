@@ -34,6 +34,19 @@ def test_parse_seasons_and_rule13_holdout_refusal():
         backfill._parse_seasons("2025-2015")  # lo > hi
 
 
+def test_pitch_feature_cols_selects_pre_31_vs_post_41():
+    # The pre-vs-post ONNX input order is the load-bearing pre-specific decision in _served_proba;
+    # exercise it directly (the full _served_proba wants a real ONNX session, so it is box-only).
+    from bullpen_training.pitch import PITCH_FEATURE_COLUMNS, PITCH_FEATURE_COLUMNS_POST
+
+    pre = backfill._pitch_feature_cols("pitch_outcome_pre")
+    post = backfill._pitch_feature_cols("pitch_outcome_post")
+    assert pre == PITCH_FEATURE_COLUMNS and len(pre) == 31
+    assert post == PITCH_FEATURE_COLUMNS_POST and len(post) == 41
+    assert "pitch_type_int" not in pre  # Tier-4, pre-head absent
+    assert "pitch_type_int" in post
+
+
 def test_merge_preserves_existing_metadata_keys(tmp_path: Path):
     meta_path = tmp_path / "metadata.json"
     original = {
