@@ -55,6 +55,10 @@ training/data/eval/promotion/*
 # import-shaped OfflineGateEvidence artifact read by import-offline + promote, deliberately NOT the
 # *_experiment_results_full*.json scorecard glob (which /accuracy bundles). Explicit negation.
 !training/data/eval/promotion/pitch_outcome_pre_promotion_gate.json
+# Same reasoning for the battedball_outcome v3-vs-v2 NON-INFERIORITY gate ([166]/[178], produced by
+# battedball.mlp.compare_versions): an OfflineGateEvidence artifact read by import-offline + promote,
+# a *_promotion_gate.json (bundled) but NOT the *_experiment_results_full*.json scorecard glob.
+!training/data/eval/promotion/battedball_outcome_v3_promotion_gate.json
 # ...but keep the exploratory temperature calibrations box-local (superseded
 # side-quests). The versioned record is isotonic (the standing best) +
 # per_park_isotonic (the gate-gaming negative); the *_temperature* runs were
