@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.URI;
+import java.net.URL;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -14,6 +15,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -22,6 +24,9 @@ import java.util.concurrent.TimeUnit;
 import net.thebullpen.baseball.Application;
 import net.thebullpen.baseball.inference.routing.RoutingService;
 import net.thebullpen.baseball.registry.RegistryRepository;
+import net.thebullpen.baseball.registry.RegistryService;
+import net.thebullpen.baseball.registry.dto.ModelVersion;
+import net.thebullpen.baseball.registry.dto.RegisterRequest;
 import net.thebullpen.baseball.registry.dto.Stage;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -59,9 +64,18 @@ import org.springframework.context.ConfigurableApplicationContext;
 class ApiPairTwoInstanceIT {
 
   private static final String ADMIN = "it-admin:it-password";
+  // Champion-shape single-park body (the toy shape was retired): the per-park outcome model's seven
+  // inputs + a parkId selecting one of its parks. PARK00 exists in the fixture calibrator.
   private static final String PREDICT_BODY =
-      "{\"launchSpeedMph\":104.5,\"launchAngleDeg\":28.0,\"releaseSpeedMph\":92.0,"
-          + "\"parkId\":\"COL\",\"stand\":\"R\"}";
+      "{\"launchSpeedMph\":104.5,\"launchAngleDeg\":28.0,\"sprayAngleDeg\":5.0,"
+          + "\"hitDistanceFt\":401.0,\"stand\":\"R\",\"baseState\":0,\"outs\":1,"
+          + "\"parkId\":\"PARK00\"}";
+  private static final Path CONTRACT =
+      Path.of(System.getProperty("user.dir"))
+          .getParent()
+          .resolve("contracts/feature_pipeline_battedball.json");
+  private static final int N_PARKS = 30;
+  private static final int N_OUTCOMES = 5;
   private static final ObjectMapper MAPPER = new ObjectMapper();
   private static final HttpClient HTTP = HttpClient.newHttpClient();
 
@@ -70,6 +84,7 @@ class ApiPairTwoInstanceIT {
   private static int portA;
   private static int portB;
   private static Path dbFile;
+  private static Path snapshotBase;
 
   /** JUnit5 @EnabledIf hook - the api context cannot start without the on-disk toy model. */
   static boolean toyModelPresent() {
@@ -85,12 +100,18 @@ class ApiPairTwoInstanceIT {
         Path.of(
             System.getProperty("java.io.tmpdir"), "bullpen-d39-" + UUID.randomUUID() + ".sqlite");
     String url = "jdbc:sqlite:" + dbFile + "?foreign_keys=true&busy_timeout=5000";
+    // A SHARED snapshot store so a champion registered via A resolves on B too (both instances
+    // read this base). Needed because /v1/predict/batted-ball now serves the registry champion,
+    // not the toy - so the predict test must register a real, loadable model.
+    snapshotBase =
+        Path.of(System.getProperty("java.io.tmpdir"), "bullpen-d39-snapshots-" + UUID.randomUUID());
     // Boot SEQUENTIALLY: A migrates + baselines the fresh SQLite to head, then B's Flyway is a
     // validate/no-op - avoids a concurrent-writer SQLITE_BUSY on the single-writer file.
     ctxA = boot(url);
     portA = portOf(ctxA);
     ctxB = boot(url);
     portB = portOf(ctxB);
+    registerChampion(ctxA.getBean(RegistryService.class));
   }
 
   private static ConfigurableApplicationContext boot(String sharedDbUrl) {
@@ -105,6 +126,7 @@ class ApiPairTwoInstanceIT {
             "--spring.datasource.url=" + sharedDbUrl,
             "--spring.flyway.url=" + sharedDbUrl,
             "--bullpen.admin.basicauth=" + ADMIN,
+            "--bullpen.snapshot.local-base-path=" + snapshotBase,
             "--bullpen.cache.routing-ttl-seconds=3");
   }
 
@@ -141,8 +163,9 @@ class ApiPairTwoInstanceIT {
       for (Future<Float> f : futures) {
         results.add(f.get(30, TimeUnit.SECONDS)); // any non-200 throws -> zero-errors assertion
       }
-      // Every instance returns the SAME toy prediction for the same input (stateless serving +
-      // deterministic ONNX), so a duplicated api instance is a byte-identical replica.
+      // Every instance returns the SAME champion prediction for the same input (stateless serving +
+      // deterministic ONNX, same shared snapshot), so a duplicated api instance is a byte-identical
+      // replica - the stateless-replica property scale-out relies on (ADR-0013).
       float first = results.get(0);
       assertThat(results).allSatisfy(p -> assertThat(p).isEqualTo(first));
     } finally {
@@ -257,5 +280,96 @@ class ApiPairTwoInstanceIT {
       Thread.sleep(100);
     }
     return last;
+  }
+
+  // --- champion fixture (same shape as PredictAllParksControllerTest; a shared test helper is a
+  // reasonable follow-up if a fourth copy appears)
+  // -------------------------------------------------
+
+  private static void registerChampion(RegistryService service) {
+    try {
+      Path dir = Files.createTempDirectory("bullpen-d39-champ-");
+      Path artifact = dir.resolve("model.onnx");
+      URL onnx =
+          ApiPairTwoInstanceIT.class.getResource("/onnx/battedball_park_outcome_fixture.onnx");
+      Files.copy(Path.of(Objects.requireNonNull(onnx, "fixture missing").toURI()), artifact);
+      Path metadata = dir.resolve("metadata.json");
+      Files.writeString(metadata, metadataJson());
+      Path pipeline = dir.resolve("feature_pipeline.json");
+      Files.copy(CONTRACT, pipeline);
+      Files.writeString(dir.resolve("calibrator.json"), calibratorJson());
+      ModelVersion mv =
+          service.register(
+              new RegisterRequest(
+                  "battedball_outcome",
+                  "v1",
+                  artifact.toString(),
+                  metadata.toString(),
+                  pipeline.toString(),
+                  "d39-champ",
+                  "[2024-01-01,2024-12-31]",
+                  "{\"ece\":0.03}",
+                  Instant.now(),
+                  null,
+                  null));
+      service.register(
+          new RegisterRequest(
+              "lr_baseline_batted_ball",
+              "v1",
+              artifact.toString(),
+              metadata.toString(),
+              pipeline.toString(),
+              "d39-champ-baseline",
+              "[2024-01-01,2024-12-31]",
+              "{\"ece\":0.05}",
+              Instant.now(),
+              null,
+              null));
+      service.transitionStage(mv.id(), Stage.CHAMPION);
+    } catch (Exception e) {
+      throw new IllegalStateException("failed to register the d39 fixture champion", e);
+    }
+  }
+
+  private static String metadataJson() {
+    StringBuilder means = new StringBuilder("[");
+    StringBuilder stds = new StringBuilder("[");
+    for (int i = 0; i < 15; i++) {
+      means.append(i == 0 ? "0.0" : ",0.0");
+      stds.append(i == 0 ? "1.0" : ",1.0");
+    }
+    means.append("]");
+    stds.append("]");
+    return "{\"model_name\":\"battedball_outcome\",\"feature_scaler\":{\"means\":"
+        + means
+        + ",\"stds\":"
+        + stds
+        + ",\"is_continuous\":[]}}";
+  }
+
+  private static String calibratorJson() {
+    String identity = "{\"x_thresholds\":[0.0,1.0],\"y_thresholds\":[0.0,1.0]}";
+    StringBuilder parkOrder = new StringBuilder("[");
+    StringBuilder parks = new StringBuilder("{");
+    for (int p = 0; p < N_PARKS; p++) {
+      String name = String.format("PARK%02d", p);
+      if (p > 0) {
+        parkOrder.append(",");
+        parks.append(",");
+      }
+      parkOrder.append("\"").append(name).append("\"");
+      parks.append("\"").append(name).append("\":[");
+      for (int o = 0; o < N_OUTCOMES; o++) {
+        parks.append(o == 0 ? "" : ",").append(identity);
+      }
+      parks.append("]");
+    }
+    parkOrder.append("]");
+    parks.append("}");
+    return "{\"park_order\":"
+        + parkOrder
+        + ",\"outcome_order\":[\"out\",\"1b\",\"2b\",\"3b\",\"hr\"],\"parks\":"
+        + parks
+        + "}";
   }
 }

@@ -7,7 +7,7 @@
     },
     "servers": [
         {
-            "url": "http://localhost:8089",
+            "url": "http://localhost:8093",
             "description": "Generated server url"
         }
     ],
@@ -388,7 +388,7 @@
                     "predict-batted-ball-controller"
                 ],
                 "summary": "Predict P(home run) for a batted ball at one park",
-                "description": "Runs the batted-ball model for the given launch parameters at the requested park and logs the prediction asynchronously. Routing fans out to champion + any shadow via the A/B router.",
+                "description": "Runs the registered per-park outcome champion for the given batted-ball inputs and returns the home-run probability at the requested park, logging the prediction asynchronously. Routing fans out to champion + any shadow via the A/B router. Returns 503 when no champion is registered.",
                 "operationId": "predict_1",
                 "parameters": [
                     {
@@ -5185,10 +5185,13 @@
             },
             "BattedBallRequest": {
                 "required": [
+                    "baseState",
+                    "hitDistanceFt",
                     "launchAngleDeg",
                     "launchSpeedMph",
+                    "outs",
                     "parkId",
-                    "releaseSpeedMph",
+                    "sprayAngleDeg",
                     "stand"
                 ],
                 "type": "object",
@@ -5213,26 +5216,52 @@
                         "format": "double",
                         "example": 28.0
                     },
-                    "releaseSpeedMph": {
-                        "maximum": 110.0,
+                    "sprayAngleDeg": {
+                        "maximum": 90.0,
                         "exclusiveMaximum": false,
-                        "minimum": 50.0,
+                        "minimum": -90.0,
                         "exclusiveMinimum": false,
                         "type": "number",
-                        "description": "Speed of the pitch that was hit, mph.",
+                        "description": "Horizontal spray angle, degrees (- pull, + oppo).",
                         "format": "double",
-                        "example": 92.0
+                        "example": 12.0
                     },
-                    "parkId": {
-                        "type": "string",
-                        "description": "3-letter MLB park id.",
-                        "example": "COL"
+                    "hitDistanceFt": {
+                        "maximum": 600.0,
+                        "exclusiveMaximum": false,
+                        "minimum": 0.0,
+                        "exclusiveMinimum": false,
+                        "type": "number",
+                        "description": "Observed hit distance, feet.",
+                        "format": "double",
+                        "example": 405.0
                     },
                     "stand": {
                         "pattern": "L|R",
                         "type": "string",
                         "description": "Batter stand: L or R (resolve switch hitters upstream).",
                         "example": "R"
+                    },
+                    "baseState": {
+                        "maximum": 7,
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "Base-occupancy code, 0-7 (bitmask of occupied bases).",
+                        "format": "int32",
+                        "example": 0
+                    },
+                    "outs": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "Number of outs, 0-2.",
+                        "format": "int32",
+                        "example": 1
+                    },
+                    "parkId": {
+                        "type": "string",
+                        "description": "3-letter MLB park id selecting one park's prediction.",
+                        "example": "COL"
                     }
                 }
             },
@@ -5248,12 +5277,12 @@
                     "modelName": {
                         "type": "string",
                         "description": "Serving model name.",
-                        "example": "_toy_batted_ball"
+                        "example": "battedball_outcome"
                     },
                     "modelVersion": {
                         "type": "string",
                         "description": "Serving model version.",
-                        "example": "v0"
+                        "example": "v1"
                     },
                     "latencyMicros": {
                         "type": "integer",
