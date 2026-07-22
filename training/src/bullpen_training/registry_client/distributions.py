@@ -138,6 +138,9 @@ class ChampionConfig:
     class_labels: list[str]
     continuous: dict[str, str]
     categorical: dict[str, str]
+    # Documentary only: records request keys deliberately NOT drift-watched (they never enter the
+    # block). `continuous` + `categorical` are the sole functional inputs - a key is suppressed by
+    # its ABSENCE from those, not by listing it here.
     excluded: list[str] = field(default_factory=list)
 
 
@@ -190,6 +193,32 @@ CHAMPIONS: dict[str, ChampionConfig] = {
         },
         excluded=["pitcherId", "batterId"],  # high-cardinality IDs, meaningless as drift features.
     ),
+    "pitch_outcome_pre": ChampionConfig(
+        model_name="pitch_outcome_pre",
+        class_labels=["ball", "called_strike", "swinging_strike", "foul", "in_play"],
+        # The pre head consumes PITCH_FEATURE_COLUMNS (31), which carries NO Tier-4 request-space
+        # continuous features (release / plate / spin all land post-release, absent pre-pitch). So
+        # the drift reference is categorical-only - the same Tier-1 request keys post uses, minus
+        # pitchType (a Tier-4 categorical). Tier-2 target-encodings + Tier-3 rolling form are
+        # server-DERIVED, not request-logged, so they are out of the drift block on both heads.
+        continuous={},
+        categorical={
+            "pitcherThrows": "pitcher_throws",
+            "batterStand": "batter_stand",
+            "parkId": "park_id",
+            "countBalls": "count_balls",
+            "countStrikes": "count_strikes",
+            "outs": "outs",
+            "inning": "inning",
+            "baseState": "base_state",
+            "scoreDiff": "score_diff",
+            "dow": "dow",
+        },
+        # pitcherId/batterId: high-cardinality IDs (as post). pitchType + the Tier-4 measured values
+        # may ride in a shared PitchRequest but the pre MODEL never sees them, so they are not drift
+        # features here.
+        excluded=["pitcherId", "batterId", "pitchType"],
+    ),
 }
 
 
@@ -241,11 +270,15 @@ def decode_pitch_categoricals(
 
     throws/stand use {0:"L", 1:"R"} (STAND_TO_INT/THROWS_TO_INT; R is the null fallback, so the int
     is always 0 or 1); park/pitch_type invert the bundle's name->int mapping.
+
+    pitch_type is a Tier-4 column the pre head does not carry: when ``pitch_type_int`` is absent
+    (a pre-head parquet) the pitch_type decode is skipped, and ``ptype_by_int`` may be empty.
     """
     throws_stand = {0: "L", 1: "R"}
     out = df.copy()
     out["park_id"] = df["park_id_int"].map(park_by_int.get)
-    out["pitch_type"] = df["pitch_type_int"].map(ptype_by_int.get)
+    if "pitch_type_int" in df.columns:
+        out["pitch_type"] = df["pitch_type_int"].map(ptype_by_int.get)
     out["pitcher_throws"] = df["pitcher_throws_int"].map(throws_stand.get)
     out["batter_stand"] = df["batter_stand_int"].map(throws_stand.get)
     return out
