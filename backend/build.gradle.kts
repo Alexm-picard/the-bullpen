@@ -48,6 +48,14 @@ tasks.register("resolveAndLockAll") {
     }
 }
 
+// Security override: netty is pulled transitively (the AWS S3 client's netty-nio-client) and
+// Spring Boot 3.5.x's BOM manages it at 4.1.135.Final, which carries CVE-2026-59901 (netty-codec)
+// + CVE-2026-55831 / -55833 / -56745 (netty-codec-http), all HIGH, fixed in 4.1.136.Final.
+// Overriding the BOM's `netty.version` property (the io.spring.dependency-management idiom) bumps
+// every netty module coherently - they ship as one coordinated release. Drop this once a managed
+// Boot patch catches up. Regenerate the lock after changing: ./gradlew resolveAndLockAll --write-locks
+extra["netty.version"] = "4.1.136.Final"
+
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
