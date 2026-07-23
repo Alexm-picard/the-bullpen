@@ -101,10 +101,12 @@ bullpen:
     webhook-url: ${DISCORD_WEBHOOK_URL:}
 
   # A4 — per-IP token-bucket rate limiting on the unauthenticated, compute-bearing
-  # endpoints (/v1/predict/**, /v1/players/search). In-memory (Caffeine), single-node;
+  # endpoints (/v1/predict/**, /v1/players/search) plus the public ClickHouse-backed
+  # reads (/v1/ops/**, /v1/games/**, the `read` bucket). In-memory (Caffeine), single-node;
   # Cloudflare sits in front for L3/L4. Disabled in the load + contract CI jobs (they
   # drive intentional high volume) and in unit tests (gradle test systemProperty).
   ratelimit:
     enabled: ${BULLPEN_RATELIMIT_ENABLED:true}
     predict-per-minute: ${BULLPEN_RATELIMIT_PREDICT:60}
     search-per-minute: ${BULLPEN_RATELIMIT_SEARCH:120}
+    read-per-minute: ${BULLPEN_RATELIMIT_READ:120}
