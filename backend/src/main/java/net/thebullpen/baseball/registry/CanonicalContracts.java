@@ -19,6 +19,9 @@ import org.springframework.stereotype.Component;
  *   <li>{@code pitch_outcome_pre} + {@code pitch_outcome_lr_baseline} - {@code
  *       feature_pipeline.json} ({@code register_pitch.py})
  *   <li>{@code pitch_outcome_post} - {@code feature_pipeline_post.json}
+ *   <li>{@code pitch_type_pre} + {@code pitch_type_lr_baseline} - {@code
+ *       feature_pipeline_pitchtype.json} (pre-pitch pitch-TYPE head, decision [183]; Phase 1a ships
+ *       the contract before any model is registered)
  *   <li>{@code battedball_outcome} + {@code battedball_lgbm_per_park} + {@code
  *       lr_baseline_batted_ball} - {@code feature_pipeline_battedball.json} (both batted-ball
  *       exporters declare this CONTRACT_PATH; the per-park LGBM consumes the same 15-feature input
@@ -45,6 +48,8 @@ public class CanonicalContracts {
           "pitch_outcome_pre", "feature_pipeline.json",
           "pitch_outcome_lr_baseline", "feature_pipeline.json",
           "pitch_outcome_post", "feature_pipeline_post.json",
+          "pitch_type_pre", "feature_pipeline_pitchtype.json",
+          "pitch_type_lr_baseline", "feature_pipeline_pitchtype.json",
           "battedball_outcome", "feature_pipeline_battedball.json",
           "battedball_lgbm_per_park", "feature_pipeline_battedball.json",
           "lr_baseline_batted_ball", "feature_pipeline_battedball.json",

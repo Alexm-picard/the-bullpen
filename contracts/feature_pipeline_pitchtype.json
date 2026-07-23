@@ -1,0 +1,165 @@
+{
+  "model_name": "pitch_type_pre",
+  "phase": "1a",
+  "feature_order": [
+    "balls",
+    "strikes",
+    "outs",
+    "inning",
+    "base_state",
+    "stand_i",
+    "throws_i",
+    "park_i",
+    "times_through_order",
+    "at_bat_number_in_game",
+    "times_faced_today",
+    "ars_FF",
+    "ars_SI",
+    "ars_FC",
+    "ars_SL",
+    "ars_CU",
+    "ars_CH",
+    "ars_OFF",
+    "ars_FF_by_count",
+    "pitcher_prior_n",
+    "prev1_pt_i",
+    "prev2_pt_i",
+    "prev1_missing",
+    "pitches_into_outing"
+  ],
+  "input_dtype": "float32",
+  "preprocess": {
+    "balls": {
+      "type": "passthrough",
+      "source_column": "balls"
+    },
+    "strikes": {
+      "type": "passthrough",
+      "source_column": "strikes"
+    },
+    "outs": {
+      "type": "passthrough",
+      "source_column": "outs"
+    },
+    "inning": {
+      "type": "passthrough",
+      "source_column": "inning"
+    },
+    "base_state": {
+      "type": "passthrough",
+      "source_column": "base_state"
+    },
+    "stand_i": {
+      "type": "categorical_map",
+      "source_column": "stand",
+      "mapping": {
+        "L": 0,
+        "R": 1
+      },
+      "missing_value": 1
+    },
+    "throws_i": {
+      "type": "categorical_map",
+      "source_column": "p_throws",
+      "mapping": {
+        "L": 0,
+        "R": 1
+      },
+      "missing_value": 1
+    },
+    "park_i": {
+      "type": "categorical_lookup",
+      "source_column": "park_id",
+      "lookup_path": "park_id_mapping.json",
+      "missing_value": -1
+    },
+    "times_through_order": {
+      "type": "passthrough_nullable",
+      "source_column": "times_through_order"
+    },
+    "at_bat_number_in_game": {
+      "type": "passthrough_nullable",
+      "source_column": "at_bat_number_in_game"
+    },
+    "times_faced_today": {
+      "type": "passthrough_nullable",
+      "source_column": "times_faced_today"
+    },
+    "ars_FF": {
+      "type": "passthrough_nullable",
+      "source_column": "ars_FF"
+    },
+    "ars_SI": {
+      "type": "passthrough_nullable",
+      "source_column": "ars_SI"
+    },
+    "ars_FC": {
+      "type": "passthrough_nullable",
+      "source_column": "ars_FC"
+    },
+    "ars_SL": {
+      "type": "passthrough_nullable",
+      "source_column": "ars_SL"
+    },
+    "ars_CU": {
+      "type": "passthrough_nullable",
+      "source_column": "ars_CU"
+    },
+    "ars_CH": {
+      "type": "passthrough_nullable",
+      "source_column": "ars_CH"
+    },
+    "ars_OFF": {
+      "type": "passthrough_nullable",
+      "source_column": "ars_OFF"
+    },
+    "ars_FF_by_count": {
+      "type": "passthrough_nullable",
+      "source_column": "ars_FF_by_count"
+    },
+    "pitcher_prior_n": {
+      "type": "passthrough_nullable",
+      "source_column": "pitcher_prior_n"
+    },
+    "prev1_pt_i": {
+      "type": "passthrough_nullable",
+      "source_column": "prev1_pt_i"
+    },
+    "prev2_pt_i": {
+      "type": "passthrough_nullable",
+      "source_column": "prev2_pt_i"
+    },
+    "prev1_missing": {
+      "type": "passthrough_nullable",
+      "source_column": "prev1_missing"
+    },
+    "pitches_into_outing": {
+      "type": "passthrough_nullable",
+      "source_column": "pitches_into_outing"
+    }
+  },
+  "output": {
+    "kind": "multiclass_probability",
+    "labels": [
+      "FF",
+      "SI",
+      "FC",
+      "SL",
+      "CU",
+      "CH",
+      "OFF"
+    ],
+    "onnx_output_index": 1,
+    "extract": "row_distribution",
+    "post_calibration": "temperature"
+  },
+  "calibrator": {
+    "kind": "temperature",
+    "lookup_path": "calibrator.json"
+  },
+  "onnx_opset": 15,
+  "pipeline_version": "1.0.0",
+  "description": "Canonical Python<->Java feature contract for the pitch_type_pre model (pre-pitch pitch-TYPE distribution; y7 taxonomy FF, SI, FC, SL, CU, CH, OFF). 24 features across Tier S (state, 11), Tier ARS (per-pitcher career-expanding arsenal frequency, 9), and Tier SEQ (in-outing sequencing, 4). LightGBM multinomial exported to ONNX (opset 15, output index 1); a single-scalar temperature calibrator is applied post-ONNX (Java) using calibrator.json (order-preserving, ONNX-foldable - report section 4, not isotonic). Authorized by decision [183]; feature spec is docs/research/2026-07-23_pitch_type_architecture_bakeoff.md section 2 (candidate A). Phase 1a: schema + window SQL + contract only; no trained model registered yet.",
+  "notes": "Both /backend (registry schema-hash check at registration, rule 7) and /training (ONNX export validation) read from this file. See docs/design.md section 5. The pre-commit hook (.githooks/pre-commit) recomputes schema_hash with the field zeroed and rejects mismatches. Tier ARS and Tier SEQ columns are Nullable/sentinel-bearing and pass through as passthrough_nullable; LightGBM handles NaN natively. stand_i/throws_i/park_i are derived from the raw stand/p_throws/park_id columns in pitch_type_features (V029) via categorical_map/categorical_lookup, mirroring the pitch_outcome_pre pattern.",
+  "schema_hash": "a2a5d474f5d8a8db0ed88632f4604122f56da006c7ece38ba974fb737bde68bd"
+}
