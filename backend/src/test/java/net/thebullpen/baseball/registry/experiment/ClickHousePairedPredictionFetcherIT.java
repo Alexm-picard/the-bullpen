@@ -160,6 +160,42 @@ class ClickHousePairedPredictionFetcherIT {
   }
 
   @Test
+  void dedups_a_restart_re_logged_pitch_to_the_latest_prediction() {
+    // prediction_log ACCUMULATES: a worker restart re-runs the poll and re-logs the SAME pitch for
+    // the same (version, role) at a later request_at. A raw read would score the pitch TWICE and
+    // bias
+    // the paired Brier/ECE the promotion gate reads; the argMax-per-pitch-key collapse must return
+    // ONE pair using the LATEST prediction, identical to the never-duplicated case.
+    Instant older = Instant.now().minus(3, ChronoUnit.HOURS);
+    Instant newer = Instant.now().minus(1, ChronoUnit.HOURS);
+
+    // Pitch (1,1,1): a STALE champion + shadow prediction, then a NEWER re-logged one for each.
+    championAt(older, 1, 1, 1, pitchJson(0.90, 0.03, 0.03, 0.02, 0.02));
+    championAt(newer, 1, 1, 1, pitchJson(0.10, 0.10, 0.10, 0.20, 0.50));
+    shadowAt(older, 1, 1, 1, pitchJson(0.80, 0.05, 0.05, 0.05, 0.05));
+    shadowAt(newer, 1, 1, 1, pitchJson(0.05, 0.15, 0.10, 0.20, 0.50));
+    truth(1, 1, 1, "in_play");
+
+    List<PairedPrediction> pairs =
+        fetcher.fetch(
+            MODEL,
+            String.valueOf(CHAMP_V),
+            String.valueOf(CHALL_V),
+            Instant.now().minus(24, ChronoUnit.HOURS),
+            Instant.now());
+
+    // ONE pair, not two: the duplicate pitch was collapsed to a single scorable row.
+    assertThat(pairs).hasSize(1);
+    PairedPrediction p = pairs.get(0);
+    assertThat(p.truthClass()).isEqualTo(4);
+    // The LATEST (newer request_at) prediction won on BOTH sides, never the stale re-log.
+    assertThat(p.championProbs())
+        .containsExactly(new double[] {0.10, 0.10, 0.10, 0.20, 0.50}, within(1e-9));
+    assertThat(p.challengerProbs())
+        .containsExactly(new double[] {0.05, 0.15, 0.10, 0.20, 0.50}, within(1e-9));
+  }
+
+  @Test
   void join_use_nulls_keeps_unmatched_truth_null_not_zero_filled() {
     // A champion+shadow pair with no pitches_live row. With join_use_nulls=1 the LEFT-JOINed
     // description must come back NULL; without the setting ClickHouse would zero-fill it to '' (the
@@ -204,12 +240,32 @@ class ClickHousePairedPredictionFetcherIT {
       int atBat,
       int pitch,
       String predictionJson) {
+    insertAt(
+        Instant.now().minus(1, ChronoUnit.HOURS),
+        model,
+        versionId,
+        role,
+        gameId,
+        atBat,
+        pitch,
+        predictionJson);
+  }
+
+  private void insertAt(
+      Instant requestAt,
+      String model,
+      long versionId,
+      String role,
+      long gameId,
+      int atBat,
+      int pitch,
+      String predictionJson) {
     ch.update(
         "INSERT INTO prediction_log"
             + " (request_at, model_name, model_version, model_version_id, role, prediction,"
             + "  game_id, at_bat_index, pitch_number)"
             + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        Timestamp.from(Instant.now().minus(1, ChronoUnit.HOURS)),
+        Timestamp.from(requestAt),
         model,
         "v1",
         versionId,
@@ -218,6 +274,16 @@ class ClickHousePairedPredictionFetcherIT {
         gameId,
         atBat,
         pitch);
+  }
+
+  private void championAt(
+      Instant requestAt, long gameId, int atBat, int pitch, String predictionJson) {
+    insertAt(requestAt, MODEL, CHAMP_V, "champion", gameId, atBat, pitch, predictionJson);
+  }
+
+  private void shadowAt(
+      Instant requestAt, long gameId, int atBat, int pitch, String predictionJson) {
+    insertAt(requestAt, MODEL, CHALL_V, "shadow", gameId, atBat, pitch, predictionJson);
   }
 
   /** HTTP-path row: the live-key columns are left out, so they default to NULL (V017 Nullable). */
