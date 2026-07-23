@@ -2,6 +2,7 @@ package net.thebullpen.baseball.api.ops;
 
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -284,6 +285,16 @@ class OpsControllerTest {
         .andExpect(jsonPath("$[0].p99Ms").value(1.37))
         .andExpect(jsonPath("$[0].p999Ms").value(2.10));
     verify(predictionLog).latencyQuantiles(7);
+  }
+
+  @Test
+  void latency_rejects_days_outside_1_to_365_without_hitting_the_repo() throws Exception {
+    // The live days=2000000000 full-table-scan DoS: an out-of-range window is a 400 BEFORE the
+    // ClickHouse read, so an anonymous caller cannot force an unbounded prediction_log scan.
+    mvc.perform(get("/v1/ops/latency").param("days", "2000000000"))
+        .andExpect(status().isBadRequest());
+    mvc.perform(get("/v1/ops/latency").param("days", "0")).andExpect(status().isBadRequest());
+    verifyNoInteractions(predictionLog);
   }
 
   @Test

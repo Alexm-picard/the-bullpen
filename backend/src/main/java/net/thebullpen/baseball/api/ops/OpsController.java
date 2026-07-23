@@ -60,6 +60,12 @@ public class OpsController {
 
   private static final int OPS_EVENTS_MIN_SIZE = 1;
   private static final int OPS_EVENTS_MAX_SIZE = 200;
+  private static final int LATENCY_MIN_DAYS = 1;
+  // 365 days caps the prediction_log window scan: an uncapped `days` (the live days=2000000000
+  // case)
+  // is a full-table-scan DoS on an anonymous public read. Inline check (not class @Validated) so it
+  // enforces under standaloneSetup, matching PlayerController's documented pattern.
+  private static final int LATENCY_MAX_DAYS = 365;
 
   private final DriftMetricsRepository driftRepo;
   private final RoutingRepository routingRepo;
@@ -155,6 +161,11 @@ public class OpsController {
    */
   @GetMapping("/latency")
   public List<LatencyStat> latency(@RequestParam(name = "days", defaultValue = "7") int days) {
+    if (days < LATENCY_MIN_DAYS || days > LATENCY_MAX_DAYS) {
+      throw new ResponseStatusException(
+          HttpStatus.BAD_REQUEST,
+          "days must be between " + LATENCY_MIN_DAYS + " and " + LATENCY_MAX_DAYS);
+    }
     if (predictionLog == null) {
       return List.of();
     }
