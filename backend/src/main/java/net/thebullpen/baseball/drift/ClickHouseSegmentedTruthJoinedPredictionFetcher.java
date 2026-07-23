@@ -181,6 +181,13 @@ public class ClickHouseSegmentedTruthJoinedPredictionFetcher
         + "     AND game_id IS NOT NULL"
         + "     AND request_at >= fromUnixTimestamp64Milli(?, 'UTC')"
         + "     AND request_at <= fromUnixTimestamp64Milli(?, 'UTC')"
+        // prediction_log ACCUMULATES (a worker restart re-logs the same pitch for a version), so a
+        // raw read double-counts a pitch and biases the per-segment calibration Brier/ECE. Collapse
+        // to one row per pitch key, keeping the LATEST by request_at. LIMIT 1 BY (not the paired /
+        // truth-joined fetchers' argMax GROUP BY) because the outer segmentExpr needs the actual
+        // kept row's `features` + `request_at` (and `prediction`), not aggregates over the group.
+        + "   ORDER BY request_at DESC"
+        + "   LIMIT 1 BY game_id, at_bat_index, pitch_number"
         + " ) AS p"
         + " LEFT JOIN ("
         + "   SELECT game_id, at_bat_index, pitch_number, description, pitch_type"
