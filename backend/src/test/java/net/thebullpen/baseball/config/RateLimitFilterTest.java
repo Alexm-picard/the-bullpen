@@ -49,8 +49,19 @@ class RateLimitFilterTest {
       return "ok";
     }
 
+    @GetMapping("/v1/games/today")
+    String games() {
+      return "ok";
+    }
+
     @PostMapping("/v1/admin/routing/ping")
     String admin() {
+      return "ok";
+    }
+
+    // A genuinely unthrottled path (matches none of the rate-limited prefixes).
+    @GetMapping("/health")
+    String health() {
       return "ok";
     }
   }
@@ -61,7 +72,7 @@ class RateLimitFilterTest {
 
   private static RateLimitFilter filter(
       boolean enabled, int predictPerMinute, int searchPerMinute, int adminPerMinute) {
-    return filter(enabled, predictPerMinute, 15, searchPerMinute, adminPerMinute);
+    return filter(enabled, predictPerMinute, 15, searchPerMinute, adminPerMinute, 120);
   }
 
   private static RateLimitFilter filter(
@@ -70,6 +81,17 @@ class RateLimitFilterTest {
       int simulatePerMinute,
       int searchPerMinute,
       int adminPerMinute) {
+    return filter(
+        enabled, predictPerMinute, simulatePerMinute, searchPerMinute, adminPerMinute, 120);
+  }
+
+  private static RateLimitFilter filter(
+      boolean enabled,
+      int predictPerMinute,
+      int simulatePerMinute,
+      int searchPerMinute,
+      int adminPerMinute,
+      int readPerMinute) {
     return new RateLimitFilter(
         new RateLimitProperties(
             enabled,
@@ -77,6 +99,7 @@ class RateLimitFilterTest {
             simulatePerMinute,
             searchPerMinute,
             adminPerMinute,
+            readPerMinute,
             LOOPBACK_PROXIES),
         new ObjectMapper());
   }
@@ -112,10 +135,26 @@ class RateLimitFilterTest {
 
   @Test
   void unthrottledPathsNeverLimited() throws Exception {
+    // A path matching none of the rate-limited prefixes (Actuator, static assets, etc.) is skipped
+    // by shouldNotFilter and never throttled, even with every bucket at 1/min.
     MockMvc mvc = mvcWith(filter(true, 1, 1, 20));
     for (int i = 0; i < 5; i++) {
-      mvc.perform(get("/v1/ops/routing")).andExpect(status().isOk());
+      mvc.perform(get("/health")).andExpect(status().isOk());
     }
+  }
+
+  @Test
+  void publicReadsThrottledOnTheirOwnSharedBucket() throws Exception {
+    // /v1/ops/** and /v1/games/** are the anonymous ClickHouse-backed reads; they share one `read`
+    // bucket (1/min here). Draining it via an ops read also limits a games read (same bucket), and
+    // leaves the generous predict bucket untouched. (Pre-fix, both prefixes were unthrottled.)
+    MockMvc mvc = mvcWith(filter(true, 60, 15, 120, 20, 1)); // read=1
+    mvc.perform(get("/v1/ops/routing")).andExpect(status().isOk());
+    mvc.perform(get("/v1/games/today"))
+        .andExpect(status().isTooManyRequests())
+        .andExpect(jsonPath("$.error.code", equalTo("rate_limited")));
+    // The drained read bucket leaves the predict bucket untouched.
+    mvc.perform(post("/v1/predict/ping")).andExpect(status().isOk());
   }
 
   @Test
