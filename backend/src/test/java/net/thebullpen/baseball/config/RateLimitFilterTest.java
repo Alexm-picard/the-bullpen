@@ -54,6 +54,16 @@ class RateLimitFilterTest {
       return "ok";
     }
 
+    @GetMapping("/v1/matchups/today")
+    String matchups() {
+      return "ok";
+    }
+
+    @GetMapping("/v1/players/42")
+    String playerProfile() {
+      return "ok";
+    }
+
     @PostMapping("/v1/admin/routing/ping")
     String admin() {
       return "ok";
@@ -155,6 +165,27 @@ class RateLimitFilterTest {
         .andExpect(jsonPath("$.error.code", equalTo("rate_limited")));
     // The drained read bucket leaves the predict bucket untouched.
     mvc.perform(post("/v1/predict/ping")).andExpect(status().isOk());
+  }
+
+  @Test
+  void matchupsAndPlayerProfileShareTheReadBucketButSearchStaysSeparate() throws Exception {
+    // /v1/matchups/** and the /v1/players/** NON-search reads (profile / roster / batted-balls)
+    // join
+    // the shared read bucket (2/min here). /v1/players/search keeps its OWN, separate `search`
+    // bucket
+    // - draining the read bucket must not touch it. (Pre-fix, matchups + the player profile were
+    // unthrottled entirely.)
+    MockMvc mvc = mvcWith(filter(true, 60, 15, 1, 20, 2)); // read=2, search=1
+    mvc.perform(get("/v1/matchups/today")).andExpect(status().isOk()); // read token 1
+    mvc.perform(get("/v1/players/42")).andExpect(status().isOk()); // read token 2 (SAME bucket)
+    mvc.perform(get("/v1/players/42")) // read bucket now drained
+        .andExpect(status().isTooManyRequests())
+        .andExpect(jsonPath("$.error.code", equalTo("rate_limited")));
+    // /v1/players/search is on the separate `search` bucket (checked by the exact-match branch
+    // before
+    // the read branch), so the drained read bucket leaves its own budget intact.
+    mvc.perform(get("/v1/players/search")).andExpect(status().isOk());
+    mvc.perform(get("/v1/players/search")).andExpect(status().isTooManyRequests());
   }
 
   @Test

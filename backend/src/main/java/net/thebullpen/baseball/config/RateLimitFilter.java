@@ -27,9 +27,11 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * unauthenticated prediction endpoints ({@code /v1/predict/**}) and player autocomplete ({@code
  * /v1/players/search}), plus the Basic-auth admin paths ({@code /v1/admin/**}), which get a tighter
  * bucket to blunt credential brute-forcing against HTTP Basic. The public ClickHouse-backed reads
- * ({@code /v1/ops/**}, {@code /v1/games/**}) share one generous {@code read} bucket - an abuse
- * backstop behind the edge-cache layer (PR 2), since a cache-busting flood would otherwise hit CH
- * on every request. Everything else (Actuator, static assets) is unthrottled.
+ * ({@code /v1/ops/**}, {@code /v1/games/**}, {@code /v1/matchups/**}, and the {@code
+ * /v1/players/**} profile/roster/batted-ball reads - {@code /v1/players/search} keeps its own
+ * tighter {@code search} bucket) share one generous {@code read} bucket - an abuse backstop behind
+ * the edge-cache layer (PR 2), since a cache-busting flood would otherwise hit CH on every request.
+ * Everything else (Actuator, static assets) is unthrottled.
  *
  * <p>Mechanism: a lazy continuous-refill token bucket per (route-class, client-IP), held in a
  * Caffeine cache (already a project dependency) that evicts idle keys after 10 minutes. This is an
@@ -59,6 +61,10 @@ public class RateLimitFilter extends OncePerRequestFilter {
   private static final String ADMIN_PREFIX = "/v1/admin/";
   private static final String OPS_PREFIX = "/v1/ops/";
   private static final String GAMES_PREFIX = "/v1/games/";
+  private static final String MATCHUPS_PREFIX = "/v1/matchups/";
+  // /v1/players/** covers the profile + roster + batted-balls reads; /v1/players/search keeps its
+  // OWN tighter `search` bucket (its exact-match branch is checked first in doFilterInternal).
+  private static final String PLAYERS_PREFIX = "/v1/players/";
 
   private final boolean enabled;
   private final int predictPerMinute;
@@ -79,10 +85,12 @@ public class RateLimitFilter extends OncePerRequestFilter {
     this.simulatePerMinute = props.simulatePerMinute();
     this.searchPerMinute = props.searchPerMinute();
     this.adminPerMinute = props.adminPerMinute();
-    // The public ClickHouse-backed reads (/v1/ops/**, /v1/games/**) share one generous bucket: they
-    // are edge-cacheable polls, so the real defense is Cache-Control + Cloudflare (PR 2); this is
-    // the
-    // abuse backstop against a cache-busting flood.
+    // The public ClickHouse-backed reads (/v1/ops/**, /v1/games/**, /v1/matchups/**, the
+    // /v1/players/** non-search reads) share one generous bucket: the polled ones are
+    // edge-cacheable
+    // so the real defense is Cache-Control + Cloudflare (PR 2); this is the abuse backstop against
+    // a
+    // flood that busts the cache or hits the un-cached profile/roster reads.
     this.readPerMinute = props.readPerMinute();
     // trim so an override like "127.0.0.0/8, ::1" (space after comma) cannot throw at startup.
     this.trustedProxies =
@@ -105,7 +113,9 @@ public class RateLimitFilter extends OncePerRequestFilter {
         || path.equals(SEARCH_PATH)
         || path.startsWith(ADMIN_PREFIX)
         || path.startsWith(OPS_PREFIX)
-        || path.startsWith(GAMES_PREFIX));
+        || path.startsWith(GAMES_PREFIX)
+        || path.startsWith(MATCHUPS_PREFIX)
+        || path.startsWith(PLAYERS_PREFIX));
   }
 
   @Override
@@ -124,7 +134,12 @@ public class RateLimitFilter extends OncePerRequestFilter {
     } else if (path.startsWith(SIMULATE_PREFIX)) {
       routeClass = "simulate";
       limit = simulatePerMinute;
-    } else if (path.startsWith(OPS_PREFIX) || path.startsWith(GAMES_PREFIX)) {
+    } else if (path.startsWith(OPS_PREFIX)
+        || path.startsWith(GAMES_PREFIX)
+        || path.startsWith(MATCHUPS_PREFIX)
+        || path.startsWith(PLAYERS_PREFIX)) {
+      // /v1/players/search is handled by the SEARCH branch above (checked first), so only the other
+      // player reads (profile / roster / batted-balls) fall through to the shared read bucket here.
       routeClass = "read";
       limit = readPerMinute;
     } else {

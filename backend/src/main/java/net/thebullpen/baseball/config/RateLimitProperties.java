@@ -12,8 +12,9 @@ import org.springframework.validation.annotation.Validated;
  * per-route limits live in one place, carry their own defaults, and fail fast at startup on a
  * non-positive limit instead of silently throttling everything to zero. {@code readPerMinute} is
  * the abuse backstop for the public ClickHouse-backed reads ({@code /v1/ops/**}, {@code
- * /v1/games/**}); it is generous because those responses are edge-cacheable (the real defense is
- * the Cache-Control + Cloudflare layer), so this only blunts a cache-busting flood.
+ * /v1/games/**}, {@code /v1/matchups/**}, and the {@code /v1/players/**} non-search reads); it is
+ * generous because the polled ones are edge-cacheable (the real defense is the Cache-Control +
+ * Cloudflare layer), so this only blunts a cache-busting flood or the un-cached profile reads.
  *
  * <p>The per-minute limits are {@link Positive}: a value of 0 while {@code enabled} would reject
  * every request on that route, which is never intended (disable the limiter with {@code

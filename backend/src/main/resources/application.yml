@@ -102,7 +102,8 @@ bullpen:
 
   # A4 — per-IP token-bucket rate limiting on the unauthenticated, compute-bearing
   # endpoints (/v1/predict/**, /v1/players/search) plus the public ClickHouse-backed
-  # reads (/v1/ops/**, /v1/games/**, the `read` bucket). In-memory (Caffeine), single-node;
+  # reads (/v1/ops/**, /v1/games/**, /v1/matchups/**, /v1/players/** non-search - the
+  # `read` bucket). In-memory (Caffeine), single-node;
   # Cloudflare sits in front for L3/L4. Disabled in the load + contract CI jobs (they
   # drive intentional high volume) and in unit tests (gradle test systemProperty).
   ratelimit:
