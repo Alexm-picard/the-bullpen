@@ -246,4 +246,5 @@ jobs:
         run: >
           uv run python -m pytest
           tests/leakage/test_sql_path_contamination.py
+          tests/leakage/test_pitch_type_sql_leakage.py
           tests/eval/promotion/test_batted_ball_export_ch.py -v

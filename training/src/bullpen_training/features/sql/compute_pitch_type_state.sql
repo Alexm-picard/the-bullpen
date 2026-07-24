@@ -48,10 +48,16 @@ WITH
         SELECT
             *,
             -- FIXED fold-independent SEQ vocab: FF=0,SI=1,FC=2,SL=3,CU=4,CH=5,OFF=6
-            -- (identical to the label_pitch_type Enum8 codes in V029).
-            multiIf(
-                y7 = 'FF', 0, y7 = 'SI', 1, y7 = 'FC', 2, y7 = 'SL', 3,
-                y7 = 'CU', 4, y7 = 'CH', 5, 6
+            -- (identical to the label_pitch_type Enum8 codes in V029). toInt8 is REQUIRED:
+            -- the -1 outing-start sentinel in lagInFrame(y7_int, n, -1) below is Int8, and
+            -- ClickHouse rejects lagInFrame when the default's type does not share the
+            -- argument's type - a bare multiIf of int literals is UInt8, so supertype(UInt8,
+            -- Int8)=Int16 != UInt8 fails (Code 36). Int8 holds 0..6 and the -1 sentinel.
+            toInt8(
+                multiIf(
+                    y7 = 'FF', 0, y7 = 'SI', 1, y7 = 'FC', 2, y7 = 'SL', 3,
+                    y7 = 'CU', 4, y7 = 'CH', 5, 6
+                )
             ) AS y7_int
         FROM base
     )
