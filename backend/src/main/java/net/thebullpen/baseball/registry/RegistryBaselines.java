@@ -21,6 +21,10 @@ public final class RegistryBaselines {
       Map.of(
           "pitch_outcome_pre", "pitch_outcome_lr_baseline",
           "pitch_outcome_post", "pitch_outcome_lr_baseline",
+          // pitch-TYPE head (decision [183]): first champion promotes via the [182]/#334
+          // first-champion offline-gate path, which binds championVersionId to this rule-9
+          // baseline.
+          "pitch_type_pre", "pitch_type_lr_baseline",
           "battedball_outcome", "lr_baseline_batted_ball",
           "battedball_lgbm_per_park", "lr_baseline_batted_ball");
 
