@@ -28,6 +28,7 @@ shape the Java serving consumer reads. No pickle, no sklearn.
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,6 +38,8 @@ import numpy as np
 from scipy.optimize import (  # pyright: ignore[reportMissingTypeStubs]
     minimize_scalar,  # pyright: ignore[reportUnknownVariableType]
 )
+
+log = logging.getLogger(__name__)
 
 # Clamp probabilities away from 0 before log() so pseudo-logits stay finite. Same
 # floor is applied to the calibrated truth-class prob inside the NLL objective.
@@ -119,6 +122,18 @@ class TemperatureCalibrator:
         # at this single boundary so the rest of the module stays strictly typed.
         result = cast(Any, minimize_scalar(nll, bounds=(_T_LOWER, _T_UPPER), method="bounded"))
         temperature = float(result.x)
+        # A fit that pins to a search bound is a "your calibration data is degenerate" smell
+        # (e.g. near-random labels vs confident probs). The report expects T ~= 1.0, so a
+        # bound-hit means the val slice is not a normal calibration target - surface it loudly
+        # rather than silently persisting a T=10 (maximally-flattened) calibrator.
+        if temperature <= _T_LOWER * 1.01 or temperature >= _T_UPPER * 0.99:
+            log.warning(
+                "temperature fit saturated its search bound (T=%.4f in [%.2f, %.2f]); the "
+                "calibration (validation) data may be degenerate - expected T near 1.0",
+                temperature,
+                _T_LOWER,
+                _T_UPPER,
+            )
         return cls(class_labels=labels, temperature=temperature)
 
     def transform(self, y_pred_proba: np.ndarray) -> np.ndarray:

@@ -9,6 +9,7 @@ T~=1.0 identity signal, row normalisation, and the calibrator.json round-trip.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -161,3 +162,21 @@ def test_temperature_from_json_rejects_missing_field(tmp_path: Path) -> None:
     path.write_text('{"kind": "temperature", "class_labels": ["FF"]}')
     with pytest.raises(ValueError, match="missing required field"):
         TemperatureCalibrator.from_json(path)
+
+
+def test_temperature_fit_warns_on_bound_saturation(caplog: pytest.LogCaptureFixture) -> None:
+    """Degenerate calibration data (confident probs vs independent random labels) pins T to
+    the upper search bound; the fit must WARN rather than silently persist a maximally-
+    flattened T=10 calibrator - the deferred #348 note the trainer surfaces."""
+    rng = np.random.default_rng(99)
+    n, k = 3_000, len(PITCH_TYPE_CLASSES)
+    predicted = rng.integers(0, k, n)
+    proba = np.full((n, k), (1 - 0.9) / (k - 1))
+    proba[np.arange(n), predicted] = 0.9
+    y_true = rng.integers(0, k, n)  # independent of the confident prediction
+    with caplog.at_level(logging.WARNING, logger="bullpen_training.pitch_type.temperature"):
+        cal = TemperatureCalibrator.fit(y_true, proba, class_labels=PITCH_TYPE_CLASSES)
+    # Pin at the warning's own >= _T_UPPER*0.99 (=9.9) threshold so the T assertion and the
+    # "warning fired" assertion can never disagree in the (9.0, 9.9) band.
+    assert cal.temperature >= 9.9, f"expected saturation at the upper bound, got {cal.temperature}"
+    assert any("saturated" in r.message for r in caplog.records), "no saturation warning logged"
