@@ -28,7 +28,7 @@ jobs:
     name: promtool check (config + rules)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Pin to the deployed Prometheus version (infra/docker-compose.yml) so the check uses prod's
       # exact parser - a config that passes here cannot fail to load on the box.
       - name: promtool check config (validates prometheus.yml + the referenced rule files)
@@ -51,7 +51,7 @@ jobs:
     name: docker compose config (fail-closed env contract)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Two assertions: (1) with a dummy env supplying the fail-closed secrets, the compose file
       # (ALL profiles) parses; (2) WITHOUT the env, compose refuses to render - proving the
       # ClickHouse/Grafana :? guards actually fail closed rather than defaulting.
@@ -78,7 +78,7 @@ jobs:
     name: amtool check-config
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Same principle as promtool above: validate with the pinned prod image's own parser. The
       # discord_url secret file is stubbed - this checks SYNTAX, not the live credential.
       - name: amtool check-config (pinned prod image)
