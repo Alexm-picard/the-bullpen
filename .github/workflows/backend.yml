@@ -23,7 +23,7 @@ jobs:
         with:
           java-version: '21'
           distribution: 'temurin'
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
 
       # The parity test (ToyParityTest) needs real model.onnx + park_hr_rate.json
       # + parity fixture JSON. Without these the test self-disables on a fresh
