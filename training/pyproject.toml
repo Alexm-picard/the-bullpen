@@ -82,6 +82,7 @@ strict = [
     "src/bullpen_training/eval/metrics.py",
     "src/bullpen_training/eval/promotion/criteria.py",
     "src/bullpen_training/registry_client/feature_hasher.py",
+    "src/bullpen_training/pitch_type/temperature.py",
 ]
 reportMissingTypeStubs = false
 reportMissingImports = "warning"

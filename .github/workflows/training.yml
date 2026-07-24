@@ -79,6 +79,9 @@ jobs:
         working-directory: training
         # Covers:
         #   tests/pitch/             - W1/W4b pitch ORT fixture, register_snapshot (new)
+        #   tests/pitch_type/        - pitch_type_pre ([183]): temperature calibrator, y7
+        #     trainer, ONNX parity. LightGBM-based, so it lives on THIS (lgbm) path, not the
+        #     torch path, to keep the OpenMP-co-load segfault split intact.
         #   tests/battedball/lgbm_per_park/ and lr_baseline/ - both now have __init__.py
         #     to resolve the test_export_onnx.py basename collision that breaks default
         #     (prepend) pytest collection.
@@ -91,7 +94,7 @@ jobs:
         run: |
           uv run python -m pytest -x --ignore=tests/leakage \
             --cov=src/bullpen_training --cov-branch --cov-append --cov-fail-under=0 \
-            tests/pitch tests/eval/test_artifact.py \
+            tests/pitch tests/pitch_type tests/eval/test_artifact.py \
             tests/eval/test_calibration.py \
             tests/eval/test_ece_reconciliation.py \
             tests/battedball/test_train_toy.py \
