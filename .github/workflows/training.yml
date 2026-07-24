@@ -243,11 +243,13 @@ jobs:
           CLICKHOUSE_PORT: "9000"
           CLICKHOUSE_PASSWORD: thebullpen
         # uv run python -m pytest avoids the stale-PYTHONPATH quirk (see unit-tests job).
-        # Both drive REAL queries against the CH service (BULLPEN_REQUIRE_CH=1 = a skip is a failure):
-        # the SQL-path leakage test (DEF-H2/H3) + the batted-ball full-data export query (auditor
-        # NOTE 2 on #112) so a schema/join/FINAL bug in the export fails here, not on the box's CV.
+        # All drive REAL queries against the CH service (BULLPEN_REQUIRE_CH=1 = a skip is a failure):
+        # the SQL-path leakage test (DEF-H2/H3), the pitch-type window-SQL leakage gate + the V029
+        # materialisation round-trip (pitch_type_pre, [183]), and the batted-ball full-data export
+        # query (auditor NOTE 2 on #112) so a schema/join/FINAL bug fails here, not on the box's CV.
         run: >
           uv run python -m pytest
           tests/leakage/test_sql_path_contamination.py
           tests/leakage/test_pitch_type_sql_leakage.py
+          tests/pitch_type/test_materialize_ch.py
           tests/eval/promotion/test_batted_ball_export_ch.py -v
