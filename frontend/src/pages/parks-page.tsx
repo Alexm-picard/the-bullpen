@@ -14,7 +14,7 @@
 import { NumberInput, SegmentedControl } from "@mantine/core";
 import { useDebouncedValue } from "@mantine/hooks";
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 
 import { useAllParksPrediction } from "../api/parks";
 import type { AllParksRequest } from "../api/parks";

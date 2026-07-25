@@ -4,7 +4,7 @@
  * NUMERIC /players/:id href, team color as a fill (never text), and the chips.
  */
 import { renderToStaticMarkup } from "react-dom/server";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 
 import { FEATURED_REPORTS } from "../../data/players-landing-fixtures";
