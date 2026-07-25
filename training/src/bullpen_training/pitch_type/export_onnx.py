@@ -20,7 +20,6 @@ without a box-trained artifact; `export()` is the file-based box/Mac wrapper.
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import os
 from pathlib import Path
@@ -35,7 +34,7 @@ from onnxmltools.convert.common.data_types import FloatTensorType  # type: ignor
 
 from bullpen_training.logging_config import configure_logging, get_logger
 from bullpen_training.pitch_type import PITCH_TYPE_FEATURE_COLUMNS
-from bullpen_training.registry_client import feature_hasher
+from bullpen_training.pitch_type.contract import load_canonical_pipeline as _load_canonical_pipeline
 
 log = get_logger(__name__)
 
@@ -54,16 +53,12 @@ DEFAULT_VERSION = "v1"
 
 
 def load_canonical_pipeline() -> dict[str, Any]:
-    """Read the pitch-type contract and verify its declared schema_hash. Drift is a hard fail."""
-    spec = cast(dict[str, Any], json.loads(CONTRACT_PATH.read_text()))
-    declared = spec["schema_hash"]
-    recomputed = feature_hasher.compute(CONTRACT_PATH)
-    if declared != recomputed:
-        raise RuntimeError(
-            f"{CONTRACT_PATH.name} schema_hash is stale (declared={declared} "
-            f"computed={recomputed}); re-run the recompute snippet in .githooks/pre-commit."
-        )
-    return spec
+    """Read the pitch-type contract and verify its declared schema_hash. Drift is a hard fail.
+
+    Thin alias for ``pitch_type.contract.load_canonical_pipeline`` - the verified read is
+    shared with ``pitch_type.persist`` so both fail loud on the same drift.
+    """
+    return _load_canonical_pipeline(CONTRACT_PATH)
 
 
 def _validate_model_matches_contract(spec: dict[str, Any]) -> None:
