@@ -3,7 +3,7 @@
  * The route wiring itself (path="*" -> NotFoundPage) is asserted end-to-end in e2e/smoke.spec.ts.
  */
 import { renderToStaticMarkup } from "react-dom/server";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 
 import NotFoundPage from "./not-found-page";

@@ -8,7 +8,7 @@
  * Same custom-<table> rationale as before: the OPEN cell must be a real <a>.
  */
 
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 
 import type { BoardRowView } from "../../api/matchups-view";
 import { colors, typography } from "../../design/broadcast";

@@ -18,7 +18,7 @@ import {
   Route,
   Routes,
   useLocation,
-} from "react-router-dom";
+} from "react-router";
 
 import HomePage from "./pages/home-page";
 import { ErrorBoundary } from "./components/shared/error-boundary";

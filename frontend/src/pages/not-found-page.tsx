@@ -3,7 +3,7 @@
  * shell with an empty <Outlet/> (a blank panel under the nav chrome) rather than an
  * honest not-found page. This renders a broadcast-styled 404 with a way back to the slate.
  */
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 
 import { PageChrome } from "../components/shared/page-chrome";
 import { colors, layouts, typography } from "../design/broadcast";
