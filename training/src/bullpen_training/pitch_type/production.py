@@ -31,7 +31,13 @@ from bullpen_training.eval.metrics import (
     multiclass_log_loss,
 )
 from bullpen_training.logging_config import configure_logging, get_logger
-from bullpen_training.pitch_type.persist import PitchTypePersistInputs, persist_pitch_type_v1
+from bullpen_training.pitch_type import PITCH_TYPE_FEATURE_COLUMNS
+from bullpen_training.pitch_type import train_lr as lr_train
+from bullpen_training.pitch_type.persist import (
+    PitchTypePersistInputs,
+    persist_pitch_type_lr_v1,
+    persist_pitch_type_v1,
+)
 from bullpen_training.pitch_type.train import make_pitch_type_feature_loader, model_factory
 
 log = get_logger(__name__)
@@ -158,7 +164,101 @@ def train_and_persist(
     return persist_pitch_type_v1(bundle, inputs, artifacts_dir=artifacts_dir)
 
 
+LR_HYPERPARAMS: dict[str, Any] = {
+    "model": "multinomial_logistic_regression",
+    "solver": "lbfgs",
+    "max_iter": 2000,
+    "C": 1.0,
+    "seed": lr_train.DEFAULT_SEED,
+    "imputer_strategy": "median",
+    "scaler": "standard",
+    "calibrator": "temperature",
+}
+
+
+def train_and_persist_lr(
+    loader: Any,
+    *,
+    version: str = "v1",
+    artifacts_dir: Path | None = None,
+    skip_cv: bool = False,
+) -> Path:
+    """Rule-9 co-trained LR baseline: same folds, same features, same calibrator family.
+
+    Mirrors the LightGBM flow deliberately - the [183] guardrail compares the two on
+    log-loss, so anything that differs between these two paths (fold windows, feature set,
+    calibration family, the eval snapshot) would contaminate that comparison.
+
+    Memory: extracts float32 design matrices and frees the multi-GB frames BEFORE the fit
+    allocates its imputer/scaler/solver copies, and row-subsamples the production train
+    window (lbfgs upcasts to float64 internally). The subsample is WITHIN the fixed temporal
+    window - not a re-split.
+    """
+    for fold in FOLDS:
+        refuse_holdout(season_from=fold.train_start_year, season_to=fold.test_year)
+
+    prod_fold = FOLDS[-1]
+    if skip_cv:
+        cv_result = _empty_cv_result()
+        log.warning("CV skipped - the persisted bundle carries no promotion evidence")
+    else:
+        cv_result = cv_run(
+            model_factory=lr_train.model_factory,
+            feature_loader=loader,
+            eval_metrics=[multiclass_brier, multiclass_log_loss, expected_calibration_error],
+        )
+        log.info("LR CV done", summary=cv_result.summary)
+
+    feat_cols = list(PITCH_TYPE_FEATURE_COLUMNS)
+    train_df = loader(prod_fold.train_start_year, prod_fold.train_end_year, prod_fold.fold_id)
+    original_rows = len(train_df)
+    train_df = lr_train.subsample_train_rows(train_df)
+    subsample_rows = len(train_df) if len(train_df) < original_rows else None
+
+    x_train = train_df[feat_cols].to_numpy(dtype=lr_train.DESIGN_MATRIX_DTYPE)
+    y_train = np.asarray(train_df["label"], dtype=np.int64)
+    del train_df
+    gc.collect()
+
+    val_df = loader(prod_fold.val_year, prod_fold.val_year, prod_fold.fold_id)
+    x_val = val_df[feat_cols].to_numpy(dtype=lr_train.DESIGN_MATRIX_DTYPE)
+    y_val = np.asarray(val_df["label"], dtype=np.int64)
+    del val_df
+    gc.collect()
+
+    bundle = lr_train.fit_lr_from_arrays(x_train, y_train, x_val, y_val)
+    bundle.train_subsample_rows = subsample_rows
+    bundle.train_rows_before_subsample = original_rows
+    del x_train, y_train, x_val, y_val
+    gc.collect()
+
+    test_df = loader(prod_fold.test_year, prod_fold.test_year, prod_fold.fold_id)
+    test_preds = cast(np.ndarray, bundle.predict_proba(test_df))
+
+    inputs = PitchTypePersistInputs(
+        model_version=version,
+        train_window=f"{prod_fold.train_start_year}-{prod_fold.train_end_year}",
+        val_window=str(prod_fold.val_year),
+        test_window=str(prod_fold.test_year),
+        test_df=test_df,
+        test_predictions=test_preds,
+        cv_result=cv_result,
+        # dict(...) so the frozen inputs never alias the module-level constant (the
+        # LightGBM side builds a fresh dict per call via _recorded_hyperparams).
+        hyperparams=dict(LR_HYPERPARAMS),
+        park_id_mapping=getattr(loader, "park_id_mapping", None),
+    )
+    return persist_pitch_type_lr_v1(bundle, inputs, artifacts_dir=artifacts_dir)
+
+
 @click.command()
+@click.option(
+    "--model",
+    type=click.Choice(["lightgbm", "lr"]),
+    default="lightgbm",
+    show_default=True,
+    help="lightgbm = the pitch_type_pre head; lr = the rule-9 pitch_type_lr_baseline.",
+)
 @click.option("--version", default="v1", show_default=True)
 @click.option(
     "--artifacts-dir",
@@ -171,7 +271,9 @@ def train_and_persist(
     type=click.Choice(["console", "json"], case_sensitive=False),
     default="console",
 )
-def main(version: str, artifacts_dir: Path | None, skip_cv: bool, log_format: str) -> None:
+def main(
+    model: str, version: str, artifacts_dir: Path | None, skip_cv: bool, log_format: str
+) -> None:
     if log_format.lower() == "json":
         os.environ["LOG_FORMAT"] = "json"
     configure_logging(level=logging.INFO)
@@ -189,10 +291,15 @@ def main(version: str, artifacts_dir: Path | None, skip_cv: bool, log_format: st
     _lgb.register_logger(logging.getLogger("lightgbm"))
 
     loader = make_pitch_type_feature_loader()
-    out_dir = train_and_persist(
-        loader, version=version, artifacts_dir=artifacts_dir, skip_cv=skip_cv
-    )
-    log.info("production bundle persisted", out_dir=str(out_dir), version=version)
+    if model == "lr":
+        out_dir = train_and_persist_lr(
+            loader, version=version, artifacts_dir=artifacts_dir, skip_cv=skip_cv
+        )
+    else:
+        out_dir = train_and_persist(
+            loader, version=version, artifacts_dir=artifacts_dir, skip_cv=skip_cv
+        )
+    log.info("production bundle persisted", model=model, out_dir=str(out_dir), version=version)
 
 
 if __name__ == "__main__":
