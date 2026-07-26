@@ -83,6 +83,21 @@ def _patch_metadata(d: Path, **changes: Any) -> None:
 _DELETE = object()
 
 
+def _restamp_contract_hash(d: Path) -> None:
+    """Re-stamp the contract's schema_hash and metadata's copy, so a test that deliberately
+    edits the contract reaches the CANONICAL comparison instead of stopping at the
+    self-consistency check."""
+    from bullpen_training.registry_client import feature_hasher
+
+    fp = d / "feature_pipeline.json"
+    spec = json.loads(fp.read_text())
+    spec["schema_hash"] = "0" * 64
+    fp.write_text(json.dumps(spec, indent=2) + "\n")
+    spec["schema_hash"] = feature_hasher.compute(fp)
+    fp.write_text(json.dumps(spec, indent=2) + "\n")
+    _patch_metadata(d, feature_pipeline_hash=feature_hasher.compute(fp))
+
+
 def _restamp_onnx_sha(d: Path) -> None:
     """Re-stamp metadata to match model.onnx on disk, so a test that deliberately rewrites the
     graph exercises the check it is aimed at rather than the digest check."""
@@ -303,21 +318,14 @@ def test_permuting_a_snapshots_labels_is_refused_by_the_canonical_hash(
     cal = json.loads((d / "calibrator.json").read_text())
     cal["class_labels"] = list(reversed(cal["class_labels"]))
     (d / "calibrator.json").write_text(json.dumps(cal))
-    with pytest.raises(RegisterGateError, match=r"schema_hash|DRIFTED"):
+    # Re-stamp so this is NOT just the stale-hash test again: with a self-consistent hash, the
+    # canonical comparison is what refuses it.
+    _restamp_contract_hash(d)
+    with pytest.raises(RegisterGateError, match="DRIFTED from the canonical"):
         run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
 
 
 # --- artifact digest + graph probes --------------------------------------------------------
-
-
-def test_a_swapped_onnx_is_refused(bundle: Path, tmp_path: Path) -> None:
-    """Name-only verification approves ANY 24->7 graph dropped into the bundle. This is the
-    "re-exported but never re-stamped" / "copied a bundle and swapped the model" case."""
-    d = _copy(bundle, tmp_path / "swapped")
-    onnx = d / "model.onnx"
-    onnx.write_bytes(onnx.read_bytes() + b"\x00")  # still parses as a graph, different bytes
-    with pytest.raises(RegisterGateError, match="sha"):
-        run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
 
 
 def test_a_constant_graph_is_refused(tmp_path: Path, bundle: Path) -> None:
@@ -507,7 +515,7 @@ def test_a_calibrator_field_that_is_not_an_object_is_a_gate_error(
     contract is that every hard exit is a RegisterGateError."""
     d = _copy(bundle, tmp_path / "calStr")
     _patch_metadata(d, calibrator="calibrator.json")
-    with pytest.raises(RegisterGateError):
+    with pytest.raises(RegisterGateError, match="not an object"):
         run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
 
 
@@ -564,4 +572,131 @@ def test_per_class_sigmoid_output_is_refused(bundle: Path, tmp_path: Path) -> No
     )
     _restamp_onnx_sha(d)
     with pytest.raises(RegisterGateError, match="does not sum to 1"):
+        run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
+
+
+# --- the calibrator pointer must stay INSIDE the bundle ------------------------------------
+
+
+def test_a_pointer_outside_the_bundle_is_refused(bundle: Path, tmp_path: Path) -> None:
+    """A FALSE-APPROVAL case. The bundle ships one calibrator and points metadata at another
+    (with a matching digest), so the gate validated the pointed-to file while the box loads the
+    shipped one - the SERVED temperature was one nothing ever checked. Containment matters more
+    for the server-side twin, where this pointer arrives in a registration payload and an
+    uncontained resolve is a traversal primitive."""
+    d = _copy(bundle, tmp_path / "escape")
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    good = json.loads((d / "calibrator.json").read_text())
+    (outside / "calibrator.json").write_text(json.dumps(good))
+    # The SHIPPED calibrator is the dangerous one; it never gets validated under a fallback.
+    shipped = dict(good, temperature=9.9)
+    (d / "calibrator.json").write_text(json.dumps(shipped))
+    _patch_metadata(d, calibrator={"path": "../elsewhere/calibrator.json", "kind": "temperature"})
+    with pytest.raises(RegisterGateError, match="outside the snapshot"):
+        run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
+
+
+def test_a_dangling_pointer_is_refused_rather_than_falling_back(
+    bundle: Path, tmp_path: Path
+) -> None:
+    """Java falls back to calibrator.json when the pointer dangles, so a silent fallback here
+    would validate a different file than the one that gets served."""
+    d = _copy(bundle, tmp_path / "dangling")
+    _patch_metadata(d, calibrator={"path": "no_such_calibrator.json", "kind": "temperature"})
+    with pytest.raises(RegisterGateError, match="does not name a file"):
+        run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
+
+
+# --- every probe row is validated, not just the dense one -----------------------------------
+
+
+def test_a_graph_whose_cold_start_path_is_broken_is_refused(bundle: Path, tmp_path: Path) -> None:
+    """WHY BOTH PROBE ROWS ARE VALIDATED. This graph scores dense rows as a perfect
+    distribution and emits a non-distribution only when the input contains NaN - the shape of a
+    cold-start-only regression. Checking rows[0] alone approves it, and the identical-output
+    check cannot see it because the two rows genuinely differ.
+
+    Note this is deliberately NOT the all-NaN case: ORT maps an all-NaN Softmax row to a
+    uniform distribution, which is valid and therefore invisible to any assertion here.
+    """
+    import onnx as onnx_mod
+    from onnx import helper, numpy_helper
+
+    d = _copy(bundle, tmp_path / "coldbroken")
+    n_f, n_c = len(PITCH_TYPE_FEATURE_COLUMNS), len(PITCH_TYPE_CLASSES)
+    rng = np.random.default_rng(11)
+    w = numpy_helper.from_array(rng.normal(size=(n_f, n_c)).astype(np.float32), name="w")
+    zero = numpy_helper.from_array(np.zeros((1, n_f), dtype=np.float32), name="zero")
+    graph = helper.make_graph(
+        [
+            # impute NaN -> 0 so the dense and cold paths both produce finite logits
+            helper.make_node("IsNaN", ["input"], ["mask"]),
+            helper.make_node("Where", ["mask", "zero", "input"], ["clean"]),
+            helper.make_node("MatMul", ["clean", "w"], ["logits"]),
+            helper.make_node("Softmax", ["logits"], ["good"], axis=1),
+            # ... but double the output whenever the row had ANY NaN, so the cold-start row
+            # sums to 2 while the dense row is untouched.
+            helper.make_node("Cast", ["mask"], ["maskf"], to=onnx_mod.TensorProto.FLOAT),
+            helper.make_node("ReduceMax", ["maskf"], ["hasnan"], axes=[1], keepdims=1),
+            helper.make_node("Mul", ["good", "hasnan"], ["extra"]),
+            helper.make_node("Add", ["good", "extra"], ["probabilities"]),
+            helper.make_node("ArgMax", ["probabilities"], ["label"], axis=1, keepdims=0),
+        ],
+        "cold_broken",
+        [helper.make_tensor_value_info("input", onnx_mod.TensorProto.FLOAT, [None, n_f])],
+        [
+            helper.make_tensor_value_info("label", onnx_mod.TensorProto.INT64, [None]),
+            helper.make_tensor_value_info("probabilities", onnx_mod.TensorProto.FLOAT, [None, n_c]),
+        ],
+        [w, zero],
+    )
+    onnx_mod.save(
+        helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)]), d / "model.onnx"
+    )
+    _restamp_onnx_sha(d)
+    with pytest.raises(RegisterGateError, match="cold-start probe row"):
+        run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
+
+
+# --- corrupt bundles refuse as RegisterGateError, never a raw traceback ----------------------
+
+
+@pytest.mark.parametrize(
+    ("filename", "content"),
+    [
+        ("metadata.json", "{not json"),
+        ("metadata.json", "[1, 2, 3]"),
+        ("feature_pipeline.json", "{truncated"),
+        ("calibrator.json", "\x00\x01binary"),
+    ],
+)
+def test_a_corrupt_bundle_file_is_a_gate_error(
+    bundle: Path, tmp_path: Path, filename: str, content: str
+) -> None:
+    """Half-finished export and interrupted sync are the cases this gate exists to catch, so
+    they must surface as a refusal with a message - not a JSONDecodeError traceback. The driver
+    catches RegisterGateError, and the server-side twin turns anything else into a 500 rather
+    than a 422."""
+    d = _copy(bundle, tmp_path / f"corrupt_{filename}_{abs(hash(content))}")
+    (d / filename).write_text(content)
+    with pytest.raises(RegisterGateError):
+        run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
+
+
+def test_a_non_object_model_artifact_is_a_gate_error(bundle: Path, tmp_path: Path) -> None:
+    """The twin of the calibrator guard; without it this escapes as a raw AttributeError."""
+    d = _copy(bundle, tmp_path / "artstr")
+    _patch_metadata(d, model_artifact="model.onnx")
+    with pytest.raises(RegisterGateError, match="not an object"):
+        run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
+
+
+def test_a_corrupt_snapshot_parquet_is_refused(bundle: Path, tmp_path: Path) -> None:
+    """decision [68]'s bitwise-reproducibility record ships in the bundle and carries a digest;
+    verifying two of the three shipped artifacts would be the arbitrariness this closes."""
+    d = _copy(bundle, tmp_path / "badparquet")
+    parquet = d / "training_data.parquet"
+    parquet.write_bytes(parquet.read_bytes() + b"\x00")
+    with pytest.raises(RegisterGateError, match="sha"):
         run_gate(d, model_name="pitch_type_pre", baseline_registered=True)

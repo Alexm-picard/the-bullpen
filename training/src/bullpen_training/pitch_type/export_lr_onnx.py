@@ -51,8 +51,6 @@ from bullpen_training.pitch_type import (
     PITCH_TYPE_FEATURE_COLUMNS,
     nullable_column_indices,
 )
-
-__all__ = ["nullable_column_indices"]  # re-exported: this was its original home
 from bullpen_training.pitch_type.contract import (
     assert_feature_order_matches,
     load_canonical_pipeline,
@@ -67,10 +65,6 @@ PARITY_ATOL = 1e-5
 N_PARITY_ROWS = 256
 
 
-# Column positions the serving path can send as NaN: the three Nullable Tier-S columns and
-# the eight career-expanding ARS columns (NULL at a pitcher's first career pitch). Derived
-# from the canonical order so a contract reshuffle cannot silently point this at the wrong
-# columns and leave the Imputer path untested.
 def assert_canonical_class_order(pipeline: Any) -> None:
     """Refuse to export a pipeline whose fitted class order is not 0..6.
 

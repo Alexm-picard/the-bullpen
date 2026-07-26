@@ -73,7 +73,12 @@ NULLABLE_FEATURE_COLUMNS: tuple[str, ...] = (
     "ars_OFF",
     "ars_FF_by_count",
 )
-"""Columns the serving path can legitimately send as NaN (cold start / outing start).
+"""Columns the serving path can legitimately send as NaN.
+
+The three Nullable Tier-S columns and the eight career-expanding ARS columns (NULL at a
+pitcher's first career pitch). Positions are derived from the canonical order rather than
+hard-coded, so a contract reshuffle cannot silently point this at the wrong columns and leave
+the Imputer path untested.
 
 Lives here rather than in an exporter so the ONNX export and the registration gate share one
 source of truth without the gate importing sklearn/skl2onnx just to read eleven names.
