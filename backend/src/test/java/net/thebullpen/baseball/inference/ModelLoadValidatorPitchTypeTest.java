@@ -100,14 +100,19 @@ class ModelLoadValidatorPitchTypeTest {
   }
 
   @Test
-  void without_model_kind_the_snapshot_misroutes_and_fails() throws Exception {
-    // PROVES THE GATE BITES: strip model_kind and the very same snapshot falls through to the
-    // batted-ball branch, exactly the pre-fix behaviour. If this ever starts passing, the
-    // discriminator has stopped being load-bearing and the routing is accidental.
+  void without_model_kind_the_snapshot_never_reaches_the_load_gate() throws Exception {
+    // This test used to register a kind-less snapshot and prove it MISROUTED into the batted-ball
+    // branch at load time. That hazard is now unreachable: decision [184]'s registration check
+    // (RegistryService.doInsert) refuses the bundle before a row is ever written, so the load gate
+    // is never asked. The guarantee got strictly stronger, and the test now pins the stronger one.
+    //
+    // The misroute branch itself is pinned separately, by
+    // an_unarmed_family_still_misroutes_at_the_load_gate below - NOT by the sibling tests here,
+    // which all pass PITCH_TYPE_KIND and therefore only exercise the positive branch.
     Path src = stageSnapshot("v-nokind", metadataJson(MODEL_NAME, null), false);
-    ModelVersion mv = registryService.register(request(MODEL_NAME, "v-nokind", src));
-    assertThatThrownBy(() -> modelLoadValidator.validate(mv))
-        .isInstanceOf(RegistryException.ModelLoadFailed.class);
+    assertThatThrownBy(() -> registryService.register(request(MODEL_NAME, "v-nokind", src)))
+        .isInstanceOf(RegistryException.ModelKindMismatch.class)
+        .hasMessageContaining("[184]");
   }
 
   @Test
@@ -175,6 +180,21 @@ class ModelLoadValidatorPitchTypeTest {
   }
 
   // --- helpers ----------------------------------------------------------
+
+  @Test
+  void an_unarmed_family_still_misroutes_at_the_load_gate() throws Exception {
+    // RESTORES the branch the test above used to cover, and pins the defense-in-depth half of the
+    // [184] scoping argument. A model name OUTSIDE CanonicalContracts' family table is UNARMED, so
+    // registration does not require model_kind - but the load gate still sniffs metadata, so a
+    // kind-less pitch-type bundle falls through to the batted-ball loader and can never reach a
+    // serving stage. That dead-end is why scoping the registration check is safe rather than a
+    // hole, and it should fail a test if it ever stops being true.
+    Path src = stageSnapshot("v-unarmed", metadataJson("pitch_type_experimental", null), false);
+    ModelVersion mv =
+        registryService.register(request("pitch_type_experimental", "v-unarmed", src));
+    assertThatThrownBy(() -> modelLoadValidator.validate(mv))
+        .isInstanceOf(RegistryException.ModelLoadFailed.class);
+  }
 
   private Path stageSnapshot(String version, String metadata, boolean corruptOnnx)
       throws Exception {

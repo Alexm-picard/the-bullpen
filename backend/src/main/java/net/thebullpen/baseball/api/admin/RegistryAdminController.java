@@ -56,6 +56,7 @@ import org.springframework.web.server.ResponseStatusException;
  *   <li>{@code FeatureSchemaMismatch} → 409
  *   <li>{@code ResetConfirmationMissing} → 400
  *   <li>{@code PromotionCriteriaMissing} → 409 (rule 5 — no passing experiment row)
+ *   <li>{@code ModelKindMismatch} → 422 (decision [184]; metadata.json must declare model_kind)
  *   <li>{@code IllegalArgumentException} from path/body mismatch → 400
  * </ul>
  */
@@ -122,7 +123,15 @@ public class RegistryAdminController {
           OpsEventType.REGISTER,
           mv.modelName() + " " + mv.version() + " registered as " + mv.stage());
       return mv;
-    } catch (RegistryException.ArtifactMissing e) {
+    } catch (RegistryException.ArtifactMissing | RegistryException.ModelKindMismatch e) {
+      // 422 rather than 409: the artifact on the server is wrong and the caller can fix it by
+      // re-exporting, which is the same shape as ArtifactMissing. NOT 409 like
+      // FeatureSchemaMismatch, whose message steers the operator to registerWithBootstrap - that
+      // archives every prior version, which would be a wildly disproportionate remedy here.
+      //
+      // This catch is load-bearing: the handler uses catch clauses, not a pattern switch, so the
+      // sealed hierarchy gives NO compile-time exhaustiveness check. An unmapped RegistryException
+      // surfaces as an opaque 500 and the operator never learns why the gate refused.
       throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, e.getMessage(), e);
     } catch (RegistryException.DuplicateVersion | RegistryException.FeatureSchemaMismatch e) {
       throw new ResponseStatusException(HttpStatus.CONFLICT, e.getMessage(), e);

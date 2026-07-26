@@ -4,6 +4,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Optional;
+import net.thebullpen.baseball.inference.ModelLoadValidator;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -55,6 +56,29 @@ public class CanonicalContracts {
           "lr_baseline_batted_ball", "feature_pipeline_battedball.json",
           "battedball_lgbm_baseline", "feature_pipeline_lgbm_battedball.json");
 
+  /**
+   * The {@code model_kind} a family's {@code metadata.json} MUST declare (decision [184]), keyed by
+   * the family's canonical contract file, which is what correctly arms the rule-9 BASELINE from the
+   * same one-line entry as its primary (both map to {@code feature_pipeline_pitchtype.json}), so
+   * the baseline cannot register kind-less while the primary is required to declare.
+   *
+   * <p>Do NOT read this as "any future family member inherits automatically". The pitch-OUTCOME
+   * precedent in the map above shows the opposite: pre and post have DIFFERENT contract files
+   * because post adds Tier-4 features. A {@code pitch_type_post} would likely get its own contract
+   * and would register UNARMED unless added here. {@code CanonicalContractsTest} asserts every
+   * {@code pitch_type*} name resolves to a kind, so forgetting reds a test instead of shipping.
+   *
+   * <p>ABSENT MEANS UNARMED, exactly as an unmapped contract file does for the schema-hash gate.
+   * Every family registered before [184] is resolved by the load gate field-sniffing instead
+   * ({@code park_order} for the batted-ball all-parks head, {@code head} for pitch-outcome), and
+   * none of their metadata carries this field - so an unconditional requirement would refuse every
+   * re-registration of the existing fleet (automated retraining, and the fresh-version path in
+   * {@code docs/runbooks/registry-snapshot-recovery.md}). Arming a family is the one-line change
+   * here, same idiom as the map above.
+   */
+  private static final Map<String, String> KIND_BY_CONTRACT_FILE =
+      Map.of("feature_pipeline_pitchtype.json", ModelLoadValidator.PITCH_TYPE_KIND);
+
   private final Path contractsDir;
   private final FeatureSchemaHasher hasher;
 
@@ -68,6 +92,18 @@ public class CanonicalContracts {
   /** The canonical contract filename for {@code modelName}; empty for an unmapped family. */
   static Optional<String> contractFileFor(String modelName) {
     return Optional.ofNullable(CONTRACT_FILE_BY_MODEL.get(modelName));
+  }
+
+  /**
+   * The {@code model_kind} {@code modelName}'s {@code metadata.json} must declare; empty when the
+   * family predates decision [184] and is resolved by field-sniffing instead.
+   *
+   * <p>Derived from the contract-file table rather than a second model-name list, so family
+   * membership is stated once. Static because it needs no contracts directory - it is a statement
+   * about the artifact's own metadata, not about a file on disk.
+   */
+  public static Optional<String> requiredModelKindFor(String modelName) {
+    return contractFileFor(modelName).map(KIND_BY_CONTRACT_FILE::get);
   }
 
   /**
