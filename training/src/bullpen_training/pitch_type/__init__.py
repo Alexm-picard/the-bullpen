@@ -58,3 +58,33 @@ in pitch_type_features (V029) and integer-encoded downstream via the contract, s
 feature-order names are the DERIVED stand_i/throws_i/park_i - mirroring how
 PITCH_FEATURE_COLUMNS lists pitcher_throws_int while `features` stores pitcher_throws
 raw."""
+
+
+NULLABLE_FEATURE_COLUMNS: tuple[str, ...] = (
+    "times_through_order",
+    "at_bat_number_in_game",
+    "times_faced_today",
+    "ars_FF",
+    "ars_SI",
+    "ars_FC",
+    "ars_SL",
+    "ars_CU",
+    "ars_CH",
+    "ars_OFF",
+    "ars_FF_by_count",
+)
+"""Columns the serving path can legitimately send as NaN.
+
+The three Nullable Tier-S columns and the eight career-expanding ARS columns (NULL at a
+pitcher's first career pitch). Positions are derived from the canonical order rather than
+hard-coded, so a contract reshuffle cannot silently point this at the wrong columns and leave
+the Imputer path untested.
+
+Lives here rather than in an exporter so the ONNX export and the registration gate share one
+source of truth without the gate importing sklearn/skl2onnx just to read eleven names.
+"""
+
+
+def nullable_column_indices() -> tuple[int, ...]:
+    """Positions of :data:`NULLABLE_FEATURE_COLUMNS` in the canonical feature order."""
+    return tuple(PITCH_TYPE_FEATURE_COLUMNS.index(c) for c in NULLABLE_FEATURE_COLUMNS)

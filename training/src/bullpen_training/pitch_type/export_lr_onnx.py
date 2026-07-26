@@ -46,7 +46,11 @@ import pandas as pd
 from skl2onnx import convert_sklearn
 from skl2onnx.common.data_types import FloatTensorType
 
-from bullpen_training.pitch_type import PITCH_TYPE_CLASSES, PITCH_TYPE_FEATURE_COLUMNS
+from bullpen_training.pitch_type import (
+    PITCH_TYPE_CLASSES,
+    PITCH_TYPE_FEATURE_COLUMNS,
+    nullable_column_indices,
+)
 from bullpen_training.pitch_type.contract import (
     assert_feature_order_matches,
     load_canonical_pipeline,
@@ -59,28 +63,6 @@ DEFAULT_MODEL_NAME = "pitch_type_lr_baseline"
 # is no tree-split accumulation here, so a larger diff means a real conversion defect.
 PARITY_ATOL = 1e-5
 N_PARITY_ROWS = 256
-
-# Column positions the serving path can send as NaN: the three Nullable Tier-S columns and
-# the eight career-expanding ARS columns (NULL at a pitcher's first career pitch). Derived
-# from the canonical order so a contract reshuffle cannot silently point this at the wrong
-# columns and leave the Imputer path untested.
-_NULLABLE_FEATURES = (
-    "times_through_order",
-    "at_bat_number_in_game",
-    "times_faced_today",
-    "ars_FF",
-    "ars_SI",
-    "ars_FC",
-    "ars_SL",
-    "ars_CU",
-    "ars_CH",
-    "ars_OFF",
-    "ars_FF_by_count",
-)
-
-
-def nullable_column_indices() -> tuple[int, ...]:
-    return tuple(PITCH_TYPE_FEATURE_COLUMNS.index(c) for c in _NULLABLE_FEATURES)
 
 
 def assert_canonical_class_order(pipeline: Any) -> None:
