@@ -83,6 +83,20 @@ def _patch_metadata(d: Path, **changes: Any) -> None:
 _DELETE = object()
 
 
+def _restamp_onnx_sha(d: Path) -> None:
+    """Re-stamp metadata to match model.onnx on disk, so a test that deliberately rewrites the
+    graph exercises the check it is aimed at rather than the digest check."""
+    import hashlib
+
+    _patch_metadata(
+        d,
+        model_artifact={
+            "path": "model.onnx",
+            "sha256": hashlib.sha256((d / "model.onnx").read_bytes()).hexdigest(),
+        },
+    )
+
+
 def test_a_real_bundle_passes(bundle: Path) -> None:
     report = run_gate(bundle, model_name="pitch_type_pre", baseline_registered=True)
     assert report.ok
@@ -211,6 +225,9 @@ def test_metadata_naming_the_training_artifact_is_refused(bundle: Path, tmp_path
 def test_a_corrupt_onnx_is_refused(bundle: Path, tmp_path: Path) -> None:
     d = _copy(bundle, tmp_path / "corrupt")
     (d / "model.onnx").write_text("not an onnx graph")
+    # Re-stamp the digest: otherwise the sha256 check fires first and this test would silently
+    # stop proving that the ONNX-load refusal bites.
+    _restamp_onnx_sha(d)
     with pytest.raises(RegisterGateError, match="ONNX runtime cannot load"):
         run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
 
@@ -240,3 +257,143 @@ def test_metadata_model_name_mismatch_is_refused(bundle: Path, tmp_path: Path) -
     _patch_metadata(d, model_name="pitch_type_lr_baseline")
     with pytest.raises(RegisterGateError, match="model_name"):
         run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
+
+
+# --- rule 7 vs the CANONICAL contract ------------------------------------------------------
+
+
+def test_a_self_consistent_but_drifted_contract_is_refused(bundle: Path, tmp_path: Path) -> None:
+    """THE CASE A SELF-CONSISTENCY CHECK CANNOT SEE. Edit the snapshot's contract, then re-stamp
+    its schema_hash and sync metadata: the bundle is now internally consistent at every point, so
+    only a comparison against canonical /contracts catches it. Without this the gate approves a
+    bundle that 422s FeatureSchemaMismatch at Java registration - the exact box-side failure this
+    gate exists to pre-empt."""
+    from bullpen_training.registry_client import feature_hasher
+
+    d = _copy(bundle, tmp_path / "drifted")
+    fp = d / "feature_pipeline.json"
+    spec = json.loads(fp.read_text())
+    spec["description"] = "drifted copy"  # semantically harmless, hash-relevant
+    fp.write_text(json.dumps(spec, indent=2) + "\n")
+    restamped = feature_hasher.compute(fp)
+    spec["schema_hash"] = restamped
+    fp.write_text(json.dumps(spec, indent=2) + "\n")
+    _patch_metadata(d, feature_pipeline_hash=feature_hasher.compute(fp))
+
+    with pytest.raises(RegisterGateError, match="DRIFTED from the canonical"):
+        run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
+
+
+def test_permuted_contract_labels_are_refused(bundle: Path, tmp_path: Path) -> None:
+    """Permuting the contract labels AND the calibrator labels together is self-consistent (Java
+    only compares those two to each other), but the ONNX columns stay in canonical order - so the
+    bundle would serve correctly-shaped probabilities under backwards labels."""
+    d = _copy(bundle, tmp_path / "permuted")
+    fp = d / "feature_pipeline.json"
+    spec = json.loads(fp.read_text())
+    spec["output"]["labels"] = list(reversed(spec["output"]["labels"]))
+    fp.write_text(json.dumps(spec, indent=2) + "\n")
+    cal = json.loads((d / "calibrator.json").read_text())
+    cal["class_labels"] = list(reversed(cal["class_labels"]))
+    (d / "calibrator.json").write_text(json.dumps(cal))
+    with pytest.raises(RegisterGateError):
+        run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
+
+
+# --- artifact digest + graph probes --------------------------------------------------------
+
+
+def test_a_swapped_onnx_is_refused(bundle: Path, tmp_path: Path) -> None:
+    """Name-only verification approves ANY 24->7 graph dropped into the bundle. This is the
+    "re-exported but never re-stamped" / "copied a bundle and swapped the model" case."""
+    d = _copy(bundle, tmp_path / "swapped")
+    onnx = d / "model.onnx"
+    onnx.write_bytes(onnx.read_bytes() + b"\x00")  # still parses as a graph, different bytes
+    with pytest.raises(RegisterGateError, match="sha"):
+        run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
+
+
+def test_a_constant_graph_is_refused(tmp_path: Path, bundle: Path) -> None:
+    """A graph that ignores its input still emits a perfectly valid distribution, so every
+    single-row assertion passes. Only two DISTINCT probes can tell the difference."""
+    import onnx as onnx_mod
+    from onnx import helper, numpy_helper
+
+    d = _copy(bundle, tmp_path / "constant")
+    n_f, n_c = len(PITCH_TYPE_FEATURE_COLUMNS), len(PITCH_TYPE_CLASSES)
+    const = numpy_helper.from_array(
+        np.full((1, n_c), 1.0 / n_c, dtype=np.float32), name="const_probs"
+    )
+    const_label = numpy_helper.from_array(np.zeros((1,), dtype=np.int64), name="const_label")
+    graph = helper.make_graph(
+        [
+            helper.make_node("Identity", ["const_label"], ["label"]),
+            helper.make_node("Identity", ["const_probs"], ["probabilities"]),
+        ],
+        "constant",
+        [helper.make_tensor_value_info("input", onnx_mod.TensorProto.FLOAT, [None, n_f])],
+        [
+            helper.make_tensor_value_info("label", onnx_mod.TensorProto.INT64, [None]),
+            helper.make_tensor_value_info("probabilities", onnx_mod.TensorProto.FLOAT, [None, n_c]),
+        ],
+        [const_label, const],
+    )
+    # A graph with an unused input is legal; ORT scores it and returns the constant every time.
+    # It keeps BOTH outputs so it reaches the probe check instead of failing the arity check.
+    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 15)])
+    onnx_mod.save(model, d / "model.onnx")
+    _restamp_onnx_sha(d)
+    with pytest.raises(RegisterGateError, match="IDENTICAL distribution"):
+        run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
+
+
+def test_a_wrong_width_onnx_is_refused(bundle: Path, tmp_path: Path) -> None:
+    """A width mismatch must be a gate refusal, not a raw ORT stack trace escaping the module."""
+    import onnx as onnx_mod
+
+    d = _copy(bundle, tmp_path / "width")
+    model = onnx_mod.load(d / "model.onnx")
+    model.graph.input[0].type.tensor_type.shape.dim[1].dim_value = 23
+    onnx_mod.save(model, d / "model.onnx")
+    _restamp_onnx_sha(d)
+    with pytest.raises(RegisterGateError, match="width"):
+        run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
+
+
+# --- calibrator resolution mirrors the Java loader -----------------------------------------
+
+
+def test_the_metadata_calibrator_pointer_is_what_gets_validated(
+    bundle: Path, tmp_path: Path
+) -> None:
+    """LoadedPitchTypeModel resolves metadata.calibrator.path FIRST. A gate that reads
+    calibrator.json unconditionally would validate a file the loader never opens, so a bundle
+    pointing at a broken calibrator would pass here and fail at load."""
+    d = _copy(bundle, tmp_path / "pointer")
+    broken = json.loads((d / "calibrator.json").read_text())
+    broken["temperature"] = -1.0
+    (d / "other_calibrator.json").write_text(json.dumps(broken))
+    _patch_metadata(d, calibrator={"path": "other_calibrator.json", "kind": "temperature"})
+    with pytest.raises(RegisterGateError, match="order-preservation"):
+        run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
+
+
+# --- the OTHER row of the [183] guardrail pair ---------------------------------------------
+
+
+def test_the_real_lr_baseline_bundle_passes(tmp_path: Path) -> None:
+    """The gate must clear BOTH rows [183]'s guardrail compares. The LR bundle differs
+    structurally from the LightGBM one - skl2onnx bakes Imputer+Scaler INTO the graph (the Java
+    pipeline is encode-only), so its probe path and its metadata are produced by different code.
+    Gating only the LightGBM bundle would leave the baseline's registration unproven."""
+    from bullpen_training.pitch_type.export_lr_onnx import export as export_lr
+    from bullpen_training.pitch_type.production import train_and_persist_lr
+
+    d = train_and_persist_lr(_Loader(), version="v1", artifacts_dir=tmp_path, skip_cv=True)
+    export_lr(model_name="pitch_type_lr_baseline", version="v1", artifacts_dir=tmp_path)
+
+    report = run_gate(d, model_name="pitch_type_lr_baseline", baseline_registered=False)
+    assert report.ok
+    assert report.model_kind == MODEL_KIND  # [184] applies to BOTH rows, not just the primary
+    assert report.n_features == 24
+    assert report.n_classes == 7

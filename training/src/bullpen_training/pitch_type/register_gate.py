@@ -15,19 +15,29 @@ The checks, in order:
   1. metadata.json + feature_pipeline.json present
   2. model_kind present and == "pitch_type"                      <- decision [184]
   3. model_name is a known pitch-type family member
-  4. contract schema_hash RECOMPUTED from content, not trusted   <- rule 7
-  5. metadata's feature_pipeline_hash agrees with the contract
-  6. contract feature_order == PITCH_TYPE_FEATURE_COLUMNS
-  7. contract-declared side-car lookups all present
-  8. calibrator loads, is kind=temperature, T finite and > 0, labels == contract labels
-  9. model_artifact names the file the registry actually stores (model.onnx)
- 10. ONNX loads and scores [1,24] -> [1,7], exactly 2 outputs, probabilities at index 1
- 11. the raw probe output is already a probability distribution
- 12. rule 9: a primary head declares its co-registered baseline
+  4. rule 9: a primary head declares its co-registered baseline
+  5. contract schema_hash RECOMPUTED from content, not trusted   <- rule 7
+  6. that hash EQUALS the canonical /contracts pipeline's        <- rule 7
+  7. metadata's feature_pipeline_hash agrees with the contract
+  8. contract feature_order == PITCH_TYPE_FEATURE_COLUMNS
+  9. contract output.labels == the canonical y7 class order
+ 10. contract-declared side-car lookups all present
+ 11. calibrator loads, is kind=temperature, T finite and > 0, labels == contract labels
+ 12. model_artifact names the file the registry stores (model.onnx) and its sha256 matches
+ 13. ONNX loads and scores [1,24] -> [1,7], exactly 2 outputs, probabilities at index 1
+ 14. two DISTINCT probes give different outputs (a constant graph is not a model)
+ 15. the raw probe output is already a probability distribution
+
+Checks 5 and 6 look redundant and are not. 5 proves the snapshot's contract is internally
+consistent; 6 proves it still matches production. A snapshot that drifted from /contracts but
+re-stamped its own hash passes 5 and fails 6 - and without 6 it would sail through here and
+then 422 FeatureSchemaMismatch at Java bootstrap registration, which is the box-side failure
+this whole file exists to pre-empt.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -37,10 +47,13 @@ import numpy as np
 
 from bullpen_training.pitch_type import PITCH_TYPE_CLASSES, PITCH_TYPE_FEATURE_COLUMNS
 from bullpen_training.pitch_type.contract import (
+    CONTRACT_PATH,
     assert_feature_order_matches,
     declared_lookup_paths,
     load_canonical_pipeline,
 )
+from bullpen_training.pitch_type.export_lr_onnx import nullable_column_indices
+from bullpen_training.registry_client import feature_hasher
 
 METADATA_FILE = "metadata.json"
 FEATURE_PIPELINE_FILE = "feature_pipeline.json"
@@ -102,8 +115,19 @@ def check_model_kind(metadata: dict[str, Any]) -> str:
     return cast(str, kind)
 
 
-def _check_calibrator(snapshot_dir: Path, contract_labels: list[str]) -> None:
+def _check_calibrator(
+    snapshot_dir: Path, contract_labels: list[str], metadata: dict[str, Any]
+) -> None:
+    # Resolve the SAME way LoadedPitchTypeModel does - metadata's calibrator.path pointer first,
+    # canonical filename as fallback. Reading calibrator.json unconditionally would validate a
+    # file the loader never opens, so a bundle whose pointer aims at a broken calibrator would
+    # pass the gate and fail at load.
     cal_path = snapshot_dir / CALIBRATOR_FILE
+    pointer = (metadata.get("calibrator") or {}).get("path")
+    if isinstance(pointer, str) and pointer.strip():
+        candidate = (snapshot_dir / pointer).resolve()
+        if candidate.is_file():
+            cal_path = candidate
     if not cal_path.is_file():
         raise RegisterGateError(f"calibrator file missing (expected {cal_path})")
     cal = cast(dict[str, Any], json.loads(cal_path.read_text()))
@@ -156,11 +180,40 @@ def _probe_onnx(snapshot_dir: Path, n_features: int, n_classes: int) -> None:
             f"{[o.name for o in outputs]}"
         )
 
-    probe = np.zeros((1, n_features), dtype=np.float32)
-    prob = np.asarray(session.run(None, {input_names[0]: probe})[-1])
+    declared_width = session.get_inputs()[0].shape
+    if (
+        len(declared_width) == 2
+        and isinstance(declared_width[1], int)
+        and (declared_width[1] != n_features)
+    ):
+        raise RegisterGateError(
+            f"ONNX declares input width {declared_width[1]}, contract has {n_features} features"
+        )
+    # Two DISTINCT probes: one row can never distinguish a correct softmax from a graph that
+    # ignores its input, and a NaN cold-start row is the only input exercising the LR baseline's
+    # in-graph Imputer (the same pair ModelLoadValidator runs, for the same reason).
+    dense = np.full((1, n_features), 0.37, dtype=np.float32)
+    cold = np.zeros((1, n_features), dtype=np.float32)
+    cold[0, list(nullable_column_indices())] = np.nan
+    rows: list[np.ndarray] = []
+    for probe in (dense, cold):
+        try:
+            out = session.run(None, {input_names[0]: probe})
+        except Exception as exc:
+            raise RegisterGateError(f"ONNX failed to score a probe row: {exc}") from exc
+        rows.append(np.asarray(out[-1]))
+    prob = rows[0]
     if prob.ndim != 2 or prob.shape[1] != n_classes:
         raise RegisterGateError(
             f"ONNX probability output must be [N,{n_classes}], got shape {prob.shape}"
+        )
+    if len(rows) == 2 and np.allclose(
+        np.asarray(rows[0], dtype=np.float64), np.asarray(rows[1], dtype=np.float64)
+    ):
+        raise RegisterGateError(
+            "ONNX returned an IDENTICAL distribution for two very different inputs, so the graph "
+            "is ignoring its input. A constant output still looks like a valid distribution, "
+            "which is why one probe row cannot catch this"
         )
     row = prob[0].astype(np.float64)
     if not np.all(np.isfinite(row)) or float(row.min()) < 0.0 or float(row.max()) > 1.0:
@@ -206,6 +259,16 @@ def run_gate(
         )
     passed.append("metadata model_name matches")
 
+    # Rule 9 first: it costs nothing (a caller-supplied flag, no I/O), so a sequencing mistake
+    # should surface before the ONNX load rather than after it.
+    if model_name == PRIMARY_MODEL:
+        if not baseline_registered:
+            raise RegisterGateError(
+                f"rule 9: primary head {model_name} has no {BASELINE_MODEL} registered; decision "
+                "[183]'s guardrail compares them and the first-champion gate binds to it"
+            )
+        passed.append(f"rule 9: {BASELINE_MODEL} is registered alongside this primary head")
+
     # Rule 7: recompute from the SNAPSHOT's own copied contract, never trust its declared field.
     # Wrapped so EVERY hard exit from this gate is a RegisterGateError - the contract helpers
     # raise bare RuntimeError, and a caller catching only RegisterGateError would otherwise get
@@ -218,8 +281,37 @@ def run_gate(
     except RuntimeError as exc:
         raise RegisterGateError(str(exc)) from exc
     declared = cast(str, spec["schema_hash"])
-    passed.append("rule 7: contract schema_hash recomputed from content")
+    passed.append("rule 7: snapshot contract schema_hash recomputed from its own content")
+
+    # The check above only proves the snapshot's contract is INTERNALLY consistent. Rule 7 is
+    # about agreement with the CANONICAL pipeline: a snapshot that drifted from /contracts but
+    # re-stamped its own hash is self-consistent and would sail through - then hard-fail at
+    # Java bootstrap registration, which compares the submitted file against
+    # CanonicalContracts.canonicalHashFor. That box-side 422 is exactly what this gate exists
+    # to pre-empt, so compare here too.
+    canonical = feature_hasher.compute(CONTRACT_PATH)
+    if declared != canonical:
+        raise RegisterGateError(
+            f"rule 7: the snapshot's feature_pipeline.json has DRIFTED from the canonical "
+            f"{CONTRACT_PATH.name} (snapshot={declared} canonical={canonical}). It is "
+            f"self-consistent, so only this comparison catches it; registration would 422 with "
+            f"FeatureSchemaMismatch on the box. Re-persist from the current contract."
+        )
+    passed.append("rule 7: snapshot contract matches the canonical /contracts pipeline")
     passed.append("contract feature_order == PITCH_TYPE_FEATURE_COLUMNS")
+
+    # The input axis is guarded by feature_order; this guards the OUTPUT axis. Permuting the
+    # contract labels AND the calibrator labels together is self-consistent (Java compares those
+    # two to each other), but the ONNX columns are in PITCH_TYPE_CLASSES order - so the bundle
+    # would serve a distribution with its labels silently backwards.
+    contract_labels = [str(x) for x in spec["output"]["labels"]]
+    if contract_labels != list(PITCH_TYPE_CLASSES):
+        raise RegisterGateError(
+            f"contract output.labels {contract_labels} != the canonical y7 order "
+            f"{list(PITCH_TYPE_CLASSES)}; the ONNX columns follow the canonical order, so this "
+            "bundle would serve correctly-shaped probabilities under the wrong labels"
+        )
+    passed.append("contract output.labels are the canonical y7 order")
 
     meta_hash = metadata.get("feature_pipeline_hash")
     if meta_hash != declared:
@@ -235,8 +327,7 @@ def run_gate(
         )
     passed.append("contract-declared lookups present")
 
-    contract_labels = [str(x) for x in spec["output"]["labels"]]
-    _check_calibrator(snapshot_dir, contract_labels)
+    _check_calibrator(snapshot_dir, contract_labels, metadata)
     passed.append("calibrator is a valid temperature calibrator with matching labels")
 
     artifact = metadata.get("model_artifact") or {}
@@ -247,17 +338,25 @@ def run_gate(
         )
     passed.append("model_artifact names the registered ONNX")
 
+    # Name alone approves ANY 24->7 graph dropped into the bundle. Verifying the digest catches
+    # "re-exported but never re-stamped", "copied a bundle and swapped the model", and
+    # "registered from a half-finished export".
+    declared_sha = artifact.get("sha256")
+    onnx_file = snapshot_dir / ARTIFACT_FILE
+    if isinstance(declared_sha, str) and onnx_file.is_file():
+        actual_sha = hashlib.sha256(onnx_file.read_bytes()).hexdigest()
+        if actual_sha != declared_sha:
+            raise RegisterGateError(
+                f"model.onnx on disk (sha {actual_sha[:16]}) is not the file metadata records "
+                f"(sha {declared_sha[:16]}); the bundle's ONNX was swapped or the export did not "
+                "re-stamp"
+            )
+        passed.append("model_artifact sha256 matches the ONNX on disk")
+
     n_features = len(PITCH_TYPE_FEATURE_COLUMNS)
     n_classes = len(PITCH_TYPE_CLASSES)
     _probe_onnx(snapshot_dir, n_features, n_classes)
     passed.append(f"ONNX loads + scores [1,{n_features}] -> [1,{n_classes}] as a distribution")
-
-    if model_name == PRIMARY_MODEL and not baseline_registered:
-        raise RegisterGateError(
-            f"rule 9: primary head {model_name} has no {BASELINE_MODEL} registered; decision "
-            "[183]'s guardrail compares them and the first-champion gate binds to it"
-        )
-    passed.append("rule 9 baseline partner accounted for")
 
     return GateReport(
         model_name=model_name,
