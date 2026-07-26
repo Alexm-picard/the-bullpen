@@ -429,3 +429,78 @@ def test_per_year_chunking_reaches_back_across_the_year_boundary(ch: Client) -> 
     both_nan = merged["ars_FF"].isna() & merged["ars_FF_ref"].isna()
     close = np.isclose(merged["ars_FF"].fillna(-1.0), merged["ars_FF_ref"].fillna(-1.0), atol=1e-6)
     assert (both_nan | close).all(), "per-year chunking diverges from the full strict-backward scan"
+
+
+def test_ars_reaches_back_past_a_90_day_window(ch: Client) -> None:
+    """THE ARS WINDOW IS CAREER-EXPANDING, NOT 90-DAY-FLOORED, and that difference is invisible
+    to every other test in this file.
+
+    compute_tier3.sql (the pitch-OUTCOME family) uses a 90-day warm-up floor, and it is the
+    in-repo precedent anyone would reach for. compute_pitch_type_arsenal.sql deliberately does
+    not: it scans from :corpus_start so every row sees its WHOLE career to date. Harmonising the
+    two would look like a tidy-up and would silently change every ars_* value in training - and
+    the serving side would then have to reproduce whichever one shipped.
+
+    The other tests here cannot catch it: their fixture spans 2024-03-01 to 2024-04-30, so ALL
+    their history already sits inside 90 days and a floor would change nothing.
+
+    Construction makes this airtight rather than merely suggestive. The pitcher's only prior
+    pitches are ~10 months before the window, all FF. Career-expanding gives prior_n > 0 and
+    ars_FF == 1.0 at his first returning pitch. A 90-day floor gives prior_n == 0 and ars_FF NaN.
+    The two outcomes cannot be confused.
+    """
+    import numpy as np
+
+    long_ago = date(2023, 6, 1)  # ~10 months before TEST_START, far outside any 90-day floor
+    sabbatical_pid = 4242
+    rows: list[tuple[Any, ...]] = []
+    game_id = 900_000
+
+    def _row(gid: int, gd: date, pn: int, pt: str) -> tuple[Any, ...]:
+        return (
+            gid,
+            gd,
+            1,
+            pn,
+            sabbatical_pid,
+            7,
+            pt,
+            0,
+            0,
+            0,
+            1,
+            0,
+            "R",
+            "R",
+            "PARK01",
+            1,
+            1,
+            0,
+            datetime(2024, 6, 1),
+        )
+
+    # Six career pitches, all FF, ~10 months before the window.
+    game_id += 1
+    rows.extend(_row(game_id, long_ago, pn, "FF") for pn in range(1, 7))
+    # Then he returns inside the test window. His FIRST returning pitch is the row under test.
+    game_id += 1
+    return_day = date(2024, 4, 15)
+    rows.extend(_row(game_id, return_day, pn, "SL") for pn in range(1, 4))
+
+    df: Any = _seed_and_load(ch, rows)
+    returning = df[(df["pitcher_id"] == sabbatical_pid)].copy()
+    returning = returning[[d == return_day for d in returning["game_date"]]]
+    returning = returning.sort_values("pitch_number")
+    assert len(returning) == 3, f"expected the 3 returning pitches, got {len(returning)}"
+
+    first = returning.iloc[0]
+    # Career-expanding: the six FF from 10 months ago are still counted.
+    assert first["pitcher_prior_n"] == 6, (
+        f"prior_n={first['pitcher_prior_n']}, expected 6. A value of 0 means the scan no longer "
+        "reaches past ~90 days, i.e. the career-expanding window was replaced by a floored one."
+    )
+    assert not np.isnan(first["ars_FF"]), (
+        "ars_FF is NaN at a pitch with 6 prior career pitches, which is the signature of a "
+        "windowed reach-back discarding them"
+    )
+    assert np.isclose(first["ars_FF"], 1.0, atol=1e-6), first["ars_FF"]
