@@ -23,12 +23,17 @@ The checks, in order:
   9. canonical contract output.labels == the in-code y7 order (see note below)
  10. contract-declared side-car lookups all present
  11. calibrator loads, is kind=temperature, T finite and > 0, labels == contract labels
- 12. model_artifact names the file the registry stores (model.onnx); model_artifact AND
-     calibrator both declare a sha256 that matches the bytes on disk (REQUIRED, not
-     verified-if-present: a conditional digest check is bypassed by omitting the field)
+ 12. model_artifact names the file the registry stores (model.onnx); model_artifact,
+     calibrator, snapshot (and the booster, when the bundle has one) each declare a sha256
+     that matches the bytes on disk (REQUIRED, not verified-if-present: a conditional digest
+     check is bypassed by omitting the field), and every declared path must BE the canonical
+     bundle filename (registration copies by canonical name, so anything else is validated
+     here and never served)
  13. ONNX loads and scores [1,24] -> [1,7], exactly 2 outputs, probabilities at index 1
  14. two DISTINCT probes give different outputs (a constant graph is not a model)
- 15. the raw probe output is already a probability distribution
+ 15. BOTH probe rows are already probability distributions
+ 16. the cold-start row is not UNIFORM (an Imputer-stripped LR export scores dense rows
+     bit-identically to a healthy one, so this is the only check that can see it)
 
 Checks 5 and 6 look redundant and are not. 5 proves the snapshot's contract is internally
 consistent; 6 proves it still matches production. A snapshot that drifted from /contracts but
@@ -39,7 +44,8 @@ this whole file exists to pre-empt.
 Check 9 is NOT a snapshot-drift check and cannot be reached by mutating a snapshot: output.labels
 lives inside the hashed document, so a permuted snapshot fails check 5 (or check 6, if its hash
 was re-stamped) first. It reads the snapshot's copy of the file, which check 6 has already proved
-byte-identical to canonical, so this is a canonical read by transitivity - a server-side twin
+equal to canonical under the hasher's canonical-JSON normalisation, so this is a canonical read
+by transitivity - a server-side twin
 running the checks in a different order could not rely on that. Like
 ``assert_feature_order_matches`` on the input axis, it guards the CANONICAL contract against the
 in-code tuple - it fires when /contracts and PITCH_TYPE_CLASSES are edited out of agreement.
@@ -72,6 +78,7 @@ METADATA_FILE = "metadata.json"
 FEATURE_PIPELINE_FILE = "feature_pipeline.json"
 ARTIFACT_FILE = "model.onnx"
 CALIBRATOR_FILE = "calibrator.json"
+SNAPSHOT_FILE = "training_data.parquet"
 
 PRIMARY_MODEL = "pitch_type_pre"
 BASELINE_MODEL = "pitch_type_lr_baseline"
@@ -86,6 +93,10 @@ so a rename on one side silently sends every pitch-type model into the batted-ba
 # a graph exported without its final softmax is INVISIBLE after calibration - the same reason
 # ModelLoadValidator asserts pre-calibration.
 _PROB_SUM_TOLERANCE = 1e-4
+
+# Max deviation from 1/n below which a cold-start row counts as uniform. Real bundles measure
+# ~0.42; an Imputer-stripped graph measures exactly 0.
+_UNIFORM_TOLERANCE = 1e-6
 
 
 class RegisterGateError(RuntimeError):
@@ -137,52 +148,59 @@ def _load_json(path: Path, label: str) -> Any:
     """
     try:
         loaded = json.loads(path.read_text())
-    except (ValueError, OSError, UnicodeDecodeError) as exc:
+    except (ValueError, OSError, RecursionError) as exc:  # UnicodeDecodeError is a ValueError
         raise RegisterGateError(f"{label} is unreadable or malformed: {exc}") from exc
     if not isinstance(loaded, dict):
         raise RegisterGateError(f"{label} must be a JSON object, got {type(loaded).__name__}")
     return loaded
 
 
-def _calibrator_path(snapshot_dir: Path, metadata: dict[str, Any]) -> Path:
-    """Resolve the calibrator the SAME way LoadedPitchTypeModel does.
+def _bundle_file(snapshot_dir: Path, declared: Any, canonical: str, label: str) -> Path:
+    """Resolve a metadata-declared bundle path, requiring it to BE the canonical file.
 
-    metadata's ``calibrator.path`` pointer wins, canonical filename is the fallback. Reading
-    calibrator.json unconditionally would validate a file the loader never opens, so a bundle
-    whose pointer aims at a broken calibrator would pass the gate and fail at load.
+    Containment is not sufficient, and this is the subtle part. Registration rewrites the
+    bundle between this gate and the loader: SnapshotRestoreService copies the calibrator by
+    canonical name only (``sourceDir.resolve(SnapshotStorage.CALIBRATOR_FILE)``), and the extra
+    copy-list is driven off ``preprocess`` lookups, which ignore ``calibrator.path``. So a
+    pointer at some OTHER in-bundle file is validated here, dropped at registration, dangles in
+    the registered snapshot, and LoadedPitchTypeModel falls back to calibrator.json - serving a
+    file this gate never looked at. Demonstrated: served T=9.9 while the gate validated T=0.232.
+
+    Requiring equality also closes the traversal shape (``../``, absolute, symlink-out) and,
+    for the server-side twin, an arbitrary-file read: ``_assert_sha256`` reads the target and
+    puts 16 hex chars of its digest in the refusal message, so an uncontained path is a
+    disclosure primitive driven by an attacker-controlled metadata field.
     """
+    target = (snapshot_dir / canonical).resolve()
+    if not isinstance(declared, str) or not declared.strip():
+        return snapshot_dir / canonical
+    try:
+        candidate = (snapshot_dir / declared).resolve()
+    except (ValueError, OSError) as exc:
+        # e.g. an embedded null byte; must not escape as a raw ValueError.
+        raise RegisterGateError(
+            f"metadata.{label}.path={declared!r} is not a usable path: {exc}"
+        ) from exc
+    if candidate != target:
+        raise RegisterGateError(
+            f"metadata.{label}.path={declared!r} does not name the bundle's {canonical}. "
+            f"Registration copies that file by canonical name and the loader falls back to it, "
+            f"so anything else would be validated here and never served."
+        )
+    if not candidate.is_file():
+        raise RegisterGateError(f"metadata.{label} names {canonical}, which is not in the bundle")
+    return candidate
+
+
+def _calibrator_path(snapshot_dir: Path, metadata: dict[str, Any]) -> Path:
+    """Resolve the calibrator the loader will actually open."""
     cal = metadata.get("calibrator")
     if not isinstance(cal, dict):
         # Java would fall back cleanly here (.path() yields a MissingNode). The gate is
         # deliberately STRICTER: a calibrator entry that is not an object cannot carry the
         # digest this gate requires, so approving it means approving an unverified calibrator.
         raise RegisterGateError("metadata.calibrator is missing or not an object")
-    pointer = cal.get("path")
-    if not (isinstance(pointer, str) and pointer.strip()):
-        return snapshot_dir / CALIBRATOR_FILE
-
-    # A DECLARED pointer must resolve to a regular file INSIDE the bundle, and failing that is a
-    # hard exit rather than a fallback. Silently falling back approves the wrong file twice over:
-    # a bundle can ship one calibrator, point metadata at another (with a matching digest), and
-    # have the gate validate the pointed-to file while the box loads the shipped one - so the
-    # SERVED temperature is one nothing ever checked. Containment matters most for the
-    # server-side twin, where this pointer arrives in a registration payload: without it, "../"
-    # or an absolute path is a traversal primitive that makes the server hash and parse an
-    # operator-chosen file outside the snapshot.
-    root = snapshot_dir.resolve()
-    candidate = (snapshot_dir / pointer).resolve()
-    if not candidate.is_relative_to(root):
-        raise RegisterGateError(
-            f"metadata.calibrator.path={pointer!r} resolves outside the snapshot ({candidate}); "
-            "the bundle must be self-contained"
-        )
-    if not candidate.is_file():
-        raise RegisterGateError(
-            f"metadata.calibrator.path={pointer!r} does not name a file in the snapshot. Java "
-            "would fall back to calibrator.json, so the gate would be validating a different "
-            "file than the one that actually gets served."
-        )
-    return candidate
+    return _bundle_file(snapshot_dir, cal.get("path"), CALIBRATOR_FILE, "calibrator")
 
 
 def _assert_sha256(holder: Any, path: Path, label: str) -> None:
@@ -269,8 +287,9 @@ def _probe_onnx(snapshot_dir: Path, n_features: int, n_classes: int) -> None:
             f"ONNX declares input width {declared_width[1]}, contract has {n_features} features"
         )
     # Two DISTINCT probes: one row can never distinguish a correct softmax from a graph that
-    # ignores its input, and a NaN cold-start row is the only input exercising the LR baseline's
-    # in-graph Imputer (the same pair ModelLoadValidator runs, for the same reason).
+    # ignores its input, and the NaN cold-start row is the only input that reaches the LR
+    # baseline's in-graph Imputer at all (the same pair ModelLoadValidator runs, for the same
+    # reason). Reaching it is not the same as VERIFYING it - see the uniformity check below.
     dense = np.full((1, n_features), 0.37, dtype=np.float32)
     cold = np.zeros((1, n_features), dtype=np.float32)
     cold[0, list(nullable_column_indices())] = np.nan
@@ -300,11 +319,12 @@ def _probe_onnx(snapshot_dir: Path, n_features: int, n_classes: int) -> None:
     # dense path is fine. NaN also makes the identical-output check above evaluate False, so
     # nothing else would catch such a row either.
     #
-    # MEASURED LIMIT, so nobody reads more into this than it gives: ORT's Softmax maps an
-    # all-NaN logit row to a UNIFORM distribution rather than propagating NaN. A dropped
-    # in-graph Imputer therefore serves a silent uniform prior on cold-start rows - a valid
-    # distribution, so no assertion here can see it. What this loop does catch is a cold-start
-    # row that is not a distribution at all.
+    # MEASURED, and the reason the uniformity check below exists: ORT's Softmax maps an all-NaN
+    # logit row to a UNIFORM distribution rather than propagating NaN (numpy's reference softmax
+    # returns NaN on the same input, so this is ORT-specific). A dropped in-graph Imputer
+    # therefore does not crash and does not emit NaN - it silently serves a uniform prior on
+    # every cold-start row, which is a perfectly valid distribution and so invisible to the
+    # is-this-a-distribution assertions in this loop.
     for label, raw in (("dense", rows[0]), ("cold-start", rows[1])):
         row = np.asarray(raw, dtype=np.float64)[0]
         if not np.all(np.isfinite(row)) or float(row.min()) < 0.0 or float(row.max()) > 1.0:
@@ -320,6 +340,26 @@ def _probe_onnx(snapshot_dir: Path, n_features: int, n_classes: int) -> None:
                 f"ONNX raw output for the {label} probe row does not sum to 1 (got {total}); the "
                 "graph is not emitting a calibrated-ready distribution"
             )
+
+    # A UNIFORM cold-start row means the graph learned nothing from the row's non-null features,
+    # which is what an Imputer-stripped LR export looks like: dense rows score bit-identically
+    # to the healthy graph, so no dense assertion and no two-rows-differ check can see it.
+    # Measured margin on real bundles is ~0.42 against 0.000000 for the stripped graph, so this
+    # threshold is not close to anything legitimate.
+    #
+    # This matters for the BASELINE specifically. A baseline serving a uniform 1/7 prior on
+    # every cold-start row (a pitcher's first career pitch, NULL ARS) is a silently degraded
+    # denominator for decision [183]'s log-loss guardrail, which would flatter the primary
+    # head's margin. Rule 9 makes the baseline a first-class registry row; it has to be as
+    # trustworthy as the primary.
+    cold_row = np.asarray(rows[1], dtype=np.float64)[0]
+    if float(np.abs(cold_row - 1.0 / n_classes).max()) < _UNIFORM_TOLERANCE:
+        raise RegisterGateError(
+            f"ONNX returns a UNIFORM {1.0 / n_classes:.6f} distribution for the cold-start probe "
+            "row, so the graph is ignoring that row's non-null features. An LR export that lost "
+            "its in-graph Imputer looks exactly like this: dense rows are unaffected, and ORT "
+            "turns the resulting all-NaN logits into a valid-looking uniform row rather than NaN"
+        )
 
 
 def run_gate(
@@ -464,9 +504,25 @@ def run_gate(
     # bundle and carries its own digest, so leaving it unverified would be the same
     # arbitrariness that verifying the calibrator just fixed.
     snap = metadata.get("snapshot")
-    snap_name = snap.get("path") if isinstance(snap, dict) else None
-    _assert_sha256(snap, snapshot_dir / str(snap_name), "snapshot")
+    if not isinstance(snap, dict):
+        raise RegisterGateError("metadata.snapshot is missing or not an object")
+    _assert_sha256(
+        snap, _bundle_file(snapshot_dir, snap.get("path"), SNAPSHOT_FILE, "snapshot"), "snapshot"
+    )
     passed.append("snapshot parquet sha256 matches the file on disk")
+
+    # The LightGBM bundle also ships model.lgb. Conditional on the ENTRY existing (the LR bundle
+    # has no booster) - which is a bundle-shape difference, not the verify-if-present weakness
+    # rejected above: when the entry exists, its digest is mandatory.
+    if "lightgbm_artifact" in metadata:
+        lgb = metadata.get("lightgbm_artifact")
+        lgb_name = lgb.get("path") if isinstance(lgb, dict) else None
+        _assert_sha256(
+            lgb,
+            _bundle_file(snapshot_dir, lgb_name, "model.lgb", "lightgbm_artifact"),
+            "lightgbm_artifact",
+        )
+        passed.append("lightgbm_artifact sha256 matches the booster on disk")
 
     n_features = len(PITCH_TYPE_FEATURE_COLUMNS)
     n_classes = len(PITCH_TYPE_CLASSES)
