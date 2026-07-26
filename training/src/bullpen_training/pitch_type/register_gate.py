@@ -629,9 +629,21 @@ def run_gate(
     model = onnx_mod.load(str(snapshot_dir / ARTIFACT_FILE), load_external_data=False)
     graph = model.graph
 
-    # The filename check above misses the real case: saving with location="weights.bin"
-    # produces a sidecar SnapshotRestoreService never copies (it copies only ARTIFACT_FILE +
-    # ".data"), so registration succeeds and the box fails at load. Ask the graph instead.
+    # The filename check above only sees a sidecar named after the artifact. A sidecar named
+    # anything else (save_as_external_data with location="weights.bin") is never copied by
+    # SnapshotRestoreService, which copies only ARTIFACT_FILE + ".data" - so registration would
+    # succeed and the box would fail at load.
+    #
+    # NOT REACHABLE BY EITHER CURRENT EXPORTER, and worth saying so rather than implying a
+    # demonstrated hole: LightGBM's tree weights are TreeEnsembleClassifier node ATTRIBUTES,
+    # the primary's single initializer stores its value in float_data (external conversion
+    # gates on raw_data, so it is skipped at any size_threshold), and the baseline graph has no
+    # initializers at all. This is a cheap fail-safe guard on a toolchain change, not a fix for
+    # something today's bundles do.
+    #
+    # Scans graph.initializer, which is where a converter would put externalised weights. It
+    # does not cover node-attribute tensors or subgraph initializers; neither exporter emits
+    # those, and ORT refuses a dangling sidecar before this line either way.
     external = [
         i.name for i in graph.initializer if i.data_location == onnx_mod.TensorProto.EXTERNAL
     ]

@@ -1017,9 +1017,13 @@ def test_a_renamed_external_data_sidecar_is_refused(bundle: Path, tmp_path: Path
     model.onnx.data is never copied by SnapshotRestoreService, so registration succeeds and the
     box fails at load. Only asking the graph catches it.
 
-    Built from a synthetic graph rather than the real primary, because LightGBM's
-    TreeEnsembleClassifier keeps its weights in NODE ATTRIBUTES - it has no initializers at
-    all, so save_as_external_data has nothing to externalise and would prove nothing.
+    Built from a synthetic graph rather than the real primary, because nothing in the real
+    primary is externalisable by that call: the tree weights are TreeEnsembleClassifier node
+    ATTRIBUTES, and its single initializer stores its value in float_data while external
+    conversion gates on raw_data, so it is skipped at any size_threshold. Saving the real
+    primary that way yields a byte-identical file and would prove nothing.
+
+    So this guards against a toolchain change rather than a hole today's exporters can produce.
     """
     import onnx as onnx_mod
     from onnx import helper, numpy_helper
