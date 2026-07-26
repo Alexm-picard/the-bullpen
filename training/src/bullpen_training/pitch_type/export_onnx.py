@@ -20,6 +20,7 @@ without a box-trained artifact; `export()` is the file-based box/Mac wrapper.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import os
 from pathlib import Path
@@ -109,6 +110,30 @@ def parity_max_diff(booster: lgb.Booster, onnx_model: onnx.ModelProto, x: np.nda
     return float(np.max(np.abs(got - want)))
 
 
+def _restamp_metadata_artifact(artifact_dir: Path, onnx_path: Path, onnx_sha: str) -> None:
+    """Point metadata.json's ``model_artifact`` at the ONNX the registry actually stores.
+
+    persist stamps ``model.lgb`` there - the training artifact, not the registered one. The
+    pitch family self-corrects because ``pitch.register_snapshot`` re-stamps at assembly time;
+    pitch-type has NO assembly step, so nothing else would fix it.
+
+    This must stay symmetric with ``export_lr_onnx``: decision [183]'s guardrail compares
+    pitch_type_pre against pitch_type_lr_baseline, and having one row name a file that is
+    neither stored nor served while the other is correct puts a wrong artifact name on exactly
+    one side of that comparison. The booster is kept as ``lightgbm_artifact`` rather than
+    dropped - both files are real, and the provenance should say which is which.
+    """
+    meta_path = artifact_dir / "metadata.json"
+    if not meta_path.exists():
+        return
+    meta = cast(dict[str, Any], json.loads(meta_path.read_text()))
+    previous = meta.get("model_artifact")
+    if previous and previous.get("path") != onnx_path.name:
+        meta["lightgbm_artifact"] = previous
+    meta["model_artifact"] = {"path": onnx_path.name, "sha256": onnx_sha}
+    meta_path.write_text(json.dumps(meta, indent=2, sort_keys=False) + "\n")
+
+
 def export(
     *,
     model_dir: Path | None = None,
@@ -154,6 +179,7 @@ def export(
     onnx_path = model_dir / "model.onnx"
     onnxmltools.utils.save_model(onnx_model, str(onnx_path))
     onnx_sha = hashlib.sha256(onnx_path.read_bytes()).hexdigest()
+    _restamp_metadata_artifact(model_dir, onnx_path, onnx_sha)
     log.info("export complete", onnx_path=str(onnx_path), onnx_sha256=onnx_sha)
     return {
         "onnx_path": str(onnx_path),
