@@ -24,11 +24,13 @@ The checks, in order:
  10. contract-declared side-car lookups all present
  11. calibrator loads, is kind=temperature, T finite and > 0, labels == contract labels
  12. model_artifact names the file the registry stores (model.onnx); model_artifact,
-     calibrator, snapshot (and the booster, when the bundle has one) each declare a sha256
-     that matches the bytes on disk (REQUIRED, not verified-if-present: a conditional digest
-     check is bypassed by omitting the field), and every declared path must BE the canonical
-     bundle filename (registration copies by canonical name, so anything else is validated
-     here and never served)
+     calibrator, snapshot, and the training artifact (model.lgb for the primary, model.pkl
+     for the baseline - derived from model_name, NOT from which key metadata happens to
+     carry) each declare a sha256 that matches the bytes on disk. Both the digest and the
+     entry are REQUIRED, never verified-if-present: either conditional is bypassed by
+     omitting a field. Every declared path must BE the canonical bundle filename, and no
+     bundle member may be a symlink (registration copies by canonical name and by content,
+     so anything else is validated here and never served)
  13. ONNX loads and scores [1,24] -> [1,7], exactly 2 outputs, probabilities at index 1
  14. two DISTINCT probes give different outputs (a constant graph is not a model)
  15. BOTH probe rows are already probability distributions
@@ -157,6 +159,33 @@ def _load_json(path: Path, label: str) -> Any:
     return loaded
 
 
+def _assert_real_file(path: Path, label: str) -> None:
+    """A bundle must ship its own bytes for this file.
+
+    ``is_file()`` follows symlinks, so without this a symlinked bundle member passes every
+    subsequent check while the bytes live elsewhere. The box-side consequence is the quiet
+    kind: a tarball transfer leaves the link dangling, SnapshotRestoreService copies declared
+    lookups under ``if (Files.isRegularFile(...))`` with a log.warn and no failure, so
+    registration SUCCEEDS with the file absent and FeaturePipelinePitchType.loadParkLookup
+    then fails at load. Registration-succeeds-load-fails is exactly what this gate exists to
+    pre-empt on the Mac.
+
+    For the server-side twin it is worse than the digest disclosure: ``Files.isRegularFile``
+    follows the link, so ``placeArtifacts`` copies the link TARGET'S CONTENT into the
+    registered snapshot. tar preserves symlinks, so an uploaded
+    ``park_id_mapping.json -> /etc/passwd`` becomes arbitrary server-side file content inside
+    a registered artifact.
+    """
+    if path.is_symlink():
+        raise RegisterGateError(
+            f"the bundle's {label} is a SYMLINK, so it does not ship its own bytes. A tarball "
+            "transfer leaves it dangling, and registration copies it by content - so the "
+            "registered snapshot would silently differ from what was gated here."
+        )
+    if not path.is_file():
+        raise RegisterGateError(f"missing {label} in {path.parent}")
+
+
 def _bundle_file(snapshot_dir: Path, declared: Any, canonical: str, label: str) -> Path:
     """Resolve a metadata-declared bundle path, requiring it to BE the canonical file.
 
@@ -183,12 +212,9 @@ def _bundle_file(snapshot_dir: Path, declared: Any, canonical: str, label: str) 
     disclosure primitive driven by an attacker-controlled field.
     """
     canonical_path = snapshot_dir / canonical
-    if canonical_path.is_symlink():
-        raise RegisterGateError(
-            f"the bundle's {canonical} is a SYMLINK, so it does not ship its own bytes. Every "
-            "path comparison here resolves through it, which would make the check a tautology, "
-            "and a tarball transfer leaves it dangling for the box to skip silently."
-        )
+    # Also a tautology guard: every comparison below resolves through this path, so if it is
+    # itself a symlink both sides resolve equal and the check proves nothing.
+    _assert_real_file(canonical_path, canonical)
     target = canonical_path.resolve()
     if not isinstance(declared, str) or not declared.strip():
         return snapshot_dir / canonical
@@ -406,10 +432,8 @@ def run_gate(
 
     meta_path = snapshot_dir / METADATA_FILE
     fp_path = snapshot_dir / FEATURE_PIPELINE_FILE
-    if not meta_path.is_file():
-        raise RegisterGateError(f"missing {METADATA_FILE} in {snapshot_dir}")
-    if not fp_path.is_file():
-        raise RegisterGateError(f"missing {FEATURE_PIPELINE_FILE} in {snapshot_dir}")
+    _assert_real_file(meta_path, METADATA_FILE)
+    _assert_real_file(fp_path, FEATURE_PIPELINE_FILE)
     metadata = cast(dict[str, Any], _load_json(meta_path, METADATA_FILE))
     passed.append("metadata.json + feature_pipeline.json present")
 
@@ -496,11 +520,10 @@ def run_gate(
         )
     passed.append("metadata feature_pipeline_hash agrees with the contract")
 
-    missing = [n for n in declared_lookup_paths(spec) if not (snapshot_dir / n).is_file()]
-    if missing:
-        raise RegisterGateError(
-            f"bundle is missing contract-declared lookup file(s): {', '.join(missing)}"
-        )
+    # park_id_mapping.json is a SERVING-path file (it encodes park_i), so the same
+    # ship-your-own-bytes rule applies to it as to the artifacts.
+    for name in declared_lookup_paths(spec):
+        _assert_real_file(snapshot_dir / name, f"contract-declared lookup {name}")
     passed.append("contract-declared lookups present")
 
     _check_calibrator(snapshot_dir, contract_labels, metadata)
@@ -554,19 +577,56 @@ def run_gate(
     # already validated above. Keying this off "is the entry present in metadata" would be the
     # same omit-to-bypass hole rejected for the digests themselves: delete the key, skip the
     # check. The training artifact is not on the serving path, but it is what a retrain reloads.
-    extra_key, extra = (
-        ("lightgbm_artifact", "model.lgb")
-        if model_name == PRIMARY_MODEL
-        else ("sklearn_artifact", "model.pkl")
-    )
+    # Explicit mapping rather than an if/else: a third family member added to FAMILY would
+    # otherwise silently inherit the LR shape and be asked for a model.pkl it never ships.
+    training_artifacts = {
+        PRIMARY_MODEL: ("lightgbm_artifact", "model.lgb"),
+        BASELINE_MODEL: ("sklearn_artifact", "model.pkl"),
+    }
+    if model_name not in training_artifacts:
+        raise RegisterGateError(
+            f"no training-artifact requirement is declared for {model_name!r}; add it to "
+            "training_artifacts rather than letting the bundle register unchecked"
+        )
+    extra_key, extra = training_artifacts[model_name]
     entry = metadata.get(extra_key)
     entry_path = entry.get("path") if isinstance(entry, dict) else None
     _assert_sha256(entry, _bundle_file(snapshot_dir, entry_path, extra, extra_key), extra_key)
     passed.append(f"{extra_key} sha256 matches the {extra} on disk")
 
+    # ORT resolves model.onnx.data as graph weights and SnapshotRestoreService copies it when
+    # present, so a swapped sidecar changes the served model while model_artifact.sha256 stays
+    # valid - the same omit-to-bypass class closed above. Neither pitch-type graph uses external
+    # data (both are ~1 KB), so its presence means something unexpected assembled this bundle.
+    if (snapshot_dir / "model.onnx.data").exists():
+        raise RegisterGateError(
+            "bundle contains model.onnx.data (ONNX external-data weights). No pitch-type graph "
+            "uses external data, and its digest is not covered by model_artifact.sha256, so it "
+            "could change the served model invisibly."
+        )
+
     n_features = len(PITCH_TYPE_FEATURE_COLUMNS)
     n_classes = len(PITCH_TYPE_CLASSES)
     _probe_onnx(snapshot_dir, n_features, n_classes)
+
+    # Rule 9 is about two genuinely DIFFERENT models, not two rows. If a bundle were assembled
+    # (or fat-fingered) so both rows carry the same graph family, decision [183]'s log-loss
+    # guardrail would compare a model against itself and always look non-inferior. The digests
+    # catch the accidental version; this catches the disguised one.
+    #
+    # Deliberately LAST: it runs after every probe check so it can never mask the refusal a
+    # more specific check would have produced.
+    import onnx as onnx_mod
+
+    expected_op = "TreeEnsembleClassifier" if model_name == PRIMARY_MODEL else "LinearClassifier"
+    ops = {n.op_type for n in onnx_mod.load(str(snapshot_dir / ARTIFACT_FILE)).graph.node}
+    if expected_op not in ops:
+        raise RegisterGateError(
+            f"{model_name} must be served by a graph containing {expected_op}, but its ONNX has "
+            f"{sorted(ops)}. Rule 9's two rows are only a guardrail if they are two different "
+            "models; a same-family pair makes decision [183]'s comparison self-referential."
+        )
+    passed.append(f"rule 9: graph family is {expected_op}, as this row requires")
     passed.append(f"ONNX loads + scores [1,{n_features}] -> [1,{n_classes}] as a distribution")
 
     return GateReport(

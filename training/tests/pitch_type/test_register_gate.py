@@ -227,7 +227,7 @@ def test_a_bundle_without_the_onnx_is_refused(bundle: Path, tmp_path: Path) -> N
     # A well-formed digest, so the MISSING-FILE branch is what fires rather than the hex-format
     # branch. A placeholder here would silently retarget this test at a different check.
     _patch_metadata(d, model_artifact={"path": "model.onnx", "sha256": "0" * 64})
-    with pytest.raises(RegisterGateError, match=r"not in the bundle"):
+    with pytest.raises(RegisterGateError, match=r"missing model\.onnx"):
         run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
 
 
@@ -491,8 +491,11 @@ def test_a_graph_whose_cold_start_path_is_broken_is_refused(bundle: Path, tmp_pa
     cold-start-only regression. Checking rows[0] alone approves it, and the identical-output
     check cannot see it because the two rows genuinely differ.
 
-    Note this is deliberately NOT the all-NaN case: ORT maps an all-NaN Softmax row to a
-    uniform distribution, which is valid and therefore invisible to any assertion here.
+    Note this is deliberately NOT the all-NaN case. ORT's MatMul on an all-NaN row returns
+    -FLT_MAX rather than NaN, so the softmax that follows sees a CONSTANT logit row and emits
+    a uniform distribution - valid, and therefore invisible to any assertion here. (A bare
+    Softmax fed NaN logits directly does return NaN, same as numpy; the flattening happens
+    upstream of it.)
     """
     import onnx as onnx_mod
     from onnx import helper, numpy_helper
@@ -922,4 +925,88 @@ def test_a_single_output_graph_is_refused(bundle: Path, tmp_path: Path) -> None:
     onnx_mod.save(model, d / "model.onnx")
     _restamp_onnx_sha(d)
     with pytest.raises(RegisterGateError, match="exactly 2 outputs"):
+        run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
+
+
+@pytest.mark.parametrize("name", ["park_id_mapping.json", "metadata.json", "feature_pipeline.json"])
+def test_a_symlinked_bundle_member_is_refused(bundle: Path, tmp_path: Path, name: str) -> None:
+    """The ship-your-own-bytes rule covers EVERY file the gate reads or registration copies,
+    not just the digested artifacts. park_id_mapping.json is a serving-path file (it encodes
+    park_i), and SnapshotRestoreService copies declared lookups under isRegularFile with a
+    log.warn and no failure - so a dangling link means registration succeeds and load fails."""
+    d = _copy(bundle, tmp_path / f"symmember_{name}")
+    outside = tmp_path / f"out_{name}"
+    outside.write_bytes((d / name).read_bytes())
+    (d / name).unlink()
+    (d / name).symlink_to(outside)
+    with pytest.raises(RegisterGateError, match="SYMLINK"):
+        run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
+
+
+def test_a_two_input_graph_is_refused(bundle: Path, tmp_path: Path) -> None:
+    """ORT loads a two-input graph fine, so this refusal is reachable and was untested."""
+    import onnx as onnx_mod
+
+    d = _copy(bundle, tmp_path / "twoin")
+    model = onnx_mod.load(d / "model.onnx")
+    model.graph.input.append(
+        onnx_mod.helper.make_tensor_value_info("spare", onnx_mod.TensorProto.FLOAT, [None, 1])
+    )
+    onnx_mod.save(model, d / "model.onnx")
+    _restamp_onnx_sha(d)
+    with pytest.raises(RegisterGateError, match="exactly one input tensor"):
+        run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
+
+
+def test_a_nullable_column_drift_is_a_gate_error(
+    bundle: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """NULLABLE_FEATURE_COLUMNS is a second name list that must track the canonical order;
+    a drift otherwise escapes as a bare ValueError from tuple.index."""
+    from bullpen_training import pitch_type as pt_pkg
+
+    monkeypatch.setattr(
+        pt_pkg, "NULLABLE_FEATURE_COLUMNS", (*pt_pkg.NULLABLE_FEATURE_COLUMNS, "no_such_column")
+    )
+    with pytest.raises(RegisterGateError, match="no longer matches the canonical feature order"):
+        run_gate(bundle, model_name="pitch_type_pre", baseline_registered=True)
+
+
+def test_an_external_data_sidecar_is_refused(bundle: Path, tmp_path: Path) -> None:
+    """ORT resolves model.onnx.data as graph weights and registration copies it, but its digest
+    is not covered by model_artifact.sha256 - so it could change the served model invisibly."""
+    d = _copy(bundle, tmp_path / "extdata")
+    (d / "model.onnx.data").write_bytes(b"weights")
+    with pytest.raises(RegisterGateError, match="external-data"):
+        run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
+
+
+def test_a_baseline_graph_registered_as_the_primary_is_refused(
+    bundle: Path, tmp_path: Path
+) -> None:
+    """Rule 9's substance: two rows are only a guardrail if they are two DIFFERENT models. A
+    disguised pair (same graph family under both names) would make decision [183]'s log-loss
+    comparison self-referential and always look non-inferior.
+
+    The training-artifact requirement catches the lazy version of this, so the test fabricates
+    a booster with a matching digest to get past it - otherwise it would pass on that refusal
+    and never exercise the graph-family check it is named for.
+    """
+    import hashlib
+
+    from bullpen_training.pitch_type.export_lr_onnx import export as export_lr
+    from bullpen_training.pitch_type.production import train_and_persist_lr
+
+    d = train_and_persist_lr(_Loader(), version="v1", artifacts_dir=tmp_path, skip_cv=True)
+    export_lr(model_name="pitch_type_lr_baseline", version="v1", artifacts_dir=tmp_path)
+    (d / "model.lgb").write_bytes((bundle / "model.lgb").read_bytes())
+    _patch_metadata(
+        d,
+        model_name="pitch_type_pre",
+        lightgbm_artifact={
+            "path": "model.lgb",
+            "sha256": hashlib.sha256((d / "model.lgb").read_bytes()).hexdigest(),
+        },
+    )
+    with pytest.raises(RegisterGateError, match="TreeEnsembleClassifier"):
         run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
