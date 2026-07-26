@@ -145,6 +145,10 @@ def test_a_gate_failure_aborts_before_anything_is_registered(
     result = _run(broken, "--register")
 
     assert result.exit_code != 0
+    # Assert on result.exception, NOT result.output: RegisterGateError is not a ClickException, so
+    # CliRunner stashes it and stdout is empty. exit_code alone would also hold for a broken
+    # symlink, a digest mismatch, or a missing env var - none of which is what this test names.
+    assert "model_kind" in str(result.exception)
     assert _RecordingClient.instances[0].registered == []
 
 
@@ -210,5 +214,128 @@ def test_registering_the_primary_alone_asks_the_registry_about_the_baseline(
     monkeypatch.setenv("BULLPEN_ADMIN_PASSWORD", "p")
     result = _run(artifacts, "--register", "--models", "primary")
     assert _RecordingClient.instances[0].listed == [BASELINE_MODEL]
-    assert result.exit_code != 0  # gate refuses: rule 9 partner not registered
+    assert result.exit_code != 0
+    assert "rule 9" in str(result.exception)  # the named reason, not merely "it failed"
     assert _RecordingClient.instances[0].registered == []
+
+
+class _FailingClient(_RecordingClient):
+    """Registers nothing and raises, standing in for an HTTP 500 from the registry."""
+
+    def register(self, **kwargs: Any) -> int:
+        super().register(**kwargs)
+        raise RuntimeError("HTTP 500 from the registry")
+
+
+def test_a_failed_post_stops_the_run_before_the_primary_is_gated(
+    artifacts: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed baseline POST must stop the run before the primary is even GATED.
+
+    Note precisely what this does and does not pin, because the distinction cost a mutation to
+    find. It does NOT pin "baseline_registered flips only after the POST returns an id": hoisting
+    that flip above the register call leaves this test green, because the exception leaves the loop
+    and the primary is never reached whatever the flag says. The ordering is UNOBSERVABLE while the
+    run fails hard - which is a stronger guarantee than the flag discipline, not a weaker one.
+
+    What this pins is that fail-hard behaviour itself. If someone later wraps _register_one in a
+    try/except to "keep going", the flag ordering becomes load-bearing again and this test is what
+    should stop them: a primary registered against a baseline whose POST failed would leave [183]'s
+    guardrail bound to a row that does not exist.
+    """
+    monkeypatch.setattr(
+        "bullpen_training.pitch_type.register_pitch_type.BullpenAdminClient", _FailingClient
+    )
+    monkeypatch.setenv("BULLPEN_ADMIN_USER", "u")
+    monkeypatch.setenv("BULLPEN_ADMIN_PASSWORD", "p")
+    result = _run(artifacts, "--register")
+
+    assert result.exit_code != 0
+    # The primary must never even be GATED, let alone registered: the exception leaves the loop.
+    assert f"=== {PRIMARY_MODEL} ===" not in result.output
+    assert [r["model_name"] for r in _RecordingClient.instances[0].registered] == [BASELINE_MODEL]
+
+
+def test_the_dry_run_rule_9_assumption_is_labelled_at_the_claim(
+    artifacts: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A caveat printed under the BASELINE's heading does not qualify a line printed under the
+    PRIMARY's. The rule-9 line for the primary must carry its own label, or a line-by-line reader
+    believes the primary passed a check no registry row backs."""
+    monkeypatch.setattr(
+        "bullpen_training.pitch_type.register_pitch_type.BullpenAdminClient", _RecordingClient
+    )
+    result = _run(artifacts)
+    assert result.exit_code == 0, result.output
+    primary_block = result.output.split(f"=== {PRIMARY_MODEL} ===")[1]
+    rule9 = [ln for ln in primary_block.splitlines() if "rule 9" in ln]
+    assert rule9, "the primary's report should mention rule 9 at all"
+    assert all("assumed, dry run" in ln for ln in rule9), rule9
+
+    # The BASELINE's own rule-9 status is not assumed, so it must not be labelled that way.
+    baseline_block = result.output.split(f"=== {BASELINE_MODEL} ===")[1].split("===")[0]
+    assert "assumed, dry run" not in baseline_block
+
+
+def test_dry_run_can_gate_the_primary_alone(
+    artifacts: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """--models primary in dry run has exactly the same registry evidence as --models both (none),
+    so relaxing rule 9 for one and not the other would be arbitrary - and would kill a plausible
+    pre-flight where the baseline is already on the box and only the new primary needs checking."""
+    monkeypatch.setattr(
+        "bullpen_training.pitch_type.register_pitch_type.BullpenAdminClient", _RecordingClient
+    )
+    result = _run(artifacts, "--models", "primary")
+    assert result.exit_code == 0, result.output
+    assert _RecordingClient.instances == []
+    assert "assumed, dry run" in result.output
+
+
+def test_a_remote_register_echoes_the_paths_it_will_send(
+    artifacts: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No hostname heuristic survives an SSH -L forward, so the operator's eyes are the backstop:
+    a local path in a box-bound payload must be visible before the POST, not inferred from a
+    422."""
+    monkeypatch.setattr(
+        "bullpen_training.pitch_type.register_pitch_type.BullpenAdminClient", _RecordingClient
+    )
+    monkeypatch.setenv("BULLPEN_ADMIN_USER", "u")
+    monkeypatch.setenv("BULLPEN_ADMIN_PASSWORD", "p")
+    result = _run(
+        artifacts,
+        "--register",
+        "--base-url",
+        "https://box.internal:8080",
+        "--server-artifacts-dir",
+        "/opt/bullpen/artifacts",
+    )
+    assert "/opt/bullpen/artifacts" in result.output
+    assert "artifact_path" in result.output
+
+
+@pytest.mark.parametrize(
+    ("base_url", "needs_server_dir"),
+    [
+        ("http://localhost:8080", False),
+        ("http://127.0.0.1:8080", False),
+        ("http://[::1]:8080", False),  # genuinely loopback; a substring test called this remote
+        ("https://localhost.box.internal:8080", True),  # remote; a substring test called it local
+        ("https://tunnel-localhost.trycloudflare.com", True),
+        ("https://api.thebullpen.net", True),
+    ],
+)
+def test_locality_is_decided_by_parsing_not_substring(
+    artifacts: Path, monkeypatch: pytest.MonkeyPatch, base_url: str, needs_server_dir: bool
+) -> None:
+    """A substring test gets both directions wrong: it calls localhost.box.internal local and
+    [::1] remote. The first is the dangerous one - it skips the guard on a genuinely remote host."""
+    monkeypatch.setattr(
+        "bullpen_training.pitch_type.register_pitch_type.BullpenAdminClient", _RecordingClient
+    )
+    monkeypatch.setenv("BULLPEN_ADMIN_USER", "u")
+    monkeypatch.setenv("BULLPEN_ADMIN_PASSWORD", "p")
+    result = _run(artifacts, "--register", "--base-url", base_url)
+    refused = result.exit_code != 0 and "server-artifacts-dir" in result.output
+    assert refused is needs_server_dir, f"{base_url}: {result.output[:200]}"

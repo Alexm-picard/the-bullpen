@@ -25,13 +25,21 @@ Running from the Mac against the box's admin API with local paths yields a 422 A
 naming a path the box has never heard of. ``--server-artifacts-dir`` is REQUIRED for any
 non-localhost ``--register``, and the payload is built from it while the gate still reads the
 local bundle.
+
+NO HOSTNAME TEST CAN BE SUFFICIENT, so do not read that guard as a guarantee: an SSH
+``-L 8080:localhost:8080`` forward to the box is ``localhost`` by hostname and remote by
+semantics. That is why the driver also ECHOES the three paths it is about to send, before it
+sends them - the operator can see a Mac path in a box-bound payload regardless of what the
+heuristic concluded.
 """
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import logging
 import os
+import urllib.parse
 from pathlib import Path
 from typing import Any
 
@@ -47,10 +55,8 @@ from bullpen_training.pitch_type.register_gate import (
 )
 from bullpen_training.retraining._api_client import BullpenAdminClient
 
-log = logging.getLogger(__name__)
 
-
-def _print_report(report: GateReport) -> None:
+def _print_report(report: GateReport, *, rule9_assumed: bool = False) -> None:
     click.echo(f"\n=== {report.model_name} ===")
     click.echo(f"  snapshot     : {report.snapshot_dir}")
     click.echo(f"  model_kind   : {report.model_kind}")
@@ -58,7 +64,14 @@ def _print_report(report: GateReport) -> None:
     click.echo(f"  shape        : {report.n_features} features -> {report.n_classes} classes")
     click.echo("  stage on register: CANDIDATE (rule 6 - promotion stays human-gated)")
     for check in report.checks_passed:
-        click.echo(f"    [ok] {check}")
+        # A rule-9 line that was satisfied by the dry-run assumption rather than by a registry row
+        # must SAY so here, where it is read. Printing an unqualified [ok] and putting the caveat
+        # under a different model's heading lets a line-by-line reader believe this bundle passed
+        # a check it did not.
+        if rule9_assumed and check.startswith("rule 9"):
+            click.echo(f"    [assumed, dry run - no registry row checked] {check}")
+        else:
+            click.echo(f"    [ok] {check}")
 
 
 def _payload_paths(bundle: Path, server_bundle: Path | None) -> dict[str, str]:
@@ -71,28 +84,31 @@ def _payload_paths(bundle: Path, server_bundle: Path | None) -> dict[str, str]:
     }
 
 
-def _register_one(
-    client: BullpenAdminClient,
-    model_name: str,
-    version: str,
-    bundle: Path,
-    server_bundle: Path | None,
-) -> int:
+def _build_payload(
+    model_name: str, version: str, bundle: Path, server_bundle: Path | None
+) -> dict[str, Any]:
+    """Assemble one registration payload, failing on a missing metadata key BEFORE anything is
+    registered. The gate does not validate these four fields, so subscripting them mid-loop could
+    kill the primary after the baseline row was already written - which would violate this file's
+    own abort-before-registering principle."""
     metadata: dict[str, Any] = json.loads((bundle / "metadata.json").read_text())
-    paths = _payload_paths(bundle, server_bundle)
-    new_id = client.register(
-        model_name=model_name,
-        version=version,
-        training_data_hash=metadata["training_data_hash"],
-        training_data_window=metadata["training_data_window"],
-        eval_metrics_json=json.dumps(metadata["eval_metrics_summary"]),
-        trained_at=metadata["trained_at"],
-        created_by="register_pitch_type",
-        notes=f"pitch_type git={metadata.get('git_commit', 'unknown')}",
-        **paths,
-    )
-    click.echo(f"  REGISTERED {model_name}/{version} -> model_versions.id={new_id}")
-    return new_id
+    try:
+        return {
+            "model_name": model_name,
+            "version": version,
+            "training_data_hash": metadata["training_data_hash"],
+            "training_data_window": metadata["training_data_window"],
+            "eval_metrics_json": json.dumps(metadata["eval_metrics_summary"]),
+            "trained_at": metadata["trained_at"],
+            "created_by": "register_pitch_type",
+            "notes": f"pitch_type git={metadata.get('git_commit', 'unknown')}",
+            **_payload_paths(bundle, server_bundle),
+        }
+    except KeyError as exc:
+        raise click.ClickException(
+            f"{model_name}/{version} metadata.json is missing {exc}, which the registry requires. "
+            "Re-run pitch_type.persist."
+        ) from exc
 
 
 @click.command()
@@ -147,7 +163,15 @@ def main(
         os.environ["LOG_FORMAT"] = "json"
     configure_logging(level=logging.INFO)
 
-    is_local = "localhost" in base_url or "127.0.0.1" in base_url
+    # Parse rather than substring-match: "https://localhost.box.internal" is remote and
+    # "http://[::1]:8080" is local, and a substring test gets both backwards.
+    host = urllib.parse.urlsplit(base_url).hostname or ""
+    is_local = host == "localhost"
+    if not is_local and host:
+        try:
+            is_local = ipaddress.ip_address(host).is_loopback
+        except ValueError:
+            is_local = False
     if do_register and not is_local and server_artifacts_dir is None:
         # Fail here rather than letting the box answer with a 422 naming a Mac path. The three
         # payload paths are resolved by the SERVER, so registering remotely with local paths is
@@ -167,22 +191,37 @@ def main(
     elif models == "baseline":
         order = [BASELINE_MODEL]
 
-    client = (
-        BullpenAdminClient(
-            base_url=base_url,
-            user=os.environ["BULLPEN_ADMIN_USER"],
-            password=os.environ["BULLPEN_ADMIN_PASSWORD"],
-        )
-        if do_register
-        else None
-    )
+    client = None
+    if do_register:
+        try:
+            client = BullpenAdminClient(
+                base_url=base_url,
+                user=os.environ["BULLPEN_ADMIN_USER"],
+                password=os.environ["BULLPEN_ADMIN_PASSWORD"],
+            )
+        except KeyError as exc:
+            # The retraining daemon lets this KeyError fly because systemd captures it. This is a
+            # hand-run CLI on the box, where a bare traceback with empty stdout reads as "the tool
+            # is broken" rather than "I forgot an export".
+            raise click.ClickException(
+                f"--register needs {exc} in the environment "
+                "(BULLPEN_ADMIN_USER and BULLPEN_ADMIN_PASSWORD)."
+            ) from exc
 
     baseline_registered = False
-    if client is not None and PRIMARY_MODEL in order and BASELINE_MODEL not in order:
-        # Registering the primary alone: ask the registry rather than assume. The precedent could
-        # not do this (it never talks to the registry); this driver can, so rule 9's flag reflects
-        # a real row instead of "the gate passed on my laptop".
-        baseline_registered = bool(client.list_versions(BASELINE_MODEL))
+    rule9_assumed = False
+    if PRIMARY_MODEL in order and BASELINE_MODEL not in order:
+        if client is not None:
+            # Registering the primary alone: ask the registry rather than assume. The precedent
+            # could not do this (it never talks to the registry); this driver can, so rule 9's flag
+            # reflects a real row instead of "the gate passed on my laptop".
+            baseline_registered = bool(client.list_versions(BASELINE_MODEL))
+        else:
+            # DRY RUN, primary only. Relaxing here for --models both but not for --models primary
+            # would be arbitrary: neither has any registry evidence. Refusing would also kill a
+            # plausible pre-flight (baseline already on the box, checking only the new primary).
+            baseline_registered = True
+            rule9_assumed = True
 
     for model_name in order:
         bundle = artifacts_dir / model_name / version
@@ -198,7 +237,7 @@ def main(
             model_name=model_name,
             baseline_registered=(model_name == BASELINE_MODEL) or baseline_registered,
         )
-        _print_report(report)
+        _print_report(report, rule9_assumed=rule9_assumed and model_name == PRIMARY_MODEL)
 
         if client is None:
             # DRY RUN. The baseline is not registered, so without this the primary could never be
@@ -208,13 +247,18 @@ def main(
             # report imply a row was verified.
             if model_name == BASELINE_MODEL:
                 baseline_registered = True
-                click.echo(
-                    "    [dry run] rule 9: treating the baseline as registered for the primary's "
-                    "gate, because this run would register it. No registry row was checked."
-                )
+                rule9_assumed = True
             continue
 
-        _register_one(client, model_name, version, bundle, server_bundle)
+        payload = _build_payload(model_name, version, bundle, server_bundle)
+        # Echo the paths BEFORE sending. No hostname heuristic can catch an SSH port-forward, so
+        # the operator's own eyes are the backstop: a Mac path in a box-bound payload is obvious
+        # here and merely a confusing 422 otherwise.
+        click.echo(f"  POST as {base_url} sees it:")
+        for key in ("artifact_path", "metadata_path", "feature_pipeline_path"):
+            click.echo(f"    {key} = {payload[key]}")
+        new_id = client.register(**payload)
+        click.echo(f"  REGISTERED {model_name}/{version} -> model_versions.id={new_id}")
         if model_name == BASELINE_MODEL:
             # Flip only after the POST returns an id, never after the gate: the gate passing says
             # nothing about whether a row exists.
