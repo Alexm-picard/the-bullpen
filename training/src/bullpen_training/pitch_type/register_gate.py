@@ -369,13 +369,17 @@ def _probe_onnx(snapshot_dir: Path, n_features: int, n_classes: int) -> None:
     # dense path is fine. NaN also makes the identical-output check above evaluate False, so
     # nothing else would catch such a row either.
     #
-    # MEASURED, and the reason the uniformity check below exists. A BARE Softmax on an all-NaN
-    # row returns NaN, same as numpy - the uniform output comes from ai.onnx.ml.LinearClassifier
-    # with post_transform=SOFTMAX, which is what the LR baseline's graph actually uses
-    # (Imputer -> Scaler -> LinearClassifier -> Normalizer; there is no bare Softmax op in it).
-    # So a dropped in-graph Imputer does not crash and does not emit NaN: it silently serves a
-    # uniform prior on every cold-start row, a perfectly valid distribution and therefore
-    # invisible to the is-this-a-distribution assertions in this loop.
+    # WHY THE UNIFORMITY CHECK BELOW EXISTS, and why it is not redundant with these assertions.
+    #
+    # An Imputer-stripped LR export feeds all-NaN into the rest of its graph, and what comes out
+    # is PLATFORM-DEPENDENT. Measured: on macOS/arm64 ORT's MatMul turns an all-NaN row into
+    # -FLT_MAX, so the constant logits reach ai.onnx.ml.LinearClassifier's post_transform=SOFTMAX
+    # and emerge as a UNIFORM distribution - perfectly valid, and invisible to every assertion in
+    # this loop. On linux/x86_64 CI the same graph propagates NaN and is caught right here.
+    #
+    # So the two checks are the same defect seen through two platforms, and BOTH are needed: the
+    # bundle is built on one machine and gated on another. Do not "simplify" by dropping the
+    # uniformity check because NaN is caught here - on the box it may not be.
     for label, raw in (("dense", rows[0]), ("cold-start", rows[1])):
         row = np.asarray(raw, dtype=np.float64)[0]
         if not np.all(np.isfinite(row)) or float(row.min()) < 0.0 or float(row.max()) > 1.0:

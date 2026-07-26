@@ -744,6 +744,13 @@ def test_an_imputer_stripped_lr_baseline_is_refused(tmp_path: Path) -> None:
     It matters because a baseline serving a uniform 1/7 prior on every cold-start row is a
     silently degraded denominator for decision [183]'s log-loss guardrail, which would flatter
     the primary head's margin.
+
+    THE REFUSAL DIFFERS BY PLATFORM, which is why this asserts both messages rather than one.
+    On macOS/arm64 ORT's MatMul maps the all-NaN row to -FLT_MAX, so LinearClassifier's softmax
+    emits a valid UNIFORM row and only the uniformity check sees it. On linux/x86_64 the NaN
+    propagates and the distribution assertion catches it first. Pinning either message alone
+    passes on one platform and fails on the other - which is exactly what CI caught after this
+    was written and verified on a Mac.
     """
     import onnx as onnx_mod
 
@@ -765,7 +772,7 @@ def test_an_imputer_stripped_lr_baseline_is_refused(tmp_path: Path) -> None:
     onnx_mod.save(model, d / "model.onnx")
     _restamp_onnx_sha(d)
 
-    with pytest.raises(RegisterGateError, match="UNIFORM"):
+    with pytest.raises(RegisterGateError, match=r"UNIFORM|is not a probability distribution"):
         run_gate(d, model_name="pitch_type_lr_baseline", baseline_registered=False)
 
 
