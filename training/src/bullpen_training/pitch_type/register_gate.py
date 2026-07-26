@@ -94,8 +94,10 @@ so a rename on one side silently sends every pitch-type model into the batted-ba
 # ModelLoadValidator asserts pre-calibration.
 _PROB_SUM_TOLERANCE = 1e-4
 
-# Max deviation from 1/n below which a cold-start row counts as uniform. Real bundles measure
-# ~0.42; an Imputer-stripped graph measures exactly 0.
+# Max deviation from 1/n below which a cold-start row counts as uniform. Measured: LR baseline
+# 0.4209 and LightGBM 0.4274 on real bundles, against 6.4e-9 for an Imputer-stripped graph
+# (float32(1/7) vs 1/7, not exactly zero). That is 157x above the broken side and 4.2e5 below
+# the legitimate side. A false positive here is fail-safe: it refuses a registration.
 _UNIFORM_TOLERANCE = 1e-6
 
 
@@ -166,12 +168,28 @@ def _bundle_file(snapshot_dir: Path, declared: Any, canonical: str, label: str) 
     the registered snapshot, and LoadedPitchTypeModel falls back to calibrator.json - serving a
     file this gate never looked at. Demonstrated: served T=9.9 while the gate validated T=0.232.
 
-    Requiring equality also closes the traversal shape (``../``, absolute, symlink-out) and,
-    for the server-side twin, an arbitrary-file read: ``_assert_sha256`` reads the target and
-    puts 16 hex chars of its digest in the refusal message, so an uncontained path is a
-    disclosure primitive driven by an attacker-controlled metadata field.
+    Equality alone is NOT enough either, because it resolves the leaf on both sides: if the
+    canonical file is ITSELF a symlink out of the bundle, both sides resolve to the same
+    out-of-bundle real path and the comparison is a tautology. So the canonical file must also
+    not be a symlink. That is the shape a bundle is most likely to acquire by accident here
+    (ADR-0007's portable-drive mirror, a multi-GB parquet), and the box-side consequence is
+    quiet: snapshots arrive as a tarball, the link dangles, and SnapshotRestoreService's
+    ``if (Files.isRegularFile(calibrator))`` SKIPS it - registration succeeds with no
+    calibrator at all and the failure only shows up at load.
+
+    For the server-side twin the same hole is an arbitrary-file read: ``_assert_sha256`` reads
+    the target and puts 16 hex chars of its digest in the refusal message, and tar preserves
+    symlinks, so ``calibrator.json -> /etc/passwd`` in an uploaded archive would be a
+    disclosure primitive driven by an attacker-controlled field.
     """
-    target = (snapshot_dir / canonical).resolve()
+    canonical_path = snapshot_dir / canonical
+    if canonical_path.is_symlink():
+        raise RegisterGateError(
+            f"the bundle's {canonical} is a SYMLINK, so it does not ship its own bytes. Every "
+            "path comparison here resolves through it, which would make the check a tautology, "
+            "and a tarball transfer leaves it dangling for the box to skip silently."
+        )
+    target = canonical_path.resolve()
     if not isinstance(declared, str) or not declared.strip():
         return snapshot_dir / canonical
     try:
@@ -255,7 +273,8 @@ def _probe_onnx(snapshot_dir: Path, n_features: int, n_classes: int) -> None:
     import onnxruntime as ort
 
     # No missing-file branch here: the model_artifact digest check already required the file to
-    # exist, so a guard would be unreachable and its message could never be shown.
+    # exist (and, via _bundle_file, that it is the canonical non-symlink bundle file), so a
+    # guard would be unreachable and its message could never be shown.
     onnx_path = snapshot_dir / ARTIFACT_FILE
     try:
         session = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
@@ -292,7 +311,16 @@ def _probe_onnx(snapshot_dir: Path, n_features: int, n_classes: int) -> None:
     # reason). Reaching it is not the same as VERIFYING it - see the uniformity check below.
     dense = np.full((1, n_features), 0.37, dtype=np.float32)
     cold = np.zeros((1, n_features), dtype=np.float32)
-    cold[0, list(nullable_column_indices())] = np.nan
+    try:
+        # NULLABLE_FEATURE_COLUMNS is a second name list that must track the canonical order;
+        # a drift raises a bare ValueError from tuple.index, which would escape run_gate and
+        # break the module's every-hard-exit-is-a-RegisterGateError contract.
+        nullable = list(nullable_column_indices())
+    except ValueError as exc:
+        raise RegisterGateError(
+            f"NULLABLE_FEATURE_COLUMNS no longer matches the canonical feature order: {exc}"
+        ) from exc
+    cold[0, nullable] = np.nan
     rows: list[np.ndarray] = []
     for probe in (dense, cold):
         try:
@@ -319,12 +347,13 @@ def _probe_onnx(snapshot_dir: Path, n_features: int, n_classes: int) -> None:
     # dense path is fine. NaN also makes the identical-output check above evaluate False, so
     # nothing else would catch such a row either.
     #
-    # MEASURED, and the reason the uniformity check below exists: ORT's Softmax maps an all-NaN
-    # logit row to a UNIFORM distribution rather than propagating NaN (numpy's reference softmax
-    # returns NaN on the same input, so this is ORT-specific). A dropped in-graph Imputer
-    # therefore does not crash and does not emit NaN - it silently serves a uniform prior on
-    # every cold-start row, which is a perfectly valid distribution and so invisible to the
-    # is-this-a-distribution assertions in this loop.
+    # MEASURED, and the reason the uniformity check below exists. A BARE Softmax on an all-NaN
+    # row returns NaN, same as numpy - the uniform output comes from ai.onnx.ml.LinearClassifier
+    # with post_transform=SOFTMAX, which is what the LR baseline's graph actually uses
+    # (Imputer -> Scaler -> LinearClassifier -> Normalizer; there is no bare Softmax op in it).
+    # So a dropped in-graph Imputer does not crash and does not emit NaN: it silently serves a
+    # uniform prior on every cold-start row, a perfectly valid distribution and therefore
+    # invisible to the is-this-a-distribution assertions in this loop.
     for label, raw in (("dense", rows[0]), ("cold-start", rows[1])):
         row = np.asarray(raw, dtype=np.float64)[0]
         if not np.all(np.isfinite(row)) or float(row.min()) < 0.0 or float(row.max()) > 1.0:
@@ -344,8 +373,9 @@ def _probe_onnx(snapshot_dir: Path, n_features: int, n_classes: int) -> None:
     # A UNIFORM cold-start row means the graph learned nothing from the row's non-null features,
     # which is what an Imputer-stripped LR export looks like: dense rows score bit-identically
     # to the healthy graph, so no dense assertion and no two-rows-differ check can see it.
-    # Measured margin on real bundles is ~0.42 against 0.000000 for the stripped graph, so this
-    # threshold is not close to anything legitimate.
+    # Measured margin on real bundles is ~0.42 against 6.4e-9 for the stripped graph. The
+    # nearest legitimate construction anyone found is an exactly-balanced LR at C=1e-9 (2.3e-8);
+    # this project uses C=1.0, and a false positive is fail-safe.
     #
     # This matters for the BASELINE specifically. A baseline serving a uniform 1/7 prior on
     # every cold-start row (a pitcher's first career pitch, NULL ARS) is a silently degraded
@@ -416,6 +446,11 @@ def run_gate(
         # neither of which is a RuntimeError - so without this the module's "every hard exit is
         # a RegisterGateError" contract breaks on exactly the interrupted-export bundles it
         # exists to catch, and the driver PR that catches RegisterGateError gets a traceback.
+        if isinstance(exc, RuntimeError) and not isinstance(exc, RecursionError):
+            # The contract helpers raise with their own precise text (stale hash, feature_order
+            # drift). Those files are perfectly readable, so prefixing them "unreadable or
+            # malformed" would misdescribe the most likely real rule-7 refusal there is.
+            raise RegisterGateError(str(exc)) from exc
         raise RegisterGateError(
             f"{FEATURE_PIPELINE_FILE} is unreadable or malformed: {exc}"
         ) from exc
@@ -490,7 +525,11 @@ def run_gate(
     # bypass than matching the hash. model_artifact.path is already a hard fail when missing;
     # anything weaker here would be an inconsistency an attacker or a half-written exporter
     # walks straight through. This same reasoning carries to the server-side twin.
-    _assert_sha256(artifact, snapshot_dir / ARTIFACT_FILE, "model_artifact")
+    _assert_sha256(
+        artifact,
+        _bundle_file(snapshot_dir, artifact.get("path"), ARTIFACT_FILE, "model_artifact"),
+        "model_artifact",
+    )
     passed.append("model_artifact sha256 matches the ONNX on disk")
 
     # The calibrator carries a digest too, and decision [183]'s order-preservation invariant
@@ -511,18 +550,19 @@ def run_gate(
     )
     passed.append("snapshot parquet sha256 matches the file on disk")
 
-    # The LightGBM bundle also ships model.lgb. Conditional on the ENTRY existing (the LR bundle
-    # has no booster) - which is a bundle-shape difference, not the verify-if-present weakness
-    # rejected above: when the entry exists, its digest is mandatory.
-    if "lightgbm_artifact" in metadata:
-        lgb = metadata.get("lightgbm_artifact")
-        lgb_name = lgb.get("path") if isinstance(lgb, dict) else None
-        _assert_sha256(
-            lgb,
-            _bundle_file(snapshot_dir, lgb_name, "model.lgb", "lightgbm_artifact"),
-            "lightgbm_artifact",
-        )
-        passed.append("lightgbm_artifact sha256 matches the booster on disk")
+    # Which extra artifact a bundle ships is decided by WHICH MODEL it is, and model_name is
+    # already validated above. Keying this off "is the entry present in metadata" would be the
+    # same omit-to-bypass hole rejected for the digests themselves: delete the key, skip the
+    # check. The training artifact is not on the serving path, but it is what a retrain reloads.
+    extra_key, extra = (
+        ("lightgbm_artifact", "model.lgb")
+        if model_name == PRIMARY_MODEL
+        else ("sklearn_artifact", "model.pkl")
+    )
+    entry = metadata.get(extra_key)
+    entry_path = entry.get("path") if isinstance(entry, dict) else None
+    _assert_sha256(entry, _bundle_file(snapshot_dir, entry_path, extra, extra_key), extra_key)
+    passed.append(f"{extra_key} sha256 matches the {extra} on disk")
 
     n_features = len(PITCH_TYPE_FEATURE_COLUMNS)
     n_classes = len(PITCH_TYPE_CLASSES)

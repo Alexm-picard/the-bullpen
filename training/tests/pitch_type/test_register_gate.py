@@ -257,13 +257,6 @@ def test_a_primary_head_without_its_baseline_is_refused(bundle: Path) -> None:
         run_gate(bundle, model_name="pitch_type_pre", baseline_registered=False)
 
 
-def test_the_baseline_itself_needs_no_partner(bundle: Path, tmp_path: Path) -> None:
-    """The LR baseline has no self-reference; it must register freely."""
-    d = _copy(bundle, tmp_path / "asbaseline")
-    _patch_metadata(d, model_name="pitch_type_lr_baseline")
-    assert run_gate(d, model_name="pitch_type_lr_baseline", baseline_registered=False).ok
-
-
 def test_a_foreign_model_name_is_refused(bundle: Path) -> None:
     with pytest.raises(RegisterGateError, match="not a pitch-type model"):
         run_gate(bundle, model_name="pitch_outcome_pre", baseline_registered=True)
@@ -723,6 +716,10 @@ def test_the_real_lr_baseline_bundle_passes(tmp_path: Path) -> None:
     d = train_and_persist_lr(_Loader(), version="v1", artifacts_dir=tmp_path, skip_cv=True)
     export_lr(model_name="pitch_type_lr_baseline", version="v1", artifacts_dir=tmp_path)
 
+    # baseline_registered=False also pins rule 9's asymmetry: the baseline has no self-reference
+    # and must register freely. This replaces a test that faked a baseline by relabelling a
+    # LightGBM bundle - a fiction that no longer holds now that the required training artifact
+    # (model.pkl vs model.lgb) is derived from model_name rather than from metadata's own claim.
     report = run_gate(d, model_name="pitch_type_lr_baseline", baseline_registered=False)
     assert report.ok
     assert report.model_kind == MODEL_KIND  # [184] applies to BOTH rows, not just the primary
@@ -815,4 +812,114 @@ def test_a_binary_calibrator_is_a_gate_error(bundle: Path, tmp_path: Path) -> No
     d = _copy(bundle, tmp_path / "binarycal")
     (d / "calibrator.json").write_bytes(b"\xff\xfe\x00\x01")
     with pytest.raises(RegisterGateError, match="unreadable or malformed"):
+        run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
+
+
+# --- a bundle must ship its own bytes -------------------------------------------------------
+
+
+@pytest.mark.parametrize("canonical", ["calibrator.json", "model.onnx", "training_data.parquet"])
+def test_a_symlinked_canonical_file_is_refused(
+    bundle: Path, tmp_path: Path, canonical: str
+) -> None:
+    """THE TAUTOLOGY IN A PATH-EQUALITY CHECK. Resolving both sides means that if the canonical
+    file is ITSELF a symlink out of the bundle, both sides resolve to the same out-of-bundle
+    real path and the comparison always succeeds - so the gate validates and digests a file the
+    bundle does not contain.
+
+    The box-side consequence is quiet rather than loud: snapshots arrive as a tarball, the link
+    dangles, and SnapshotRestoreService's `if (Files.isRegularFile(...))` SKIPS it, so
+    registration succeeds with the file missing and the failure only appears at load.
+    """
+    d = _copy(bundle, tmp_path / f"symlink_{canonical}")
+    outside = tmp_path / f"outside_{canonical}"
+    outside.write_bytes((d / canonical).read_bytes())
+    (d / canonical).unlink()
+    (d / canonical).symlink_to(outside)
+    with pytest.raises(RegisterGateError, match="SYMLINK"):
+        run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
+
+
+def test_a_hardlinked_canonical_file_still_passes(bundle: Path, tmp_path: Path) -> None:
+    """A hardlink is a real directory entry holding the bundle's own bytes, and a tarball or
+    rclone transfer materialises it as a normal file. Refusing it would be over-strict."""
+    d = _copy(bundle, tmp_path / "hardlink")
+    src = d / "calibrator.json"
+    other = tmp_path / "hard_source.json"
+    other.write_bytes(src.read_bytes())
+    src.unlink()
+    import os
+
+    os.link(other, src)
+    assert run_gate(d, model_name="pitch_type_pre", baseline_registered=True).ok
+
+
+# --- which extra artifact ships is decided by the model, not by metadata --------------------
+
+
+def test_deleting_the_booster_entry_does_not_skip_its_digest(bundle: Path, tmp_path: Path) -> None:
+    """Keying the booster check off "is the entry present in metadata" would be the same
+    omit-to-bypass hole rejected for the digests themselves. model_name is already validated,
+    and it is what decides the bundle shape."""
+    d = _copy(bundle, tmp_path / "noboosterkey")
+    (d / "model.lgb").write_bytes(b"a different booster")
+    _patch_metadata(d, lightgbm_artifact=_DELETE)
+    with pytest.raises(RegisterGateError, match="lightgbm_artifact"):
+        run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
+
+
+def test_a_swapped_sklearn_artifact_is_refused(tmp_path: Path) -> None:
+    """The LR bundle's model.pkl carries a declared digest and was never verified - the same
+    arbitrariness the parquet check closed, on the rule-9 baseline row."""
+    from bullpen_training.pitch_type.export_lr_onnx import export as export_lr
+    from bullpen_training.pitch_type.production import train_and_persist_lr
+
+    d = train_and_persist_lr(_Loader(), version="v1", artifacts_dir=tmp_path, skip_cv=True)
+    export_lr(model_name="pitch_type_lr_baseline", version="v1", artifacts_dir=tmp_path)
+    pkl = d / "model.pkl"
+    pkl.write_bytes(pkl.read_bytes() + b"\x00")
+    with pytest.raises(RegisterGateError, match="sha"):
+        run_gate(d, model_name="pitch_type_lr_baseline", baseline_registered=False)
+
+
+# --- remaining untested refusals ------------------------------------------------------------
+
+
+def test_canonical_contract_feature_order_must_match_the_in_code_columns(
+    bundle: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Input-axis twin of the labels check, which got a test while this did not."""
+    from bullpen_training.pitch_type import contract as contract_mod
+
+    permuted = tuple(reversed(PITCH_TYPE_FEATURE_COLUMNS))
+    monkeypatch.setattr(contract_mod, "PITCH_TYPE_FEATURE_COLUMNS", permuted)
+    with pytest.raises(RegisterGateError, match="feature_order"):
+        run_gate(bundle, model_name="pitch_type_pre", baseline_registered=True)
+
+
+def test_a_stale_hash_is_not_reported_as_a_corrupt_file(bundle: Path, tmp_path: Path) -> None:
+    """The single most likely real rule-7 refusal must not be mislabelled: the file is
+    perfectly readable, it is the hash that is stale."""
+    d = _copy(bundle, tmp_path / "stalemsg")
+    fp = d / "feature_pipeline.json"
+    fp.write_text(
+        fp.read_text().replace('"pipeline_version": "1.0.0"', '"pipeline_version": "9.9"')
+    )
+    with pytest.raises(RegisterGateError) as exc:
+        run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
+    assert "schema_hash" in str(exc.value)
+    assert "unreadable or malformed" not in str(exc.value)
+
+
+def test_a_single_output_graph_is_refused(bundle: Path, tmp_path: Path) -> None:
+    """The contract's onnx_output_index=1 is only the probability tensor if there are exactly
+    two outputs; a one-output graph would silently shift what gets served."""
+    import onnx as onnx_mod
+
+    d = _copy(bundle, tmp_path / "onearity")
+    model = onnx_mod.load(d / "model.onnx")
+    del model.graph.output[0]
+    onnx_mod.save(model, d / "model.onnx")
+    _restamp_onnx_sha(d)
+    with pytest.raises(RegisterGateError, match="exactly 2 outputs"):
         run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
