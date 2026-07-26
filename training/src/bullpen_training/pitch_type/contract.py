@@ -22,6 +22,7 @@ import json
 from pathlib import Path
 from typing import Any, cast
 
+from bullpen_training.pitch_type import PITCH_TYPE_FEATURE_COLUMNS
 from bullpen_training.registry_client import feature_hasher
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -39,6 +40,29 @@ def load_canonical_pipeline(contract_path: Path = CONTRACT_PATH) -> dict[str, An
             f"computed={recomputed}); re-run the recompute snippet in .githooks/pre-commit."
         )
     return spec
+
+
+def assert_feature_order_matches(spec: dict[str, Any]) -> None:
+    """The contract's declared feature_order must equal PITCH_TYPE_FEATURE_COLUMNS.
+
+    Java builds its feature vector in the CONTRACT's declared order while the Python exports
+    build their graphs in ``PITCH_TYPE_FEATURE_COLUMNS`` order. Those are equal today, and
+    this is what keeps them equal. It matters most on the BASELINE: both pitch-type models
+    share one contract, so asymmetric enforcement would mean a drift makes ``pitch_type_pre``
+    fail loud while ``pitch_type_lr_baseline`` silently serves permuted features - corrupting
+    exactly the log-loss number decision [183]'s guardrail reads.
+
+    Deliberately does NOT check ``model_name``: the contract names the primary head, and the
+    rule-9 baseline legitimately shares it (the same way pitch_outcome_lr_baseline shares
+    feature_pipeline.json).
+    """
+    declared = tuple(spec["feature_order"])
+    if declared != PITCH_TYPE_FEATURE_COLUMNS:
+        raise RuntimeError(
+            "contract feature_order != PITCH_TYPE_FEATURE_COLUMNS - code and contract "
+            f"drifted; reconcile before exporting. contract has {len(declared)} columns, "
+            f"code has {len(PITCH_TYPE_FEATURE_COLUMNS)}."
+        )
 
 
 def declared_lookup_paths(spec: dict[str, Any]) -> tuple[str, ...]:
@@ -77,6 +101,7 @@ def assert_declared_lookups_present(out_dir: Path, spec: dict[str, Any]) -> None
 __all__ = (
     "CONTRACT_PATH",
     "assert_declared_lookups_present",
+    "assert_feature_order_matches",
     "declared_lookup_paths",
     "load_canonical_pipeline",
 )

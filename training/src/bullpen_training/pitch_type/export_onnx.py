@@ -34,6 +34,7 @@ from onnxmltools.convert.common.data_types import FloatTensorType  # type: ignor
 
 from bullpen_training.logging_config import configure_logging, get_logger
 from bullpen_training.pitch_type import PITCH_TYPE_FEATURE_COLUMNS
+from bullpen_training.pitch_type.contract import assert_feature_order_matches
 from bullpen_training.pitch_type.contract import load_canonical_pipeline as _load_canonical_pipeline
 
 log = get_logger(__name__)
@@ -67,11 +68,7 @@ def _validate_model_matches_contract(spec: dict[str, Any]) -> None:
             f"contract model_name is {spec['model_name']!r}; export_onnx only handles "
             f"{DEFAULT_MODEL_NAME!r}"
         )
-    if tuple(spec["feature_order"]) != PITCH_TYPE_FEATURE_COLUMNS:
-        raise RuntimeError(
-            "contract feature_order != PITCH_TYPE_FEATURE_COLUMNS - code + contract drifted; "
-            "reconcile before exporting"
-        )
+    assert_feature_order_matches(spec)
 
 
 def convert_booster_to_onnx(
