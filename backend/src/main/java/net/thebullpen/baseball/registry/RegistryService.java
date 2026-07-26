@@ -303,22 +303,6 @@ public class RegistryService {
     return repo.findChallenger(modelName);
   }
 
-  // --- state transitions --------------------------------------------------
-
-  /**
-   * Move {@code id} from its current stage to {@code newStage}, enforcing the {@link Stage}
-   * transition matrix.
-   *
-   * <p>When the target is {@link Stage#CHAMPION}, the prior champion (if any) is archived in the
-   * SAME transaction so there's no instant where the model has two champions. The {@code
-   * findChampion} invariant in the repository validates this is a single-row-per-stage rule
-   * downstream.
-   *
-   * <p>Idempotent on already-at-target: transitioning to the current stage is a no-op (logged at
-   * debug) — the leaf body's "CANDIDATE → CANDIDATE" rejection was a bug surfaced during the
-   * service-author pass; the right behaviour is no-op rather than throw, because the promotion
-   * controller may issue the same call twice on retry.
-   */
   /**
    * Decision [184]: a family whose serving loader is resolved by an explicit metadata {@code
    * model_kind} must declare it, or {@link net.thebullpen.baseball.inference.ModelLoadValidator}
@@ -356,6 +340,22 @@ public class RegistryService {
     }
   }
 
+  // --- state transitions --------------------------------------------------
+
+  /**
+   * Move {@code id} from its current stage to {@code newStage}, enforcing the {@link Stage}
+   * transition matrix.
+   *
+   * <p>When the target is {@link Stage#CHAMPION}, the prior champion (if any) is archived in the
+   * SAME transaction so there's no instant where the model has two champions. The {@code
+   * findChampion} invariant in the repository validates this is a single-row-per-stage rule
+   * downstream.
+   *
+   * <p>Idempotent on already-at-target: transitioning to the current stage is a no-op (logged at
+   * debug) — the leaf body's "CANDIDATE → CANDIDATE" rejection was a bug surfaced during the
+   * service-author pass; the right behaviour is no-op rather than throw, because the promotion
+   * controller may issue the same call twice on retry.
+   */
   @Transactional
   public ModelVersion transitionStage(long id, Stage newStage) {
     ModelVersion current =

@@ -58,16 +58,23 @@ public class CanonicalContracts {
 
   /**
    * The {@code model_kind} a family's {@code metadata.json} MUST declare (decision [184]), keyed by
-   * the family's canonical contract file so a future member (a {@code pitch_type_post}) inherits
-   * the requirement from {@link #CONTRACT_FILE_BY_MODEL} above rather than needing a second
-   * registration here.
+   * the family's canonical contract file, which is what correctly arms the rule-9 BASELINE from the
+   * same one-line entry as its primary (both map to {@code feature_pipeline_pitchtype.json}), so
+   * the baseline cannot register kind-less while the primary is required to declare.
+   *
+   * <p>Do NOT read this as "any future family member inherits automatically". The pitch-OUTCOME
+   * precedent in the map above shows the opposite: pre and post have DIFFERENT contract files
+   * because post adds Tier-4 features. A {@code pitch_type_post} would likely get its own contract
+   * and would register UNARMED unless added here. {@code CanonicalContractsTest} asserts every
+   * {@code pitch_type*} name resolves to a kind, so forgetting reds a test instead of shipping.
    *
    * <p>ABSENT MEANS UNARMED, exactly as an unmapped contract file does for the schema-hash gate.
    * Every family registered before [184] is resolved by the load gate field-sniffing instead
    * ({@code park_order} for the batted-ball all-parks head, {@code head} for pitch-outcome), and
-   * none of their metadata carries this field - so an unconditional requirement would refuse
-   * re-registration of the entire existing fleet, including the restore drill (rule 8). Arming a
-   * family is the one-line change here, same idiom as the map above.
+   * none of their metadata carries this field - so an unconditional requirement would refuse every
+   * re-registration of the existing fleet (automated retraining, and the fresh-version path in
+   * {@code docs/runbooks/registry-snapshot-recovery.md}). Arming a family is the one-line change
+   * here, same idiom as the map above.
    */
   private static final Map<String, String> KIND_BY_CONTRACT_FILE =
       Map.of("feature_pipeline_pitchtype.json", ModelLoadValidator.PITCH_TYPE_KIND);
@@ -96,7 +103,7 @@ public class CanonicalContracts {
    * about the artifact's own metadata, not about a file on disk.
    */
   public static Optional<String> requiredModelKindFor(String modelName) {
-    return contractFileFor(modelName).map(KIND_BY_CONTRACT_FILE::get).filter(k -> k != null);
+    return contractFileFor(modelName).map(KIND_BY_CONTRACT_FILE::get);
   }
 
   /**

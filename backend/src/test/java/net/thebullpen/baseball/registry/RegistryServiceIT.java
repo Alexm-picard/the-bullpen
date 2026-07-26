@@ -46,12 +46,15 @@ class RegistryServiceIT {
     // 3a.5: SnapshotStorage writes copies of every registered artifact under this base path.
     // Per-JVM temp so the tests don't pollute ./data/models. R2 is intentionally NOT configured
     // (bullpen.s3.endpoint-url stays blank) so the retention sweep no-ops.
-    Path snapshotBase =
+    snapshotBase =
         Path.of(
             System.getProperty("java.io.tmpdir"),
             "bullpen-registry-svc-it-snapshots-" + UUID.randomUUID());
     registry.add("bullpen.snapshot.local-base-path", snapshotBase::toString);
   }
+
+  /** Where SnapshotStorage places registered artifacts; asserted empty after a refusal. */
+  private static Path snapshotBase;
 
   @Autowired private RegistryService service;
   @Autowired private RegistryRepository registryRepo;
@@ -749,6 +752,11 @@ class RegistryServiceIT {
         .hasMessageContaining("[184]")
         .hasMessageContaining("pitch_type");
     assertThat(service.findByName("pitch_type_lr_baseline")).isEmpty();
+    // Pins the ORDERING, which otherwise only a comment holds: the check runs before
+    // stageForRegistration, because placeArtifacts copies files that a rolled-back transaction
+    // does not un-copy. Without this, moving the check after staging stays green while leaving a
+    // snapshot dir on disk with no registry row behind it.
+    assertThat(snapshotBase.resolve("pitch_type_lr_baseline")).doesNotExist();
   }
 
   @Test
@@ -783,6 +791,13 @@ class RegistryServiceIT {
     // THE REASON THE CHECK LIVES IN doInsert. registerWithBootstrap is a sibling entry point that
     // never calls register(), and it is the path a first registration takes from the box - so a
     // check placed in register() would leave precisely the door open that matters.
+    // Seed a prior version so the rollback is genuinely exercised: registerWithBootstrap archives
+    // ALL prior versions BEFORE doInsert runs, so the refusal lands after a destructive archive
+    // and only @Transactional saves it. With no prior version, archiveAllForModel touches 0 rows
+    // and this would pass without ever proving the rollback works.
+    ModelVersion prior =
+        service.register(
+            canonicalFamilyRequest("pitch_type_pre", "v0", "{\"model_kind\":\"pitch_type\"}"));
     RegisterRequest req =
         canonicalFamilyRequest("pitch_type_pre", "v1", "{\"model_kind\":\"battedball\"}");
     assertThatThrownBy(
@@ -790,7 +805,11 @@ class RegistryServiceIT {
                 service.registerWithBootstrap(
                     req, new ResetFeatureSchemaConfirmation("pitch_type_pre", "bypass attempt")))
         .isInstanceOf(RegistryException.ModelKindMismatch.class);
-    assertThat(service.findByName("pitch_type_pre")).isEmpty();
+    assertThat(service.findByName("pitch_type_pre"))
+        .extracting(ModelVersion::version)
+        .containsExactly("v0");
+    assertThat(registryRepo.findById(prior.id()).orElseThrow().stage())
+        .isNotEqualTo(Stage.ARCHIVED);
   }
 
   @Test
