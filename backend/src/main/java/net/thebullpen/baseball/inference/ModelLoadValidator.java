@@ -75,8 +75,14 @@ public class ModelLoadValidator {
    * every pitch-type model back into the batted-ball branch and 422s every promotion. {@code
    * ModelLoadValidatorPitchTypeTest} references this constant rather than re-spelling it, so a
    * rename breaks a test instead of a box run.
+   *
+   * <p>{@code public} because {@link net.thebullpen.baseball.registry.CanonicalContracts} keys the
+   * REGISTRATION-side [184] requirement off it, so the string exists exactly once in Java. The
+   * remaining cross-boundary copy is the Python one, pinned by a test in {@code
+   * training/tests/pitch_type/test_register_gate.py} that greps this file for the literal
+   * declaration below - so keep the declaration on one line and keep the spelling.
    */
-  static final String PITCH_TYPE_KIND = "pitch_type";
+  public static final String PITCH_TYPE_KIND = "pitch_type";
 
   /**
    * Warm-up dummy for a pitch-TYPE model. Nulls in the ARS and V013 blocks are deliberate: they are

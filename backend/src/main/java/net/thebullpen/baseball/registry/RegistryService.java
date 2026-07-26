@@ -1,5 +1,8 @@
 package net.thebullpen.baseball.registry;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -194,7 +197,24 @@ public class RegistryService {
     return doInsert(reqWithReason, candidateHash);
   }
 
+  private static final ObjectMapper METADATA_MAPPER = new ObjectMapper();
+
   private ModelVersion doInsert(RegisterRequest req, String featureSchemaHash) {
+    // Decision [184], and it lives HERE rather than in register() deliberately:
+    // registerWithBootstrap
+    // does not call register(), so a check placed there would leave the bootstrap path - the very
+    // path a first registration takes from the box - an open door. doInsert is the single funnel
+    // both public entry points cross.
+    //
+    // [184] put model_kind in the artifact's metadata.json rather than a model_versions column, and
+    // says in its own text that a metadata-only field is a convention unless the registration path
+    // hard-fails a model that lacks it. The Python register_gate is the fast local twin; a
+    // hand-rolled curl bypasses that and cannot bypass this. Same posture as the rule-7 hash check.
+    //
+    // Runs BEFORE stageForRegistration because placeArtifacts copies files to disk that a
+    // rolled-back transaction does not un-copy: refuse first, touch disk second.
+    assertDeclaredModelKind(req);
+
     // Assemble the copy-list, place the snapshot, and derive the canonical registered paths. The
     // "what goes in the snapshot" policy (calibrator + external-data sidecars + pipeline-declared
     // Tier-2 lookups) lives in SnapshotRestoreService; this runs inside register()'s transaction
@@ -299,6 +319,43 @@ public class RegistryService {
    * service-author pass; the right behaviour is no-op rather than throw, because the promotion
    * controller may issue the same call twice on retry.
    */
+  /**
+   * Decision [184]: a family whose serving loader is resolved by an explicit metadata {@code
+   * model_kind} must declare it, or {@link net.thebullpen.baseball.inference.ModelLoadValidator}
+   * routes the snapshot to the batted-ball loader and every promotion 422s about the wrong model.
+   *
+   * <p>SCOPED, NOT UNIVERSAL, and that is a correctness requirement rather than politeness: the
+   * requirement is derived from {@link CanonicalContracts}' family table, so families registered
+   * before [184] - batted-ball and pitch-outcome pre/post, none of whose metadata carries the field
+   * - keep registering untouched. An unconditional check would refuse re-registration of the whole
+   * existing fleet, which includes the restore drill (rule 8). A caller cannot exploit the scoping,
+   * because the arming is keyed off the model NAME the server already validated, never off anything
+   * the payload declares about itself.
+   */
+  private void assertDeclaredModelKind(RegisterRequest req) {
+    Optional<String> expected = CanonicalContracts.requiredModelKindFor(req.modelName());
+    if (expected.isEmpty()) {
+      // Do not even OPEN metadata.json for a field-sniffed family. Pre-[184] artifacts are not
+      // required to be parseable JSON at this point, so parsing unconditionally and validating
+      // only when armed would be a silent behaviour change for every existing model.
+      return;
+    }
+    String declared;
+    try {
+      JsonNode md = METADATA_MAPPER.readTree(Files.readAllBytes(Path.of(req.metadataPath())));
+      declared = md.path("model_kind").asText("");
+    } catch (IOException e) {
+      // Fail closed. Metadata the registry cannot read is metadata it cannot trust, and the serving
+      // loader reads these same bytes later.
+      throw new RegistryException.ModelKindMismatch(
+          req.modelName(), expected.get(), "<unreadable metadata.json: " + e.getMessage() + ">");
+    }
+    if (!expected.get().equals(declared)) {
+      throw new RegistryException.ModelKindMismatch(
+          req.modelName(), expected.get(), declared.isEmpty() ? "<absent>" : declared);
+    }
+  }
+
   @Transactional
   public ModelVersion transitionStage(long id, Stage newStage) {
     ModelVersion current =

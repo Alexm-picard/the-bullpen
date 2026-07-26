@@ -100,14 +100,19 @@ class ModelLoadValidatorPitchTypeTest {
   }
 
   @Test
-  void without_model_kind_the_snapshot_misroutes_and_fails() throws Exception {
-    // PROVES THE GATE BITES: strip model_kind and the very same snapshot falls through to the
-    // batted-ball branch, exactly the pre-fix behaviour. If this ever starts passing, the
-    // discriminator has stopped being load-bearing and the routing is accidental.
+  void without_model_kind_the_snapshot_never_reaches_the_load_gate() throws Exception {
+    // This test used to register a kind-less snapshot and prove it MISROUTED into the batted-ball
+    // branch at load time. That hazard is now unreachable: decision [184]'s registration check
+    // (RegistryService.doInsert) refuses the bundle before a row is ever written, so the load gate
+    // is never asked. The guarantee got strictly stronger, and the test now pins the stronger one.
+    //
+    // The misroute itself is still pinned, just at the layer that can still produce it:
+    // ModelLoadValidator's own branch selection, exercised by the sibling tests here that call
+    // validate() directly on a loaded version.
     Path src = stageSnapshot("v-nokind", metadataJson(MODEL_NAME, null), false);
-    ModelVersion mv = registryService.register(request(MODEL_NAME, "v-nokind", src));
-    assertThatThrownBy(() -> modelLoadValidator.validate(mv))
-        .isInstanceOf(RegistryException.ModelLoadFailed.class);
+    assertThatThrownBy(() -> registryService.register(request(MODEL_NAME, "v-nokind", src)))
+        .isInstanceOf(RegistryException.ModelKindMismatch.class)
+        .hasMessageContaining("[184]");
   }
 
   @Test

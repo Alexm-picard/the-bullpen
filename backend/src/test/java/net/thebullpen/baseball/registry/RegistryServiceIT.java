@@ -733,6 +733,89 @@ class RegistryServiceIT {
    * {@code ../contracts} resolves from the Gradle test working directory ({@code backend/}), the
    * same geometry as {@link CanonicalContracts}' dev default.
    */
+
+  // --- decision [184]: mandatory model_kind for the families it arms ----------------------
+
+  @Test
+  void pitch_type_registration_without_model_kind_is_refused() throws Exception {
+    // THE [184] CLAUSE. Without this the field is a convention: the row registers looking healthy
+    // and only fails at promote, when ModelLoadValidator sniffs it into the batted-ball branch and
+    // reports an error about a different model entirely.
+    RegisterRequest req =
+        canonicalFamilyRequest(
+            "pitch_type_lr_baseline", "v1", "{\"model_name\":\"pitch_type_lr_baseline\"}");
+    assertThatThrownBy(() -> service.register(req))
+        .isInstanceOf(RegistryException.ModelKindMismatch.class)
+        .hasMessageContaining("[184]")
+        .hasMessageContaining("pitch_type");
+    assertThat(service.findByName("pitch_type_lr_baseline")).isEmpty();
+  }
+
+  @Test
+  void pitch_type_registration_with_the_wrong_model_kind_is_refused() throws Exception {
+    RegisterRequest req =
+        canonicalFamilyRequest("pitch_type_pre", "v1", "{\"model_kind\":\"battedball\"}");
+    assertThatThrownBy(() -> service.register(req))
+        .isInstanceOf(RegistryException.ModelKindMismatch.class)
+        .hasMessageContaining("battedball");
+    assertThat(service.findByName("pitch_type_pre")).isEmpty();
+  }
+
+  @Test
+  void pitch_type_registration_with_unreadable_metadata_is_refused() throws Exception {
+    // Fail CLOSED. The serving loader reads these same bytes later, so metadata the registry
+    // cannot parse is a model it cannot route.
+    RegisterRequest req = canonicalFamilyRequest("pitch_type_pre", "v1", "{not json");
+    assertThatThrownBy(() -> service.register(req))
+        .isInstanceOf(RegistryException.ModelKindMismatch.class);
+    assertThat(service.findByName("pitch_type_pre")).isEmpty();
+  }
+
+  @Test
+  void pitch_type_registration_declaring_the_kind_succeeds() throws Exception {
+    RegisterRequest req =
+        canonicalFamilyRequest("pitch_type_pre", "v1", "{\"model_kind\":\"pitch_type\"}");
+    assertThat(service.register(req).modelName()).isEqualTo("pitch_type_pre");
+  }
+
+  @Test
+  void register_with_bootstrap_cannot_bypass_the_model_kind_check() throws Exception {
+    // THE REASON THE CHECK LIVES IN doInsert. registerWithBootstrap is a sibling entry point that
+    // never calls register(), and it is the path a first registration takes from the box - so a
+    // check placed in register() would leave precisely the door open that matters.
+    RegisterRequest req =
+        canonicalFamilyRequest("pitch_type_pre", "v1", "{\"model_kind\":\"battedball\"}");
+    assertThatThrownBy(
+            () ->
+                service.registerWithBootstrap(
+                    req, new ResetFeatureSchemaConfirmation("pitch_type_pre", "bypass attempt")))
+        .isInstanceOf(RegistryException.ModelKindMismatch.class);
+    assertThat(service.findByName("pitch_type_pre")).isEmpty();
+  }
+
+  @Test
+  void a_field_sniffed_family_still_registers_without_model_kind() throws Exception {
+    // REGRESSION FENCE. No family that predates [184] carries the field, so an unconditional check
+    // would refuse re-registration of the entire existing fleet - including the restore drill
+    // (rule 8). This fails the moment someone widens the check beyond the armed families.
+    assertThat(service.register(canonicalFamilyRequest("battedball_outcome", "v1")).modelName())
+        .isEqualTo("battedball_outcome");
+    assertThat(service.register(canonicalFamilyRequest("pitch_outcome_post", "v1")).modelName())
+        .isEqualTo("pitch_outcome_post");
+  }
+
+  /**
+   * {@link #canonicalFamilyRequest(String, String)} with real JSON in metadata.json. The default
+   * helper writes the literal "stub for tests" placeholder, which is not parseable JSON - fine for
+   * a field-sniffed family, correctly refused for one armed by decision [184].
+   */
+  private RegisterRequest canonicalFamilyRequest(String modelName, String version, String metaJson)
+      throws Exception {
+    RegisterRequest base = canonicalFamilyRequest(modelName, version);
+    Files.writeString(Path.of(base.metadataPath()), metaJson);
+    return base;
+  }
+
   private RegisterRequest canonicalFamilyRequest(String modelName, String version)
       throws Exception {
     String contractFile =

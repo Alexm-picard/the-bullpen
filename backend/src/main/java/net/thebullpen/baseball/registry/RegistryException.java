@@ -14,6 +14,7 @@ public sealed class RegistryException extends RuntimeException
         RegistryException.ResetConfirmationMissing,
         RegistryException.PromotionCriteriaMissing,
         RegistryException.BaselineMissing,
+        RegistryException.ModelKindMismatch,
         RegistryException.ModelLoadFailed {
 
   protected RegistryException(String message) {
@@ -212,6 +213,50 @@ public sealed class RegistryException extends RuntimeException
                   ? cause.getClass().getSimpleName()
                   : cause.getMessage()),
           cause);
+    }
+  }
+
+  /**
+   * {@code metadata.json}'s {@code model_kind} is absent or wrong for a family whose serving loader
+   * is resolved by that field (decision [184]).
+   *
+   * <p>Refused at REGISTRATION rather than at promote on purpose: a row that registers without it
+   * looks perfectly healthy until {@code ModelLoadValidator} sniffs it into the batted-ball branch,
+   * and the promotion then fails with a message about a completely different model. Catching it
+   * here turns a confusing box-side 422 into a specific one, at the moment the operator can still
+   * fix the bundle.
+   */
+  public static final class ModelKindMismatch extends RegistryException {
+    private final String modelName;
+    private final String expectedKind;
+    private final String declaredKind;
+
+    public ModelKindMismatch(String modelName, String expectedKind, String declaredKind) {
+      super(
+          "registry: decision [184] - "
+              + modelName
+              + " metadata.json must declare model_kind="
+              + expectedKind
+              + " but declares "
+              + declaredKind
+              + "; re-export the bundle (bullpen_training.pitch_type.persist writes this field)"
+              + " and re-register. The registry will not store a model whose serving loader"
+              + " cannot be resolved from its own metadata.");
+      this.modelName = modelName;
+      this.expectedKind = expectedKind;
+      this.declaredKind = declaredKind;
+    }
+
+    public String modelName() {
+      return modelName;
+    }
+
+    public String expectedKind() {
+      return expectedKind;
+    }
+
+    public String declaredKind() {
+      return declaredKind;
     }
   }
 }
