@@ -3,6 +3,8 @@ package net.thebullpen.baseball.data;
 import java.time.LocalDate;
 import java.util.Optional;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 /**
@@ -25,6 +27,11 @@ import org.springframework.stereotype.Component;
  * zero (a pitcher's first career pitch - a declared production state that LightGBM handles
  * natively, ~0.17% of training rows).
  *
+ * <p>GUARDED ON {@code bullpen.clickhouse.enabled} AND THE api/worker PROFILES, matching the
+ * repositories it composes. Without that, this bean is created wherever ClickHouse is off - which
+ * is every default-profile test - and its missing {@code clickhouseDataSource} dependency fails the
+ * whole Spring context rather than one test. That is how it first broke CI.
+ *
  * <p>WHY THIS LIVES IN {@code data/} AND NOT {@code inference/}. ArchUnit's {@code
  * inferenceMustNotDependOnPersistenceExceptItsOwnRepository} states the boundary plainly: serving
  * reads models and routing, not application tables, and it names its single exemption explicitly so
@@ -37,6 +44,8 @@ import org.springframework.stereotype.Component;
  * [183]), a quietly wrong prior is worse than no prediction at all.
  */
 @Component
+@Profile({"api", "worker"})
+@ConditionalOnProperty(name = "bullpen.clickhouse.enabled", havingValue = "true")
 public class PitchTypeArsenalDeriver {
 
   private final PitcherPitchTypePriorRepository priors;
