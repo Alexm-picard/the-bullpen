@@ -311,10 +311,19 @@ public class RegistryService {
    * <p>SCOPED, NOT UNIVERSAL, and that is a correctness requirement rather than politeness: the
    * requirement is derived from {@link CanonicalContracts}' family table, so families registered
    * before [184] - batted-ball and pitch-outcome pre/post, none of whose metadata carries the field
-   * - keep registering untouched. An unconditional check would refuse re-registration of the whole
-   * existing fleet, which includes the restore drill (rule 8). A caller cannot exploit the scoping,
-   * because the arming is keyed off the model NAME the server already validated, never off anything
-   * the payload declares about itself.
+   * - keep registering untouched. An unconditional check would refuse every re-registration of the
+   * existing fleet: automated retraining registers new versions of those same models across this
+   * endpoint, and {@code docs/runbooks/registry-snapshot-recovery.md} tells the operator to
+   * "register a fresh version from the Python training artifacts" when a snapshot is unrecoverable.
+   * (It would NOT break the restore drill - that restores registry.sqlite with {@code sqlite3
+   * .restore} and never crosses this path. Decision [185] records that correction.)
+   *
+   * <p>A caller cannot exploit the scoping. The arming is keyed off the model NAME, which {@code
+   * RegisterRequest}'s compact constructor has already fenced to {@code ^[a-z0-9_]+$}, and never
+   * off anything the payload declares about itself. An UNMAPPED novel name registers unarmed but
+   * dead-ends: serving dispatch is by hardcoded model-name constants, and the promote load gate
+   * still sniffs metadata, so a kind-less bundle falls to the batted-ball loader and 422s before it
+   * can reach any serving stage.
    */
   private void assertDeclaredModelKind(RegisterRequest req) {
     Optional<String> expected = CanonicalContracts.requiredModelKindFor(req.modelName());

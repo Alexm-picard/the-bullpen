@@ -815,8 +815,11 @@ class RegistryServiceIT {
   @Test
   void a_field_sniffed_family_still_registers_without_model_kind() throws Exception {
     // REGRESSION FENCE. No family that predates [184] carries the field, so an unconditional check
-    // would refuse re-registration of the entire existing fleet - including the restore drill
-    // (rule 8). This fails the moment someone widens the check beyond the armed families.
+    // would refuse every re-registration of the existing fleet: automated retraining registers new
+    // versions of these same models, and the snapshot-recovery runbook tells the operator to
+    // register a fresh version from the training artifacts. (NOT the restore drill - that restores
+    // registry.sqlite via sqlite3 .restore and never crosses this path; see decision [185].)
+    // This fails the moment someone widens the check beyond the armed families.
     assertThat(service.register(canonicalFamilyRequest("battedball_outcome", "v1")).modelName())
         .isEqualTo("battedball_outcome");
     assertThat(service.register(canonicalFamilyRequest("pitch_outcome_post", "v1")).modelName())
