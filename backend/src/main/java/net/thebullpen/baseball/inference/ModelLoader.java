@@ -16,9 +16,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
- * Loads {@link LoadedBattedBallModel} (and, later, pre/post pitch heads) by registry {@code
- * version_id}. Caches loaded bundles in memory (Caffeine, default 4 per model — covers champion +
- * shadow + one in-flight rollback + one warm-up slot). On eviction the bundle is {@link
+ * Loads {@link LoadedBattedBallModel} (pre/post pitch heads, and the pitch-type family) by registry
+ * {@code version_id}. Caches loaded bundles in memory (Caffeine, default 4 per model — covers
+ * champion + shadow + one in-flight rollback + one warm-up slot). On eviction the bundle is {@link
  * AutoCloseable#close() closed} so ORT sessions get released — the Caffeine {@code removalListener}
  * is the discipline.
  *
@@ -45,6 +45,7 @@ public class ModelLoader {
   private final Cache<Long, LoadedAllParksModel> allParksCache;
   private final Cache<Long, LoadedPitchModel> pitchPreCache;
   private final Cache<Long, LoadedPitchModel> pitchPostCache;
+  private final Cache<Long, LoadedPitchTypeModel> pitchTypeCache;
 
   public ModelLoader(
       RegistryService registry, @Value("${bullpen.model-loader.cache-size:4}") int cacheSize) {
@@ -86,6 +87,7 @@ public class ModelLoader {
     // given version_id loads into exactly one cache; the two never hold the same key).
     this.pitchPreCache = buildPitchCache("pre", cacheSize);
     this.pitchPostCache = buildPitchCache("post", cacheSize);
+    this.pitchTypeCache = buildPitchTypeCache(cacheSize);
     log.info("ModelLoader ready: per-model cache size={}", cacheSize);
   }
 
@@ -267,6 +269,55 @@ public class ModelLoader {
     return new ResolvedSnapshot(mv, snapshotDir);
   }
 
+  private static Cache<Long, LoadedPitchTypeModel> buildPitchTypeCache(int cacheSize) {
+    return Caffeine.newBuilder()
+        .maximumSize(cacheSize)
+        .removalListener(
+            (Long key, LoadedPitchTypeModel value, RemovalCause cause) -> {
+              if (value == null) {
+                return;
+              }
+              try {
+                value.close();
+                log.info("ModelLoader: evicted pitch-type version_id={} (cause={})", key, cause);
+              } catch (OrtException e) {
+                log.warn("ModelLoader: failed to close evicted pitch-type model_id={}", key, e);
+              }
+            })
+        .build();
+  }
+
+  /**
+   * Get (or load) a pitch-TYPE model ({@code pitch_type_pre} or its rule-9 {@code
+   * pitch_type_lr_baseline}) for {@code versionId} (decision [183]).
+   *
+   * <p>One cache serves both rows: they share a contract and a serving shape, and keying by
+   * versionId already keeps distinct registry rows distinct. Rule 9 is about separate REGISTRY
+   * rows, which they have - it does not require a duplicated cache.
+   */
+  public LoadedPitchTypeModel loadPitchType(long versionId) {
+    return pitchTypeCache.get(versionId, this::loadPitchTypeFresh);
+  }
+
+  private LoadedPitchTypeModel loadPitchTypeFresh(long versionId) {
+    ResolvedSnapshot r = resolveSnapshot(versionId);
+    try {
+      return LoadedPitchTypeModel.load(
+          versionId,
+          r.mv().modelName(),
+          r.mv().version(),
+          r.mv().featureSchemaHash(),
+          r.snapshotDir());
+    } catch (IOException | OrtException e) {
+      throw new ModelUnavailableException(
+          "ModelLoader: failed to load pitch-type model "
+              + r.mv().naturalKey()
+              + " from "
+              + r.snapshotDir(),
+          e);
+    }
+  }
+
   private record ResolvedSnapshot(ModelVersion mv, Path snapshotDir) {}
 
   /** Visible for tests + warm-up: hint that {@code versionId} is no longer needed in cache. */
@@ -275,6 +326,7 @@ public class ModelLoader {
     allParksCache.invalidate(versionId);
     pitchPreCache.invalidate(versionId);
     pitchPostCache.invalidate(versionId);
+    pitchTypeCache.invalidate(versionId);
   }
 
   @PreDestroy
@@ -287,6 +339,8 @@ public class ModelLoader {
     pitchPreCache.cleanUp();
     pitchPostCache.invalidateAll();
     pitchPostCache.cleanUp();
+    pitchTypeCache.invalidateAll();
+    pitchTypeCache.cleanUp();
     log.info("ModelLoader: shut down, all cached sessions released");
   }
 }

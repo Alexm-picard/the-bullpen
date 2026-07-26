@@ -158,6 +158,11 @@ def _write_metadata(
 ) -> Path:
     payload: dict[str, Any] = {
         "model_name": model_name,
+        # The Java load gate resolves a loader from the model's OWN metadata, never by model name
+        # (ModelLoadValidator). pitch-type has neither park_order nor head, so without an explicit
+        # kind it falls through to the batted-ball loader and every promotion 422s. This is the
+        # first-class discriminator that class's follow-on note asks for.
+        "model_kind": "pitch_type",
         "model_version": inputs.model_version,
         "phase": phase,
         "training_data_window": inputs.train_window,
