@@ -1010,3 +1010,153 @@ def test_a_baseline_graph_registered_as_the_primary_is_refused(
     )
     with pytest.raises(RegisterGateError, match="TreeEnsembleClassifier"):
         run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
+
+
+def test_a_renamed_external_data_sidecar_is_refused(bundle: Path, tmp_path: Path) -> None:
+    """The FILENAME check is not the real test. A sidecar named anything other than
+    model.onnx.data is never copied by SnapshotRestoreService, so registration succeeds and the
+    box fails at load. Only asking the graph catches it.
+
+    Built from a synthetic graph rather than the real primary, because LightGBM's
+    TreeEnsembleClassifier keeps its weights in NODE ATTRIBUTES - it has no initializers at
+    all, so save_as_external_data has nothing to externalise and would prove nothing.
+    """
+    import onnx as onnx_mod
+    from onnx import helper, numpy_helper
+
+    d = _copy(bundle, tmp_path / "extnamed")
+    n_f, n_c = len(PITCH_TYPE_FEATURE_COLUMNS), len(PITCH_TYPE_CLASSES)
+    rng = np.random.default_rng(31)
+    w = numpy_helper.from_array(rng.normal(size=(n_f, n_c)).astype(np.float32), name="w")
+    # Impute NaN to a NON-zero constant so the cold row is a real, non-uniform distribution;
+    # otherwise this trips the uniformity check long before the external-data one.
+    fill = numpy_helper.from_array(np.full((1, n_f), 0.5, dtype=np.float32), name="fill")
+    graph = helper.make_graph(
+        [
+            helper.make_node("IsNaN", ["input"], ["mask"]),
+            helper.make_node("Where", ["mask", "fill", "input"], ["clean"]),
+            helper.make_node("MatMul", ["clean", "w"], ["logits"]),
+            helper.make_node("Softmax", ["logits"], ["probabilities"], axis=1),
+            helper.make_node("ArgMax", ["probabilities"], ["label"], axis=1, keepdims=0),
+        ],
+        "external",
+        [helper.make_tensor_value_info("input", onnx_mod.TensorProto.FLOAT, [None, n_f])],
+        [
+            helper.make_tensor_value_info("label", onnx_mod.TensorProto.INT64, [None]),
+            helper.make_tensor_value_info("probabilities", onnx_mod.TensorProto.FLOAT, [None, n_c]),
+        ],
+        [w, fill],
+    )
+    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)])
+    assert model.graph.initializer, "fixture must carry an initializer for this to mean anything"
+    onnx_mod.save(
+        model,
+        d / "model.onnx",
+        save_as_external_data=True,
+        all_tensors_to_one_file=True,
+        location="weights.bin",
+        size_threshold=0,
+    )
+    _restamp_onnx_sha(d)
+    with pytest.raises(RegisterGateError, match="EXTERNAL data"):
+        run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
+
+
+def test_a_dead_marker_node_does_not_disguise_the_family(tmp_path: Path, bundle: Path) -> None:
+    """Presence alone is defeated by appending a node of the expected type whose output nothing
+    consumes, so the OTHER family's marker must be absent too."""
+    import hashlib
+
+    import onnx as onnx_mod
+
+    from bullpen_training.pitch_type.export_lr_onnx import export as export_lr
+    from bullpen_training.pitch_type.production import train_and_persist_lr
+
+    d = train_and_persist_lr(_Loader(), version="v1", artifacts_dir=tmp_path, skip_cv=True)
+    export_lr(model_name="pitch_type_lr_baseline", version="v1", artifacts_dir=tmp_path)
+    model = onnx_mod.load(d / "model.onnx")
+    # Lift the REAL node: a bare TreeEnsembleClassifier has no attributes, so ORT refuses the
+    # session ("n_targets_or_classes must be positive") before the family check is reached.
+    primary = onnx_mod.load(bundle / "model.onnx")
+    dead = next(n for n in primary.graph.node if n.op_type == "TreeEnsembleClassifier")
+    dead.input[0] = model.graph.input[0].name
+    for i in range(len(dead.output)):
+        dead.output[i] = f"dead_{i}"
+    model.graph.node.append(dead)
+    model.opset_import.extend(primary.opset_import)
+    onnx_mod.save(model, d / "model.onnx")
+    (d / "model.lgb").write_bytes((bundle / "model.lgb").read_bytes())
+    _patch_metadata(
+        d,
+        model_name="pitch_type_pre",
+        model_artifact={
+            "path": "model.onnx",
+            "sha256": hashlib.sha256((d / "model.onnx").read_bytes()).hexdigest(),
+        },
+        lightgbm_artifact={
+            "path": "model.lgb",
+            "sha256": hashlib.sha256((d / "model.lgb").read_bytes()).hexdigest(),
+        },
+    )
+    with pytest.raises(RegisterGateError, match="belongs to the other rule-9 row"):
+        run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
+
+
+def test_the_primary_graph_registered_as_the_baseline_is_refused(
+    bundle: Path, tmp_path: Path
+) -> None:
+    """The MIRROR of the disguise test, and the likelier real accident: copying the champion
+    bundle and relabelling it as the baseline."""
+    import hashlib
+
+    d = _copy(bundle, tmp_path / "mirror")
+    (d / "model.pkl").write_bytes(b"a plausible pickle")
+    _patch_metadata(
+        d,
+        model_name="pitch_type_lr_baseline",
+        sklearn_artifact={
+            "path": "model.pkl",
+            "sha256": hashlib.sha256((d / "model.pkl").read_bytes()).hexdigest(),
+        },
+    )
+    with pytest.raises(RegisterGateError, match="must be served by a graph containing"):
+        run_gate(d, model_name="pitch_type_lr_baseline", baseline_registered=False)
+
+
+def test_a_five_class_probability_output_is_refused(bundle: Path, tmp_path: Path) -> None:
+    """Only the INPUT width is pre-checked against the contract, so a graph emitting the wrong
+    number of classes reaches the probe and must be refused there."""
+    import onnx as onnx_mod
+    from onnx import helper, numpy_helper
+
+    d = _copy(bundle, tmp_path / "fiveclass")
+    n_f = len(PITCH_TYPE_FEATURE_COLUMNS)
+    rng = np.random.default_rng(21)
+    w = numpy_helper.from_array(rng.normal(size=(n_f, 5)).astype(np.float32), name="w")
+    graph = helper.make_graph(
+        [
+            helper.make_node("MatMul", ["input", "w"], ["logits"]),
+            helper.make_node("Softmax", ["logits"], ["probabilities"], axis=1),
+            helper.make_node("ArgMax", ["probabilities"], ["label"], axis=1, keepdims=0),
+        ],
+        "fiveclass",
+        [helper.make_tensor_value_info("input", onnx_mod.TensorProto.FLOAT, [None, n_f])],
+        [
+            helper.make_tensor_value_info("label", onnx_mod.TensorProto.INT64, [None]),
+            helper.make_tensor_value_info("probabilities", onnx_mod.TensorProto.FLOAT, [None, 5]),
+        ],
+        [w],
+    )
+    onnx_mod.save(
+        helper.make_model(graph, opset_imports=[helper.make_opsetid("", 15)]), d / "model.onnx"
+    )
+    _restamp_onnx_sha(d)
+    with pytest.raises(RegisterGateError, match=r"must be \[N,7\]"):
+        run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
+
+
+def test_a_non_object_snapshot_entry_is_a_gate_error(bundle: Path, tmp_path: Path) -> None:
+    d = _copy(bundle, tmp_path / "snapstr")
+    _patch_metadata(d, snapshot="training_data.parquet")
+    with pytest.raises(RegisterGateError, match="not an object"):
+        run_gate(d, model_name="pitch_type_pre", baseline_registered=True)

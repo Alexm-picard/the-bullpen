@@ -231,8 +231,6 @@ def _bundle_file(snapshot_dir: Path, declared: Any, canonical: str, label: str) 
             f"Registration copies that file by canonical name and the loader falls back to it, "
             f"so anything else would be validated here and never served."
         )
-    if not candidate.is_file():
-        raise RegisterGateError(f"metadata.{label} names {canonical}, which is not in the bundle")
     return candidate
 
 
@@ -258,8 +256,6 @@ def _assert_sha256(holder: Any, path: Path, label: str) -> None:
             f"{declared!r}). It is required, not optional: a skipped digest check would let a "
             f"swapped artifact through by omitting one field."
         )
-    if not path.is_file():
-        raise RegisterGateError(f"metadata.{label} names {path.name}, which is not in the bundle")
     actual = hashlib.sha256(path.read_bytes()).hexdigest()
     if actual != declared.lower():
         raise RegisterGateError(
@@ -271,9 +267,9 @@ def _assert_sha256(holder: Any, path: Path, label: str) -> None:
 def _check_calibrator(
     snapshot_dir: Path, contract_labels: list[str], metadata: dict[str, Any]
 ) -> None:
+    # No presence guard: every path here comes through _bundle_file -> _assert_real_file, so a
+    # guard would be unreachable and its message could never be shown.
     cal_path = _calibrator_path(snapshot_dir, metadata)
-    if not cal_path.is_file():
-        raise RegisterGateError(f"calibrator file missing (expected {cal_path})")
     cal = cast(dict[str, Any], _load_json(cal_path, "calibrator"))
     kind = cal.get("kind")
     if kind != "temperature":
@@ -579,16 +575,24 @@ def run_gate(
     # check. The training artifact is not on the serving path, but it is what a retrain reloads.
     # Explicit mapping rather than an if/else: a third family member added to FAMILY would
     # otherwise silently inherit the LR shape and be asked for a model.pkl it never ships.
-    training_artifacts = {
-        PRIMARY_MODEL: ("lightgbm_artifact", "model.lgb"),
-        BASELINE_MODEL: ("sklearn_artifact", "model.pkl"),
+    # One mapping for everything that varies by family member, so a third member cannot
+    # silently inherit another's shape - it has to be declared here or the gate refuses.
+    # TreeEnsemble is ai.onnx.ml v5's replacement for TreeEnsembleClassifier; onnxmltools emits
+    # the latter today, and accepting both means an opset bump does not refuse a valid primary.
+    family_shape = {
+        PRIMARY_MODEL: (
+            "lightgbm_artifact",
+            "model.lgb",
+            frozenset({"TreeEnsembleClassifier", "TreeEnsemble"}),
+        ),
+        BASELINE_MODEL: ("sklearn_artifact", "model.pkl", frozenset({"LinearClassifier"})),
     }
-    if model_name not in training_artifacts:
+    if model_name not in family_shape:
         raise RegisterGateError(
-            f"no training-artifact requirement is declared for {model_name!r}; add it to "
-            "training_artifacts rather than letting the bundle register unchecked"
+            f"no bundle shape is declared for {model_name!r}; add it to family_shape rather "
+            "than letting the bundle register unchecked"
         )
-    extra_key, extra = training_artifacts[model_name]
+    extra_key, extra, expected_ops = family_shape[model_name]
     entry = metadata.get(extra_key)
     entry_path = entry.get("path") if isinstance(entry, dict) else None
     _assert_sha256(entry, _bundle_file(snapshot_dir, entry_path, extra, extra_key), extra_key)
@@ -598,11 +602,12 @@ def run_gate(
     # present, so a swapped sidecar changes the served model while model_artifact.sha256 stays
     # valid - the same omit-to-bypass class closed above. Neither pitch-type graph uses external
     # data (both are ~1 KB), so its presence means something unexpected assembled this bundle.
-    if (snapshot_dir / "model.onnx.data").exists():
+    # Cheap filename pre-filter; the graph-level test that actually covers this is below,
+    # after ORT has parsed the file.
+    if (snapshot_dir / (ARTIFACT_FILE + ".data")).exists():
         raise RegisterGateError(
-            "bundle contains model.onnx.data (ONNX external-data weights). No pitch-type graph "
-            "uses external data, and its digest is not covered by model_artifact.sha256, so it "
-            "could change the served model invisibly."
+            f"bundle contains {ARTIFACT_FILE}.data (ONNX external-data weights); its digest is "
+            "not covered by model_artifact.sha256, so it could change the served model invisibly"
         )
 
     n_features = len(PITCH_TYPE_FEATURE_COLUMNS)
@@ -618,15 +623,45 @@ def run_gate(
     # more specific check would have produced.
     import onnx as onnx_mod
 
-    expected_op = "TreeEnsembleClassifier" if model_name == PRIMARY_MODEL else "LinearClassifier"
-    ops = {n.op_type for n in onnx_mod.load(str(snapshot_dir / ARTIFACT_FILE)).graph.node}
-    if expected_op not in ops:
+    # Loaded only now, so ORT has already proved the file parses: a corrupt graph refuses with
+    # the ONNX-load message instead of leaking a raw protobuf DecodeError from here.
+    # load_external_data=False means this never reads a sidecar it is about to refuse.
+    model = onnx_mod.load(str(snapshot_dir / ARTIFACT_FILE), load_external_data=False)
+    graph = model.graph
+
+    # The filename check above misses the real case: saving with location="weights.bin"
+    # produces a sidecar SnapshotRestoreService never copies (it copies only ARTIFACT_FILE +
+    # ".data"), so registration succeeds and the box fails at load. Ask the graph instead.
+    external = [
+        i.name for i in graph.initializer if i.data_location == onnx_mod.TensorProto.EXTERNAL
+    ]
+    if external:
         raise RegisterGateError(
-            f"{model_name} must be served by a graph containing {expected_op}, but its ONNX has "
-            f"{sorted(ops)}. Rule 9's two rows are only a guardrail if they are two different "
-            "models; a same-family pair makes decision [183]'s comparison self-referential."
+            f"the ONNX keeps initializer(s) {external} in EXTERNAL data. Neither pitch-type "
+            "exporter does that, model_artifact.sha256 does not cover the sidecar, and "
+            "registration only copies a sidecar named after the artifact - so the box would "
+            "register successfully and then fail at load."
         )
-    passed.append(f"rule 9: graph family is {expected_op}, as this row requires")
+    passed.append("ONNX carries its weights inline, not as external data")
+
+    ops = {n.op_type for n in graph.node}
+    foreign = {op for k, (_, _, marks) in family_shape.items() if k != model_name for op in marks}
+    if not (ops & expected_ops):
+        raise RegisterGateError(
+            f"{model_name} must be served by a graph containing one of {sorted(expected_ops)}, "
+            f"but its ONNX has {sorted(ops)}. Rule 9's two rows are only a guardrail if they are "
+            "two different models; a same-family pair makes [183]'s comparison self-referential."
+        )
+    # Presence alone is defeated by appending a dead node of the expected type, so the OTHER
+    # family's marker must be absent too. The real exporters emit disjoint op sets
+    # (primary: Cast/Identity/Mul/TreeEnsembleClassifier; baseline:
+    # Imputer/LinearClassifier/Normalizer/Scaler), so this cannot refuse a legitimate bundle.
+    if ops & foreign:
+        raise RegisterGateError(
+            f"{model_name}'s ONNX also contains {sorted(ops & foreign)}, which belongs to the "
+            "other rule-9 row. A graph carrying both families' markers is disguised, not shared."
+        )
+    passed.append(f"rule 9: graph family is {sorted(ops & expected_ops)}, as this row requires")
     passed.append(f"ONNX loads + scores [1,{n_features}] -> [1,{n_classes}] as a distribution")
 
     return GateReport(
