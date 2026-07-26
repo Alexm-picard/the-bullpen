@@ -28,6 +28,7 @@ dependencies = [
     "shap>=0.50.0",
     "nvidia-cuda-nvcc-cu12==12.9.86 ; sys_platform == 'linux'",
     "boto3>=1.43.27",
+    "joblib>=1.5.3",
 ]
 
 [dependency-groups]

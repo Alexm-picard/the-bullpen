@@ -20,9 +20,11 @@ import pandas as pd
 import pytest
 from click.testing import CliRunner
 
+from bullpen_training.eval.cv_harness import CVResult
 from bullpen_training.pitch_type import PITCH_TYPE_CLASSES, PITCH_TYPE_FEATURE_COLUMNS
 from bullpen_training.pitch_type import production as production_mod
-from bullpen_training.pitch_type.production import main, train_and_persist
+from bullpen_training.pitch_type.persist import PitchTypePersistInputs
+from bullpen_training.pitch_type.production import main, train_and_persist, train_and_persist_lr
 from bullpen_training.pitch_type.temperature import TemperatureCalibrator
 from bullpen_training.registry_client import feature_hasher
 
@@ -247,3 +249,175 @@ def test_cli_runs_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     )
     assert result.exit_code == 0, result.output
     assert (tmp_path / "pitch_type_pre" / "vcli" / "metadata.json").exists()
+
+
+# --- rule-9 LR baseline (Phase 2b) -----------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def lr_bundle_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    out = tmp_path_factory.mktemp("lr_artifacts")
+    return train_and_persist_lr(_SyntheticLoader(), version="v1", artifacts_dir=out, skip_cv=True)
+
+
+def test_lr_writes_its_own_canonical_files(lr_bundle_dir: Path) -> None:
+    """The baseline is a SEPARATE registry row (rule 9) with an sklearn artifact."""
+    assert lr_bundle_dir.parent.name == "pitch_type_lr_baseline"
+    for name in (
+        "model.pkl",
+        "calibrator.json",
+        "feature_pipeline.json",
+        "park_id_mapping.json",
+        "metadata.json",
+        "training_data.parquet",
+    ):
+        assert (lr_bundle_dir / name).exists(), f"missing canonical file: {name}"
+    assert not (lr_bundle_dir / "model.lgb").exists(), "LR must not emit a LightGBM artifact"
+    # LR coefficients are not on LightGBM's gain scale; emitting the file under the same name
+    # would invite a false side-by-side comparison.
+    assert not (lr_bundle_dir / "eval" / "feature_importance.csv").exists()
+    assert (lr_bundle_dir / "eval" / "metrics.json").exists()
+
+
+def test_lr_metadata_records_the_baseline_identity_and_calibrator(lr_bundle_dir: Path) -> None:
+    meta = json.loads((lr_bundle_dir / "metadata.json").read_text())
+    assert meta["model_name"] == "pitch_type_lr_baseline"
+    assert meta["calibrator"]["kind"] == "temperature"
+    assert meta["hyperparams"]["model"] == "multinomial_logistic_regression"
+    assert meta["hyperparams"]["calibrator"] == "temperature"
+    # The temperature choice is a guardrail-integrity decision, so it is written down.
+    assert "guardrail" in meta["calibrator_family_rationale"].lower()
+    assert meta["fitted_label_classes"] == list(range(len(PITCH_TYPE_CLASSES)))
+    # Same rule-7 invariant as the primary head: recomputed, not self-declared.
+    assert meta["feature_pipeline_hash"] == feature_hasher.compute(
+        lr_bundle_dir / "feature_pipeline.json"
+    )
+
+
+def test_lr_shares_the_primary_heads_contract_and_windows(lr_bundle_dir: Path) -> None:
+    """rule-9 comparability: the guardrail compares the two heads on log-loss, so they must
+    be trained on the same folds, the same features, and evaluated on the same snapshot."""
+    meta = json.loads((lr_bundle_dir / "metadata.json").read_text())
+    assert meta["training_data_window"] == "2015-2023"
+    assert meta["val_window"] == "2024"
+    assert meta["snapshot"]["window"] == "2025"
+    fp = json.loads((lr_bundle_dir / "feature_pipeline.json").read_text())
+    assert fp["feature_order"] == list(PITCH_TYPE_FEATURE_COLUMNS)
+
+
+def test_lr_bundle_reloads_and_predicts(lr_bundle_dir: Path) -> None:
+    """The persisted joblib pipeline + calibrator must reproduce a valid 7-class prior."""
+    import joblib
+
+    meta = json.loads((lr_bundle_dir / "metadata.json").read_text())
+    # PRECONDITION for skipping the canonical remap below: sklearn saw every y7 class, so its
+    # predict_proba columns already ARE the canonical order. Assert it rather than assume it -
+    # this shortcut is silently wrong for any bundle where a class was absent.
+    assert meta["fitted_label_classes"] == list(range(len(PITCH_TYPE_CLASSES)))
+    pipeline = joblib.load(lr_bundle_dir / "model.pkl")
+    cal = TemperatureCalibrator.from_json(lr_bundle_dir / "calibrator.json")
+    snap = pd.read_parquet(lr_bundle_dir / "training_data.parquet")
+    raw = pipeline.predict_proba(snap[list(PITCH_TYPE_FEATURE_COLUMNS)].to_numpy()[:32])
+    out = cal.transform(raw)
+    assert out.shape == (32, len(PITCH_TYPE_CLASSES))
+    assert np.allclose(out.sum(axis=1), 1.0, atol=1e-6)
+
+
+def test_lr_cv_branch_produces_promotion_evidence(tmp_path: Path) -> None:
+    """The LR baseline's own 4-fold evidence. The guardrail compares this model's log-loss
+    against the primary head's, so the baseline must be shown to run the SAME rolling-origin
+    folds - every other LR test here uses skip_cv, which would leave that unproven in CI."""
+    out = train_and_persist_lr(
+        _SyntheticLoader(), version="vcv", artifacts_dir=tmp_path, skip_cv=False
+    )
+    meta = json.loads((out / "metadata.json").read_text())
+    assert [f["fold_id"] for f in meta["eval_metrics_per_fold"]] == [1, 2, 3, 4]
+    for metric in ("multiclass_brier", "multiclass_log_loss", "expected_calibration_error"):
+        assert metric in meta["eval_metrics_summary"]
+    assert json.loads((out / "eval" / "metrics.json").read_text())["n_folds"] == 4
+
+
+def test_lr_metadata_phase_is_2b(lr_bundle_dir: Path) -> None:
+    assert json.loads((lr_bundle_dir / "metadata.json").read_text())["phase"] == "2b"
+
+
+def test_metadata_extras_cannot_shadow_identity_fields() -> None:
+    """A per-head extras key silently overwriting model_name or feature_pipeline_hash would
+    produce a bundle whose metadata lies about what it is."""
+    from bullpen_training.pitch_type import persist as persist_mod
+
+    with pytest.raises(ValueError, match="may not overwrite core fields"):
+        persist_mod._write_metadata(  # pyright: ignore[reportPrivateUsage]
+            Path("/tmp"),
+            PitchTypePersistInputs(
+                model_version="v1",
+                train_window="2015-2023",
+                val_window="2024",
+                test_df=pd.DataFrame({"label": [0]}),
+                test_predictions=np.full((1, 7), 1 / 7),
+                cv_result=CVResult(per_fold=(), summary={}),
+                hyperparams={},
+            ),
+            Path(__file__),
+            model_name="pitch_type_lr_baseline",
+            training_data_hash="h",
+            calibrator_path=Path(__file__),
+            schema_hash="s",
+            snapshot_path=Path(__file__),
+            phase="2b",
+            extras={"model_name": "spoofed"},
+        )
+
+
+def test_lr_rule_13_fence_fires_on_a_holdout_fold(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The LR entry point copies the fence, so the fence must be proven to BITE there too -
+    a copied guard that was never exercised is not a guard."""
+    from bullpen_training.eval.cv_harness import FoldSpec
+
+    monkeypatch.setattr(production_mod, "FOLDS", (FoldSpec(9, 2015, 2023, 2024, 2026),))
+    with pytest.raises(Exception, match="holdout"):
+        train_and_persist_lr(_SyntheticLoader(), skip_cv=True)
+
+
+def test_lr_subsample_provenance_lands_in_metadata(tmp_path: Path) -> None:
+    """The subsample-extras branch IS the honest-provenance claim about what the persisted
+    model was fit on, and it is the branch a normal-sized fixture never reaches."""
+    from bullpen_training.pitch_type.persist import persist_pitch_type_lr_v1
+    from bullpen_training.pitch_type.train_lr import model_factory as lr_model_factory
+
+    frame = _frame(n=400, seed=77)
+    bundle = lr_model_factory(frame, _frame(n=200, seed=78))
+    bundle.train_subsample_rows = 3_000_000
+    bundle.train_rows_before_subsample = 6_500_000
+
+    out = persist_pitch_type_lr_v1(
+        bundle,
+        PitchTypePersistInputs(
+            model_version="vsub",
+            train_window="2015-2023",
+            val_window="2024",
+            test_window="2025",
+            test_df=frame,
+            test_predictions=bundle.predict_proba(frame),
+            cv_result=CVResult(per_fold=(), summary={}),
+            hyperparams={},
+            park_id_mapping={"PARK00": 0},
+        ),
+        artifacts_dir=tmp_path,
+    )
+    meta = json.loads((out / "metadata.json").read_text())
+    assert meta["lr_train_subsample_rows"] == 3_000_000
+    # The retained FRACTION must be legible, not left for a reader to infer.
+    assert meta["lr_train_rows_before_subsample"] == 6_500_000
+    assert "not a re-split" in meta["lr_train_subsample_rationale"].lower()
+    # The inherited measurement is attributed, not passed off as this head's own.
+    assert "measured on pitch_outcome_lr_baseline" in meta["lr_train_subsample_rationale"].lower()
+
+
+def test_cli_model_lr_runs_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(production_mod, "make_pitch_type_feature_loader", _SyntheticLoader)
+    result = CliRunner().invoke(
+        main, ["--model", "lr", "--version", "vcli", "--artifacts-dir", str(tmp_path), "--skip-cv"]
+    )
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "pitch_type_lr_baseline" / "vcli" / "model.pkl").exists()
