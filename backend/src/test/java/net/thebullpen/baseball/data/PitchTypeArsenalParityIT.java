@@ -234,12 +234,30 @@ class PitchTypeArsenalParityIT {
 
   private void seedEverything() throws Exception {
     createTables();
-    insertPitches("pitches", career(), PID);
-    insertPitches("pitches", career(), DECOY_PID); // decoy career, must never be counted
+    insertPitches("pitches", career(), PID, 0L);
+    // THE DECOY MUST NOT SHARE SORT KEYS WITH THE PITCHER UNDER TEST. `pitches` is a
+    // ReplacingMergeTree ordered by (game_date, game_id, at_bat_index, pitch_number) and
+    // pitcher_id is NOT in that key, so seeding the identical career for a second pitcher gives
+    // every row a twin with the same key - and FINAL collapses each pair to ONE row. When the
+    // decoy won, pitcher 4242 had zero rows and every downstream failure followed from that.
+    // The offset keeps the isolation check honest while keeping the keys disjoint.
+    insertPitches("pitches", career(), DECOY_PID, 50_000L);
     // The current game lives in pitches_live (not yet handed off), which is what the delta reads.
-    insertPitches("pitches_live", currentGame(), PID);
-    insertPitches("pitches_live", currentGame(), DECOY_PID);
+    insertPitches("pitches_live", currentGame(), PID, 0L);
+    insertPitches("pitches_live", currentGame(), DECOY_PID, 50_000L);
     refreshSnapshot();
+
+    // Split the failure modes at the source. If the seed is not visible here, every assertion
+    // downstream fails for one upstream reason and the messages point at the wrong layer - which
+    // is exactly what happened: a no-row refusal read as a snapshot bug when the pitches were
+    // never there.
+    Integer seeded =
+        ch.queryForObject(
+            "SELECT count() FROM pitches FINAL WHERE pitcher_id = ?", Integer.class, PID);
+    assertThat(seeded)
+        .as("seeded career for pitcher %d must be visible in pitches before anything else", PID)
+        .isNotNull()
+        .isGreaterThan(0);
   }
 
   /**
@@ -335,14 +353,14 @@ class PitchTypeArsenalParityIT {
     throw new AssertionError("V030 migration not found from " + cwd);
   }
 
-  private void insertPitches(String table, List<P> rows, long pitcherId) {
+  private void insertPitches(String table, List<P> rows, long pitcherId, long gameIdOffset) {
     for (P r : rows) {
       ch.update(
           "INSERT INTO "
               + table
               + " (game_id, game_date, at_bat_index, pitch_number, pitcher_id, pitch_type, balls,"
               + " strikes) VALUES (?, toDate(?), ?, ?, ?, ?, ?, ?)",
-          r.gameId(),
+          r.gameId() + gameIdOffset,
           r.date().toString(),
           r.ab(),
           r.pn(),
