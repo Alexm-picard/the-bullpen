@@ -21,6 +21,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
 from bullpen_training.pitch_type import PITCH_TYPE_CLASSES, PITCH_TYPE_FEATURE_COLUMNS
 from bullpen_training.registry_client.distributions import CHAMPIONS
 
@@ -128,3 +130,49 @@ def test_class_labels_are_the_canonical_y7_order() -> None:
     """The reference distribution is packed positionally against these labels."""
     assert _CONFIG.class_labels == list(PITCH_TYPE_CLASSES)
     assert _CONFIG.model_name == "pitch_type_pre"
+
+
+# --- the pin above guards the WRONG artifact until the wire DTO exists ----------------------
+
+_WIRE_DTO = (
+    Path(__file__).resolve().parents[3]
+    / "backend/src/main/java/net/thebullpen/baseball/api/dto/PitchTypeRequest.java"
+)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "The pitch_type WIRE DTO does not exist yet (it lands with the serving endpoint). Until "
+        "it does, every pin above parses FeaturePipelinePitchType.Request - the INTERNAL pipeline "
+        "record - while prediction_log.features is the serialized WIRE DTO. Those two coincide "
+        "for pitch-outcome, which is exactly why the mistake looked correct. This is xfail(strict) "
+        "rather than a plain failure because a red required check would block the very PR that "
+        "fixes it, and rather than a skip because a skip reads as coverage. When the DTO lands "
+        "this test PASSES, strict turns that XPASS into a hard failure, and whoever ships the "
+        "endpoint must remove this marker and repoint the pin."
+    ),
+)
+def test_champion_keys_derive_from_the_wire_dto() -> None:
+    """THE PIN ABOVE IS CURRENTLY GREEN AND WRONG, which is worse than red because it reads as
+    coverage.
+
+    PSI parses observed distributions out of prediction_log.features, which the serving path
+    writes from the SERIALIZED WIRE DTO - not from the internal pipeline record. A wire field
+    named anything other than the 11 keys in CHAMPIONS joins nothing, writes nothing, raises
+    nothing, and leaves every assertion above passing.
+    """
+    assert _WIRE_DTO.is_file(), f"no wire DTO at {_WIRE_DTO}"
+    src = _WIRE_DTO.read_text()
+    body = src.split("public record PitchTypeRequest(", 1)[1].split(")", 1)[0]
+    wire_fields = {
+        m.group(1)
+        for line in body.splitlines()
+        if (m := re.search(r"\b(\w+)\s*,?\s*$", line.strip()))
+    }
+    watched = set(_CONFIG.continuous) | set(_CONFIG.categorical)
+    missing = watched - wire_fields
+    assert not missing, (
+        f"CHAMPIONS watches {sorted(missing)}, which the wire DTO does not carry. PSI joins by "
+        "EXACT key, so those would silently contribute nothing to the drift surface."
+    )
