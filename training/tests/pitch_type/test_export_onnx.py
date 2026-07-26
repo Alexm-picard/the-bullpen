@@ -13,6 +13,8 @@ Runs in CI (lightgbm + onnx + onnxruntime are all deps); needs no committed arti
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import numpy as np
 import pandas as pd
 
@@ -110,3 +112,38 @@ def test_full_serving_path_reconstructs_bundle() -> None:
     reconstructed = bundle.calibrator.transform(onnx_raw)
     expected = bundle.predict_proba(test)
     assert np.allclose(reconstructed, expected, atol=_MINI_ATOL)
+
+
+def test_export_restamps_metadata_artifact_to_the_onnx(tmp_path) -> None:
+    """The registry stores and serves model.onnx, but persist stamps model.lgb. pitch-type has no
+    assembly step to correct that, and an asymmetry here would put a wrong artifact name on one of
+    the two rows decision [183]'s guardrail compares (the LR export already re-stamps)."""
+    import json
+
+    from bullpen_training.pitch_type.export_onnx import export
+    from bullpen_training.pitch_type.production import train_and_persist
+
+    class _Loader:
+        park_id_mapping: ClassVar[dict[str, int]] = {"PARK00": 0}
+
+        def __call__(self, start_year: int, end_year: int, fold_id: int) -> pd.DataFrame:
+            return _frame(n=900, seed=start_year)
+
+    bundle_dir = train_and_persist(
+        _Loader(),
+        version="v1",
+        artifacts_dir=tmp_path,
+        skip_cv=True,
+        num_boost_round=25,
+        early_stopping_rounds=5,
+    )
+    before = json.loads((bundle_dir / "metadata.json").read_text())["model_artifact"]
+    assert before["path"] == "model.lgb"
+
+    result = export(version="v1", artifacts_dir=tmp_path)
+
+    meta = json.loads((bundle_dir / "metadata.json").read_text())
+    assert meta["model_artifact"]["path"] == "model.onnx"
+    assert meta["model_artifact"]["sha256"] == result["onnx_sha256"]
+    # The booster is kept, not dropped - both files are real.
+    assert meta["lightgbm_artifact"]["path"] == "model.lgb"
