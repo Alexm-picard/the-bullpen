@@ -190,13 +190,21 @@ class PitchTypeArsenalParityIT {
     seedEverything();
     Map<String, Object> ref = trainingReferenceForCurrentPitch();
 
-    // ANTI-VACUITY. If the fixture were degenerate the parity assertion above would hold trivially.
-    // 10 labeled career pitches + 3 earlier pitches this doubleheader = 13, and the ST/KC folds
-    // mean
-    // SL and CU are non-zero, so a fold regression cannot hide behind an all-FF arsenal.
+    // ANTI-VACUITY. If the fixture were degenerate the parity assertion above would hold
+    // trivially, so this counts the same quantity by hand.
+    //
+    // 10 labeled career pitches (6 FF, 3 ST->SL, 1 KC->CU; the PO and '' rows are excluded rather
+    // than folded) plus the FOUR thrown earlier today across BOTH games of the doubleheader -
+    // game 700_001 pitches 1-2, and game 700_002 pitches 1-2 ahead of the pitch under test at
+    // pitch 3 - is 14.
+    //
+    // Spelled out rather than computed: deriving it from the same tuple logic the implementation
+    // uses would make this assert nothing. That is also how it was wrong on the first pass. I
+    // counted three current-game pitches instead of four, and the parity assertion above passed
+    // on that same run - which is exactly the case an independent count exists to expose.
     assertThat(((Number) ref.get("pitcher_prior_n")).longValue())
-        .as("a doubleheader-blind implementation would report 11, not 13")
-        .isEqualTo(13L);
+        .as("a doubleheader-blind implementation (game_id = current) would report 12, not 14")
+        .isEqualTo(14L);
     assertThat((Double) ref.get("ars_SL")).as("ST must fold to SL").isGreaterThan(0.0);
     assertThat((Double) ref.get("ars_CU")).as("KC must fold to CU").isGreaterThan(0.0);
     assertThat((Double) ref.get("ars_OFF"))
