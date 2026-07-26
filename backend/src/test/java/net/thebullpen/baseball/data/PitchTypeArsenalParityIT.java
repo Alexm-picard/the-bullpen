@@ -246,22 +246,13 @@ class PitchTypeArsenalParityIT {
    * Populate the snapshot exactly as the nightly job will: counts, never ratios, with as_of_date
    * anchored to the observed max(game_date) in pitches rather than today().
    */
+  /**
+   * Populate the snapshot through the SAME code the nightly job uses. Inlining the SQL here would
+   * make this test assert parity against a definition the job does not share, which is the failure
+   * mode the shared class exists to remove.
+   */
   private void refreshSnapshot() {
-    ch.execute(
-        """
-        INSERT INTO pitcher_pitchtype_prior_current
-        SELECT pitcher_id, (SELECT max(game_date) FROM pitches) AS as_of_date,
-               count() AS prior_n,
-               countIf(y7 = 'FF'), countIf(y7 = 'SI'), countIf(y7 = 'FC'), countIf(y7 = 'SL'),
-               countIf(y7 = 'CU'), countIf(y7 = 'CH'), countIf(y7 = 'OFF'),
-               arrayMap(s -> countIf(balls * 3 + strikes = s), range(12)),
-               arrayMap(s -> countIf(y7 = 'FF' AND balls * 3 + strikes = s), range(12)),
-               now64(3)
-        FROM (SELECT pitcher_id, balls, strikes, %s AS y7 FROM pitches FINAL
-              WHERE pitch_type NOT IN ('', 'PO', 'IN'))
-        GROUP BY pitcher_id
-        """
-            .formatted(y7Expression()));
+    ch.execute(PitcherPitchTypePriorSnapshotSql.refreshInsert(y7Expression()));
   }
 
   /** The class fold, lifted from the training SQL so a taxonomy change cannot desync the two. */
