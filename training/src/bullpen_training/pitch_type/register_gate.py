@@ -20,10 +20,12 @@ The checks, in order:
   6. that hash EQUALS the canonical /contracts pipeline's        <- rule 7
   7. metadata's feature_pipeline_hash agrees with the contract
   8. contract feature_order == PITCH_TYPE_FEATURE_COLUMNS
-  9. contract output.labels == the canonical y7 class order
+  9. canonical contract output.labels == the in-code y7 order (see note below)
  10. contract-declared side-car lookups all present
  11. calibrator loads, is kind=temperature, T finite and > 0, labels == contract labels
- 12. model_artifact names the file the registry stores (model.onnx) and its sha256 matches
+ 12. model_artifact names the file the registry stores (model.onnx); model_artifact AND
+     calibrator both declare a sha256 that matches the bytes on disk (REQUIRED, not
+     verified-if-present: a conditional digest check is bypassed by omitting the field)
  13. ONNX loads and scores [1,24] -> [1,7], exactly 2 outputs, probabilities at index 1
  14. two DISTINCT probes give different outputs (a constant graph is not a model)
  15. the raw probe output is already a probability distribution
@@ -33,6 +35,11 @@ consistent; 6 proves it still matches production. A snapshot that drifted from /
 re-stamped its own hash passes 5 and fails 6 - and without 6 it would sail through here and
 then 422 FeatureSchemaMismatch at Java bootstrap registration, which is the box-side failure
 this whole file exists to pre-empt.
+
+Check 9 is NOT a snapshot-drift check and cannot be reached by mutating a snapshot: output.labels
+lives inside the hashed document, so a permuted snapshot fails check 6 first. Like
+``assert_feature_order_matches`` on the input axis, it guards the CANONICAL contract against the
+in-code tuple - it fires when /contracts and PITCH_TYPE_CLASSES are edited out of agreement.
 """
 
 from __future__ import annotations
@@ -45,14 +52,17 @@ from typing import Any, cast
 
 import numpy as np
 
-from bullpen_training.pitch_type import PITCH_TYPE_CLASSES, PITCH_TYPE_FEATURE_COLUMNS
+from bullpen_training.pitch_type import (
+    PITCH_TYPE_CLASSES,
+    PITCH_TYPE_FEATURE_COLUMNS,
+    nullable_column_indices,
+)
 from bullpen_training.pitch_type.contract import (
     CONTRACT_PATH,
     assert_feature_order_matches,
     declared_lookup_paths,
     load_canonical_pipeline,
 )
-from bullpen_training.pitch_type.export_lr_onnx import nullable_column_indices
 from bullpen_training.registry_client import feature_hasher
 
 METADATA_FILE = "metadata.json"
@@ -115,19 +125,49 @@ def check_model_kind(metadata: dict[str, Any]) -> str:
     return cast(str, kind)
 
 
-def _check_calibrator(
-    snapshot_dir: Path, contract_labels: list[str], metadata: dict[str, Any]
-) -> None:
-    # Resolve the SAME way LoadedPitchTypeModel does - metadata's calibrator.path pointer first,
-    # canonical filename as fallback. Reading calibrator.json unconditionally would validate a
-    # file the loader never opens, so a bundle whose pointer aims at a broken calibrator would
-    # pass the gate and fail at load.
-    cal_path = snapshot_dir / CALIBRATOR_FILE
-    pointer = (metadata.get("calibrator") or {}).get("path")
+def _calibrator_path(snapshot_dir: Path, metadata: dict[str, Any]) -> Path:
+    """Resolve the calibrator the SAME way LoadedPitchTypeModel does.
+
+    metadata's ``calibrator.path`` pointer wins, canonical filename is the fallback. Reading
+    calibrator.json unconditionally would validate a file the loader never opens, so a bundle
+    whose pointer aims at a broken calibrator would pass the gate and fail at load.
+    """
+    cal = metadata.get("calibrator")
+    # Java reads this via .path("calibrator").path("path"), which yields a MissingNode and falls
+    # back cleanly for a non-object. Mirror that instead of raising AttributeError on a string.
+    pointer = cal.get("path") if isinstance(cal, dict) else None
     if isinstance(pointer, str) and pointer.strip():
         candidate = (snapshot_dir / pointer).resolve()
         if candidate.is_file():
-            cal_path = candidate
+            return candidate
+    return snapshot_dir / CALIBRATOR_FILE
+
+
+def _assert_sha256(holder: Any, path: Path, label: str) -> None:
+    """Require a declared sha256 and verify it against the bytes on disk."""
+    if not isinstance(holder, dict):
+        raise RegisterGateError(f"metadata.{label} is missing or not an object")
+    declared = holder.get("sha256")
+    if not isinstance(declared, str) or len(declared) != 64:
+        raise RegisterGateError(
+            f"metadata.{label}.sha256 is missing or not a 64-char hex digest (got "
+            f"{declared!r}). It is required, not optional: a skipped digest check would let a "
+            f"swapped artifact through by omitting one field."
+        )
+    if not path.is_file():
+        raise RegisterGateError(f"metadata.{label} names {path.name}, which is not in the bundle")
+    actual = hashlib.sha256(path.read_bytes()).hexdigest()
+    if actual != declared:
+        raise RegisterGateError(
+            f"{path.name} on disk (sha {actual[:16]}) is not the file metadata.{label} records "
+            f"(sha {declared[:16]}); the artifact was swapped or the export did not re-stamp"
+        )
+
+
+def _check_calibrator(
+    snapshot_dir: Path, contract_labels: list[str], metadata: dict[str, Any]
+) -> None:
+    cal_path = _calibrator_path(snapshot_dir, metadata)
     if not cal_path.is_file():
         raise RegisterGateError(f"calibrator file missing (expected {cal_path})")
     cal = cast(dict[str, Any], json.loads(cal_path.read_text()))
@@ -282,6 +322,7 @@ def run_gate(
         raise RegisterGateError(str(exc)) from exc
     declared = cast(str, spec["schema_hash"])
     passed.append("rule 7: snapshot contract schema_hash recomputed from its own content")
+    passed.append("contract feature_order == PITCH_TYPE_FEATURE_COLUMNS")
 
     # The check above only proves the snapshot's contract is INTERNALLY consistent. Rule 7 is
     # about agreement with the CANONICAL pipeline: a snapshot that drifted from /contracts but
@@ -298,20 +339,21 @@ def run_gate(
             f"FeatureSchemaMismatch on the box. Re-persist from the current contract."
         )
     passed.append("rule 7: snapshot contract matches the canonical /contracts pipeline")
-    passed.append("contract feature_order == PITCH_TYPE_FEATURE_COLUMNS")
 
-    # The input axis is guarded by feature_order; this guards the OUTPUT axis. Permuting the
-    # contract labels AND the calibrator labels together is self-consistent (Java compares those
-    # two to each other), but the ONNX columns are in PITCH_TYPE_CLASSES order - so the bundle
-    # would serve a distribution with its labels silently backwards.
+    # OUTPUT-axis twin of assert_feature_order_matches, and like it this guards the CANONICAL
+    # contract against the in-code tuple - NOT snapshot drift. A permuted snapshot cannot reach
+    # here: output.labels is inside the hashed document, so it fails the canonical-hash check
+    # above first. What this catches is someone editing /contracts (or PITCH_TYPE_CLASSES) so
+    # the two disagree, which would ship a contract whose labels no longer describe the ONNX
+    # column order the trainer produces.
     contract_labels = [str(x) for x in spec["output"]["labels"]]
     if contract_labels != list(PITCH_TYPE_CLASSES):
         raise RegisterGateError(
-            f"contract output.labels {contract_labels} != the canonical y7 order "
-            f"{list(PITCH_TYPE_CLASSES)}; the ONNX columns follow the canonical order, so this "
-            "bundle would serve correctly-shaped probabilities under the wrong labels"
+            f"canonical contract output.labels {contract_labels} != the in-code y7 order "
+            f"{list(PITCH_TYPE_CLASSES)}; the ONNX columns follow the in-code order, so a model "
+            "built against this contract would serve probabilities under the wrong labels"
         )
-    passed.append("contract output.labels are the canonical y7 order")
+    passed.append("canonical contract output.labels == the in-code y7 order")
 
     meta_hash = metadata.get("feature_pipeline_hash")
     if meta_hash != declared:
@@ -341,17 +383,21 @@ def run_gate(
     # Name alone approves ANY 24->7 graph dropped into the bundle. Verifying the digest catches
     # "re-exported but never re-stamped", "copied a bundle and swapped the model", and
     # "registered from a half-finished export".
-    declared_sha = artifact.get("sha256")
-    onnx_file = snapshot_dir / ARTIFACT_FILE
-    if isinstance(declared_sha, str) and onnx_file.is_file():
-        actual_sha = hashlib.sha256(onnx_file.read_bytes()).hexdigest()
-        if actual_sha != declared_sha:
-            raise RegisterGateError(
-                f"model.onnx on disk (sha {actual_sha[:16]}) is not the file metadata records "
-                f"(sha {declared_sha[:16]}); the bundle's ONNX was swapped or the export did not "
-                "re-stamp"
-            )
-        passed.append("model_artifact sha256 matches the ONNX on disk")
+    #
+    # The digest is REQUIRED, not verified-if-present. A conditional check is not a check: it
+    # would let a swapped ONNX through by simply omitting the field, which is a strictly easier
+    # bypass than matching the hash. model_artifact.path is already a hard fail when missing;
+    # anything weaker here would be an inconsistency an attacker or a half-written exporter
+    # walks straight through. This same reasoning carries to the server-side twin.
+    _assert_sha256(artifact, snapshot_dir / ARTIFACT_FILE, "model_artifact")
+    passed.append("model_artifact sha256 matches the ONNX on disk")
+
+    # The calibrator carries a digest too, and decision [183]'s order-preservation invariant
+    # rests on it, so verifying one artifact and not the other would be arbitrary.
+    _assert_sha256(
+        metadata.get("calibrator"), _calibrator_path(snapshot_dir, metadata), "calibrator"
+    )
+    passed.append("calibrator sha256 matches the file on disk")
 
     n_features = len(PITCH_TYPE_FEATURE_COLUMNS)
     n_classes = len(PITCH_TYPE_CLASSES)

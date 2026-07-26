@@ -209,15 +209,17 @@ def test_a_bundle_without_the_onnx_is_refused(bundle: Path, tmp_path: Path) -> N
     """The registry serves every model through ONNX Runtime; model.lgb alone is unregisterable."""
     d = _copy(bundle, tmp_path / "noonnx")
     (d / "model.onnx").unlink()
-    _patch_metadata(d, model_artifact={"path": "model.onnx", "sha256": "x"})
-    with pytest.raises(RegisterGateError, match=r"model\.onnx"):
+    # A well-formed digest, so the MISSING-FILE branch is what fires rather than the hex-format
+    # branch. A placeholder here would silently retarget this test at a different check.
+    _patch_metadata(d, model_artifact={"path": "model.onnx", "sha256": "0" * 64})
+    with pytest.raises(RegisterGateError, match=r"not in the bundle"):
         run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
 
 
 def test_metadata_naming_the_training_artifact_is_refused(bundle: Path, tmp_path: Path) -> None:
     """Catches a bundle where the ONNX export never ran: persist stamps model.lgb."""
     d = _copy(bundle, tmp_path / "lgbname")
-    _patch_metadata(d, model_artifact={"path": "model.lgb", "sha256": "x"})
+    _patch_metadata(d, model_artifact={"path": "model.lgb", "sha256": "0" * 64})
     with pytest.raises(RegisterGateError, match="model_artifact"):
         run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
 
@@ -284,10 +286,15 @@ def test_a_self_consistent_but_drifted_contract_is_refused(bundle: Path, tmp_pat
         run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
 
 
-def test_permuted_contract_labels_are_refused(bundle: Path, tmp_path: Path) -> None:
-    """Permuting the contract labels AND the calibrator labels together is self-consistent (Java
-    only compares those two to each other), but the ONNX columns stay in canonical order - so the
-    bundle would serve correctly-shaped probabilities under backwards labels."""
+def test_permuting_a_snapshots_labels_is_refused_by_the_canonical_hash(
+    bundle: Path, tmp_path: Path
+) -> None:
+    """Permuting a SNAPSHOT's labels is caught by the canonical-hash check, not the label check.
+
+    output.labels lives inside the hashed document, so any snapshot carrying permuted labels
+    fails check 6 before check 9 is reached. Asserting the label message here would be asserting
+    a refusal that never fires - the check-9 guarantee is tested separately below.
+    """
     d = _copy(bundle, tmp_path / "permuted")
     fp = d / "feature_pipeline.json"
     spec = json.loads(fp.read_text())
@@ -296,7 +303,7 @@ def test_permuted_contract_labels_are_refused(bundle: Path, tmp_path: Path) -> N
     cal = json.loads((d / "calibrator.json").read_text())
     cal["class_labels"] = list(reversed(cal["class_labels"]))
     (d / "calibrator.json").write_text(json.dumps(cal))
-    with pytest.raises(RegisterGateError):
+    with pytest.raises(RegisterGateError, match=r"schema_hash|DRIFTED"):
         run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
 
 
@@ -397,3 +404,164 @@ def test_the_real_lr_baseline_bundle_passes(tmp_path: Path) -> None:
     assert report.model_kind == MODEL_KIND  # [184] applies to BOTH rows, not just the primary
     assert report.n_features == 24
     assert report.n_classes == 7
+
+
+def test_canonical_contract_labels_must_match_the_in_code_order(
+    bundle: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The real check-9 guarantee: /contracts and PITCH_TYPE_CLASSES must agree.
+
+    The ONNX columns follow the in-code order, so if someone edits one side without the other,
+    a model built against that contract serves probabilities under the wrong labels. This is an
+    input the snapshot cannot control, which is why it needs its own test rather than a bundle
+    mutation.
+    """
+    from bullpen_training import pitch_type as pt_pkg
+    from bullpen_training.pitch_type import register_gate as rg
+
+    permuted = tuple(reversed(pt_pkg.PITCH_TYPE_CLASSES))
+    monkeypatch.setattr(rg, "PITCH_TYPE_CLASSES", permuted)
+    with pytest.raises(RegisterGateError, match="in-code y7 order"):
+        run_gate(bundle, model_name="pitch_type_pre", baseline_registered=True)
+
+
+# --- artifact digests are REQUIRED, not verified-if-present ---------------------------------
+
+
+def _valid_alternate_onnx(path: Path, n_f: int, n_c: int) -> None:
+    """A genuinely different but perfectly valid n_f->n_c softmax graph.
+
+    Appending a byte would fail ORT load instead, which would test the wrong check and would
+    stop testing anything at all if the check order ever changed.
+    """
+    import onnx as onnx_mod
+    from onnx import helper, numpy_helper
+
+    rng = np.random.default_rng(99)
+    w = numpy_helper.from_array(rng.normal(size=(n_f, n_c)).astype(np.float32), name="w")
+    graph = helper.make_graph(
+        [
+            helper.make_node("MatMul", ["input", "w"], ["logits"]),
+            helper.make_node("Softmax", ["logits"], ["probabilities"], axis=1),
+            helper.make_node("ArgMax", ["probabilities"], ["label"], axis=1, keepdims=0),
+        ],
+        "alternate",
+        [helper.make_tensor_value_info("input", onnx_mod.TensorProto.FLOAT, [None, n_f])],
+        [
+            helper.make_tensor_value_info("label", onnx_mod.TensorProto.INT64, [None]),
+            helper.make_tensor_value_info("probabilities", onnx_mod.TensorProto.FLOAT, [None, n_c]),
+        ],
+        [w],
+    )
+    onnx_mod.save(helper.make_model(graph, opset_imports=[helper.make_opsetid("", 15)]), path)
+
+
+def test_a_swapped_onnx_is_refused_by_the_digest(bundle: Path, tmp_path: Path) -> None:
+    """The "copied a bundle and swapped the model" case: a valid graph, wrong model."""
+    d = _copy(bundle, tmp_path / "swapped")
+    _valid_alternate_onnx(
+        d / "model.onnx", len(PITCH_TYPE_FEATURE_COLUMNS), len(PITCH_TYPE_CLASSES)
+    )
+    with pytest.raises(RegisterGateError, match="sha"):
+        run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
+
+
+def test_deleting_the_declared_sha_does_not_skip_the_digest_check(
+    bundle: Path, tmp_path: Path
+) -> None:
+    """A CONDITIONAL digest check is not a check. Verified-if-present would let a swapped ONNX
+    through by simply omitting the field, which is strictly easier than matching the hash."""
+    d = _copy(bundle, tmp_path / "noSha")
+    _valid_alternate_onnx(
+        d / "model.onnx", len(PITCH_TYPE_FEATURE_COLUMNS), len(PITCH_TYPE_CLASSES)
+    )
+    _patch_metadata(d, model_artifact={"path": "model.onnx"})  # sha256 field removed entirely
+    with pytest.raises(RegisterGateError, match="sha256 is missing"):
+        run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
+
+
+def test_a_non_string_sha_does_not_skip_the_digest_check(bundle: Path, tmp_path: Path) -> None:
+    """A JSON writer emitting null, or a number, must not disable the check either."""
+    d = _copy(bundle, tmp_path / "nullSha")
+    _patch_metadata(d, model_artifact={"path": "model.onnx", "sha256": None})
+    with pytest.raises(RegisterGateError, match="sha256 is missing"):
+        run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
+
+
+def test_a_swapped_calibrator_is_refused(bundle: Path, tmp_path: Path) -> None:
+    """Decision [183]'s order-preservation invariant rests on the calibrator, so verifying the
+    ONNX digest and not this one would be arbitrary."""
+    d = _copy(bundle, tmp_path / "calSwap")
+    cal = json.loads((d / "calibrator.json").read_text())
+    cal["temperature"] = float(cal["temperature"]) + 0.5  # still valid, different file
+    (d / "calibrator.json").write_text(json.dumps(cal))
+    with pytest.raises(RegisterGateError, match="sha"):
+        run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
+
+
+def test_a_calibrator_field_that_is_not_an_object_is_a_gate_error(
+    bundle: Path, tmp_path: Path
+) -> None:
+    """Java reads this via .path("calibrator").path("path"), which falls back cleanly for a
+    non-object. The gate must mirror that rather than raising a raw AttributeError - the module
+    contract is that every hard exit is a RegisterGateError."""
+    d = _copy(bundle, tmp_path / "calStr")
+    _patch_metadata(d, calibrator="calibrator.json")
+    with pytest.raises(RegisterGateError):
+        run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
+
+
+# --- check 15: the raw output must ALREADY be a distribution --------------------------------
+
+
+def _graph_with_final_node(path: Path, n_f: int, n_c: int, final: str | None) -> None:
+    """A MatMul graph whose head is Softmax (valid), Sigmoid (sums != 1), or nothing (logits)."""
+    import onnx as onnx_mod
+    from onnx import helper, numpy_helper
+
+    rng = np.random.default_rng(7)
+    w = numpy_helper.from_array(rng.normal(size=(n_f, n_c)).astype(np.float32), name="w")
+    nodes = [helper.make_node("MatMul", ["input", "w"], ["logits"])]
+    if final is None:
+        nodes.append(helper.make_node("Identity", ["logits"], ["probabilities"]))
+    elif final == "Softmax":
+        nodes.append(helper.make_node("Softmax", ["logits"], ["probabilities"], axis=1))
+    else:
+        nodes.append(helper.make_node(final, ["logits"], ["probabilities"]))
+    nodes.append(helper.make_node("ArgMax", ["probabilities"], ["label"], axis=1, keepdims=0))
+    graph = helper.make_graph(
+        nodes,
+        "probe",
+        [helper.make_tensor_value_info("input", onnx_mod.TensorProto.FLOAT, [None, n_f])],
+        [
+            helper.make_tensor_value_info("label", onnx_mod.TensorProto.INT64, [None]),
+            helper.make_tensor_value_info("probabilities", onnx_mod.TensorProto.FLOAT, [None, n_c]),
+        ],
+        [w],
+    )
+    onnx_mod.save(helper.make_model(graph, opset_imports=[helper.make_opsetid("", 15)]), path)
+
+
+def test_a_graph_exported_without_its_softmax_is_refused(bundle: Path, tmp_path: Path) -> None:
+    """THE HAZARD BEHIND THE PRE-CALIBRATION RULE. Temperature turns ANY finite vector into a
+    plausible sums-to-1 distribution, so a graph missing its final softmax is INVISIBLE after
+    calibration. Only a pre-calibration assertion on the raw output can see it."""
+    d = _copy(bundle, tmp_path / "logits")
+    _graph_with_final_node(
+        d / "model.onnx", len(PITCH_TYPE_FEATURE_COLUMNS), len(PITCH_TYPE_CLASSES), None
+    )
+    _restamp_onnx_sha(d)
+    with pytest.raises(RegisterGateError, match="not a probability distribution"):
+        run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
+
+
+def test_per_class_sigmoid_output_is_refused(bundle: Path, tmp_path: Path) -> None:
+    """Per-class sigmoids are in [0,1] and look like probabilities elementwise, but do not sum
+    to 1 - a multi-label head where a multinomial one is required."""
+    d = _copy(bundle, tmp_path / "sigmoid")
+    _graph_with_final_node(
+        d / "model.onnx", len(PITCH_TYPE_FEATURE_COLUMNS), len(PITCH_TYPE_CLASSES), "Sigmoid"
+    )
+    _restamp_onnx_sha(d)
+    with pytest.raises(RegisterGateError, match="does not sum to 1"):
+        run_gate(d, model_name="pitch_type_pre", baseline_registered=True)
