@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -74,7 +75,7 @@ class TemperatureCalibrator:
         # so T <= 0 would divide-by-zero or invert the ranking (turning the calibrated
         # prior into an anti-predictor). Guard every construction path, including
         # from_json reading a hand-edited cross-language calibrator.json.
-        if self.temperature <= 0.0:
+        if not math.isfinite(self.temperature) or self.temperature <= 0.0:
             raise ValueError(
                 f"temperature must be > 0 (the order-preservation invariant); "
                 f"got {self.temperature}"
