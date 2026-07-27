@@ -163,17 +163,20 @@ _WIRE_DTO = (
 def test_champion_keys_derive_from_the_wire_dto() -> None:
     """THE ASSERTION THAT ACTUALLY GUARDS THE DRIFT SURFACE.
 
-    PSI parses observed distributions out of prediction_log.features, which the pitch-type
-    prediction service writes from the SERIALIZED WIRE DTO - not from the internal pipeline record
-    the pins above parse. A wire field named anything other than the 11 keys in CHAMPIONS joins nothing, writes
-    nothing, raises nothing, and leaves every one of those assertions still passing.
+    PSI parses observed distributions out of prediction_log.features, which the
+    pitch-type prediction service writes from the SERIALIZED WIRE DTO - not from
+    the internal pipeline record the pins above parse. A wire field named
+    anything other than the 11 keys in CHAMPIONS joins nothing, writes nothing,
+    raises nothing, and leaves every one of those assertions still passing.
 
-    This carried an xfail(strict) marker until PitchTypeRequest existed, precisely so the DTO
-    could not arrive without someone being forced back here. It fired on the commit that added it.
+    This carried an xfail(strict) marker until PitchTypeRequest existed,
+    precisely so the DTO could not arrive without someone being forced back
+    here. It fired on the commit that added it.
 
-    Note the spelling trap it defends: both pitch-outcome DTOs use batterStand / pitcherThrows,
-    while pitch_type uses stand / pThrows. Copying the neighbour is the natural move and produces
-    an empty drift surface indistinguishable from a healthy one.
+    Note the spelling trap it defends: both pitch-outcome DTOs use batterStand
+    and pitcherThrows, while pitch_type uses stand and pThrows. Copying the
+    neighbour is the natural move and produces an empty drift surface that is
+    indistinguishable from a healthy one.
     """
     assert _WIRE_DTO.is_file(), f"no wire DTO at {_WIRE_DTO}"
     wire_fields = set(_record_components(_WIRE_DTO.read_text(), "public record PitchTypeRequest("))
