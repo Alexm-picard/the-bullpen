@@ -288,11 +288,13 @@ public class PitcherPitchTypePriorRepository {
    * compute_pitch_type_state.sql}: the previous two LABELED pitch types this outing as y7 ints
    * (fold applied first, so ST reads back as SL=3), and the count of prior labeled pitches.
    *
-   * <p>Outing-scoped by construction - {@code (game_id, pitcher_id)} with the tuple cutoff - so
-   * unlike the ARS career scan this reads a few dozen rows off {@code pitches_live}'s own sort key
-   * (~2ms measured) and needs no snapshot. The labeled filter is load-bearing: training's sequence
-   * SHIFTS OVER labeled pitches, so a pitchout between two fastballs must not become prev1, and
-   * {@code pitches_into_outing} counts labeled pitches only.
+   * <p>Outing-scoped by construction - {@code (game_id, pitcher_id)} with the tuple cutoff. {@code
+   * pitches_live} sorts on {@code (game_id, at_bat_index, pitch_number)}, so the scan is pruned to
+   * the GAME's granules and {@code pitcher_id} filters post-scan - a whole game is a few hundred
+   * rows, so unlike the ARS career scan (100% of pitches, measured in V030's header) this needs no
+   * snapshot. The labeled filter is load-bearing: training's sequence SHIFTS OVER labeled pitches,
+   * so a pitchout between two fastballs must not become prev1, and {@code pitches_into_outing}
+   * counts labeled pitches only.
    *
    * <p>The int vocabulary (FF=0..OFF=6, applied after {@link
    * PitcherPitchTypePriorSnapshotSql#CANONICAL_Y7}) is written once here and pinned end-to-end by
@@ -300,10 +302,13 @@ public class PitcherPitchTypePriorRepository {
    */
   public PitcherOutingSequence findOutingSequence(
       long pitcherId, long gameId, int atBatIndex, int pitchNumber) {
+    // Casts mirror SELECT_IN_GAME_DELTA's documented rule: each side of the tuple comparison gets
+    // the exact column type (at_bat_index UInt16, pitch_number UInt8), so ClickHouse never invents
+    // a common type and the driver's binding behaviour is not load-bearing.
     String labeled =
         " FROM pitches_live FINAL"
             + " WHERE game_id = ? AND pitcher_id = ?"
-            + "   AND (at_bat_index, pitch_number) < (?, ?)"
+            + "   AND (at_bat_index, pitch_number) < (toUInt16(?), toUInt8(?))"
             + "   AND pitch_type NOT IN ('', 'PO', 'IN')";
     // Two point reads on the outing's own sort-key prefix rather than one clever aggregate:
     // groupArray gives no ordering guarantee over a parallel merge, and an ordered LIMIT 2 does.
@@ -330,10 +335,16 @@ public class PitcherPitchTypePriorRepository {
             atBatIndex,
             pitchNumber);
     int n = count == null ? 0 : count;
+    if (lastTwo.isEmpty()) {
+      // By construction, not field coincidence: the doc's claim that an empty outing IS the
+      // declared cold-start state should be true because this returns that constant.
+      return PitcherOutingSequence.OUTING_START;
+    }
+    // prev1Missing derives from the SAME read as prev1, never from the separate count: a pitch
+    // landing between the two queries could otherwise yield prev1Missing=0 with prev1PtI=-1, a
+    // combination the model never saw in training. The count is floored to the rows actually seen
+    // for the mirror-image race (prev1 present, count read first and low).
     return new PitcherOutingSequence(
-        lastTwo.isEmpty() ? -1 : lastTwo.get(0),
-        lastTwo.size() < 2 ? -1 : lastTwo.get(1),
-        n == 0 ? 1 : 0,
-        n);
+        lastTwo.get(0), lastTwo.size() < 2 ? -1 : lastTwo.get(1), 0, Math.max(n, lastTwo.size()));
   }
 }

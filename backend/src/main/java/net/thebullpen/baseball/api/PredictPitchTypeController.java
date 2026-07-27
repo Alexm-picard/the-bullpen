@@ -62,7 +62,13 @@ public class PredictPitchTypeController {
       String servingVersion,
       @Schema(description = "Career pitches the prior was computed over, strictly before this one.")
           long priorPitches,
-      long elapsedMicros,
+      @Schema(
+              description =
+                  "Routing plus inference time only, DELIBERATELY excluding the server-side"
+                      + " history derivation (four ClickHouse reads) so it is comparable to the"
+                      + " other heads' latency. Diffing this against wall-clock time will show a"
+                      + " large gap; that gap is the derivation, not overhead.")
+          long elapsedMicros,
       String correlationId) {}
 
   @Operation(

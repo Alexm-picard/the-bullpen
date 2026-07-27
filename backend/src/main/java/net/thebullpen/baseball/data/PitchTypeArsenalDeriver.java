@@ -176,6 +176,13 @@ public class PitchTypeArsenalDeriver {
    * <p>No staleness or leakage precondition applies, unlike the arsenal: the outing is live by
    * definition, the tuple cutoff excludes the current pitch trivially, and an empty outing is the
    * declared OUTING_START state the model trained on - so there is nothing here to refuse over.
+   *
+   * <p>ONE KNOWN TRAIN/SERVE SKEW, stated rather than implied away: the live parser coalesces an
+   * as-yet-untyped pitch to {@code ''}, and the labeled filter drops it - so a pitch the MLB feed
+   * has not classified yet silently shifts prev1/prev2 back one and undercounts pitches_into_outing
+   * relative to training, which reads fully-typed Statcast rows. For the ARS career ratios the same
+   * exclusion is a rounding error; here it changes a feature outright. The parity IT seeds both
+   * tables identically and is structurally blind to this, which is why it is written here instead.
    */
   public PitcherOutingSequence deriveSequence(
       long pitcherId, long gameId, int atBatIndex, int pitchNumber) {

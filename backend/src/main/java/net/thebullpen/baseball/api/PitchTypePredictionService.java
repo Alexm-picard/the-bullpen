@@ -1,9 +1,12 @@
 package net.thebullpen.baseball.api;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.Timer;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import net.thebullpen.baseball.api.dto.PitchTypeRequest;
@@ -18,6 +21,9 @@ import net.thebullpen.baseball.inference.ModelLoader;
 import net.thebullpen.baseball.inference.PredictionLogEvent;
 import net.thebullpen.baseball.inference.RoutedPrediction;
 import net.thebullpen.baseball.inference.routing.Role;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
@@ -43,8 +49,10 @@ import org.springframework.web.server.ResponseStatusException;
  *
  * <p>ROUTED THROUGH {@link InferenceRouter}, not resolved with findChampion. Resolving the champion
  * directly can never emit a SHADOW row, so {@code prediction_log.role} has no correct value
- * available and the v1-to-v2 evidence path has nothing to write. Routing buys the correct role and
- * the shadow dual-log.
+ * available. Routing buys the correct role and the shadow dual-log MECHANISM. Note the scope: rows
+ * from this HTTP endpoint carry NULL live keys and are excluded from every evidence reader by
+ * explicit filter, so they are promotion evidence for nothing - the mechanism becomes
+ * evidence-bearing only when a live-ingest poller leg logs through it with real live keys.
  *
  * <p>IT DOES NOT BUY SHADOW-STAGE SERVING, and an earlier version of this comment claimed it did.
  * {@code model_routing} rows are created only by {@code
@@ -57,7 +65,8 @@ import org.springframework.web.server.ResponseStatusException;
  *
  * <p>The first champion for this family promotes via the OFFLINE GATE ([182]/#334), as {@link
  * net.thebullpen.baseball.registry.RegistryBaselines} already records against this exact model
- * name. Shadow rows are the v1-to-v2 path, not the v0-to-v1 path.
+ * name. Later promotions need evidence rows with real live keys - the poller leg or the offline
+ * gate, never this endpoint's rows (see the note on {@link #predict}).
  *
  * <p>SERVE-LIVE-CHAMPION-ELSE-503 otherwise, matching the pitch-outcome heads: 503 rather than 404
  * because the route exists and it is the model that is absent. {@code pitch_type_pre} has neither a
@@ -68,8 +77,7 @@ import org.springframework.web.server.ResponseStatusException;
 @ConditionalOnProperty(name = "bullpen.clickhouse.enabled", havingValue = "true")
 public class PitchTypePredictionService {
 
-  private static final org.slf4j.Logger log =
-      org.slf4j.LoggerFactory.getLogger(PitchTypePredictionService.class);
+  private static final Logger log = LoggerFactory.getLogger(PitchTypePredictionService.class);
 
   public static final String MODEL_NAME = "pitch_type_pre";
 
@@ -95,17 +103,6 @@ public class PitchTypePredictionService {
     this.objectMapper = objectMapper;
   }
 
-  /**
-   * A8: HTTP-path rows carry NULL {@code (gameId, atBatIndex, pitchNumber)} in {@code
-   * prediction_log}, matching the pitch-outcome precedent - an arbitrary API caller should not be
-   * able to inject rows that join to real {@code pitches_live} pitches.
-   *
-   * <p>The consequence is worth stating rather than discovering: until a live-ingest poller leg
-   * exists for pitch-type, its rows are UNPAIRED, so there is no truth join and therefore no
-   * retrospective scorecard for this family. That does not affect the first-champion path, which is
-   * the offline gate ([182]/#334), but it does mean ECE evidence for any LATER promotion has to
-   * come from the poller leg or the offline gate - not from this endpoint.
-   */
   /** The served distribution plus the identity the controller needs for its response. */
   public record Served(
       Map<String, Double> probabilities,
@@ -114,15 +111,31 @@ public class PitchTypePredictionService {
       long priorPitches,
       long elapsedMicros) {}
 
+  /**
+   * A8, THE LOGGING CONTRACT OF THIS METHOD: HTTP-path rows carry NULL {@code (gameId, atBatIndex,
+   * pitchNumber)} in {@code prediction_log}, matching the pitch-outcome precedent - an arbitrary
+   * API caller must not be able to inject rows that join to real {@code pitches_live} pitches. Both
+   * evidence readers exclude NULL-keyed rows by explicit filter, so NOTHING this method logs enters
+   * any promotion gate.
+   *
+   * <p>The consequence is worth stating rather than discovering: until a live-ingest poller leg
+   * exists for pitch-type, its rows are UNPAIRED - no truth join, no retrospective scorecard for
+   * this family. That does not affect the first-champion path (the offline gate, [182]/#334), but
+   * ECE evidence for any LATER promotion has to come from the poller leg or the offline gate, never
+   * from here. Note also that the logged {@code features} carry the 11 wire keys only: ARS and SEQ
+   * are server-derived and absent, so a logged row does NOT determine the scored vector and cannot
+   * be replayed.
+   */
   public Served predict(PitchTypeRequest req) {
     Instant requestAt = Instant.now();
-    String correlationId = org.slf4j.MDC.get("correlation_id");
+    String correlationId = MDC.get("correlation_id");
 
     // Derived server-side, career-expanding, strictly before this pitch. Runs BEFORE routing so a
     // missing or stale prior refuses once rather than once per routed leg. The deriver refuses
     // instead of guessing: a calibrated prior computed over the wrong history is worse than no
     // answer, which is the whole reason this model is promoted on calibration.
     PitchTypeArsenalDeriver.Arsenal ars;
+    PitcherOutingSequence seq;
     try {
       ars =
           arsenal.derive(
@@ -133,24 +146,32 @@ public class PitchTypePredictionService {
               req.pitchNumber(),
               req.balls(),
               req.strikes(),
-              LocalDate.now(java.time.ZoneId.of("America/New_York")));
+              LocalDate.now(ZoneId.of("America/New_York")));
+      // SEQ derived here too, once before routing, for the same pairing reason as the arsenal:
+      // both routed legs must score the IDENTICAL feature vector, or champion and shadow rows
+      // silently unpair. Unlike the arsenal it has nothing to refuse over - an empty outing is
+      // the declared OUTING_START state the model trained on.
+      seq =
+          arsenal.deriveSequence(
+              req.pitcherId(), req.gameId(), req.atBatIndex(), req.pitchNumber());
     } catch (PitchTypeArsenalDeriver.PriorUnavailable e) {
       throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage(), e);
+    } catch (RuntimeException e) {
+      // A ClickHouse failure on the derivation reads is a real model-path failure and must be
+      // COUNTED, not just surfaced as an HTTP 500. The "unknown" role bucket exists precisely for
+      // failures before routing has chosen a role; without this the endpoint could be fully down
+      // while its error series stayed flat.
+      metrics.incrementError(MODEL_NAME, "unknown", e.getClass().getSimpleName());
+      throw e;
     }
-    // SEQ derived here too, once before routing, for the same pairing reason as the arsenal: both
-    // routed legs must score the IDENTICAL feature vector, or champion and shadow rows silently
-    // unpair. Unlike the arsenal it has nothing to refuse over - an empty outing is the declared
-    // OUTING_START state the model trained on.
-    PitcherOutingSequence seq =
-        arsenal.deriveSequence(req.pitcherId(), req.gameId(), req.atBatIndex(), req.pitchNumber());
     FeaturePipelinePitchType.Request features = toPipelineRequest(req, ars, seq);
 
-    // Timed from HERE, after the arsenal reads. latency_ms feeds the Ops dashboard's p50/p95/p99
-    // grouped by (model_name, model_version) alongside the pitch-outcome heads, whose timers cover
-    // routing plus inference with no DB call on the path. Including two ClickHouse reads would
-    // make pitch_type read an order of magnitude slower in the same column for reasons that have
-    // nothing to do with inference.
-    long startNanos = System.nanoTime();
+    // Timed from HERE, after the FOUR ClickHouse reads above (two arsenal, two sequence).
+    // latency_ms feeds the Ops dashboard's p50/p95/p99 grouped by (model_name, model_version)
+    // alongside the pitch-outcome heads, whose timers cover routing plus inference with no DB
+    // call on the path - including the derivation reads would make pitch_type read an order of
+    // magnitude slower in the same column for reasons that have nothing to do with inference.
+    Timer.Sample sample = metrics.startTimer();
     // "unknown" until routing resolves, so a failure BEFORE that point is attributed honestly
     // rather than blamed on a role that was never chosen. Mirrors the pitch-outcome shape.
     String role = "unknown";
@@ -174,12 +195,12 @@ public class PitchTypePredictionService {
                         + " not.");
               });
 
-      role = routed.servingRole().name().toLowerCase(java.util.Locale.ROOT);
+      role = routed.servingRole().name().toLowerCase(Locale.ROOT);
       metrics.incrementPrediction(MODEL_NAME, role);
       Map<String, Double> probs = routed.servingResponse();
-      long elapsedMicros = (System.nanoTime() - startNanos) / 1_000L;
-      metrics.timer(MODEL_NAME).record(elapsedMicros, java.util.concurrent.TimeUnit.MICROSECONDS);
-      float elapsedMs = elapsedMicros / 1_000.0f;
+      long elapsedNanos = sample.stop(metrics.timer(MODEL_NAME));
+      long elapsedMicros = elapsedNanos / 1_000L;
+      float elapsedMs = elapsedNanos / 1_000_000.0f;
 
       LoadedPitchTypeModel serving = modelLoader.loadPitchType(routed.servingVersionId());
       logger.enqueue(
@@ -197,8 +218,14 @@ public class PitchTypePredictionService {
               correlationId));
 
       // Shadow row fire-and-forget off the request path: the serving leg already returned, and the
-      // shadow logs when it completes. These are the rows promotion evidence is built from, so this
-      // leg is the point of the whole change rather than an extra.
+      // shadow logs when it completes. WHAT THIS BUYS IS THE MECHANISM AND THE CORRECT ROLE - NOT
+      // promotion evidence. Rows from THIS endpoint carry NULL live keys (the A8 contract on
+      // predict()), and both evidence readers exclude them by explicit game_id IS NOT NULL filter,
+      // so nothing logged here enters any gate. Evidence rows arrive when a live-ingest poller leg
+      // supplies real live keys; this code is what will log them correctly when it does. Do NOT
+      // "fix" an evidence shortfall by logging the caller-supplied live keys - that is precisely
+      // the injection the NULL keys exist to prevent, and it would poison the truth-joined sample
+      // a real promotion gate reads.
       routed
           .shadowFuture()
           .ifPresent(
@@ -207,6 +234,9 @@ public class PitchTypePredictionService {
                 shadowFut.whenComplete(
                     (shadowProbs, ex) -> {
                       if (ex != null) {
+                        // Not a silent hole: the router's onShadowComplete already counted this
+                        // as shadow_dropped{timeout|defect|degraded}. This callback only owns the
+                        // LOGGING failure below.
                         return;
                       }
                       try {
@@ -227,9 +257,11 @@ public class PitchTypePredictionService {
                       } catch (RuntimeException logEx) {
                         // A throwing whenComplete action completes the DERIVED future
                         // exceptionally, and that future is discarded - so without this the failure
-                        // vanishes with no log and no metric. These rows ARE rule 5's evidence, so
-                        // a silently dropped one does not merely cost observability, it biases the
-                        // sample the promotion gate will read.
+                        // vanishes with no log and no metric. Today that costs observability only
+                        // (HTTP rows enter no gate - see the A8 note on predict()); once a poller
+                        // leg logs rows with real live keys through this same path, a silent drop
+                        // WOULD bias the sample a promotion gate reads, which is why the counter
+                        // ships now rather than being retrofitted then.
                         metrics.incrementShadowDropped(MODEL_NAME, "log_failed");
                         log.warn("pitch-type shadow row dropped for version {}", shadowVid, logEx);
                       }

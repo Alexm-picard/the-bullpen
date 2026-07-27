@@ -179,16 +179,23 @@ class PredictPitchTypeRoutingIT {
 
   @Test
   void a_missing_prior_snapshot_refuses_503_before_routing() throws Exception {
-    // No snapshot row at all: the deriver's PriorUnavailable surfaces as 503 BEFORE routing runs.
-    // Same status as the no-model case by design - a calibrated prior computed over the wrong
-    // history is worse than no answer - but this pin proves the derive-first ordering: nothing is
-    // logged and no model was even needed to refuse.
+    // No snapshot row - but a REGISTERED, PROMOTED champion. This is what makes the pin real: with
+    // no model registered, a route-first implementation would also 503 (from the fallback) with
+    // nothing logged, and the test would prove nothing about ordering. With a servable champion
+    // present, the ONLY explanation for 503-plus-empty-log is that the deriver refused BEFORE
+    // routing ever ran - a prior computed over the wrong history is worse than no answer.
+    registerVersion(BASELINE, "v1");
+    long championId = registerVersion(MODEL_NAME, "v1");
+    registryService.transitionStage(championId, Stage.CHAMPION);
+
     mvc.perform(
             post("/v1/predict/pitch-type")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(requestBody()))
         .andExpect(status().isServiceUnavailable());
-    assertThat(logger.events).isEmpty();
+    assertThat(logger.events)
+        .as("a servable champion existed, so an empty log proves derive-first ordering")
+        .isEmpty();
   }
 
   @Test
@@ -235,11 +242,18 @@ class PredictPitchTypeRoutingIT {
 
   @Test
   void shadow_challenger_dual_logs_role_shadow_with_the_challengers_fk() throws Exception {
-    // THE A10 PIN. The #368 change exists so this row can exist: findChampion could never emit
-    // it, and these rows are what rule 5's v1-to-v2 promotion evidence is built from.
+    // THE A10 PIN. The #368 change exists so this row can exist: findChampion could never emit it.
+    // Scope the claim precisely: these HTTP-path rows carry NULL live keys and enter NO promotion
+    // gate (both evidence readers filter game_id IS NOT NULL) - what this pins is the MECHANISM
+    // and the correct role, which become evidence-bearing when a live-ingest poller leg logs
+    // through this same path with real live keys.
     seedPriorSnapshot();
     registerVersion(BASELINE, "v1");
     long championId = registerVersion(MODEL_NAME, "v1");
+    // The promotion here rides the documented BOOTSTRAP EXEMPTION: pitch_type_pre has exactly one
+    // ever-registered version, so assertPromotionCriteriaMet self-exempts. That is the real
+    // first-champion path, not a test shortcut - but do not read this line as "promotion needs no
+    // evidence": with 2+ versions it requires a passing experiment_results row (rule 5).
     registryService.transitionStage(championId, Stage.CHAMPION);
     long challengerId = registerVersion(MODEL_NAME, "v2");
     registryService.transitionStage(challengerId, Stage.SHADOW);
@@ -259,7 +273,13 @@ class PredictPitchTypeRoutingIT {
         .as("the SHADOW row carries the challenger's FK, which the eval fetchers key on")
         .isEqualTo(challengerId);
     assertThat(shadow.features())
-        .as("champion and shadow rows are PAIRED: same wire features, derived once before routing")
+        // HONEST SCOPE: this pins that both legs logged the same request serialization, nothing
+        // more - serializeFeatures is a pure function of the request DTO called in each leg, so
+        // these bytes are identical whether the derivations ran once or twice. The derive-once
+        // guarantee is structural (both derivations complete before router.route; the closure
+        // captures the finished vector) and is not observable from the log rows, whose features
+        // deliberately exclude every derived value.
+        .as("both legs logged the same wire-key serialization of the request")
         .isEqualTo(
             logger.events.stream()
                 .filter(e -> e.role() == PredictionLogEvent.Role.CHAMPION)
@@ -281,7 +301,12 @@ class PredictPitchTypeRoutingIT {
       }
       Thread.sleep(20);
     }
-    throw new AssertionError("no SHADOW prediction-log event captured within 5s");
+    // First execution of this IT is CI, so the failure must be diagnosable from the message alone.
+    throw new AssertionError(
+        "no SHADOW prediction-log event captured within 5s; captured "
+            + logger.events.size()
+            + " event(s) with roles "
+            + logger.events.stream().map(e -> e.role().name()).toList());
   }
 
   // --- fixtures --------------------------------------------------------------
