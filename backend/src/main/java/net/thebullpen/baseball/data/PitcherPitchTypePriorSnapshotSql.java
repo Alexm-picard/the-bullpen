@@ -27,6 +27,20 @@ public final class PitcherPitchTypePriorSnapshotSql {
 
   private PitcherPitchTypePriorSnapshotSql() {}
 
+  /**
+   * The canonical y7 class fold, lifted verbatim from {@code compute_pitch_type_arsenal.sql}.
+   *
+   * <p>A CONSTANT PINNED BY TEST rather than configuration. The backend cannot read the training
+   * SQL at runtime (it does not ship to the box), and a config value would let the taxonomy drift
+   * silently - a wrong fold yields a plausible snapshot, not an obviously broken one, which is the
+   * failure mode this whole family keeps producing. {@code PitchTypeArsenalParityIT} asserts this
+   * string still equals the fold in the training SQL, so a taxonomy change reds a test.
+   */
+  public static final String CANONICAL_Y7 =
+      "multiIf( pitch_type = 'FF', 'FF', pitch_type = 'SI', 'SI', pitch_type = 'FC', 'FC', pitc"
+          + "h_type IN ('SL', 'ST', 'SV'), 'SL', pitch_type IN ('CU', 'KC', 'CS'), 'CU', pitch_type ="
+          + " 'CH', 'CH', 'OFF' )";
+
   /** Slot index for a count state, matching V030's documented {@code balls * 3 + strikes}. */
   public static final int SLOTS = 12;
 

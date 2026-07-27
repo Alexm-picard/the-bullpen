@@ -227,6 +227,33 @@ public class PitcherPitchTypePriorRepository {
    * <p>Always returns a row (all zeros when the pitcher has thrown nothing since the snapshot);
    * never empty.
    */
+  /**
+   * Rebuild the whole snapshot, and report the {@code as_of_date} it anchored to.
+   *
+   * <p>Delegates to {@link PitcherPitchTypePriorSnapshotSql} rather than carrying its own copy of
+   * the INSERT. That class exists precisely because the first version of this SQL lived only in the
+   * parity test while claiming the job would match it - so the job would have inherited a query
+   * ClickHouse cannot execute. One definition, exercised by the test, run by the job.
+   *
+   * @param y7Expression the training SQL's own class fold, passed through so a taxonomy change
+   *     cannot desync training from serving.
+   */
+  public LocalDate refreshSnapshot(String y7Expression) {
+    jdbc.execute(PitcherPitchTypePriorSnapshotSql.refreshInsert(y7Expression));
+    LocalDate asOf =
+        jdbc.queryForObject(
+            "SELECT max(as_of_date) FROM pitcher_pitchtype_prior_current FINAL", LocalDate.class);
+    if (asOf == null) {
+      // max() over an empty table. Loud rather than a null the caller would stamp onto the
+      // freshness gauge as a quiet zero: an empty snapshot after a "successful" refresh means the
+      // scan over pitches matched nothing, which is a real fault.
+      throw new IllegalStateException(
+          "pitcher_pitchtype_prior_current is empty after a refresh; the scan over pitches matched"
+              + " no rows");
+    }
+    return asOf;
+  }
+
   public PitcherPitchTypeDelta findInGameDelta(
       long pitcherId,
       LocalDate asOfDate,

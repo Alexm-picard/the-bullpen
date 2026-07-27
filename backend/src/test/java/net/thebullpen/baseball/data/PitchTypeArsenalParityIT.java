@@ -185,6 +185,21 @@ class PitchTypeArsenalParityIT {
   }
 
   @Test
+  void the_pinned_y7_constant_still_matches_the_training_sql() {
+    // The backend cannot read the training SQL at runtime, so the fold ships as a constant. A
+    // constant nobody checks is a copy waiting to drift, and a wrong fold produces a PLAUSIBLE
+    // snapshot rather than an obviously broken one - every ars_* value shifts and nothing throws.
+    // This is the lock-step, same shape as the model_kind and drift-key pins.
+    String fromTraining = y7Expression().replaceAll("\\s+", " ").trim();
+    String pinned = PitcherPitchTypePriorSnapshotSql.CANONICAL_Y7.replaceAll("\\s+", " ").trim();
+    assertThat(pinned)
+        .as(
+            "PitcherPitchTypePriorSnapshotSql.CANONICAL_Y7 has drifted from"
+                + " compute_pitch_type_arsenal.sql; re-lift it rather than editing one side")
+        .isEqualTo(fromTraining);
+  }
+
+  @Test
   void the_fixture_actually_exercises_the_doubleheader_and_the_class_folds() throws Exception {
     ch = new JdbcTemplate(clickhouse);
     seedEverything();
