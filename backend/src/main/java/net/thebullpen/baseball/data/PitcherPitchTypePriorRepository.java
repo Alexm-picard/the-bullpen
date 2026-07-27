@@ -282,4 +282,58 @@ public class PitcherPitchTypePriorRepository {
             pitchNumber);
     return rows.isEmpty() ? EMPTY_DELTA : rows.get(0);
   }
+
+  /**
+   * Tier-SEQ state for the pitch about to be thrown, mirroring {@code
+   * compute_pitch_type_state.sql}: the previous two LABELED pitch types this outing as y7 ints
+   * (fold applied first, so ST reads back as SL=3), and the count of prior labeled pitches.
+   *
+   * <p>Outing-scoped by construction - {@code (game_id, pitcher_id)} with the tuple cutoff - so
+   * unlike the ARS career scan this reads a few dozen rows off {@code pitches_live}'s own sort key
+   * (~2ms measured) and needs no snapshot. The labeled filter is load-bearing: training's sequence
+   * SHIFTS OVER labeled pitches, so a pitchout between two fastballs must not become prev1, and
+   * {@code pitches_into_outing} counts labeled pitches only.
+   *
+   * <p>The int vocabulary (FF=0..OFF=6, applied after {@link
+   * PitcherPitchTypePriorSnapshotSql#CANONICAL_Y7}) is written once here and pinned end-to-end by
+   * the SEQ leg of the parity IT, which runs the real training SQL as its reference.
+   */
+  public PitcherOutingSequence findOutingSequence(
+      long pitcherId, long gameId, int atBatIndex, int pitchNumber) {
+    String labeled =
+        " FROM pitches_live FINAL"
+            + " WHERE game_id = ? AND pitcher_id = ?"
+            + "   AND (at_bat_index, pitch_number) < (?, ?)"
+            + "   AND pitch_type NOT IN ('', 'PO', 'IN')";
+    // Two point reads on the outing's own sort-key prefix rather than one clever aggregate:
+    // groupArray gives no ordering guarantee over a parallel merge, and an ordered LIMIT 2 does.
+    List<Integer> lastTwo =
+        jdbc.query(
+            "SELECT toInt32(multiIf(y7 = 'FF', 0, y7 = 'SI', 1, y7 = 'FC', 2, y7 = 'SL', 3,"
+                + " y7 = 'CU', 4, y7 = 'CH', 5, 6)) AS y7i"
+                + " FROM (SELECT "
+                + PitcherPitchTypePriorSnapshotSql.CANONICAL_Y7
+                + " AS y7, at_bat_index, pitch_number"
+                + labeled
+                + ") ORDER BY at_bat_index DESC, pitch_number DESC LIMIT 2",
+            (rs, n) -> rs.getInt("y7i"),
+            gameId,
+            pitcherId,
+            atBatIndex,
+            pitchNumber);
+    Integer count =
+        jdbc.queryForObject(
+            "SELECT toInt32(count())" + labeled,
+            Integer.class,
+            gameId,
+            pitcherId,
+            atBatIndex,
+            pitchNumber);
+    int n = count == null ? 0 : count;
+    return new PitcherOutingSequence(
+        lastTwo.isEmpty() ? -1 : lastTwo.get(0),
+        lastTwo.size() < 2 ? -1 : lastTwo.get(1),
+        n == 0 ? 1 : 0,
+        n);
+  }
 }

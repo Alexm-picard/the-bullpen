@@ -170,6 +170,18 @@ public class PitchTypeArsenalDeriver {
     }
   }
 
+  /**
+   * Tier-SEQ state for the pitch about to be thrown, outing-scoped off {@code pitches_live}.
+   *
+   * <p>No staleness or leakage precondition applies, unlike the arsenal: the outing is live by
+   * definition, the tuple cutoff excludes the current pitch trivially, and an empty outing is the
+   * declared OUTING_START state the model trained on - so there is nothing here to refuse over.
+   */
+  public PitcherOutingSequence deriveSequence(
+      long pitcherId, long gameId, int atBatIndex, int pitchNumber) {
+    return priors.findOutingSequence(pitcherId, gameId, atBatIndex, pitchNumber);
+  }
+
   /** NaN when the denominator is zero, matching the training SQL's NULL at a first career pitch. */
   private static Double ratio(long numerator, long denominator) {
     return denominator == 0L ? null : (double) numerator / (double) denominator;

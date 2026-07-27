@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.UUID;
 import net.thebullpen.baseball.api.dto.PitchTypeRequest;
 import net.thebullpen.baseball.data.PitchTypeArsenalDeriver;
+import net.thebullpen.baseball.data.PitcherOutingSequence;
 import net.thebullpen.baseball.inference.AsyncPredictionLogger;
 import net.thebullpen.baseball.inference.FeaturePipelinePitchType;
 import net.thebullpen.baseball.inference.InferenceMetrics;
@@ -136,7 +137,13 @@ public class PitchTypePredictionService {
     } catch (PitchTypeArsenalDeriver.PriorUnavailable e) {
       throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage(), e);
     }
-    FeaturePipelinePitchType.Request features = toPipelineRequest(req, ars);
+    // SEQ derived here too, once before routing, for the same pairing reason as the arsenal: both
+    // routed legs must score the IDENTICAL feature vector, or champion and shadow rows silently
+    // unpair. Unlike the arsenal it has nothing to refuse over - an empty outing is the declared
+    // OUTING_START state the model trained on.
+    PitcherOutingSequence seq =
+        arsenal.deriveSequence(req.pitcherId(), req.gameId(), req.atBatIndex(), req.pitchNumber());
+    FeaturePipelinePitchType.Request features = toPipelineRequest(req, ars, seq);
 
     // Timed from HERE, after the arsenal reads. latency_ms feeds the Ops dashboard's p50/p95/p99
     // grouped by (model_name, model_version) alongside the pitch-outcome heads, whose timers cover
@@ -275,13 +282,16 @@ public class PitchTypePredictionService {
   /**
    * Wire DTO plus derived history into the pipeline's input record.
    *
-   * <p>The SEQ features are not yet derived live and are passed as their declared cold-start
-   * values. That is a stated gap rather than a silent default: prev-pitch derivation is outing
-   * scoped and cheap (measured ~2ms) but is not built, and a fabricated sequence would be worse
-   * than an honest cold start, which the model already handles natively.
+   * <p>SEQ is derived LIVE from {@code pitches_live} (outing-scoped, ~2ms), mirroring {@code
+   * compute_pitch_type_state.sql}: previous two labeled pitch types as y7 ints with the fold
+   * applied, {@code -1} at outing start, and a labeled-only pitch count. An empty outing yields
+   * exactly the cold-start values this method used to hardcode - {@code
+   * PitcherOutingSequence.OUTING_START} - so the model's declared cold-start state is unchanged;
+   * what changed is that a mid-outing request now carries the real sequence instead of pretending
+   * every pitch is the first.
    */
   private static FeaturePipelinePitchType.Request toPipelineRequest(
-      PitchTypeRequest req, PitchTypeArsenalDeriver.Arsenal ars) {
+      PitchTypeRequest req, PitchTypeArsenalDeriver.Arsenal ars, PitcherOutingSequence seq) {
     return new FeaturePipelinePitchType.Request(
         req.balls(),
         req.strikes(),
@@ -303,10 +313,10 @@ public class PitchTypePredictionService {
         ars.arsOff(),
         ars.arsFfByCount(),
         (int) ars.pitcherPriorN(),
-        -1,
-        -1,
-        1,
-        0);
+        seq.prev1PtI(),
+        seq.prev2PtI(),
+        seq.prev1Missing(),
+        seq.pitchesIntoOuting());
   }
 
   /** The request as logged to {@code prediction_log.features}: the WIRE keys, flat. */
