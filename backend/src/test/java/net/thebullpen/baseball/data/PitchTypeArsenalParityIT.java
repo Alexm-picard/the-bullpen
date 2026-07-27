@@ -108,6 +108,90 @@ class PitchTypeArsenalParityIT {
   @BeforeAll
   static void sqlExists() {
     assertThat(trainingSql()).exists();
+    assertThat(stateSql()).exists();
+  }
+
+  /** The SEQ training definition, resolved the same loud way as the arsenal SQL. */
+  private static Path stateSql() {
+    Path cwd = Path.of(System.getProperty("user.dir")).toAbsolutePath();
+    for (Path p = cwd; p != null; p = p.getParent()) {
+      Path candidate =
+          p.resolve("training/src/bullpen_training/features/sql/compute_pitch_type_state.sql");
+      if (Files.isRegularFile(candidate)) {
+        return candidate;
+      }
+    }
+    throw new AssertionError("compute_pitch_type_state.sql not found walking up from " + cwd);
+  }
+
+  // --- SEQ parity -------------------------------------------------------------
+
+  @Test
+  void seq_serving_derivation_equals_the_training_state_sql() throws Exception {
+    ch = new JdbcTemplate(clickhouse);
+    createTables();
+
+    // An outing built from the cases that distinguish a faithful SEQ from a plausible one. The
+    // labeled sequence is FF (0), ST -> SL (3), CH (5); the PO and '' rows sit BETWEEN them, so an
+    // implementation that fails to skip unlabeled pitches gets a different prev1/prev2 AND a
+    // different count. The AB boundary makes prev2 cross at-bats. Distinct pitcher/game so the
+    // other tests' seeds cannot bleed in (these tables are not truncated between tests).
+    long pid = 7777L;
+    long gid = 810_001L;
+    LocalDate day = LocalDate.of(2024, 5, 1);
+    List<P> outing =
+        List.of(
+            new P(day, gid, 1, 1, "FF", 0, 0),
+            new P(day, gid, 1, 2, "PO", 0, 1), // excluded: never a previous pitch, never counted
+            new P(day, gid, 1, 3, "ST", 1, 1), // folds to SL = 3
+            new P(day, gid, 2, 1, "", 0, 0), //  excluded: the LowCardinality missing default
+            new P(day, gid, 2, 2, "CH", 0, 0));
+    // TRAINING reads pitches; SERVING reads pitches_live. Same rows into both, which is exactly
+    // the parity claim: same pitches, same SEQ, whichever table they arrive through.
+    insertPitches("pitches", outing, pid, 0L);
+    insertPitches("pitches_live", outing, pid, 0L);
+
+    // Serving side, through the real deriver call path, for the pitch at (ab 2, pn 3).
+    PitcherOutingSequence served = deriver.deriveSequence(pid, gid, 2, 3);
+
+    // Reference side: the REAL state SQL from disk, binds substituted, SETTINGS stripped (it is a
+    // training-side batch setting the auditor flagged as wrong for anything request-shaped), the
+    // whole statement wrapped and filtered to the current pitch's key.
+    String sql =
+        Files.readString(stateSql())
+            .replace(":test_start", "'" + day + "'")
+            .replace(":test_end", "'" + day + "'")
+            .replace("SETTINGS max_memory_usage = 0", "");
+    // The current pitch does not exist as a row yet at serve time, so the reference is the NEXT
+    // row's lag view: append the current pitch to pitches only, and read ITS row from the SQL.
+    insertPitches("pitches", List.of(new P(day, gid, 2, 3, "FF", 1, 1)), pid, 0L);
+    Map<String, Object> ref =
+        ch.queryForMap(
+            "SELECT prev1_pt_i, prev2_pt_i, prev1_missing, pitches_into_outing FROM ("
+                + sql
+                + ") WHERE game_id = "
+                + gid
+                + " AND at_bat_index = 2 AND pitch_number = 3");
+
+    // ANTI-VACUITY: hand-computed expectations first, so both sides cannot be wrong together.
+    // Labeled priors in order: FF(0), ST->SL(3), CH(5) -> count 3, prev1 CH=5, prev2 SL=3.
+    assertThat(((Number) ref.get("pitches_into_outing")).intValue())
+        .as("an unlabeled-inclusive count would say 5, not 3")
+        .isEqualTo(3);
+    assertThat(((Number) ref.get("prev1_pt_i")).intValue()).isEqualTo(5);
+    assertThat(((Number) ref.get("prev2_pt_i")).intValue())
+        .as("prev2 crosses the at-bat boundary and carries the ST->SL fold")
+        .isEqualTo(3);
+
+    assertThat(served.pitchesIntoOuting()).isEqualTo(3);
+    assertThat(served.prev1PtI()).isEqualTo(5);
+    assertThat(served.prev2PtI()).isEqualTo(3);
+    assertThat(served.prev1Missing()).isZero();
+
+    // Outing start: before any labeled pitch, serving must report the declared cold-start state -
+    // the exact values the service used to hardcode for every pitch.
+    PitcherOutingSequence start = deriver.deriveSequence(pid, gid, 1, 1);
+    assertThat(start).isEqualTo(PitcherOutingSequence.OUTING_START);
   }
 
   // --- fixture ---------------------------------------------------------------
