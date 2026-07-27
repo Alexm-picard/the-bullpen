@@ -68,7 +68,7 @@ class PitchTypeServingContractTest {
     // Only the ObjectMapper participates in serializeFeatures; the rest are never touched on this
     // path, so nulls keep the test to the contract under examination instead of standing up an
     // inference stack to read a map.
-    return new PitchTypePredictionService(null, null, null, null, null, new ObjectMapper());
+    return new PitchTypePredictionService(null, null, null, null, new ObjectMapper());
   }
 
   @Test

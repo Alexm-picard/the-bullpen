@@ -21,10 +21,12 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * <p>NAMING AND WORDING ARE PART OF THE CONTRACT HERE. Top-1 accuracy is around 0.45 - pitch
  * selection is high-entropy and the ceiling is low - so this model is promoted on CALIBRATION and
- * never on accuracy. The path says {@code /prior}, the response carries no argmax or "predicted
- * pitch" field, and the description says what the numbers are. A caller must not be able to read
- * this as "we predict the next pitch", which is [183]'s non-negotiable framing constraint applied
- * at the surface where it is easiest to violate.
+ * never on accuracy. The response type carries no argmax or "predicted pitch" field, the method and
+ * response are named for a PRIOR, and the description says what the numbers are. (The URL is {@code
+ * /v1/predict/pitch-type} and carries none of that meaning; the enforcement is the ABSENT FIELD,
+ * which a test pins, not the path.) A caller must not be able to read this as "we predict the next
+ * pitch", which is [183]'s non-negotiable framing constraint applied at the surface where it is
+ * easiest to violate.
  */
 @RestController
 @RequestMapping("/v1/predict")
