@@ -30,6 +30,11 @@ import org.springframework.transaction.annotation.Transactional;
  *   <li>Challenger stage != SHADOW → {@link RoutingException.ChallengerNotInShadow}.
  *   <li>{@code traffic_pct} outside [0, 100] → {@link RoutingException.InvalidTrafficPct}.
  *   <li>SHADOW mode with {@code traffic_pct > 0} → {@link RoutingException.ShadowModeWithTraffic}.
+ *   <li>Champion not at CHAMPION stage → {@link RoutingException.ChampionNotAtChampionStage}.
+ *       Checked before EVERY upsert, including the four paths that merely carry the current
+ *       champion forward - perpetuating a bad reference is the same bypass as writing one (task
+ *       #94). The V020 triggers enforce the same invariant at the SQLite layer; this check exists
+ *       so the failure is a typed, precisely-worded refusal instead of an SQLException.
  * </ul>
  */
 @Service
@@ -104,6 +109,7 @@ public class RoutingService {
       throw new RoutingException.ChallengerNotInShadow(
           challengerVersionId, candidate.stage().name());
     }
+    assertChampionStage(current.championVersionId());
     RoutingConfig updated =
         repo.upsert(
             modelName, current.championVersionId(), challengerVersionId, 0.0, current.mode());
@@ -122,6 +128,7 @@ public class RoutingService {
     RoutingConfig current =
         repo.findByModelName(modelName)
             .orElseThrow(() -> new RoutingException.UnknownModel(modelName));
+    assertChampionStage(current.championVersionId());
     RoutingConfig updated =
         repo.upsert(modelName, current.championVersionId(), null, 0.0, RoutingMode.SHADOW);
     log.info("routing: {} challenger cleared, mode set to SHADOW", modelName);
@@ -144,6 +151,7 @@ public class RoutingService {
     if (current.mode() == RoutingMode.SHADOW && pct > 0) {
       throw new RoutingException.ShadowModeWithTraffic(pct);
     }
+    assertChampionStage(current.championVersionId());
     RoutingConfig updated =
         repo.upsert(
             modelName,
@@ -163,6 +171,7 @@ public class RoutingService {
         repo.findByModelName(modelName)
             .orElseThrow(() -> new RoutingException.UnknownModel(modelName));
     double pct = mode == RoutingMode.SHADOW ? 0.0 : current.challengerTrafficPct();
+    assertChampionStage(current.championVersionId());
     RoutingConfig updated =
         repo.upsert(
             modelName, current.championVersionId(), current.challengerVersionId(), pct, mode);
@@ -181,12 +190,13 @@ public class RoutingService {
    */
   @Transactional
   @CacheEvict(value = CacheConfig.ROUTING_CACHE, allEntries = true)
-  public void removeRouting(String modelName) {
+  public void removeRouting(String modelName, String reason) {
     int deleted = repo.deleteByModelName(modelName);
     log.warn(
-        "routing: removed routing row for {} ({} row(s)) - champion rolled back, falling back to legacy",
+        "routing: removed routing row for {} ({} row(s)) - {}; router falls back to legacy",
         modelName,
-        deleted);
+        deleted,
+        reason);
   }
 
   /**
@@ -199,6 +209,10 @@ public class RoutingService {
   @Transactional
   @CacheEvict(value = CacheConfig.ROUTING_CACHE, allEntries = true)
   public RoutingConfig ensureRoutingForChampion(String modelName, long championVersionId) {
+    // The registry promote flips the version to CHAMPION before calling here, in the same
+    // transaction, so this reads the just-updated stage. Anything else reaching this method with
+    // a non-champion id is exactly the bypass the check exists for.
+    assertChampionStage(championVersionId);
     Optional<RoutingConfig> existing = repo.findByModelName(modelName);
     if (existing.isEmpty()) {
       RoutingConfig created =
@@ -227,5 +241,27 @@ public class RoutingService {
         challenger,
         mode);
     return updated;
+  }
+
+  /**
+   * The V011-bypass guard (task #94): every write that stores a {@code champion_version_id} - or
+   * carries the current one forward - first proves the referenced version is at {@link
+   * Stage#CHAMPION}. A routing row is the registry's serving switch; a row referencing any other
+   * stage means a version is serving (or about to serve) without having passed the rule-5/rule-6
+   * promotion gates. Refusing on the carry-forward paths too is deliberate: an admin write that
+   * perpetuates a bad reference launders it.
+   */
+  private void assertChampionStage(long championVersionId) {
+    ModelVersion champion =
+        registry
+            .getById(championVersionId)
+            .orElseThrow(
+                () ->
+                    new RoutingException.ChampionNotAtChampionStage(
+                        championVersionId, "<no model_versions row>"));
+    if (champion.stage() != Stage.CHAMPION) {
+      throw new RoutingException.ChampionNotAtChampionStage(
+          championVersionId, champion.stage().name());
+    }
   }
 }

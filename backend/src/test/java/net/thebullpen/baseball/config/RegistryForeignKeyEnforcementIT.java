@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.file.Path;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -60,20 +62,51 @@ class RegistryForeignKeyEnforcementIT {
         .as("PRAGMA foreign_keys must be ON (1) for registry connections")
         .isEqualTo(1);
 
-    // model_routing.champion_version_id REFERENCES model_versions(id). id 999999 does not exist, so
-    // with enforcement on the INSERT must be rejected instead of silently creating an orphan row.
-    // SQLite raises SQLITE_CONSTRAINT_FOREIGNKEY (error code 19, null SQLState), which Spring's
-    // code
-    // translator leaves as an UncategorizedSQLException (a DataAccessException) - assert on the FK
-    // message so this proves enforcement rather than just "some failure".
+    // model_routing.challenger_version_id REFERENCES model_versions(id). id 999999 does not exist,
+    // so with enforcement on the INSERT must be rejected instead of silently creating an orphan
+    // row. SQLite raises SQLITE_CONSTRAINT_FOREIGNKEY (error code 19, null SQLState), which
+    // Spring's code translator leaves as an UncategorizedSQLException (a DataAccessException) -
+    // assert on the FK message so this proves enforcement rather than just "some failure".
+    //
+    // This probes the CHALLENGER column, not the champion one it used before V020. V020's BEFORE
+    // INSERT trigger on model_routing runs AHEAD of foreign-key enforcement and is NULL-safe, so a
+    // dangling champion_version_id is now rejected by the stage guard and never reaches the FK
+    // check - it would report the invariant message instead, and this test would then pass with
+    // foreign_keys OFF, which would gut its whole purpose. challenger_version_id carries the same
+    // FK to the same table and has no trigger on it, so it is the honest probe.
+    long championId = insertChampionModelVersion("fk-it-model", "v-fk-1");
+    assertThatThrownBy(
+            () ->
+                jdbc.update(
+                    "INSERT INTO model_routing(model_name, champion_version_id,"
+                        + " challenger_version_id) VALUES (?, ?, ?)",
+                    "fk-it-model",
+                    championId,
+                    999_999))
+        .isInstanceOf(DataAccessException.class)
+        .hasMessageContaining("FOREIGN KEY constraint failed");
+  }
+
+  /**
+   * Companion to the above, pinning the ordering it depends on: V020's champion-stage trigger fires
+   * BEFORE foreign-key enforcement, so a dangling champion_version_id surfaces as the stage
+   * invariant rather than as "FOREIGN KEY constraint failed". Either way the orphan row is refused;
+   * this records WHICH guard owns that case, so a future change to the trigger's WHEN clause (for
+   * instance swapping the NULL-safe {@code IS NOT} for {@code <>}, which would let a dangling id
+   * fall through) shows up here as a message change rather than passing silently.
+   */
+  @Test
+  void danglingChampionVersionIdIsCaughtByTheStageGuardBeforeTheForeignKey() {
     assertThatThrownBy(
             () ->
                 jdbc.update(
                     "INSERT INTO model_routing(model_name, champion_version_id) VALUES (?, ?)",
-                    "fk-it-model",
+                    "fk-it-dangling-champion",
                     999_999))
         .isInstanceOf(DataAccessException.class)
-        .hasMessageContaining("FOREIGN KEY constraint failed");
+        .hasMessageContaining(
+            "model_routing.champion_version_id must reference a model_versions row at stage"
+                + " champion");
   }
 
   @Test
@@ -82,5 +115,39 @@ class RegistryForeignKeyEnforcementIT {
     assertThat(busyTimeout)
         .as("PRAGMA busy_timeout should reflect the 5000ms URL param")
         .isEqualTo(5000);
+  }
+
+  /**
+   * Insert a champion-stage model_versions row and return its id. Needed since V020: a routing row
+   * used as an FK probe must itself name a champion, or the stage trigger rejects it first.
+   */
+  private long insertChampionModelVersion(String modelName, String version) {
+    jdbc.update(
+        """
+        INSERT INTO model_versions (model_name, version, artifact_path, metadata_path,
+            training_data_hash, training_data_window, feature_schema_hash, eval_metrics,
+            trained_at, stage)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'champion')
+        """,
+        modelName,
+        version,
+        "/snapshots/" + version + "/model.onnx",
+        "/snapshots/" + version + "/metadata.json",
+        "hash-" + version,
+        "[2024-01-01,2024-12-31]",
+        "feature-hash-" + version,
+        "{}",
+        Timestamp.from(Instant.now()));
+    Long id =
+        jdbc.queryForObject(
+            "SELECT id FROM model_versions WHERE model_name = ? AND version = ?",
+            Long.class,
+            modelName,
+            version);
+    if (id == null) {
+      throw new IllegalStateException(
+          "model_versions row not found after insert: " + modelName + "/" + version);
+    }
+    return id;
   }
 }

@@ -185,6 +185,14 @@ public class RegistryService {
 
     String candidateHash = hasher.compute(Path.of(req.featurePipelinePath()));
     int archived = repo.archiveAllForModel(req.modelName());
+    // Task #94: archiveAllForModel just flipped every version - including a serving champion - to
+    // ARCHIVED, but until this line nothing touched model_routing. A surviving routing row would
+    // keep the router serving the archived champion, which is the V011 bypass in its most
+    // reachable form (no hand-edit needed, just this escape hatch). Remove it in the same
+    // transaction, mirroring the INC-1 rollback branch: no champion means no routing row, and the
+    // legacy fallback (or a 503) serves until a new champion is promoted through the gates.
+    routingService.removeRouting(
+        req.modelName(), "bootstrap reset archived all versions including any champion");
     log.warn(
         "registry: bootstrap reset for {} — archived {} prior version(s); new pinned hash={};"
             + " reason: {}",
@@ -392,9 +400,24 @@ public class RegistryService {
       // recovers:
       // demote, fix the snapshot, re-promote the same version.
       repo.updateStage(id, Stage.SHADOW);
-      routingService.removeRouting(current.modelName());
+      routingService.removeRouting(
+          current.modelName(), "champion rolled back to SHADOW (INC-1 / decision [150])");
       log.warn(
           "registry: ROLLBACK {}/{} (id={}) CHAMPION->SHADOW, routing row removed",
+          current.modelName(),
+          current.version(),
+          id);
+    } else if (current.stage() == Stage.CHAMPION && newStage == Stage.ARCHIVED) {
+      // Task #94: archiving a SERVING champion must drop its routing row in the same transaction,
+      // for the same reason the INC-1 rollback branch above does - a routing row referencing an
+      // ARCHIVED version keeps the router serving a version outside the rule-5/rule-6 gates. This
+      // branch only fires for a direct CHAMPION->ARCHIVED transition; the promote path archives
+      // the prior champion via repo.updateStage directly and repoints (not removes) the row.
+      repo.updateStage(id, Stage.ARCHIVED);
+      routingService.removeRouting(
+          current.modelName(), "serving champion archived via direct CHAMPION->ARCHIVED");
+      log.warn(
+          "registry: ARCHIVED serving champion {}/{} (id={}), routing row removed",
           current.modelName(),
           current.version(),
           id);

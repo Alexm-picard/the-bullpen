@@ -43,6 +43,33 @@ public class RoutingRepository {
   }
 
   /**
+   * One row violating the task-#94 invariant: a {@code model_routing.champion_version_id} whose
+   * referenced version is not at stage {@code 'champion'}. {@code stage} is the literal found, or
+   * {@code "<no model_versions row>"} for a dangling reference (LEFT JOIN miss - should be
+   * impossible with {@code foreign_keys=true}, but the check is total rather than trusting the
+   * pragma survived every connection).
+   */
+  public record ChampionStageViolation(String modelName, long championVersionId, String stage) {}
+
+  /**
+   * The read behind {@link RoutingChampionIntegrityCheck}: every routing row joined to its
+   * champion's stage, returning only violators. {@code IS NOT} rather than {@code !=} so a NULL
+   * stage (dangling reference) is a violation instead of a three-valued-logic pass.
+   */
+  public List<ChampionStageViolation> findChampionStageViolations() {
+    return jdbc.query(
+        "SELECT r.model_name, r.champion_version_id, v.stage"
+            + " FROM model_routing r"
+            + " LEFT JOIN model_versions v ON v.id = r.champion_version_id"
+            + " WHERE v.stage IS NOT 'champion'",
+        (ResultSet rs, int rowNum) ->
+            new ChampionStageViolation(
+                rs.getString("model_name"),
+                rs.getLong("champion_version_id"),
+                rs.getString("stage") == null ? "<no model_versions row>" : rs.getString("stage")));
+  }
+
+  /**
    * Delete the routing row for {@code modelName}. Used by the champion-rollback path (INC-1):
    * {@code champion_version_id} is NOT NULL, so a demoted champion's row can't be emptied - it must
    * be removed, leaving no routing row -> {@code InferenceRouter} finds none -> legacy fallback.

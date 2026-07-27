@@ -19,7 +19,9 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
 /**
- * Integration test for the Phase 3a.1 SQLite registry schema (migrations V010-V013).
+ * Integration test for the Phase 3a.1 SQLite registry schema (migrations V010-V013), plus the later
+ * constraints layered on it: V016's one-champion-per-model partial unique index and V020's
+ * model_routing champion-stage triggers.
  *
  * <p>Runs against a temp SQLite created by the {@code registry-it} profile (see {@code
  * src/test/resources/application-registry-it.yml}) so the test doesn't touch the dev DB at {@code
@@ -46,6 +48,13 @@ class RegistrySchemaIT {
           trained_at, stage)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       """;
+
+  /**
+   * Substring of the V020 trigger's RAISE(ABORT, ...) message. Asserted on so the guard tests prove
+   * the STAGE invariant fired, not merely that "some constraint" rejected the statement.
+   */
+  private static final String CHAMPION_STAGE_INVARIANT =
+      "model_routing.champion_version_id must reference a model_versions row at stage champion";
 
   @Autowired private JdbcTemplate jdbc;
 
@@ -209,6 +218,67 @@ class RegistrySchemaIT {
             Double.class);
     assertThat(mode).isEqualTo("shadow");
     assertThat(pct).isEqualTo(0.0);
+  }
+
+  // --- model_routing champion-stage guard (V020) ---------------------------
+
+  /**
+   * V020 bite tests. V011's foreign key proves the referenced version EXISTS but not that it is a
+   * CHAMPION, so a hand-written routing row could point the A/B router at an unvetted model and
+   * bypass rules 5 and 6. These three assert the triggers actually fire (both events) and,
+   * crucially for anti-vacuity, that a legitimate row still goes in - a WHEN clause that always
+   * raises would "pass" the first two while breaking every promotion.
+   */
+  @Test
+  void model_routing_rejects_insert_pointing_at_a_shadow_stage_version() {
+    long shadowId = insertModelVersion("batted_ball", "v-guard-shadow-ins", "shadow");
+    assertThatThrownBy(
+            () ->
+                jdbc.update(
+                    "INSERT INTO model_routing (model_name, champion_version_id) VALUES (?, ?)",
+                    "batted_ball",
+                    shadowId))
+        .isInstanceOf(DataAccessException.class)
+        .hasMessageContaining(CHAMPION_STAGE_INVARIANT);
+  }
+
+  @Test
+  void model_routing_rejects_update_repointing_champion_at_a_shadow_stage_version() {
+    long championId = insertModelVersion("batted_ball", "v-guard-champ", "champion");
+    long shadowId = insertModelVersion("batted_ball", "v-guard-shadow-upd", "shadow");
+    jdbc.update(
+        "INSERT INTO model_routing (model_name, champion_version_id) VALUES (?, ?)",
+        "batted_ball",
+        championId);
+    assertThatThrownBy(
+            () ->
+                jdbc.update(
+                    "UPDATE model_routing SET champion_version_id = ? WHERE model_name = ?",
+                    shadowId,
+                    "batted_ball"))
+        .isInstanceOf(DataAccessException.class)
+        .hasMessageContaining(CHAMPION_STAGE_INVARIANT);
+    // The rejected UPDATE must leave the routing row untouched, not half-applied.
+    Long stillChampion =
+        jdbc.queryForObject(
+            "SELECT champion_version_id FROM model_routing WHERE model_name = 'batted_ball'",
+            Long.class);
+    assertThat(stillChampion).isEqualTo(championId);
+  }
+
+  @Test
+  void model_routing_accepts_insert_pointing_at_a_champion_stage_version() {
+    // Anti-vacuity: proves the V020 WHEN clause is selective rather than always-raising.
+    long championId = insertModelVersion("batted_ball", "v-guard-happy", "champion");
+    jdbc.update(
+        "INSERT INTO model_routing (model_name, champion_version_id) VALUES (?, ?)",
+        "batted_ball",
+        championId);
+    Long stored =
+        jdbc.queryForObject(
+            "SELECT champion_version_id FROM model_routing WHERE model_name = 'batted_ball'",
+            Long.class);
+    assertThat(stored).isEqualTo(championId);
   }
 
   // --- experiment_results CHECK --------------------------------------------

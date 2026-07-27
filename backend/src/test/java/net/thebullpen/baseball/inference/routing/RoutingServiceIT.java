@@ -248,6 +248,115 @@ class RoutingServiceIT {
     assertThat(second).isSameAs(first);
   }
 
+  // --- champion-stage invariant (task #94, V011 bypass) -------------------
+
+  @Autowired private RoutingChampionIntegrityCheck integrityCheck;
+
+  /**
+   * The carry-forward refusal: an admin write that merely preserves the current champion must still
+   * refuse if that champion is no longer at CHAMPION stage. The stranded state is created by a RAW
+   * stage flip on model_versions (which has no trigger, by design - see V020's header) - simulating
+   * a row stranded before this guard existed, since every in-code path that archives a serving
+   * champion now removes the routing row in the same transaction.
+   */
+  @Test
+  void setMode_refuses_to_perpetuate_a_non_champion_reference() throws Exception {
+    ModelVersion v1 = registry.register(sampleRequest("stale_champ_model", "v1"));
+    registry.transitionStage(v1.id(), Stage.CHAMPION);
+    jdbc.update("UPDATE model_versions SET stage = 'archived' WHERE id = ?", v1.id());
+
+    assertThatThrownBy(() -> routing.setMode("stale_champ_model", RoutingMode.AB))
+        .isInstanceOf(RoutingException.ChampionNotAtChampionStage.class)
+        .hasMessageContaining("ARCHIVED");
+  }
+
+  @Test
+  void setChallenger_refuses_to_perpetuate_a_non_champion_reference() throws Exception {
+    ModelVersion v1 = registry.register(sampleRequest("stale_champ_sc_model", "v1"));
+    registry.transitionStage(v1.id(), Stage.CHAMPION);
+    ModelVersion v2 = registry.register(sampleRequest("stale_champ_sc_model", "v2"));
+    registry.transitionStage(v2.id(), Stage.SHADOW);
+    jdbc.update("UPDATE model_versions SET stage = 'archived' WHERE id = ?", v1.id());
+
+    assertThatThrownBy(() -> routing.setChallenger("stale_champ_sc_model", v2.id()))
+        .isInstanceOf(RoutingException.ChampionNotAtChampionStage.class);
+  }
+
+  /** Direct call with a never-promoted version: refused, and no row is written. */
+  @Test
+  void ensureRoutingForChampion_refuses_a_candidate_version() throws Exception {
+    ModelVersion v1 = registry.register(sampleRequest("ensure_cand_model", "v1"));
+    // v1 stays at CANDIDATE.
+
+    assertThatThrownBy(() -> routing.ensureRoutingForChampion("ensure_cand_model", v1.id()))
+        .isInstanceOf(RoutingException.ChampionNotAtChampionStage.class)
+        .hasMessageContaining("CANDIDATE");
+    Integer rows =
+        jdbc.queryForObject(
+            "SELECT count(*) FROM model_routing WHERE model_name = ?",
+            Integer.class,
+            "ensure_cand_model");
+    assertThat(rows).isZero();
+  }
+
+  /**
+   * The V011 bypass in its most reachable form: archiving a SERVING champion. Both in-code paths
+   * that do this must drop the routing row in the same transaction - a surviving row would keep the
+   * router serving a version outside the rule-5/rule-6 gates.
+   */
+  @Test
+  void champion_to_archived_transition_removes_routing_row() throws Exception {
+    ModelVersion v1 = registry.register(sampleRequest("arch_champ_model", "v1"));
+    registry.transitionStage(v1.id(), Stage.CHAMPION);
+    assertThat(routingRowCount("arch_champ_model")).isEqualTo(1); // anti-vacuity
+
+    registry.transitionStage(v1.id(), Stage.ARCHIVED);
+    assertThat(routingRowCount("arch_champ_model")).isZero();
+  }
+
+  @Test
+  void bootstrap_reset_removes_routing_row() throws Exception {
+    ModelVersion v1 = registry.register(sampleRequest("bootstrap_reset_model", "v1"));
+    registry.transitionStage(v1.id(), Stage.CHAMPION);
+    assertThat(routingRowCount("bootstrap_reset_model")).isEqualTo(1); // anti-vacuity
+
+    registry.registerWithBootstrap(
+        sampleRequest("bootstrap_reset_model", "v2"),
+        new net.thebullpen.baseball.registry.dto.ResetFeatureSchemaConfirmation(
+            "bootstrap_reset_model", "RoutingServiceIT: proving bootstrap drops routing"));
+    assertThat(routingRowCount("bootstrap_reset_model")).isZero();
+  }
+
+  /**
+   * Boot-time half of the invariant. The bean's throw-on-violation is what fails the boot
+   * (SmartInitializingSingleton failures abort context refresh - framework contract, not re-proven
+   * here); these tests pin the detection itself, both directions.
+   */
+  @Test
+  void integrity_check_passes_on_a_legitimate_routing_row() throws Exception {
+    bootstrapRouting("integrity_ok_model");
+    integrityCheck.afterSingletonsInstantiated(); // must not throw
+  }
+
+  @Test
+  void integrity_check_throws_on_a_stranded_routing_row() throws Exception {
+    ModelVersion v1 = registry.register(sampleRequest("integrity_bad_model", "v1"));
+    registry.transitionStage(v1.id(), Stage.CHAMPION);
+    jdbc.update("UPDATE model_versions SET stage = 'archived' WHERE id = ?", v1.id());
+
+    assertThatThrownBy(() -> integrityCheck.afterSingletonsInstantiated())
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("integrity_bad_model")
+        .hasMessageContaining("archived");
+  }
+
+  private int routingRowCount(String modelName) {
+    Integer rows =
+        jdbc.queryForObject(
+            "SELECT count(*) FROM model_routing WHERE model_name = ?", Integer.class, modelName);
+    return rows == null ? 0 : rows;
+  }
+
   // --- helpers ----------------------------------------------------------
 
   /**

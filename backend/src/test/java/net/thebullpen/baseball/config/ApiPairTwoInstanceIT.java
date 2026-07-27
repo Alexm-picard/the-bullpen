@@ -176,9 +176,11 @@ class ApiPairTwoInstanceIT {
   @Test
   void routingWriteOnAConvergesOnBWithinTheTtl() throws Exception {
     String model = "d39_conv_model";
-    // model_routing.champion_version_id has a FK to model_versions, so insert a minimal version
-    // first (RegistryRepository.insert bypasses the register schema-hash gate), then create the
-    // SHADOW routing row pointing at it.
+    // model_routing.champion_version_id has a FK to model_versions AND (task #94) a
+    // CHAMPION-stage requirement enforced by RoutingService + the V020 triggers, so insert a
+    // minimal version already at CHAMPION (RegistryRepository.insert bypasses the register
+    // schema-hash gate; this test's charter is cache convergence, not promotion mechanics), then
+    // create the shadow-MODE routing row pointing at it.
     long championId =
         ctxA.getBean(RegistryRepository.class)
             .insert(
@@ -191,7 +193,7 @@ class ApiPairTwoInstanceIT {
                 "schema",
                 "{}",
                 Instant.now(),
-                Stage.SHADOW,
+                Stage.CHAMPION,
                 "d39-it",
                 "routing convergence seed")
             .id();

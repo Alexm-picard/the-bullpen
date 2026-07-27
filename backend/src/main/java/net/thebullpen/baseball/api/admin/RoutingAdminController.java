@@ -49,6 +49,10 @@ import org.springframework.web.server.ResponseStatusException;
  *   <li>{@code UnknownModel} → 404
  *   <li>{@code ChallengerNotInShadow} / {@code ChallengerSameAsChampion} / {@code
  *       InvalidTrafficPct} / {@code ShadowModeWithTraffic} → 400
+ *   <li>{@code ChampionNotAtChampionStage} → 500. Deliberately NOT a 4xx: the caller's request was
+ *       fine - the STORED routing row references a non-CHAMPION version (task #94), which is
+ *       server-side state corruption. The write is refused rather than perpetuating the bad
+ *       reference, and the precise message surfaces which version id is wrong.
  * </ul>
  */
 @Tag(
@@ -98,6 +102,8 @@ public class RoutingAdminController {
       throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage(), e);
     } catch (RoutingException.ChallengerNotInShadow | RoutingException.ChallengerSameAsChampion e) {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage(), e);
+    } catch (RoutingException.ChampionNotAtChampionStage e) {
+      throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
     }
   }
 
@@ -109,6 +115,8 @@ public class RoutingAdminController {
       return updated;
     } catch (RoutingException.UnknownModel e) {
       throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage(), e);
+    } catch (RoutingException.ChampionNotAtChampionStage e) {
+      throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
     }
   }
 
@@ -127,6 +135,8 @@ public class RoutingAdminController {
       throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage(), e);
     } catch (RoutingException.InvalidTrafficPct | RoutingException.ShadowModeWithTraffic e) {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage(), e);
+    } catch (RoutingException.ChampionNotAtChampionStage e) {
+      throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
     }
   }
 
@@ -148,6 +158,8 @@ public class RoutingAdminController {
       return updated;
     } catch (RoutingException.UnknownModel e) {
       throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage(), e);
+    } catch (RoutingException.ChampionNotAtChampionStage e) {
+      throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
     }
   }
 }
