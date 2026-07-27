@@ -163,9 +163,9 @@ _WIRE_DTO = (
 def test_champion_keys_derive_from_the_wire_dto() -> None:
     """THE ASSERTION THAT ACTUALLY GUARDS THE DRIFT SURFACE.
 
-    PSI parses observed distributions out of prediction_log.features, which PitchTypePredictionService
-    writes from the SERIALIZED WIRE DTO - not from the internal pipeline record the pins above
-    parse. A wire field named anything other than the 11 keys in CHAMPIONS joins nothing, writes
+    PSI parses observed distributions out of prediction_log.features, which the pitch-type
+    prediction service writes from the SERIALIZED WIRE DTO - not from the internal pipeline record
+    the pins above parse. A wire field named anything other than the 11 keys in CHAMPIONS joins nothing, writes
     nothing, raises nothing, and leaves every one of those assertions still passing.
 
     This carried an xfail(strict) marker until PitchTypeRequest existed, precisely so the DTO
