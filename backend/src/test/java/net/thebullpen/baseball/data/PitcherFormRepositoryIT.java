@@ -1,6 +1,7 @@
 package net.thebullpen.baseball.data;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 
 import java.time.LocalDate;
@@ -181,6 +182,95 @@ class PitcherFormRepositoryIT {
     insertLivePitch(555L, 777, 1); // pitcher 777 has live pitches but no nightly form row
     repo.upsertIntraDayForm(777, 555L);
     assertThat(repo.findCurrent(777)).isEmpty(); // no row fabricated
+  }
+
+  // --- the 2026-07-27 data-anchor fix ---------------------------------------
+
+  @Test
+  void refresh_stamps_as_of_date_from_the_corpus_not_the_clock() {
+    // THE FIX UNDER TEST. The clock-anchored stamp said "fresh" for two months while the corpus
+    // (last backfill ran 2026-05-28, loading games through 2026-05-25) had aged out of every 28-day
+    // window and the nightly refresh
+    // selected nothing. Seeding the corpus edge 3 days back keeps the window non-empty while
+    // making the anchor distinguishable from today - so reverting the stamp to today() reds this.
+    insertPitches(101, daysAgo(3), "called_strike", "ball");
+    repo.refreshCurrentForm();
+
+    Object stamped =
+        ch.queryForMap("SELECT as_of_date FROM pitcher_form_current FINAL WHERE pitcher_id = 101")
+            .get("as_of_date");
+    assertThat(String.valueOf(stamped))
+        .as("as_of_date must record what the DATA covers, not when the job ran")
+        .isEqualTo(daysAgo(3))
+        .isNotEqualTo(daysAgo(0));
+  }
+
+  @Test
+  void intra_day_upsert_carries_as_of_date_forward() {
+    // The column describes what the 28-day window values cover, and the upsert carries those
+    // values unchanged - so it must carry their coverage date too. Stamping today() here was what
+    // made the table read fresh WHOLESALE while the nightly leg was dead (the live strays wore
+    // today's date). It also lands the replacement in the same monthly partition as the row it
+    // supersedes, which background merges can actually collapse - merges never cross partitions.
+    insertPitches(102, daysAgo(3), "swinging_strike", "in_play");
+    repo.refreshCurrentForm();
+    insertLivePitch(9001L, 102, 1);
+    repo.upsertIntraDayForm(102, 9001L);
+
+    Map<String, Object> row =
+        ch.queryForMap(
+            "SELECT as_of_date, pitches_in_game, days_since_last_appearance"
+                + " FROM pitcher_form_current FINAL WHERE pitcher_id = 102");
+    // pitches_in_game = 1 proves the row under assertion IS the upsert's - without it this test
+    // passes identically if the upsert writes nothing, since the nightly row carries the same
+    // anchor (a conjunction pin over both legs, not an isolated upsert pin).
+    assertThat(num(row, "pitches_in_game")).isEqualTo(1.0);
+    assertThat(num(row, "days_since_last_appearance")).isZero();
+    assertThat(String.valueOf(row.get("as_of_date")))
+        .as("the carried-forward window values still cover the corpus edge, not today")
+        .isEqualTo(daysAgo(3));
+  }
+
+  @Test
+  void corpus_max_game_date_fails_loud_on_empty_and_returns_the_edge() {
+    // The empty case comes FIRST, and comes free: @BeforeEach wiped pitches. It matters because
+    // ClickHouse returns the TYPE DEFAULT (1970-01-01), not NULL, for max() over an empty table -
+    // so an empty corpus must be a loud fault, never an epoch-dated gauge reading of ~20k days.
+    assertThatThrownBy(repo::corpusMaxGameDate)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("empty");
+
+    insertPitches(103, daysAgo(5), "ball");
+    insertPitches(104, daysAgo(3), "ball");
+    assertThat(repo.corpusMaxGameDate()).isEqualTo(LocalDate.parse(daysAgo(3)));
+  }
+
+  @Test
+  void refresh_count_ignores_a_live_leg_row_stamped_today() {
+    // THE LIE THE OLD COUNT TOLD. With the corpus outside every 28-day window, the nightly INSERT
+    // selects nothing - but a live-leg stray stamped today() made the today()-based count report
+    // "refreshed 1" (prod said "refreshed 7" the morning this was found). Here the table starts
+    // empty so the anchor-based count reads zero; in steady state it reads the cohort AT the
+    // anchor (earlier nights' rows persist there), which is why the GAUGE, not this count, is
+    // the staleness signal - see runOnce's javadoc.
+    insertPitches(105, daysAgo(60), "ball", "called_strike");
+    ch.update(
+        "INSERT INTO pitcher_form_current"
+            + " (pitcher_id, as_of_date, pitches_in_game, pitches_last_28d,"
+            + "  strike_rate_28d, swstrike_rate_28d, inplay_rate_28d, days_since_last_appearance)"
+            + " VALUES (?, ?, 3, 10, 0.5, 0.2, 0.3, 0)",
+        105L,
+        // Bound as a STRING, deliberately: java.sql.Date is mis-bound by clickhouse-jdbc into
+        // this Date column (the auditor probed the stored value: 1975-06-16, not today) - which
+        // made this whole test VACUOUS, passing with or without the count fix because the "stray
+        // stamped today" never existed. insertPitches binds its date as a String for the same
+        // reason; insertLivePitch carries the same latent mis-bind, saved only because the
+        // intra-day count keys on game_id + pitcher_id rather than the date.
+        daysAgo(0));
+
+    assertThat(repo.refreshCurrentForm())
+        .as("a stray live-leg row must not be reported as a refreshed pitcher")
+        .isZero();
   }
 
   // --- helpers ----------------------------------------------------------

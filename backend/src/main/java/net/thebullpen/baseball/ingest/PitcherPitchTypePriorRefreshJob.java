@@ -79,8 +79,11 @@ public class PitcherPitchTypePriorRefreshJob {
             "bullpen_pitchtype_prior_age_days", ageDays, AtomicLong::doubleValue)
         .description(
             "Days between today and pitcher_pitchtype_prior_current.as_of_date. -1 before the"
-                + " first refresh. Goes flat and then climbs when the job stops, which is the"
-                + " signal that precedes the deriver refusing predictions.")
+                + " first refresh, so any alert rule must be `< 0 or > N`. Climbs while the corpus"
+                + " ages between backfills - and is set only on a SUCCESSFUL run, so a dead job"
+                + " pins it at its last value rather than climbing; it cannot distinguish"
+                + " corpus-stale from job-dead. The climb precedes the deriver refusing"
+                + " predictions at its staleness bound.")
         .register(meters);
   }
 
