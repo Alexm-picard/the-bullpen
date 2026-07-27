@@ -1,5 +1,6 @@
 package net.thebullpen.baseball.data;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import javax.sql.DataSource;
@@ -52,7 +53,19 @@ public class PitcherFormRepository {
       "INSERT INTO pitcher_form_current"
           + " (pitcher_id, as_of_date, pitches_in_game, pitches_last_28d,"
           + "  strike_rate_28d, swstrike_rate_28d, inplay_rate_28d, days_since_last_appearance)"
-          + " SELECT pitcher_id, today() AS as_of_date, 0 AS pitches_in_game,"
+          // ANCHORED TO THE DATA, NOT THE CLOCK (2026-07-27 finding). This job stamped
+          // as_of_date = today() while computing its windows FROM pitches, a manually-backfilled
+          // corpus whose last write was 2026-05-28 - so the stamp said "fresh" while the 28-day
+          // window had selected nothing for two months, and the PRE head silently served NaN form
+          // to most of the cohort. The stamp now records what the DATA covers, so it goes stale
+          // when the corpus does. The sibling V030 job already did this and refused loudly, which
+          // is what surfaced this defect before that model served a single prediction.
+          //
+          // The WINDOW BASE (today() - 28) is deliberately UNCHANGED: rebasing it to the corpus
+          // edge would alter Tier-3 feature semantics on a LIVE model, and which table feeds this
+          // window is exactly the open /decide. Stamp honesty ships now; semantics wait.
+          + " SELECT pitcher_id, (SELECT max(game_date) FROM pitches) AS as_of_date,"
+          + "        0 AS pitches_in_game,"
           + "        toUInt32(count()) AS pitches_last_28d,"
           + "        toFloat32(countIf(description IN ('called_strike','swinging_strike','foul'))"
           + "                  / count()) AS strike_rate_28d,"
@@ -69,10 +82,16 @@ public class PitcherFormRepository {
           + "   AND game_date >= today() - 28 AND game_date <= today()"
           + " GROUP BY pitcher_id";
 
-  // Non-FINAL is correct here: the REFRESH above just wrote exactly one row per pitcher at today's
-  // as_of_date, so today's partition has nothing to dedup yet. (Reads of older rows use FINAL.)
-  private static final String COUNT_TODAY =
-      "SELECT count(DISTINCT pitcher_id) FROM pitcher_form_current WHERE as_of_date = today()";
+  // Counts at the DATA anchor, not today(). The old today()-based count reported live-leg strays
+  // as "refreshed" pitchers while the nightly window selected nothing - the morning this was
+  // found, it said "refreshed 7" when the true nightly answer was 0. With a stale corpus this now
+  // returns an honest zero. (Non-FINAL + DISTINCT: the refresh writes one row per pitcher at the
+  // anchor; carried-forward intra-day rows at the same anchor dedup via DISTINCT. When the corpus
+  // is static across days, this counts the cohort AT the anchor, not just rows written this run -
+  // acceptable for a log line, noted so nobody reads it as a write count.)
+  private static final String COUNT_AT_ANCHOR =
+      "SELECT count(DISTINCT pitcher_id) FROM pitcher_form_current"
+          + " WHERE as_of_date = (SELECT max(game_date) FROM pitches)";
 
   private final JdbcTemplate jdbc;
 
@@ -88,8 +107,28 @@ public class PitcherFormRepository {
    */
   public long refreshCurrentForm() {
     jdbc.update(REFRESH);
-    Long n = jdbc.queryForObject(COUNT_TODAY, Long.class);
+    Long n = jdbc.queryForObject(COUNT_AT_ANCHOR, Long.class);
     return n == null ? 0L : n;
+  }
+
+  /**
+   * The newest {@code game_date} in {@code pitches} - what the nightly windows can possibly see,
+   * and therefore the number the freshness gauge is built from. {@code pitches} is a MANUALLY
+   * BACKFILLED corpus (last write 2026-05-28; no live handoff job exists), so this grows only when
+   * a backfill runs, and the gap to today grows without bound in between.
+   *
+   * <p>ClickHouse trap, handled rather than discovered: {@code max()} over an empty table returns
+   * the type default (1970-01-01), NOT NULL, so both are treated as the same fault.
+   */
+  public LocalDate corpusMaxGameDate() {
+    LocalDate d = jdbc.queryForObject("SELECT max(game_date) FROM pitches", LocalDate.class);
+    if (d == null || !d.isAfter(LocalDate.EPOCH)) {
+      throw new IllegalStateException(
+          "pitches is empty (max(game_date) returned "
+              + d
+              + "); the Tier-3 form windows have no corpus to read");
+    }
+    return d;
   }
 
   // --- live read path (WS3 A3.1) --------------------------------------------
@@ -137,7 +176,16 @@ public class PitcherFormRepository {
       "INSERT INTO pitcher_form_current"
           + " (pitcher_id, as_of_date, pitches_in_game, pitches_last_28d,"
           + "  strike_rate_28d, swstrike_rate_28d, inplay_rate_28d, days_since_last_appearance)"
-          + " SELECT pitcher_id, today(),"
+          // Carries as_of_date FORWARD rather than stamping today(): the column describes what
+          // the 28-day window values cover, and this row carries those values unchanged - the
+          // intra-day fields are self-evidently current. Stamping today() was also what made the
+          // clock-anchored stamp look fresh table-wide while the nightly leg was dead. Bonus:
+          // the replacement now lands in the SAME partition as the row it supersedes
+          // (PARTITION BY toYYYYMM(as_of_date)), so background merges can actually collapse the
+          // pair - ReplacingMergeTree merges never cross partitions, and the today() stamp
+          // scattered a pitcher's replacements across monthly partitions forever, hidden only by
+          // read-time FINAL.
+          + " SELECT pitcher_id, as_of_date,"
           + "        (SELECT toUInt32(count()) FROM pitches_live"
           + "         WHERE game_id = ? AND pitcher_id = ?) AS pitches_in_game,"
           + "        pitches_last_28d, strike_rate_28d, swstrike_rate_28d, inplay_rate_28d,"

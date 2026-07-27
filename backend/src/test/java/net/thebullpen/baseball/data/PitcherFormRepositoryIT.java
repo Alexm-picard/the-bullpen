@@ -1,6 +1,7 @@
 package net.thebullpen.baseball.data;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 
 import java.time.LocalDate;
@@ -184,6 +185,80 @@ class PitcherFormRepositoryIT {
   }
 
   // --- helpers ----------------------------------------------------------
+
+  // --- the 2026-07-27 data-anchor fix ---------------------------------------
+
+  @Test
+  void refresh_stamps_as_of_date_from_the_corpus_not_the_clock() {
+    // THE FIX UNDER TEST. The clock-anchored stamp said "fresh" for two months while the corpus
+    // (last backfill 2026-05-28) had aged out of every 28-day window and the nightly refresh
+    // selected nothing. Seeding the corpus edge 3 days back keeps the window non-empty while
+    // making the anchor distinguishable from today - so reverting the stamp to today() reds this.
+    insertPitches(101, daysAgo(3), "called_strike", "ball");
+    repo.refreshCurrentForm();
+
+    Object stamped =
+        ch.queryForMap("SELECT as_of_date FROM pitcher_form_current FINAL WHERE pitcher_id = 101")
+            .get("as_of_date");
+    assertThat(String.valueOf(stamped))
+        .as("as_of_date must record what the DATA covers, not when the job ran")
+        .isEqualTo(daysAgo(3))
+        .isNotEqualTo(daysAgo(0));
+  }
+
+  @Test
+  void intra_day_upsert_carries_as_of_date_forward() {
+    // The column describes what the 28-day window values cover, and the upsert carries those
+    // values unchanged - so it must carry their coverage date too. Stamping today() here was what
+    // made the table read fresh WHOLESALE while the nightly leg was dead (the live strays wore
+    // today's date). It also lands the replacement in the same monthly partition as the row it
+    // supersedes, which background merges can actually collapse - merges never cross partitions.
+    insertPitches(102, daysAgo(3), "swinging_strike", "in_play");
+    repo.refreshCurrentForm();
+    insertLivePitch(9001L, 102, 1);
+    repo.upsertIntraDayForm(102, 9001L);
+
+    Object stamped =
+        ch.queryForMap("SELECT as_of_date FROM pitcher_form_current FINAL WHERE pitcher_id = 102")
+            .get("as_of_date");
+    assertThat(String.valueOf(stamped))
+        .as("the carried-forward window values still cover the corpus edge, not today")
+        .isEqualTo(daysAgo(3));
+  }
+
+  @Test
+  void corpus_max_game_date_fails_loud_on_empty_and_returns_the_edge() {
+    // The empty case comes FIRST, and comes free: @BeforeEach wiped pitches. It matters because
+    // ClickHouse returns the TYPE DEFAULT (1970-01-01), not NULL, for max() over an empty table -
+    // so an empty corpus must be a loud fault, never an epoch-dated gauge reading of ~20k days.
+    assertThatThrownBy(repo::corpusMaxGameDate)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("empty");
+
+    insertPitches(103, daysAgo(5), "ball");
+    insertPitches(104, daysAgo(3), "ball");
+    assertThat(repo.corpusMaxGameDate()).isEqualTo(LocalDate.parse(daysAgo(3)));
+  }
+
+  @Test
+  void refresh_count_is_an_honest_zero_when_the_corpus_aged_out() {
+    // THE LIE THE OLD COUNT TOLD. With the corpus outside every 28-day window, the nightly INSERT
+    // selects nothing - but a live-leg stray stamped today() made the today()-based count report
+    // "refreshed 1" (prod said "refreshed 7" the morning this was found). The anchor-based count
+    // must say zero: the full-cohort refresh accomplished nothing.
+    insertPitches(105, daysAgo(60), "ball", "called_strike");
+    ch.update(
+        "INSERT INTO pitcher_form_current"
+            + " (pitcher_id, as_of_date, pitches_in_game, pitches_last_28d,"
+            + "  strike_rate_28d, swstrike_rate_28d, inplay_rate_28d, days_since_last_appearance)"
+            + " VALUES (?, ?, 3, 10, 0.5, 0.2, 0.3, 0)",
+        105L,
+        java.sql.Date.valueOf(daysAgo(0)));
+
+    assertThat(repo.refreshCurrentForm())
+        .as("a stray live-leg row must not be reported as a refreshed pitcher")
+        .isZero();
+  }
 
   private void insertPitches(int pitcherId, String gameDate, String... descriptions) {
     for (int i = 0; i < descriptions.length; i++) {
