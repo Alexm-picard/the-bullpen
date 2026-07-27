@@ -94,6 +94,17 @@ public class PitchTypePredictionService {
     this.objectMapper = objectMapper;
   }
 
+  /**
+   * A8: HTTP-path rows carry NULL {@code (gameId, atBatIndex, pitchNumber)} in {@code
+   * prediction_log}, matching the pitch-outcome precedent - an arbitrary API caller should not be
+   * able to inject rows that join to real {@code pitches_live} pitches.
+   *
+   * <p>The consequence is worth stating rather than discovering: until a live-ingest poller leg
+   * exists for pitch-type, its rows are UNPAIRED, so there is no truth join and therefore no
+   * retrospective scorecard for this family. That does not affect the first-champion path, which is
+   * the offline gate ([182]/#334), but it does mean ECE evidence for any LATER promotion has to
+   * come from the poller leg or the offline gate - not from this endpoint.
+   */
   /** The served distribution plus the identity the controller needs for its response. */
   public record Served(
       Map<String, Double> probabilities,
