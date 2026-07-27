@@ -29,12 +29,14 @@ class PitcherFormRefreshJobTest {
     SimpleMeterRegistry meters = new SimpleMeterRegistry();
 
     PitcherFormRefreshJob job = new PitcherFormRefreshJob(repo, meters);
-    assertThat(meters.get("bullpen_form_age_days").gauge().value())
-        .as("-1 before the first run, so 'never ran' cannot read as 'fresh'")
+    assertThat(meters.get("bullpen_pitcher_form_age_days").gauge().value())
+        .as(
+            "-1 before the first run; NOTE a bare > N alert reads -1 as fresh, so the rule must"
+                + " include < 0")
         .isEqualTo(-1.0);
 
     assertThat(job.runOnce()).isEqualTo(42L);
-    assertThat(meters.get("bullpen_form_age_days").gauge().value())
+    assertThat(meters.get("bullpen_pitcher_form_age_days").gauge().value())
         .as("days between today and max(game_date) in pitches")
         .isEqualTo(ChronoUnit.DAYS.between(corpusEdge, LocalDate.now(ET)));
   }
@@ -47,7 +49,7 @@ class PitcherFormRefreshJobTest {
     PitcherFormRefreshJob job = new PitcherFormRefreshJob(repo, meters);
     // A failed nightly refresh must not crash the worker - it degrades to yesterday's form / NaN.
     assertThatCode(job::run).doesNotThrowAnyException();
-    assertThat(meters.get("bullpen_form_age_days").gauge().value())
+    assertThat(meters.get("bullpen_pitcher_form_age_days").gauge().value())
         .as("a failed run must not fabricate freshness")
         .isEqualTo(-1.0);
   }

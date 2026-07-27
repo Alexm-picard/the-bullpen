@@ -184,14 +184,13 @@ class PitcherFormRepositoryIT {
     assertThat(repo.findCurrent(777)).isEmpty(); // no row fabricated
   }
 
-  // --- helpers ----------------------------------------------------------
-
   // --- the 2026-07-27 data-anchor fix ---------------------------------------
 
   @Test
   void refresh_stamps_as_of_date_from_the_corpus_not_the_clock() {
     // THE FIX UNDER TEST. The clock-anchored stamp said "fresh" for two months while the corpus
-    // (last backfill 2026-05-28) had aged out of every 28-day window and the nightly refresh
+    // (last backfill ran 2026-05-28, loading games through 2026-05-25) had aged out of every 28-day
+    // window and the nightly refresh
     // selected nothing. Seeding the corpus edge 3 days back keeps the window non-empty while
     // making the anchor distinguishable from today - so reverting the stamp to today() reds this.
     insertPitches(101, daysAgo(3), "called_strike", "ball");
@@ -218,10 +217,16 @@ class PitcherFormRepositoryIT {
     insertLivePitch(9001L, 102, 1);
     repo.upsertIntraDayForm(102, 9001L);
 
-    Object stamped =
-        ch.queryForMap("SELECT as_of_date FROM pitcher_form_current FINAL WHERE pitcher_id = 102")
-            .get("as_of_date");
-    assertThat(String.valueOf(stamped))
+    Map<String, Object> row =
+        ch.queryForMap(
+            "SELECT as_of_date, pitches_in_game, days_since_last_appearance"
+                + " FROM pitcher_form_current FINAL WHERE pitcher_id = 102");
+    // pitches_in_game = 1 proves the row under assertion IS the upsert's - without it this test
+    // passes identically if the upsert writes nothing, since the nightly row carries the same
+    // anchor (a conjunction pin over both legs, not an isolated upsert pin).
+    assertThat(num(row, "pitches_in_game")).isEqualTo(1.0);
+    assertThat(num(row, "days_since_last_appearance")).isZero();
+    assertThat(String.valueOf(row.get("as_of_date")))
         .as("the carried-forward window values still cover the corpus edge, not today")
         .isEqualTo(daysAgo(3));
   }
@@ -241,11 +246,13 @@ class PitcherFormRepositoryIT {
   }
 
   @Test
-  void refresh_count_is_an_honest_zero_when_the_corpus_aged_out() {
+  void refresh_count_ignores_a_live_leg_row_stamped_today() {
     // THE LIE THE OLD COUNT TOLD. With the corpus outside every 28-day window, the nightly INSERT
     // selects nothing - but a live-leg stray stamped today() made the today()-based count report
-    // "refreshed 1" (prod said "refreshed 7" the morning this was found). The anchor-based count
-    // must say zero: the full-cohort refresh accomplished nothing.
+    // "refreshed 1" (prod said "refreshed 7" the morning this was found). Here the table starts
+    // empty so the anchor-based count reads zero; in steady state it reads the cohort AT the
+    // anchor (earlier nights' rows persist there), which is why the GAUGE, not this count, is
+    // the staleness signal - see runOnce's javadoc.
     insertPitches(105, daysAgo(60), "ball", "called_strike");
     ch.update(
         "INSERT INTO pitcher_form_current"
@@ -253,12 +260,20 @@ class PitcherFormRepositoryIT {
             + "  strike_rate_28d, swstrike_rate_28d, inplay_rate_28d, days_since_last_appearance)"
             + " VALUES (?, ?, 3, 10, 0.5, 0.2, 0.3, 0)",
         105L,
-        java.sql.Date.valueOf(daysAgo(0)));
+        // Bound as a STRING, deliberately: java.sql.Date is mis-bound by clickhouse-jdbc into
+        // this Date column (the auditor probed the stored value: 1975-06-16, not today) - which
+        // made this whole test VACUOUS, passing with or without the count fix because the "stray
+        // stamped today" never existed. insertPitches binds its date as a String for the same
+        // reason; insertLivePitch carries the same latent mis-bind, saved only because the
+        // intra-day count keys on game_id + pitcher_id rather than the date.
+        daysAgo(0));
 
     assertThat(repo.refreshCurrentForm())
         .as("a stray live-leg row must not be reported as a refreshed pitcher")
         .isZero();
   }
+
+  // --- helpers ----------------------------------------------------------
 
   private void insertPitches(int pitcherId, String gameDate, String... descriptions) {
     for (int i = 0; i < descriptions.length; i++) {

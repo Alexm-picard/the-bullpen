@@ -55,16 +55,28 @@ public class PitcherFormRepository {
           + "  strike_rate_28d, swstrike_rate_28d, inplay_rate_28d, days_since_last_appearance)"
           // ANCHORED TO THE DATA, NOT THE CLOCK (2026-07-27 finding). This job stamped
           // as_of_date = today() while computing its windows FROM pitches, a manually-backfilled
-          // corpus whose last write was 2026-05-28 - so the stamp said "fresh" while the 28-day
-          // window had selected nothing for two months, and the PRE head silently served NaN form
-          // to most of the cohort. The stamp now records what the DATA covers, so it goes stale
-          // when the corpus does. The sibling V030 job already did this and refused loudly, which
-          // is what surfaced this defect before that model served a single prediction.
+          // corpus (last backfill RAN 2026-05-28, loading games THROUGH 2026-05-25 - two numbers,
+          // write time vs coverage, kept distinct because a reviewer already mistook one for a
+          // typo of the other) - so the stamp said "fresh" while the 28-day window had selected
+          // nothing for two months, and the PRE head silently served NaN form to most of the
+          // cohort. The stamp now records what the DATA covers, so it goes stale when the corpus
+          // does. The sibling V030 job already did this and refused loudly, which is what
+          // surfaced this defect before that model served a single prediction.
+          //
+          // The anchor subquery carries the SAME game_date <= today() bound the outer WHERE
+          // defends below: unbounded, a future-dated row would stamp as_of_date LATER than
+          // anything the aggregate covers - overstating freshness, this fix's exact failure
+          // class - and would drive the age gauge negative into its -1 never-ran sentinel.
+          // (The anchor is evaluated independently here, in COUNT_AT_ANCHOR, and in
+          // corpusMaxGameDate(); a backfill landing mid-run can skew the count and log line,
+          // never the data. Accepted - the 02:40 ET slot.)
           //
           // The WINDOW BASE (today() - 28) is deliberately UNCHANGED: rebasing it to the corpus
           // edge would alter Tier-3 feature semantics on a LIVE model, and which table feeds this
           // window is exactly the open /decide. Stamp honesty ships now; semantics wait.
-          + " SELECT pitcher_id, (SELECT max(game_date) FROM pitches) AS as_of_date,"
+          + " SELECT pitcher_id,"
+          + "        (SELECT max(game_date) FROM pitches"
+          + "          WHERE description != 'unknown' AND game_date <= today()) AS as_of_date,"
           + "        0 AS pitches_in_game,"
           + "        toUInt32(count()) AS pitches_last_28d,"
           + "        toFloat32(countIf(description IN ('called_strike','swinging_strike','foul'))"
@@ -89,9 +101,13 @@ public class PitcherFormRepository {
   // anchor; carried-forward intra-day rows at the same anchor dedup via DISTINCT. When the corpus
   // is static across days, this counts the cohort AT the anchor, not just rows written this run -
   // acceptable for a log line, noted so nobody reads it as a write count.)
+  // The subquery is TEXTUALLY IDENTICAL to the REFRESH's anchor - both filters included - or the
+  // two could disagree and the count would miss the rows the refresh just wrote.
   private static final String COUNT_AT_ANCHOR =
       "SELECT count(DISTINCT pitcher_id) FROM pitcher_form_current"
-          + " WHERE as_of_date = (SELECT max(game_date) FROM pitches)";
+          + " WHERE as_of_date ="
+          + "   (SELECT max(game_date) FROM pitches"
+          + "     WHERE description != 'unknown' AND game_date <= today())";
 
   private final JdbcTemplate jdbc;
 
@@ -100,10 +116,18 @@ public class PitcherFormRepository {
   }
 
   /**
-   * Recompute and insert today's current-form row for every active pitcher (a pitch in the last 28
-   * days). Returns the number of distinct pitchers refreshed today. The ReplacingMergeTree dedups
-   * on {@code pitcher_id} keeping the newest {@code ingested_at}, so the prior day's rows compact
-   * away.
+   * Recompute and insert a current-form row for every pitcher active in the trailing 28-day window,
+   * stamped at the CORPUS ANCHOR (the newest usable game_date in pitches) rather than today.
+   *
+   * <p>Returns the count of distinct pitchers with a row AT that anchor - the cohort at the anchor,
+   * NOT a write count (see COUNT_AT_ANCHOR's caveat: rows from earlier nights at the same anchor
+   * are included). The ReplacingMergeTree dedups on {@code pitcher_id} keeping the newest {@code
+   * ingested_at}, so repeat nights at a static anchor compact away.
+   *
+   * <p>Coherence note: {@code as_of_date} describes the 28-day WINDOW columns. {@code
+   * days_since_last_appearance} is deliberately serving-clock-based (today minus the last game), so
+   * under a stale corpus a row can carry an old {@code as_of_date} with a large dsla - two true
+   * statements about different clocks, not a contradiction.
    */
   public long refreshCurrentForm() {
     jdbc.update(REFRESH);
@@ -112,16 +136,25 @@ public class PitcherFormRepository {
   }
 
   /**
-   * The newest {@code game_date} in {@code pitches} - what the nightly windows can possibly see,
-   * and therefore the number the freshness gauge is built from. {@code pitches} is a MANUALLY
-   * BACKFILLED corpus (last write 2026-05-28; no live handoff job exists), so this grows only when
-   * a backfill runs, and the gap to today grows without bound in between.
+   * The newest USABLE {@code game_date} in {@code pitches} - what the nightly windows can possibly
+   * see, and therefore the number the freshness gauge is built from. {@code pitches} is a MANUALLY
+   * BACKFILLED corpus (last backfill ran 2026-05-28, loading games through 2026-05-25; no live
+   * handoff job exists), so this grows only when a backfill runs, and the gap to today grows
+   * without bound in between.
+   *
+   * <p>Same filters as the REFRESH anchor, deliberately: unfiltered, a future-dated or
+   * unknown-description row would report coverage the windows cannot use - and a future date would
+   * drive the age gauge negative, colliding with its -1 never-ran sentinel.
    *
    * <p>ClickHouse trap, handled rather than discovered: {@code max()} over an empty table returns
    * the type default (1970-01-01), NOT NULL, so both are treated as the same fault.
    */
   public LocalDate corpusMaxGameDate() {
-    LocalDate d = jdbc.queryForObject("SELECT max(game_date) FROM pitches", LocalDate.class);
+    LocalDate d =
+        jdbc.queryForObject(
+            "SELECT max(game_date) FROM pitches"
+                + " WHERE description != 'unknown' AND game_date <= today()",
+            LocalDate.class);
     if (d == null || !d.isAfter(LocalDate.EPOCH)) {
       throw new IllegalStateException(
           "pitches is empty (max(game_date) returned "
