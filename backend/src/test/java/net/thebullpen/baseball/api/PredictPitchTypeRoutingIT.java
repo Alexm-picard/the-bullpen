@@ -181,11 +181,15 @@ class PredictPitchTypeRoutingIT {
   void a_missing_prior_snapshot_refuses_503_before_routing() throws Exception {
     // No snapshot row - but a REGISTERED, PROMOTED champion. This is what makes the pin real: with
     // no model registered, a route-first implementation would also 503 (from the fallback) with
-    // nothing logged, and the test would prove nothing about ordering. With a servable champion
-    // present, the ONLY explanation for 503-plus-empty-log is that the deriver refused BEFORE
-    // routing ever ran - a prior computed over the wrong history is worse than no answer.
+    // nothing logged, and the test would prove nothing about ordering. With a routing row present
+    // the fallback 503 is eliminated, so the 503 is the DERIVER's refusal, and the empty log pins
+    // that a refusal writes no row - a prior computed over the wrong history is worse than no
+    // answer. (A derive-inside-the-lambda implementation would look the same here; the structural
+    // derive-before-route ordering is what the service code asserts, this pins its observable
+    // half.)
     registerVersion(BASELINE, "v1");
     long championId = registerVersion(MODEL_NAME, "v1");
+    // Bootstrap exemption again - see the shadow test's note.
     registryService.transitionStage(championId, Stage.CHAMPION);
 
     mvc.perform(
@@ -203,6 +207,8 @@ class PredictPitchTypeRoutingIT {
     seedPriorSnapshot();
     registerVersion(BASELINE, "v1"); // rule 9: the primary cannot reach CHAMPION without it
     long championId = registerVersion(MODEL_NAME, "v1");
+    // Bootstrap exemption (single ever-registered version) - the real first-champion path, see
+    // the note in the shadow test below.
     registryService.transitionStage(championId, Stage.CHAMPION);
 
     mvc.perform(

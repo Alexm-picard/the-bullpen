@@ -220,9 +220,10 @@ public class PitchTypePredictionService {
       // Shadow row fire-and-forget off the request path: the serving leg already returned, and the
       // shadow logs when it completes. WHAT THIS BUYS IS THE MECHANISM AND THE CORRECT ROLE - NOT
       // promotion evidence. Rows from THIS endpoint carry NULL live keys (the A8 contract on
-      // predict()), and both evidence readers exclude them by explicit game_id IS NOT NULL filter,
+      // predict()), and every evidence reader exclude them by explicit game_id IS NOT NULL filter,
       // so nothing logged here enters any gate. Evidence rows arrive when a live-ingest poller leg
-      // supplies real live keys; this code is what will log them correctly when it does. Do NOT
+      // supplies real live keys - via a separate INTERNAL entry point, since this method
+      // uses the no-key constructor and must never lift keys off the public request DTO. Do NOT
       // "fix" an evidence shortfall by logging the caller-supplied live keys - that is precisely
       // the injection the NULL keys exist to prevent, and it would poison the truth-joined sample
       // a real promotion gate reads.
