@@ -21,8 +21,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import pytest
-
 from bullpen_training.pitch_type import PITCH_TYPE_CLASSES, PITCH_TYPE_FEATURE_COLUMNS
 from bullpen_training.registry_client.distributions import CHAMPIONS
 
@@ -34,21 +32,43 @@ _JAVA = (
 _CONFIG = CHAMPIONS["pitch_type_pre"]
 
 
+def _record_components(src: str, header: str) -> list[str]:
+    """Component names of a Java record, tolerant of annotations.
+
+    Balances parentheses rather than splitting on the first ')': an annotated component such as
+    `@Schema(description = "...") String parkId` contains parens of its own, and a naive split
+    truncates the body to nothing. A parser that silently under-reads turns every assertion built
+    on it into a tautology, which is the failure mode these pins exist to catch - so it also
+    refuses to return an empty result.
+    """
+    start = src.index(header) + len(header)
+    depth = 1
+    end = start
+    while depth > 0:
+        ch = src[end]
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        end += 1
+    body = src[start : end - 1]
+    # Strip annotation arguments so their contents cannot be mistaken for component names.
+    body = re.sub(r"@\w+\s*\([^()]*(?:\([^()]*\)[^()]*)*\)", " ", body)
+    body = re.sub(r"@\w+", " ", body)
+    fields = [
+        m.group(1) for part in body.split(",") if (m := re.search(r"\b(\w+)\s*$", part.strip()))
+    ]
+    assert fields, f"failed to parse components from {header!r}; the pin would be vacuous"
+    return fields
+
+
 def _java_request_fields() -> list[str]:
     """The component names of FeaturePipelinePitchType.Request, in declaration order.
 
     Parsed from source rather than hardcoded: a hardcoded copy would drift with the record and
     turn this pin into a tautology.
     """
-    src = _JAVA.read_text()
-    body = src.split("public record Request(", 1)[1].split(")", 1)[0]
-    fields = [
-        m.group(1)
-        for line in body.splitlines()
-        if (m := re.search(r"\b(\w+)\s*,?\s*$", line.strip()))
-    ]
-    assert fields, "failed to parse the Request record; the pin would be vacuous"
-    return fields
+    return _record_components(_JAVA.read_text(), "public record Request(")
 
 
 def test_the_java_request_record_is_parseable_and_has_24_components() -> None:
@@ -140,36 +160,26 @@ _WIRE_DTO = (
 )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "The pitch_type WIRE DTO does not exist yet (it lands with the serving endpoint). Until "
-        "it does, every pin above parses FeaturePipelinePitchType.Request - the INTERNAL pipeline "
-        "record - while prediction_log.features is the serialized WIRE DTO. Those two coincide "
-        "for pitch-outcome, which is exactly why the mistake looked correct. This is xfail(strict) "
-        "rather than a plain failure because a red required check would block the very PR that "
-        "fixes it, and rather than a skip because a skip reads as coverage. When the DTO lands "
-        "this test PASSES, strict turns that XPASS into a hard failure, and whoever ships the "
-        "endpoint must remove this marker and repoint the pin."
-    ),
-)
 def test_champion_keys_derive_from_the_wire_dto() -> None:
-    """THE PIN ABOVE IS CURRENTLY GREEN AND WRONG, which is worse than red because it reads as
-    coverage.
+    """THE ASSERTION THAT ACTUALLY GUARDS THE DRIFT SURFACE.
 
-    PSI parses observed distributions out of prediction_log.features, which the serving path
-    writes from the SERIALIZED WIRE DTO - not from the internal pipeline record. A wire field
-    named anything other than the 11 keys in CHAMPIONS joins nothing, writes nothing, raises
-    nothing, and leaves every assertion above passing.
+    PSI parses observed distributions out of prediction_log.features, which the
+    pitch-type prediction service writes from the SERIALIZED WIRE DTO - not from
+    the internal pipeline record the pins above parse. A wire field named
+    anything other than the 11 keys in CHAMPIONS joins nothing, writes nothing,
+    raises nothing, and leaves every one of those assertions still passing.
+
+    This carried an xfail(strict) marker until PitchTypeRequest existed,
+    precisely so the DTO could not arrive without someone being forced back
+    here. It fired on the commit that added it.
+
+    Note the spelling trap it defends: both pitch-outcome DTOs use batterStand
+    and pitcherThrows, while pitch_type uses stand and pThrows. Copying the
+    neighbour is the natural move and produces an empty drift surface that is
+    indistinguishable from a healthy one.
     """
     assert _WIRE_DTO.is_file(), f"no wire DTO at {_WIRE_DTO}"
-    src = _WIRE_DTO.read_text()
-    body = src.split("public record PitchTypeRequest(", 1)[1].split(")", 1)[0]
-    wire_fields = {
-        m.group(1)
-        for line in body.splitlines()
-        if (m := re.search(r"\b(\w+)\s*,?\s*$", line.strip()))
-    }
+    wire_fields = set(_record_components(_WIRE_DTO.read_text(), "public record PitchTypeRequest("))
     watched = set(_CONFIG.continuous) | set(_CONFIG.categorical)
     missing = watched - wire_fields
     assert not missing, (
