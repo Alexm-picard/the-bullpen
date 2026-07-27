@@ -10,6 +10,7 @@ import net.thebullpen.baseball.api.dto.PitchTypeRequest;
 import net.thebullpen.baseball.data.PitchTypeArsenalDeriver;
 import net.thebullpen.baseball.inference.AsyncPredictionLogger;
 import net.thebullpen.baseball.inference.FeaturePipelinePitchType;
+import net.thebullpen.baseball.inference.InferenceMetrics;
 import net.thebullpen.baseball.inference.InferenceRouter;
 import net.thebullpen.baseball.inference.LoadedPitchTypeModel;
 import net.thebullpen.baseball.inference.ModelLoader;
@@ -66,12 +67,16 @@ import org.springframework.web.server.ResponseStatusException;
 @ConditionalOnProperty(name = "bullpen.clickhouse.enabled", havingValue = "true")
 public class PitchTypePredictionService {
 
+  private static final org.slf4j.Logger log =
+      org.slf4j.LoggerFactory.getLogger(PitchTypePredictionService.class);
+
   public static final String MODEL_NAME = "pitch_type_pre";
 
   private final ModelLoader modelLoader;
   private final InferenceRouter router;
   private final PitchTypeArsenalDeriver arsenal;
   private final AsyncPredictionLogger logger;
+  private final InferenceMetrics metrics;
   private final ObjectMapper objectMapper;
 
   public PitchTypePredictionService(
@@ -79,11 +84,13 @@ public class PitchTypePredictionService {
       InferenceRouter router,
       PitchTypeArsenalDeriver arsenal,
       AsyncPredictionLogger logger,
+      InferenceMetrics metrics,
       ObjectMapper objectMapper) {
     this.modelLoader = modelLoader;
     this.router = router;
     this.arsenal = arsenal;
     this.logger = logger;
+    this.metrics = metrics;
     this.objectMapper = objectMapper;
   }
 
@@ -126,75 +133,100 @@ public class PitchTypePredictionService {
     // make pitch_type read an order of magnitude slower in the same column for reasons that have
     // nothing to do with inference.
     long startNanos = System.nanoTime();
+    // "unknown" until routing resolves, so a failure BEFORE that point is attributed honestly
+    // rather than blamed on a role that was never chosen. Mirrors the pitch-outcome shape.
+    String role = "unknown";
 
-    // ROUTED, NOT findChampion. Resolving the champion directly could never emit a SHADOW row, so
-    // prediction_log.role would have no correct value to take. Routing buys the role and the
-    // shadow dual-log - NOT shadow-stage serving: no champion means no model_routing row, which
-    // means the fallback below and a 503, exactly as before. See the class javadoc.
-    RoutedPrediction<Map<String, Double>> routed =
-        router.route(
-            MODEL_NAME,
-            req.gameId(),
-            versionId -> predictWith(versionId, features),
-            () -> {
-              throw new ResponseStatusException(
-                  HttpStatus.SERVICE_UNAVAILABLE,
-                  MODEL_NAME
-                      + " has no promoted champion and no A/B routing config; register and promote"
-                      + " a model first. 503 rather than 404: the route exists, the model does"
-                      + " not.");
-            });
+    try {
+      // ROUTED, NOT findChampion. Resolving the champion directly could never emit a SHADOW row, so
+      // prediction_log.role would have no correct value to take. Routing buys the role and the
+      // shadow dual-log - NOT shadow-stage serving: no champion means no model_routing row, which
+      // means the fallback below and a 503, exactly as before. See the class javadoc.
+      RoutedPrediction<Map<String, Double>> routed =
+          router.route(
+              MODEL_NAME,
+              req.gameId(),
+              versionId -> predictWith(versionId, features),
+              () -> {
+                throw new ResponseStatusException(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    MODEL_NAME
+                        + " has no promoted champion and no A/B routing config; register and promote"
+                        + " a model first. 503 rather than 404: the route exists, the model does"
+                        + " not.");
+              });
 
-    Map<String, Double> probs = routed.servingResponse();
-    long elapsedMicros = (System.nanoTime() - startNanos) / 1_000L;
-    float elapsedMs = elapsedMicros / 1_000.0f;
+      role = routed.servingRole().name().toLowerCase(java.util.Locale.ROOT);
+      metrics.incrementPrediction(MODEL_NAME, role);
+      Map<String, Double> probs = routed.servingResponse();
+      long elapsedMicros = (System.nanoTime() - startNanos) / 1_000L;
+      metrics.timer(MODEL_NAME).record(elapsedMicros, java.util.concurrent.TimeUnit.MICROSECONDS);
+      float elapsedMs = elapsedMicros / 1_000.0f;
 
-    LoadedPitchTypeModel serving = modelLoader.loadPitchType(routed.servingVersionId());
-    logger.enqueue(
-        new PredictionLogEvent(
-            UUID.randomUUID(),
-            requestAt,
-            MODEL_NAME,
-            serving.version(),
-            routed.servingVersionId(),
-            toLogRole(routed.servingRole()),
-            serving.schemaHash(),
-            serializeFeatures(req),
-            serializePrediction(probs),
-            elapsedMs,
-            correlationId));
+      LoadedPitchTypeModel serving = modelLoader.loadPitchType(routed.servingVersionId());
+      logger.enqueue(
+          new PredictionLogEvent(
+              UUID.randomUUID(),
+              requestAt,
+              MODEL_NAME,
+              serving.version(),
+              routed.servingVersionId(),
+              toLogRole(routed.servingRole()),
+              serving.schemaHash(),
+              serializeFeatures(req),
+              serializePrediction(probs),
+              elapsedMs,
+              correlationId));
 
-    // Shadow row fire-and-forget off the request path: the serving leg already returned, and the
-    // shadow logs when it completes. These are the rows promotion evidence is built from, so this
-    // leg is the point of the whole change rather than an extra.
-    routed
-        .shadowFuture()
-        .ifPresent(
-            shadowFut -> {
-              long shadowVid = routed.shadowVersionId().orElseThrow();
-              shadowFut.whenComplete(
-                  (shadowProbs, ex) -> {
-                    if (ex != null) {
-                      return;
-                    }
-                    LoadedPitchTypeModel shadowModel = modelLoader.loadPitchType(shadowVid);
-                    logger.enqueue(
-                        new PredictionLogEvent(
-                            UUID.randomUUID(),
-                            requestAt,
-                            MODEL_NAME,
-                            shadowModel.version(),
-                            shadowVid,
-                            PredictionLogEvent.Role.SHADOW,
-                            shadowModel.schemaHash(),
-                            serializeFeatures(req),
-                            serializePrediction(shadowProbs),
-                            elapsedMs,
-                            correlationId));
-                  });
-            });
+      // Shadow row fire-and-forget off the request path: the serving leg already returned, and the
+      // shadow logs when it completes. These are the rows promotion evidence is built from, so this
+      // leg is the point of the whole change rather than an extra.
+      routed
+          .shadowFuture()
+          .ifPresent(
+              shadowFut -> {
+                long shadowVid = routed.shadowVersionId().orElseThrow();
+                shadowFut.whenComplete(
+                    (shadowProbs, ex) -> {
+                      if (ex != null) {
+                        return;
+                      }
+                      try {
+                        LoadedPitchTypeModel shadowModel = modelLoader.loadPitchType(shadowVid);
+                        logger.enqueue(
+                            new PredictionLogEvent(
+                                UUID.randomUUID(),
+                                requestAt,
+                                MODEL_NAME,
+                                shadowModel.version(),
+                                shadowVid,
+                                PredictionLogEvent.Role.SHADOW,
+                                shadowModel.schemaHash(),
+                                serializeFeatures(req),
+                                serializePrediction(shadowProbs),
+                                elapsedMs,
+                                correlationId));
+                      } catch (RuntimeException logEx) {
+                        // A throwing whenComplete action completes the DERIVED future
+                        // exceptionally, and that future is discarded - so without this the failure
+                        // vanishes with no log and no metric. These rows ARE rule 5's evidence, so
+                        // a silently dropped one does not merely cost observability, it biases the
+                        // sample the promotion gate will read.
+                        metrics.incrementShadowDropped(MODEL_NAME, "log_failed");
+                        log.warn("pitch-type shadow row dropped for version {}", shadowVid, logEx);
+                      }
+                    });
+              });
 
-    return new Served(probs, MODEL_NAME, serving.version(), ars.pitcherPriorN(), elapsedMicros);
+      return new Served(probs, MODEL_NAME, serving.version(), ars.pitcherPriorN(), elapsedMicros);
+    } catch (ResponseStatusException e) {
+      // 503 is the designed no-champion / stale-prior answer, not a model fault. Counting it
+      // against the model's error rate would make an unregistered model look broken.
+      throw e;
+    } catch (RuntimeException e) {
+      metrics.incrementError(MODEL_NAME, role, e.getClass().getSimpleName());
+      throw e;
+    }
   }
 
   private Map<String, Double> predictWith(
