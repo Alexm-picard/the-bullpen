@@ -37,30 +37,35 @@ public final class PitcherPitchTypePriorSnapshotSql {
    *     rather than duplicated so a taxonomy change cannot desync training from serving.
    */
   public static String refreshInsert(String y7Expression) {
-    String byCount = countIfArray("slot = %d");
-    String ffByCount = countIfArray("y7 = 'FF' AND slot = %d");
-    return """
-        INSERT INTO pitcher_pitchtype_prior_current
-        SELECT pitcher_id,
-               (SELECT max(game_date) FROM pitches) AS as_of_date,
-               count() AS prior_n,
-               countIf(y7 = 'FF'), countIf(y7 = 'SI'), countIf(y7 = 'FC'), countIf(y7 = 'SL'),
-               countIf(y7 = 'CU'), countIf(y7 = 'CH'), countIf(y7 = 'OFF'),
-               %s, %s,
-               now64(3)
-        FROM (
-          SELECT pitcher_id, balls * 3 + strikes AS slot, %s AS y7
-          FROM pitches FINAL
-          WHERE pitch_type NOT IN ('', 'PO', 'IN')
-        )
-        GROUP BY pitcher_id
-        """
-        .formatted(byCount, ffByCount, y7Expression);
+    // Concatenated rather than a text block through String.formatted: SpotBugs' FS rule flags the
+    // newlines inside a text block used as a format string, and suppressing a real static-analysis
+    // rule to keep a nicer-looking literal is the wrong trade.
+    return "INSERT INTO pitcher_pitchtype_prior_current\n"
+        + "SELECT pitcher_id,\n"
+        + "       (SELECT max(game_date) FROM pitches) AS as_of_date,\n"
+        + "       count() AS prior_n,\n"
+        + "       countIf(y7 = 'FF'), countIf(y7 = 'SI'), countIf(y7 = 'FC'), countIf(y7 = 'SL'),\n"
+        + "       countIf(y7 = 'CU'), countIf(y7 = 'CH'), countIf(y7 = 'OFF'),\n"
+        + "       "
+        + countIfArray("slot = ")
+        + ",\n"
+        + "       "
+        + countIfArray("y7 = 'FF' AND slot = ")
+        + ",\n"
+        + "       now64(3)\n"
+        + "FROM (\n"
+        + "  SELECT pitcher_id, balls * 3 + strikes AS slot, "
+        + y7Expression
+        + " AS y7\n"
+        + "  FROM pitches FINAL\n"
+        + "  WHERE pitch_type NOT IN ('', 'PO', 'IN')\n"
+        + ")\n"
+        + "GROUP BY pitcher_id\n";
   }
 
-  private static String countIfArray(String predicateFormat) {
+  private static String countIfArray(String predicatePrefix) {
     return IntStream.range(0, SLOTS)
-        .mapToObj(s -> "countIf(" + predicateFormat.formatted(s) + ")")
+        .mapToObj(s -> "countIf(" + predicatePrefix + s + ")")
         .collect(Collectors.joining(", ", "[", "]"));
   }
 }
