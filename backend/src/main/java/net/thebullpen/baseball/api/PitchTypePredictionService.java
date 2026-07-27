@@ -5,7 +5,6 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 import net.thebullpen.baseball.api.dto.PitchTypeRequest;
 import net.thebullpen.baseball.data.PitchTypeArsenalDeriver;
@@ -17,8 +16,6 @@ import net.thebullpen.baseball.inference.ModelLoader;
 import net.thebullpen.baseball.inference.PredictionLogEvent;
 import net.thebullpen.baseball.inference.RoutedPrediction;
 import net.thebullpen.baseball.inference.routing.Role;
-import net.thebullpen.baseball.registry.RegistryService;
-import net.thebullpen.baseball.registry.dto.ModelVersion;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
@@ -42,12 +39,23 @@ import org.springframework.web.server.ResponseStatusException;
  * belongs here; the alternative would have been to route data access through inference, which is
  * precisely the edge the rule exists to prevent.
  *
- * <p>ROUTED THROUGH {@link InferenceRouter}, not resolved with findChampion. That distinction is
- * load-bearing rather than stylistic: resolving the champion directly can never emit a SHADOW row,
- * so {@code prediction_log.role} has no correct value available - and a SHADOW-stage model would
- * 503 on every request, which is chicken-and-egg against rule 5, because promotion requires
- * shadow-logged evidence the model could not structurally produce. Routing buys the correct role,
- * the shadow dual-log, and shadow-stage serving in one move.
+ * <p>ROUTED THROUGH {@link InferenceRouter}, not resolved with findChampion. Resolving the champion
+ * directly can never emit a SHADOW row, so {@code prediction_log.role} has no correct value
+ * available and the v1-to-v2 evidence path has nothing to write. Routing buys the correct role and
+ * the shadow dual-log.
+ *
+ * <p>IT DOES NOT BUY SHADOW-STAGE SERVING, and an earlier version of this comment claimed it did.
+ * {@code model_routing} rows are created only by {@code
+ * RegistryService.promoteToChampionAtomically}, behind the rule-5 evidence gate, so a model with no
+ * champion has no routing config, takes the fallback, and 503s exactly as it did before this
+ * change. The false version of this claim is worse than merely wrong: it points a reader who needs
+ * first-champion evidence at hand-inserting a {@code model_routing} row, which V011 does not
+ * stage-constrain - that would serve an unpromoted model as {@code role=champion} and breach rules
+ * 5 and 6 together.
+ *
+ * <p>The first champion for this family promotes via the OFFLINE GATE ([182]/#334), as {@link
+ * net.thebullpen.baseball.registry.RegistryBaselines} already records against this exact model
+ * name. Shadow rows are the v1-to-v2 path, not the v0-to-v1 path.
  *
  * <p>SERVE-LIVE-CHAMPION-ELSE-503 otherwise, matching the pitch-outcome heads: 503 rather than 404
  * because the route exists and it is the model that is absent. {@code pitch_type_pre} has neither a
@@ -62,7 +70,6 @@ public class PitchTypePredictionService {
 
   private final ModelLoader modelLoader;
   private final InferenceRouter router;
-  private final RegistryService registry;
   private final PitchTypeArsenalDeriver arsenal;
   private final AsyncPredictionLogger logger;
   private final ObjectMapper objectMapper;
@@ -70,13 +77,11 @@ public class PitchTypePredictionService {
   public PitchTypePredictionService(
       ModelLoader modelLoader,
       InferenceRouter router,
-      RegistryService registry,
       PitchTypeArsenalDeriver arsenal,
       AsyncPredictionLogger logger,
       ObjectMapper objectMapper) {
     this.modelLoader = modelLoader;
     this.router = router;
-    this.registry = registry;
     this.arsenal = arsenal;
     this.logger = logger;
     this.objectMapper = objectMapper;
@@ -91,7 +96,6 @@ public class PitchTypePredictionService {
       long elapsedMicros) {}
 
   public Served predict(PitchTypeRequest req) {
-    long startNanos = System.nanoTime();
     Instant requestAt = Instant.now();
     String correlationId = org.slf4j.MDC.get("correlation_id");
 
@@ -116,11 +120,17 @@ public class PitchTypePredictionService {
     }
     FeaturePipelinePitchType.Request features = toPipelineRequest(req, ars);
 
+    // Timed from HERE, after the arsenal reads. latency_ms feeds the Ops dashboard's p50/p95/p99
+    // grouped by (model_name, model_version) alongside the pitch-outcome heads, whose timers cover
+    // routing plus inference with no DB call on the path. Including two ClickHouse reads would
+    // make pitch_type read an order of magnitude slower in the same column for reasons that have
+    // nothing to do with inference.
+    long startNanos = System.nanoTime();
+
     // ROUTED, NOT findChampion. Resolving the champion directly could never emit a SHADOW row, so
-    // prediction_log.role would have no correct value to take - and worse, a SHADOW-stage model
-    // would 503 on every request, which is chicken-and-egg against rule 5: promotion needs
-    // shadow-logged evidence the model could not structurally produce. Routing buys the role, the
-    // shadow dual-log, and shadow-stage serving in one move.
+    // prediction_log.role would have no correct value to take. Routing buys the role and the
+    // shadow dual-log - NOT shadow-stage serving: no champion means no model_routing row, which
+    // means the fallback below and a 503, exactly as before. See the class javadoc.
     RoutedPrediction<Map<String, Double>> routed =
         router.route(
             MODEL_NAME,
@@ -275,9 +285,5 @@ public class PitchTypePredictionService {
     } catch (Exception e) {
       throw new IllegalStateException("failed to serialize pitch-type features", e);
     }
-  }
-
-  Optional<ModelVersion> champion() {
-    return registry.findChampion(MODEL_NAME);
   }
 }
