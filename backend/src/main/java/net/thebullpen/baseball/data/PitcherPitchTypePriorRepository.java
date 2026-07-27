@@ -243,7 +243,15 @@ public class PitcherPitchTypePriorRepository {
     LocalDate asOf =
         jdbc.queryForObject(
             "SELECT max(as_of_date) FROM pitcher_pitchtype_prior_current FINAL", LocalDate.class);
-    return Objects.requireNonNull(asOf, "snapshot wrote no rows");
+    if (asOf == null) {
+      // max() over an empty table. Loud rather than a null the caller would stamp onto the
+      // freshness gauge as a quiet zero: an empty snapshot after a "successful" refresh means the
+      // scan over pitches matched nothing, which is a real fault.
+      throw new IllegalStateException(
+          "pitcher_pitchtype_prior_current is empty after a refresh; the scan over pitches matched"
+              + " no rows");
+    }
+    return asOf;
   }
 
   public PitcherPitchTypeDelta findInGameDelta(
