@@ -65,10 +65,17 @@ public final class BattedBallOnnxModel implements AutoCloseable {
     var inputNames = session.getInputNames();
     if (inputNames.size() != 1) {
       // The session is live here; close it before propagating or the native handle leaks (the
-      // same construct-order discipline task #87 imposes on the Loaded* bundle classes).
-      session.close();
-      throw new IllegalStateException(
-          "batted-ball ONNX must declare exactly one input tensor, got " + inputNames);
+      // same construct-order discipline task #87 imposes on the Loaded* bundle classes). A failing
+      // close must not EAT the arity diagnostic - suppress it onto the real error instead.
+      IllegalStateException arity =
+          new IllegalStateException(
+              "batted-ball ONNX must declare exactly one input tensor, got " + inputNames);
+      try {
+        session.close();
+      } catch (OrtException closeEx) {
+        arity.addSuppressed(closeEx);
+      }
+      throw arity;
     }
     this.inputName = inputNames.iterator().next();
     this.hasCarry = session.getOutputNames().contains(CARRY_OUTPUT_NAME);

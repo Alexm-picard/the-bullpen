@@ -53,6 +53,9 @@ class SessionGuardTest {
             });
     closer.start();
 
+    // Prove the closer has actually ENTERED closeWhenIdle (it sets retired first) - without this
+    // the negative check below could pass vacuously because the closer had not started yet.
+    awaitTrue(guard::isRetired);
     // Negative check: with the in-flight call still parked, the close action must not have run.
     Thread.sleep(150);
     assertThat(closed.getCount()).as("close ran while a call was in flight").isEqualTo(1);
@@ -125,13 +128,95 @@ class SessionGuardTest {
     Thread closerB = new Thread(closerBody);
     closerA.start();
     closerB.start();
-    // Let both closers reach the drain before releasing the in-flight call.
-    Thread.sleep(150);
+    // Deterministic overlap: both closers must be INSIDE their timed drain wait before the
+    // in-flight call releases - otherwise this degenerates into the sequential-idempotency case
+    // and stops pinning the post-drain re-check. These threads never sleep, so TIMED_WAITING
+    // unambiguously means "inside wait(ms)".
+    awaitTrue(
+        () ->
+            closerA.getState() == Thread.State.TIMED_WAITING
+                && closerB.getState() == Thread.State.TIMED_WAITING);
     release.countDown();
     closerA.join(2000);
     closerB.join(2000);
     inFlight.join(2000);
+    // BOTH closers must have finished: the winner by closing, the LOSER by observing the claim
+    // (the notifyAll-on-claim) - a loser still draining out its timeout here is the pinned bug.
+    assertThat(closerA.isAlive()).isFalse();
+    assertThat(closerB.isAlive()).isFalse();
     assertThat(closes.get()).isEqualTo(1);
+  }
+
+  /**
+   * A throwing body must still exit the gate - a leaked count would turn every close into a full
+   * drain-timeout wait. Pinned by the DURATION: a leak still closes (forced), but slowly.
+   */
+  @Test
+  void a_throwing_body_still_exits_the_gate() throws Exception {
+    SessionGuard guard = new SessionGuard("test");
+    assertThatThrownBy(
+            () ->
+                guard.withSession(
+                    () -> {
+                      throw new IllegalStateException("boom");
+                    }))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("boom");
+
+    AtomicInteger closes = new AtomicInteger();
+    long start = System.nanoTime();
+    guard.closeWhenIdle(closes::incrementAndGet);
+    assertThat(closes.get()).isEqualTo(1);
+    assertThat(Duration.ofNanos(System.nanoTime() - start))
+        .as("close must be immediate - a drain wait here means the exceptional exit leaked count")
+        .isLessThan(Duration.ofSeconds(2));
+  }
+
+  @Test
+  void interrupted_drain_forces_the_close_and_restores_the_flag() throws Exception {
+    SessionGuard guard = new SessionGuard("test");
+    CountDownLatch entered = new CountDownLatch(1);
+    CountDownLatch release = new CountDownLatch(1);
+    AtomicInteger closes = new AtomicInteger();
+    java.util.concurrent.atomic.AtomicBoolean flagRestored =
+        new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    Thread inFlight =
+        new Thread(
+            () -> {
+              try {
+                guard.withSession(
+                    () -> {
+                      entered.countDown();
+                      awaitQuietly(release);
+                      return null;
+                    });
+              } catch (Exception e) {
+                throw new IllegalStateException(e);
+              }
+            });
+    inFlight.start();
+    assertThat(entered.await(2, TimeUnit.SECONDS)).isTrue();
+
+    Thread closer =
+        new Thread(
+            () -> {
+              try {
+                guard.closeWhenIdle(closes::incrementAndGet);
+              } catch (Exception e) {
+                throw new IllegalStateException(e);
+              }
+              flagRestored.set(Thread.currentThread().isInterrupted());
+            });
+    closer.start();
+    awaitTrue(() -> closer.getState() == Thread.State.TIMED_WAITING);
+    closer.interrupt();
+    closer.join(2000);
+
+    assertThat(closes.get()).as("interrupt forces the close, not an abandon").isEqualTo(1);
+    assertThat(flagRestored.get()).as("the interrupt flag must survive the drain").isTrue();
+    release.countDown();
+    inFlight.join(2000);
   }
 
   @Test
@@ -197,6 +282,14 @@ class SessionGuardTest {
     release.countDown();
     a.join(2000);
     b.join(2000);
+  }
+
+  private static void awaitTrue(java.util.function.BooleanSupplier condition)
+      throws InterruptedException {
+    for (int i = 0; i < 200 && !condition.getAsBoolean(); i++) {
+      Thread.sleep(10);
+    }
+    assertThat(condition.getAsBoolean()).as("condition not reached within the poll bound").isTrue();
   }
 
   private static void awaitQuietly(CountDownLatch latch) {

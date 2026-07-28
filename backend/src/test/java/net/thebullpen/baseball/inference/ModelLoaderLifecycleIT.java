@@ -3,12 +3,10 @@ package net.thebullpen.baseball.inference;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Map;
-import java.util.Objects;
 import java.util.UUID;
 import net.thebullpen.baseball.registry.RegistryService;
 import net.thebullpen.baseball.registry.dto.ModelVersion;
@@ -53,9 +51,6 @@ class ModelLoaderLifecycleIT {
     registry.add("bullpen.snapshot.local-base-path", snapshotBase::toString);
   }
 
-  private static final Path REPO_ROOT = Path.of(System.getProperty("user.dir")).getParent();
-  private static final Path CONTRACT =
-      REPO_ROOT.resolve("contracts/feature_pipeline_pitchtype.json");
   private static final String MODEL_NAME = "pitch_type_pre";
 
   @Autowired private RegistryService registryService;
@@ -125,18 +120,56 @@ class ModelLoaderLifecycleIT {
       throws Exception {
     long v1 = registerVersion("v1").id();
     ModelLoader loader = new ModelLoader(registryService, 1);
-    LoadedPitchTypeModel b1 = loader.loadPitchType(v1);
-    assertThat(b1.predict(sampleRequest())).hasSize(7);
+    try {
+      LoadedPitchTypeModel b1 = loader.loadPitchType(v1);
+      assertThat(b1.predict(sampleRequest())).hasSize(7);
 
-    // Direct close path: retirement is SYNCHRONOUS here (no async-listener poll needed) - that
-    // is the point of the @PreDestroy rewrite; the listener alone gave no such guarantee.
-    loader.close();
-    assertThat(b1.isRetired()).isTrue();
-    assertThatThrownBy(() -> b1.predict(sampleRequest()))
-        .isInstanceOf(ModelUnavailableException.class)
-        .hasMessageContaining("retired");
+      // Direct close path: retirement is SYNCHRONOUS here (no async-listener poll needed) - that
+      // is the point of the @PreDestroy rewrite; the listener alone gave no such guarantee.
+      loader.close();
+      assertThat(b1.isRetired()).isTrue();
+      assertThatThrownBy(() -> b1.predict(sampleRequest()))
+          .isInstanceOf(ModelUnavailableException.class)
+          .hasMessageContaining("retired");
+      // And the loader itself refuses further loads - a load racing the shutdown sweep would
+      // otherwise repopulate the cache with a session nothing ever closes.
+      assertThatThrownBy(() -> loader.loadPitchType(v1))
+          .isInstanceOf(IllegalStateException.class)
+          .hasMessageContaining("closed");
+    } finally {
+      loader.close(); // idempotent; keeps the leak-on-assertion-failure symmetry of the other tests
+    }
   }
 
+  /**
+   * The getLive recheck's BITING test: retire a bundle while its cache mapping still exists (a
+   * direct close, no eviction), then load the same id - a plain {@code cache.get} would hand back
+   * the retired instance; the recheck must reload fresh.
+   */
+  @Test
+  void getLive_reloads_a_bundle_retired_while_still_cached() throws Exception {
+    long v1 = registerVersion("v1").id();
+    ModelLoader loader = new ModelLoader(registryService, 1);
+    try {
+      LoadedPitchTypeModel b1 = loader.loadPitchType(v1);
+      b1.close(); // retired, but the mapping is untouched - no eviction happened
+
+      LoadedPitchTypeModel fresh = loader.loadPitchType(v1);
+      assertThat(fresh).isNotSameAs(b1);
+      assertThat(fresh.isRetired()).isFalse();
+      assertThat(fresh.predict(sampleRequest())).hasSize(7);
+    } finally {
+      loader.close();
+    }
+  }
+
+  /**
+   * Pins fail-loud-typed on a corrupt calibrator for the pitch-type path - which was ALREADY
+   * session-last on main, so this does NOT assert the three task-#87 reorders (LoadedAllParksModel,
+   * LoadedPitchModel pre/post). Those are pinned by the SESSION LAST comments at each site and by
+   * review; asserting "no session was created" would need live-session introspection the wrappers
+   * deliberately do not expose.
+   */
   @Test
   void corrupt_calibrator_fails_the_load_typed() throws Exception {
     ModelVersion mv = registerVersion("v-corrupt");
@@ -178,31 +211,40 @@ class ModelLoaderLifecycleIT {
 
   private static FeaturePipelinePitchType.Request sampleRequest() {
     return new FeaturePipelinePitchType.Request(
-        1, 1, 1, 3, 0, "R", "R", "NYY", 1.0, 5.0, 1.0, 0.35, 0.2, 0.1, 0.15, 0.1, 0.08, 0.02, 0.4,
-        250, 0, 3, 0, 12);
+        // count/state: balls, strikes, outs, inning, baseState, stand, pThrows, parkId
+        1,
+        1,
+        1,
+        3,
+        0,
+        "R",
+        "R",
+        "NYY",
+        // TTO: timesThroughOrder, atBatNumberInGame, timesFacedToday
+        1.0,
+        5.0,
+        1.0,
+        // ARS mix: arsFf, arsSi, arsFc, arsSl, arsCu, arsCh, arsOff, arsFfByCount, pitcherPriorN
+        0.35,
+        0.2,
+        0.1,
+        0.15,
+        0.1,
+        0.08,
+        0.02,
+        0.4,
+        250,
+        // SEQ: prev1PitchTypeInt, prev2PitchTypeInt, prev1Missing, pitchesIntoOuting
+        0,
+        3,
+        0,
+        12);
   }
 
-  /** Same fixture shape as {@code PredictPitchTypeRoutingIT}: real ONNX, real contract. */
   private ModelVersion registerVersion(String version) throws Exception {
-    Path src = Files.createDirectories(sourceDir.resolve(MODEL_NAME + "-" + version));
-    URL onnx = getClass().getResource("/onnx/pitch_type_fixture.onnx");
-    Files.copy(
-        Path.of(Objects.requireNonNull(onnx, "pitch-type fixture missing").toURI()),
-        src.resolve("model.onnx"));
-    Files.writeString(
-        src.resolve("metadata.json"),
-        "{\"model_name\":\""
-            + MODEL_NAME
-            + "\",\"model_kind\":\"pitch_type\",\"model_version\":\""
-            + version
-            + "\",\"calibrator\":{\"path\":\"calibrator.json\"}}");
-    Files.copy(CONTRACT, src.resolve("feature_pipeline.json"));
-    Files.writeString(
-        src.resolve("calibrator.json"),
-        "{\"kind\":\"temperature\",\"class_labels\":"
-            + "[\"FF\",\"SI\",\"FC\",\"SL\",\"CU\",\"CH\",\"OFF\"],\"temperature\":1.0}");
-    Files.writeString(
-        src.resolve("park_id_mapping.json"), "{\"park_id\":{\"NYY\":0},\"missing_value\":-1}");
+    Path src =
+        PitchTypeSnapshotFixtures.writeStandardSnapshot(
+            sourceDir.resolve(MODEL_NAME + "-" + version), MODEL_NAME, version);
 
     return registryService.register(
         new RegisterRequest(

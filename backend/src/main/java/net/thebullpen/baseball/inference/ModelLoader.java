@@ -29,6 +29,13 @@ import org.springframework.stereotype.Component;
  * close-under-use, and the {@code getLive} recheck reloads a retired bundle before it ever reaches
  * the caller in the common case.
  *
+ * <p>Executor note: removal notifications run on Caffeine's default executor (the common pool), and
+ * a guarded close can now occupy that thread for up to the drain bound when a run is in flight.
+ * Typical cost is one forward pass (~p99 14ms); the pathological case (evictions over STUCK runs
+ * pinning several common-pool workers for 5s each) is accepted rather than given a dedicated
+ * executor - graceful shutdown means the {@code @PreDestroy} sweep normally finds nothing in
+ * flight, and eviction churn at that rate is a cache-sizing defect to fix, not to absorb.
+ *
  * <p>Loading reads the registry row for the {@code versionId}, derives the snapshot directory from
  * the row's {@code artifact_path}, and constructs the bundle. {@code s3://}-prefixed paths are
  * rejected with a clear error — operator runs the {@code
@@ -48,6 +55,7 @@ public class ModelLoader {
   private static final Logger log = LoggerFactory.getLogger(ModelLoader.class);
 
   private final RegistryService registry;
+  private volatile boolean closed;
   private final Cache<Long, LoadedBattedBallModel> battedBallCache;
   private final Cache<Long, LoadedAllParksModel> allParksCache;
   private final Cache<Long, LoadedPitchModel> pitchPreCache;
@@ -345,8 +353,14 @@ public class ModelLoader {
    * Deliberately no retry loop: a second retired hit within one request means eviction is churning
    * faster than a request, which is a cache-sizing problem to surface loudly, not to spin on.
    */
-  private static <M> M getLive(
+  private <M> M getLive(
       Cache<Long, M> cache, long versionId, Function<Long, M> fresh, Predicate<M> retired) {
+    if (closed) {
+      // Without this, a load racing the @PreDestroy sweep would repopulate the cache with a
+      // fresh session nothing ever closes - in a many-context test JVM that is exactly the
+      // accumulation the direct-close shutdown exists to stop.
+      throw new IllegalStateException("ModelLoader is closed - no loads after shutdown began");
+    }
     M m = cache.get(versionId, fresh);
     if (retired.test(m)) {
       cache.invalidate(versionId);
@@ -366,6 +380,7 @@ public class ModelLoader {
 
   @PreDestroy
   public void close() {
+    closed = true;
     // Close bundles DIRECTLY rather than relying on the removalListener: Caffeine delivers
     // removal notifications ASYNCHRONOUSLY on its executor (the previous comment here claimed
     // cleanUp() fires them synchronously - it does not), so a shutdown that only invalidates can

@@ -93,7 +93,10 @@ final class SessionGuard {
         return;
       }
       long deadlineNanos = System.nanoTime() + drainTimeout.toNanos();
-      while (inFlight > 0) {
+      // Also exits when a CONCURRENT closer claims the close while this one drains - without the
+      // closeActionRan term a losing closer would sit out its full timeout and then log a
+      // "forcing the native close" ERROR for a close it never performs.
+      while (inFlight > 0 && !closeActionRan) {
         long remainingMillis = (deadlineNanos - System.nanoTime()) / 1_000_000;
         if (remainingMillis <= 0) {
           log.error(
@@ -122,6 +125,9 @@ final class SessionGuard {
         return;
       }
       closeActionRan = true;
+      // Wake any concurrent closer still in its drain wait so it observes the claim immediately
+      // instead of timing out.
+      notifyAll();
     }
     action.close();
   }
