@@ -1,20 +1,24 @@
 # Runbook - model_routing integrity failure at boot
 
-**Owner:** alex · **Last reviewed:** 2026-07-27 · **Task:** #94 / PR #373
+**Owner:** alex · **Last reviewed:** 2026-07-28 · **Task:** #94 / PR #373, issue #374
 
 Applies when `bullpen-api` or `bullpen-worker` refuses to start with:
 
 ```
-IllegalStateException: routing integrity: N model_routing row(s) reference a
-non-CHAMPION version - refusing to start rather than serve outside the
-promotion gates (task #94): [ChampionStageRow[modelName=..., ...]]
+IllegalStateException: routing integrity: N model_routing row(s) violate the
+stage invariants (champion must be a same-model CHAMPION, an occupied
+challenger slot a same-model SHADOW) - refusing to start rather than serve
+outside the promotion gates (task #94 / issue #374): [RoutingStageRow[...]]
 ```
 
-`RoutingChampionIntegrityCheck` found a `model_routing` row whose
-`champion_version_id` does not reference a CHAMPION-stage version OF THE SAME
-MODEL. The check fails the boot before the web server accepts traffic, on both
-profiles, because the alternative is the A/B router serving a version that
-never passed the rule-5/rule-6 gates.
+`RoutingIntegrityCheck` found a `model_routing` row violating one of the two
+stage invariants: `champion_version_id` must reference a CHAMPION-stage
+version OF THE SAME MODEL, and an occupied `challenger_version_id` must
+reference a same-model SHADOW-stage version. The check fails the boot before
+the web server accepts traffic, on both profiles, because the alternative is
+the A/B router serving (or shadow-routing) a version that never passed the
+rule-5/rule-6 gates. The printed `RoutingStageRow` shows both sides - the
+violating one is whichever stage is not its legit value.
 
 ## Why the normal tools will not work
 
@@ -26,7 +30,19 @@ never passed the rule-5/rule-6 gates.
 - Do NOT weaken or bypass the check. A bad routing row is an un-audited
   promotion in everything but name.
 
-## Recovery A - delete the offending row (usual case)
+## Which repair for which violation
+
+- **Champion violation** -> Recovery A (DELETE the row; the slot cannot be
+  emptied, champion_version_id is NOT NULL).
+- **Challenger violation** -> Recovery A2 (CLEAR the slot; the row itself is
+  healthy and deleting it would needlessly drop the serving champion to the
+  legacy fallback).
+- **BOTH in one row** -> Recovery A. A champion violation blocks the A2 update as well:
+  V020's trigger is `BEFORE UPDATE` on the whole row, not `UPDATE OF champion_version_id`, so
+  clearing the challenger on a row whose champion is corrupt aborts too.
+- **Anything you cannot explain** -> Recovery B.
+
+## Recovery A - delete the offending row (champion violation)
 
 This is the documented EMERGENCY EXCEPTION to ADR-0006's read-only-prod rule:
 a `sqlite3` write on the box, snapshot-first, smallest possible statement.
@@ -63,6 +79,26 @@ a `sqlite3` write on the box, snapshot-first, smallest possible statement.
    promote flow, and record how the row went bad. If the cause was a code
    path (not a hand edit), that path is a bug - file it.
 
+## Recovery A2 - clear a stale challenger slot (challenger violation)
+
+Same emergency-exception rules as Recovery A: `.backup` first, smallest
+possible statement, evidence preserved.
+
+1. Back up as in Recovery A step 1.
+2. Confirm the slot is the violation (challenger stage not 'shadow' or NULL
+   join miss), using the pre-flight query below.
+3. Clear ONLY the slot - the row stays, the champion keeps serving:
+
+   ```bash
+   sqlite3 /opt/bullpen/data/registry.sqlite \
+     "UPDATE model_routing SET challenger_version_id = NULL,
+        challenger_traffic_pct = 0, mode = 'shadow'
+      WHERE model_name = '<model_name_from_the_boot_log>';"
+   ```
+
+4. Restart. Afterwards, from the Mac: set a legitimate challenger via the
+   normal admin flow if one is wanted, and record how the slot went stale.
+
 ## Recovery B - restore registry.sqlite from the nightly snapshot
 
 Use when the corruption is broader than one row (or step 2 above shows
@@ -74,7 +110,7 @@ anything you cannot explain). The 03:00 snapshot captures the registry at
 2. `.backup` the current file as in Recovery A step 1 (preserve the evidence).
 3. Copy the latest snapshot's `_sqlite/registry.sqlite` over
    `/opt/bullpen/data/registry.sqlite`.
-4. Restart. Flyway will re-apply nothing (the snapshot is post-V020 once this
+4. Restart. Flyway will re-apply nothing (the snapshot is post-V021 once this
    PR has deployed at least one nightly cycle; if restoring an OLDER snapshot,
    Flyway applies the missing migrations at boot - that is fine).
 5. Reconcile: any registration or promotion that happened after the snapshot
@@ -83,14 +119,19 @@ anything you cannot explain). The 03:00 snapshot captures the registry at
 ## Pre-flight (avoid this runbook entirely)
 
 Before every deploy that includes V020 or later, run the read-only check on
-the box (this is exactly `findChampionStageRows`' violation predicate):
+the box (this is exactly `findRoutingStageRows`' violation predicate, both invariants):
 
 ```sql
-SELECT r.model_name, r.champion_version_id, v.stage
+SELECT r.model_name,
+       r.champion_version_id,   v.stage AS champion_stage,
+       r.challenger_version_id, c.stage AS challenger_stage
   FROM model_routing r
   LEFT JOIN model_versions v
     ON v.id = r.champion_version_id AND v.model_name = r.model_name
- WHERE v.stage IS NOT 'champion';
+  LEFT JOIN model_versions c
+    ON c.id = r.challenger_version_id AND c.model_name = r.model_name
+ WHERE v.stage IS NOT 'champion'
+    OR (r.challenger_version_id IS NOT NULL AND c.stage IS NOT 'shadow');
 ```
 
 Zero rows = safe to deploy.
