@@ -34,16 +34,21 @@ public final class PitchOnnxModel implements AutoCloseable {
   private final OrtEnvironment env;
   private final OrtSession session;
   private final String inputName;
+  private final SessionGuard guard;
 
   public PitchOnnxModel(Path modelPath) throws OrtException {
     this.env = OrtEnvironment.getEnvironment();
     this.session = env.createSession(modelPath.toString(), new OrtSession.SessionOptions());
     var inputNames = session.getInputNames();
     if (inputNames.size() != 1) {
+      // The session is live here; close it before propagating or the native handle leaks (the
+      // same construct-order discipline task #87 imposes on the Loaded* bundle classes).
+      session.close();
       throw new IllegalStateException(
           "pitch ONNX must declare exactly one input tensor, got " + inputNames);
     }
     this.inputName = inputNames.iterator().next();
+    this.guard = new SessionGuard("pitch onnx session " + modelPath.getFileName());
   }
 
   /**
@@ -54,20 +59,29 @@ public final class PitchOnnxModel implements AutoCloseable {
    * side too. Mirrors the legacy reader's {@code runOnnx} so parity holds against the same graph.
    */
   public float[] predict(float[] features) throws OrtException {
-    try (OnnxTensor tensor = OnnxTensor.createTensor(env, new float[][] {features});
-        OrtSession.Result result = session.run(Map.of(inputName, tensor))) {
-      int size = result.size();
-      if (size == 0) {
-        throw new IllegalStateException("pitch ONNX session returned no outputs");
-      }
-      Object probObj = (size == 1 ? result.get(0) : result.get(1)).getValue();
-      if (!(probObj instanceof float[][] probs)) {
-        throw new IllegalStateException(
-            "pitch ONNX probability output must be a float[N][K] tensor, got "
-                + (probObj == null ? "null" : probObj.getClass().getSimpleName()));
-      }
-      return probs[0];
-    }
+    // Every native touch goes through the guard (task #87 / H2): close waits for this run.
+    return guard.withSession(
+        () -> {
+          try (OnnxTensor tensor = OnnxTensor.createTensor(env, new float[][] {features});
+              OrtSession.Result result = session.run(Map.of(inputName, tensor))) {
+            int size = result.size();
+            if (size == 0) {
+              throw new IllegalStateException("pitch ONNX session returned no outputs");
+            }
+            Object probObj = (size == 1 ? result.get(0) : result.get(1)).getValue();
+            if (!(probObj instanceof float[][] probs)) {
+              throw new IllegalStateException(
+                  "pitch ONNX probability output must be a float[N][K] tensor, got "
+                      + (probObj == null ? "null" : probObj.getClass().getSimpleName()));
+            }
+            return probs[0];
+          }
+        });
+  }
+
+  /** True once {@link #close()} has begun: the bundle is stale and a fresh load should serve. */
+  public boolean isRetired() {
+    return guard.isRetired();
   }
 
   /** The resolved input tensor name (visible for tests / diagnostics). */
@@ -77,7 +91,9 @@ public final class PitchOnnxModel implements AutoCloseable {
 
   @Override
   public void close() throws OrtException {
-    session.close();
+    // Retire-drain-close via the guard: safe against in-flight runs, idempotent across the
+    // Caffeine removalListener and the ModelLoader shutdown sweep both reaching this bundle.
+    guard.closeWhenIdle(session::close);
     // env is the process-wide ORT singleton owned by ORT; do not close it.
   }
 }

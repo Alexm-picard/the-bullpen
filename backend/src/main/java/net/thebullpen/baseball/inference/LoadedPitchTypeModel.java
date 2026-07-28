@@ -71,7 +71,11 @@ public final class LoadedPitchTypeModel implements AutoCloseable {
     // they ever disagree, the calibrated probabilities would be packed under the wrong labels -
     // a silently wrong distribution rather than a failure. Refuse to load instead.
     if (!pipeline.spec().classLabels().equals(calibrator.classLabels())) {
-      throw new IllegalStateException(
+      // ModelUnavailableException, not IllegalStateException: ModelLoader wraps only
+      // IOException | OrtException, so an ISE here used to propagate UNWRAPPED past the
+      // "failed to load pitch-type model <naturalKey>" framing every other load failure gets.
+      // This is a snapshot-integrity refusal like the rest - same type, same handling.
+      throw new ModelUnavailableException(
           "class-label mismatch in "
               + snapshotDir
               + ": contract has "
@@ -182,6 +186,13 @@ public final class LoadedPitchTypeModel implements AutoCloseable {
 
   public FeaturePipelinePitchType pipeline() {
     return pipeline;
+  }
+
+  /**
+   * True once this bundle's close has begun (evicted or shutting down) - reload for a fresh one.
+   */
+  public boolean isRetired() {
+    return onnx.isRetired();
   }
 
   @Override

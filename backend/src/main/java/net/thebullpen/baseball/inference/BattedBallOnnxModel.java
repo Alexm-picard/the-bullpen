@@ -57,16 +57,22 @@ public final class BattedBallOnnxModel implements AutoCloseable {
    */
   private final boolean hasCarry;
 
+  private final SessionGuard guard;
+
   public BattedBallOnnxModel(Path modelPath) throws OrtException {
     this.env = OrtEnvironment.getEnvironment();
     this.session = env.createSession(modelPath.toString(), new OrtSession.SessionOptions());
     var inputNames = session.getInputNames();
     if (inputNames.size() != 1) {
+      // The session is live here; close it before propagating or the native handle leaks (the
+      // same construct-order discipline task #87 imposes on the Loaded* bundle classes).
+      session.close();
       throw new IllegalStateException(
           "batted-ball ONNX must declare exactly one input tensor, got " + inputNames);
     }
     this.inputName = inputNames.iterator().next();
     this.hasCarry = session.getOutputNames().contains(CARRY_OUTPUT_NAME);
+    this.guard = new SessionGuard("batted-ball onnx session " + modelPath.getFileName());
   }
 
   /** True when the graph exposes the second (carry) output (Phase 4). */
@@ -98,10 +104,14 @@ public final class BattedBallOnnxModel implements AutoCloseable {
 
   /** Batched variant: {@code [N][nFeatures]} in, {@code [N][nParks][nOutcomes]} out. */
   public float[][][] predictBatch(float[][] features) throws OrtException {
-    try (OnnxTensor tensor = OnnxTensor.createTensor(env, features);
-        OrtSession.Result result = session.run(Map.of(inputName, tensor))) {
-      return readDistribution(result);
-    }
+    // Every native touch goes through the guard (task #87 / H2): close waits for this run.
+    return guard.withSession(
+        () -> {
+          try (OnnxTensor tensor = OnnxTensor.createTensor(env, features);
+              OrtSession.Result result = session.run(Map.of(inputName, tensor))) {
+            return readDistribution(result);
+          }
+        });
   }
 
   /**
@@ -112,29 +122,40 @@ public final class BattedBallOnnxModel implements AutoCloseable {
    * trailing dim, so the carry tensor is {@code [N][nParks]}; we read row 0.
    */
   public Prediction predictWithCarry(float[] features) throws OrtException {
-    try (OnnxTensor tensor = OnnxTensor.createTensor(env, new float[][] {features});
-        OrtSession.Result result = session.run(Map.of(inputName, tensor))) {
-      float[][] dist = readDistribution(result)[0];
-      if (!hasCarry) {
-        return new Prediction(dist, null);
-      }
-      Object carryValue =
-          result
-              .get(CARRY_OUTPUT_NAME)
-              .orElseThrow(
-                  () ->
-                      new IllegalStateException(
-                          "hasCarry set but session has no '" + CARRY_OUTPUT_NAME + "' output"))
-              .getValue();
-      if (!(carryValue instanceof float[][] carry)) {
-        throw new IllegalStateException(
-            "batted-ball ONNX '"
-                + CARRY_OUTPUT_NAME
-                + "' output must be a float[N][nParks] tensor, got "
-                + (carryValue == null ? "null" : carryValue.getClass().getSimpleName()));
-      }
-      return new Prediction(dist, carry[0]);
-    }
+    // Every native touch goes through the guard (task #87 / H2): close waits for this run.
+    return guard.withSession(
+        () -> {
+          try (OnnxTensor tensor = OnnxTensor.createTensor(env, new float[][] {features});
+              OrtSession.Result result = session.run(Map.of(inputName, tensor))) {
+            float[][] dist = readDistribution(result)[0];
+            if (!hasCarry) {
+              return new Prediction(dist, null);
+            }
+            Object carryValue =
+                result
+                    .get(CARRY_OUTPUT_NAME)
+                    .orElseThrow(
+                        () ->
+                            new IllegalStateException(
+                                "hasCarry set but session has no '"
+                                    + CARRY_OUTPUT_NAME
+                                    + "' output"))
+                    .getValue();
+            if (!(carryValue instanceof float[][] carry)) {
+              throw new IllegalStateException(
+                  "batted-ball ONNX '"
+                      + CARRY_OUTPUT_NAME
+                      + "' output must be a float[N][nParks] tensor, got "
+                      + (carryValue == null ? "null" : carryValue.getClass().getSimpleName()));
+            }
+            return new Prediction(dist, carry[0]);
+          }
+        });
+  }
+
+  /** True once {@link #close()} has begun: the bundle is stale and a fresh load should serve. */
+  public boolean isRetired() {
+    return guard.isRetired();
   }
 
   /** Read + type-check output 0 - the per-park distribution the contract pins at index 0. */
@@ -150,7 +171,9 @@ public final class BattedBallOnnxModel implements AutoCloseable {
 
   @Override
   public void close() throws OrtException {
-    session.close();
+    // Retire-drain-close via the guard: safe against in-flight runs, idempotent across the
+    // Caffeine removalListener and the ModelLoader shutdown sweep both reaching this bundle.
+    guard.closeWhenIdle(session::close);
     // env is the process-wide ORT singleton owned by ORT; do not close it.
   }
 }
