@@ -430,8 +430,14 @@ class PitchTypeArsenalParityIT {
    * at_bat_index, pitch_number)} with no game_date, so the 4-part dedup key is STRICTER than that
    * table's identity. A suspended game re-reported under the same game_pk on a different date is
    * two distinct rows to LIMIT 1 BY, and only FINAL collapses them - without it the pitch DOUBLE
-   * COUNTS. This fixture is also the only place in the class where one game_id appears on two
-   * game_dates, so it doubles as the pin distinguishing the 4-part dedup key from a 3-part one.
+   * COUNTS.
+   *
+   * <p>The SECOND pair, seeded in {@code pitches}, is what pins the dedup key's WIDTH - and it has
+   * to be in that table to do so. My first version claimed the live pair doubled as that pin; the
+   * auditor disproved it by mutation: in {@code pitches_live} FINAL collapses the pair BEFORE
+   * {@code LIMIT 1 BY} ever sees a key, so a 3-part key survives unnoticed. In {@code pitches},
+   * whose ReplacingMergeTree identity IS the 4-part key, both rows survive FINAL and a 3-part key
+   * would wrongly drop one.
    */
   @Test
   void a_live_pitch_re_reported_under_a_different_date_counts_once() throws Exception {
@@ -443,6 +449,15 @@ class PitchTypeArsenalParityIT {
     // Same game_pk and same pitch, re-reported a day later (suspended-game shape).
     insertPitches(
         "pitches_live", List.of(new P(AS_OF.minusDays(1), 640_001L, 1, 1, "FF", 0, 0)), p, 0L);
+    // The key-WIDTH pair, in pitches: two genuinely distinct rows under that table's own 4-part
+    // identity, which a 3-part dedup key would wrongly collapse to one.
+    insertPitches(
+        "pitches",
+        List.of(
+            new P(AS_OF, 640_002L, 1, 1, "SL", 0, 0),
+            new P(AS_OF.minusDays(1), 640_002L, 1, 1, "SL", 0, 0)),
+        p,
+        0L);
 
     refreshSnapshot();
 
@@ -450,8 +465,88 @@ class PitchTypeArsenalParityIT {
         ch.queryForMap(
             "SELECT prior_n FROM pitcher_pitchtype_prior_current FINAL WHERE pitcher_id = ?", p);
     assertThat(((Number) row.get("prior_n")).longValue())
-        .as("one physical pitch, re-reported - FINAL collapses it before the 4-part key sees two")
-        .isEqualTo(1L);
+        .as(
+            "1 live pitch (re-reported; FINAL collapses it) + 2 distinct corpus pitches sharing a"
+                + " game_id across two dates (only a 4-part key keeps both)")
+        .isEqualTo(3L);
+  }
+
+  /**
+   * THE BRANCH NO TEST REACHED, caught by the auditor's second pass: with {@code pitches_live}
+   * EMPTY the snapshot must still be the full career. Routing the corpus down the cheap undeduped
+   * leg depends on {@code live_floor} becoming the far future, and an {@code ifNull(min(...))}
+   * guard could not do that - ClickHouse {@code min()} over an empty non-Nullable column returns
+   * the type DEFAULT (1970-01-01), never NULL - so the routing silently inverted and the whole
+   * corpus took the global sort (measured 3.16 GiB vs 56 MiB). Empty is not exotic: the 14-day TTL
+   * means the entire OFFSEASON, any long ingest outage, and every fresh or restored box.
+   */
+  /**
+   * THE PIN THAT ACTUALLY BITES the live-floor guard. The snapshot-content test below cannot: the
+   * guard decides WHICH LEG runs, not which rows come out, and at fixture scale the global and
+   * scoped legs return identical answers - I confirmed by mutation that the dead {@code
+   * ifNull(min(...))} form passes every content assertion in this class. So this evaluates the
+   * expression itself against an empty table, where the two forms differ visibly: the correct guard
+   * yields the far-future sentinel, the dead one yields ClickHouse's type default of 1970-01-01 and
+   * would route the entire career corpus through the global sort.
+   */
+  @Test
+  void the_live_floor_guard_yields_the_far_future_on_an_empty_live_table() throws Exception {
+    ch = new JdbcTemplate(clickhouse);
+    seedEverything();
+
+    // Compared against the table's OWN min rather than a literal: pitches_live accumulates across
+    // tests in this class (the SEQ fixture seeds its own dates), so the minimum is not knowable
+    // from this test's seeds alone. What matters is that a POPULATED table yields the real
+    // minimum and never the sentinel.
+    LocalDate actualMin =
+        ch.queryForObject("SELECT min(game_date) FROM pitches_live", LocalDate.class);
+    LocalDate populated =
+        ch.queryForObject("SELECT " + PitcherPitchTypePriorSnapshotSql.LIVE_FLOOR, LocalDate.class);
+    assertThat(populated)
+        .as("with rows present the floor is the live table's own minimum")
+        .isEqualTo(actualMin)
+        .isNotEqualTo(LocalDate.of(2149, 6, 6));
+
+    ch.execute("TRUNCATE TABLE pitches_live");
+    LocalDate empty =
+        ch.queryForObject("SELECT " + PitcherPitchTypePriorSnapshotSql.LIVE_FLOOR, LocalDate.class);
+    assertThat(empty)
+        .as(
+            "min() over an empty non-Nullable column returns 1970-01-01, NOT null - the guard"
+                + " must not rely on ifNull, or the cheap leg matches nothing")
+        .isEqualTo(LocalDate.of(2149, 6, 6));
+  }
+
+  @Test
+  void snapshot_is_complete_when_the_live_table_is_empty() throws Exception {
+    ch = new JdbcTemplate(clickhouse);
+    seedEverything();
+    // Ephemeral Testcontainers instance, not live ClickHouse - the same wipe idiom
+    // PitcherFormRepositoryIT uses between tests.
+    ch.execute("TRUNCATE TABLE pitches_live");
+    long p = 7777L;
+    insertPitches(
+        "pitches",
+        List.of(
+            new P(AS_OF, 650_001L, 1, 1, "FF", 0, 0),
+            new P(AS_OF, 650_001L, 1, 2, "SL", 0, 0),
+            new P(AS_OF.minusDays(3), 650_002L, 1, 1, "CH", 0, 0)),
+        p,
+        0L);
+
+    refreshSnapshot();
+
+    Map<String, Object> row =
+        ch.queryForMap(
+            "SELECT prior_n, n_ff, n_sl, n_ch FROM pitcher_pitchtype_prior_current FINAL"
+                + " WHERE pitcher_id = ?",
+            p);
+    assertThat(((Number) row.get("prior_n")).longValue())
+        .as("an empty live table must not cost the corpus a single pitch")
+        .isEqualTo(3L);
+    assertThat(((Number) row.get("n_ff")).longValue()).isEqualTo(1L);
+    assertThat(((Number) row.get("n_sl")).longValue()).isEqualTo(1L);
+    assertThat(((Number) row.get("n_ch")).longValue()).isEqualTo(1L);
   }
 
   private void seedEverything() throws Exception {

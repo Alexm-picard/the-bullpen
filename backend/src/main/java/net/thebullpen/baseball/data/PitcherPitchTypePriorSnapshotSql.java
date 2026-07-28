@@ -119,13 +119,35 @@ public final class PitcherPitchTypePriorSnapshotSql {
    * most one row per key, so {@code src} alone decides. It stays so that losing a leg's FINAL
    * degrades to the same answer rather than an arbitrary one.
    */
+  /**
+   * The live-floor scalar, extracted so a test can assert on the EXPRESSION rather than on its
+   * consequences. That distinction is the whole reason it is here: the guard's failure mode is
+   * WHICH LEG RUNS, not which rows come out, and at fixture scale both legs return the same answer
+   * - so a snapshot-content test cannot see a broken guard (verified by mutation: the dead ifNull
+   * form passes every content assertion in the parity IT). Only evaluating the expression against
+   * an empty table catches it.
+   */
+  static final String LIVE_FLOOR =
+      "(SELECT if(count() = 0, toDate('2149-06-06'), min(game_date)) FROM pitches_live)";
+
   private static String unionSource(String y7Expression) {
     String projection =
         "SELECT pitcher_id, balls * 3 + strikes AS slot, " + y7Expression + " AS y7";
     String filter = "pitch_type NOT IN ('', 'PO', 'IN') AND game_date <= " + TODAY_ET + " - 1";
-    // Empty pitches_live: the guard makes live_floor the far future, so the whole corpus takes
-    // the cheap undeduped leg and the overlap leg matches nothing.
-    return "WITH ifNull((SELECT min(game_date) FROM pitches_live), toDate('2999-12-31'))"
+    // EMPTY pitches_live -> live_floor is the far future, so the whole corpus takes the cheap
+    // undeduped leg and the overlap leg matches nothing. The guard is an explicit count(), NOT
+    // ifNull(min(...)): ClickHouse min() over an EMPTY non-Nullable column returns the TYPE
+    // DEFAULT (1970-01-01), never NULL, so ifNull cannot fire - it would leave live_floor at the
+    // epoch, match NOTHING on the cheap leg, and send the entire career corpus through the global
+    // sort this whole rewrite exists to avoid (measured 3.16 GiB / 6-8s vs 56 MiB / 0.24s). That
+    // is not a rare edge: pitches_live has a 14-day TTL, so it is empty for the entire OFFSEASON
+    // (~100 consecutive nightly refreshes), through any 14-day ingest outage, and on a fresh or
+    // just-restored box. The same trap is called out on corpusMaxGameDate's sibling in
+    // PitcherFormRepository - it was documented before it was walked into here.
+    // 2149-06-06 is Date's actual maximum (UInt16 days from epoch); a larger literal silently
+    // saturates to it, so write the reachable value.
+    return "WITH "
+        + LIVE_FLOOR
         + " AS live_floor\n"
         + projection
         + "\n  FROM pitches FINAL\n"

@@ -261,6 +261,18 @@ public class PitcherPitchTypePriorRepository {
    * (there is no hole if there is no second source - the freshness gauge owns that case).
    */
   public long coverageGapDays() {
+    // The ifNull wrappers below are DEAD, deliberately left with this note: min()/max() over an
+    // empty non-Nullable column return the TYPE DEFAULT (1970-01-01), not NULL. What actually
+    // produces the documented 0 on an empty pitches_live is the greatest() clamp - an empty live
+    // table yields epoch minus corpus_max, hugely negative. Do not "simplify" the clamp away on
+    // the reasoning that ifNull covers the case; it does not. (The same trap killed the
+    // snapshot SQL's live_floor guard - see PitcherPitchTypePriorSnapshotSql.)
+    //
+    // One state this clamp reads oddly for, on purpose: EMPTY pitches with a populated
+    // pitches_live (a fresh or just-restored box, before the first backfill) reports ~20,600 -
+    // literally true, since everything before the live floor is missing, but it will look like a
+    // broken gauge at exactly the moment someone is watching a restore drill. The gauge
+    // description names that state so an alert rule can tell it from a real backfill lag.
     Long gap =
         jdbc.queryForObject(
             "SELECT greatest(0, toInt64(ifNull("

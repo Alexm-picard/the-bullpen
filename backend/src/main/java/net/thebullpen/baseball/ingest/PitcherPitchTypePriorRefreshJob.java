@@ -104,7 +104,9 @@ public class PitcherPitchTypePriorRefreshJob {
                 + " are computed over an incomplete history and prior_n - itself a model feature"
                 + " - is biased low for every pitcher active in the gap; it is fixed by running"
                 + " the backfill, not by waiting, because this window is career-expanding rather"
-                + " than rolling and never ages out.")
+                + " than rolling and never ages out. A reading in the tens of thousands is the"
+                + " empty-corpus state (a fresh or just-restored box before the first backfill),"
+                + " not a broken gauge - everything before the live floor is genuinely missing.")
         .register(meters);
   }
 
