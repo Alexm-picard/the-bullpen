@@ -423,6 +423,13 @@ public class RegistryService {
           id);
     } else {
       repo.updateStage(id, newStage);
+      if (newStage == Stage.ARCHIVED) {
+        // Issue #374, the challenger-side mirror of the task-#94 branches above: archiving a
+        // version that currently occupies its model's challenger slot must clear that slot in
+        // the same transaction, or shadow legs keep hitting an archived version (and mode=AB
+        // would route it real traffic). No-op for versions not in a slot.
+        routingService.clearChallengerIfRouted(current.modelName(), id);
+      }
     }
     return repo.findById(id)
         .orElseThrow(

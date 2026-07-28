@@ -20,8 +20,8 @@ import org.springframework.test.context.DynamicPropertySource;
 
 /**
  * Integration test for the Phase 3a.1 SQLite registry schema (migrations V010-V013), plus the later
- * constraints layered on it: V016's one-champion-per-model partial unique index and V020's
- * model_routing champion-stage triggers.
+ * constraints layered on it: V016's one-champion-per-model partial unique index, V020's
+ * model_routing champion-stage triggers, and V021's challenger-stage mirror of them.
  *
  * <p>Runs against a temp SQLite created by the {@code registry-it} profile (see {@code
  * src/test/resources/application-registry-it.yml}) so the test doesn't touch the dev DB at {@code
@@ -56,6 +56,15 @@ class RegistrySchemaIT {
   private static final String CHAMPION_STAGE_INVARIANT =
       "model_routing.champion_version_id must reference a model_versions row of the same"
           + " model_name at stage champion";
+
+  /**
+   * Substring of the V021 trigger's RAISE(ABORT, ...) message - the challenger-side mirror. Same
+   * reason as above: asserted on so the guard tests prove the CHALLENGER stage invariant fired
+   * rather than the champion one, the FK, or any other constraint on the same statement.
+   */
+  private static final String CHALLENGER_STAGE_INVARIANT =
+      "model_routing.challenger_version_id, when non-null, must reference a model_versions row of"
+          + " the same model_name at stage shadow";
 
   @Autowired private JdbcTemplate jdbc;
 
@@ -301,6 +310,109 @@ class RegistrySchemaIT {
             "SELECT champion_version_id FROM model_routing WHERE model_name = 'batted_ball'",
             Long.class);
     assertThat(stored).isEqualTo(championId);
+  }
+
+  // --- model_routing challenger-stage guard (V021) -------------------------
+
+  /**
+   * V021 bite tests, the challenger-side mirror of the V020 block above. V011's foreign key proves
+   * the referenced version EXISTS but not that it is a SHADOW one, so a hand-written routing row
+   * could park an ARCHIVED (or another model's) version in the challenger slot - and under
+   * mode='ab' with traffic &gt; 0 that version takes real user traffic, which is a rule-6 violation
+   * in substance.
+   *
+   * <p>The nullable column is the interesting difference: NULL is the common healthy state
+   * (champion-only routing, which is what every prod row looks like today), so the anti-vacuity
+   * pair below covers BOTH admitted shapes - a same-model shadow challenger and no challenger at
+   * all. A WHEN clause that dropped the {@code IS NOT NULL} term would still pass the two rejection
+   * tests while aborting every champion-only write in the system.
+   */
+  @Test
+  void model_routing_rejects_insert_with_a_challenger_at_archived_stage() {
+    long championId = insertModelVersion("batted_ball", "v-chal-champ-arch", "champion");
+    long archivedId = insertModelVersion("batted_ball", "v-chal-archived", "archived");
+    assertThatThrownBy(
+            () ->
+                jdbc.update(
+                    "INSERT INTO model_routing (model_name, champion_version_id,"
+                        + " challenger_version_id) VALUES (?, ?, ?)",
+                    "batted_ball",
+                    championId,
+                    archivedId))
+        .isInstanceOf(DataAccessException.class)
+        .hasMessageContaining(CHALLENGER_STAGE_INVARIANT);
+  }
+
+  /**
+   * The cross-model bite (rule 9): the referenced version IS at stage shadow, but belongs to a
+   * DIFFERENT model. Stage-only checking would wave it through and the router would shadow-log one
+   * head's predictions under another head's name; the model_name binding in the WHEN subquery makes
+   * it read as "no such shadow version".
+   *
+   * <p>Runs as an UPDATE so the second trigger event is covered, and asserts the row is left
+   * untouched rather than half-applied.
+   */
+  @Test
+  void model_routing_rejects_update_repointing_challenger_at_another_models_shadow_version() {
+    long championId = insertModelVersion("batted_ball", "v-chal-champ-xm", "champion");
+    long ownShadowId = insertModelVersion("batted_ball", "v-chal-own-shadow", "shadow");
+    long otherShadowId = insertModelVersion("pitch_outcome_xm2", "v-chal-other-shadow", "shadow");
+    jdbc.update(
+        "INSERT INTO model_routing (model_name, champion_version_id, challenger_version_id)"
+            + " VALUES (?, ?, ?)",
+        "batted_ball",
+        championId,
+        ownShadowId);
+    assertThatThrownBy(
+            () ->
+                jdbc.update(
+                    "UPDATE model_routing SET challenger_version_id = ? WHERE model_name = ?",
+                    otherShadowId,
+                    "batted_ball"))
+        .isInstanceOf(DataAccessException.class)
+        .hasMessageContaining(CHALLENGER_STAGE_INVARIANT);
+    Long stillChallenger =
+        jdbc.queryForObject(
+            "SELECT challenger_version_id FROM model_routing WHERE model_name = 'batted_ball'",
+            Long.class);
+    assertThat(stillChallenger).isEqualTo(ownShadowId);
+  }
+
+  @Test
+  void model_routing_accepts_insert_with_a_same_model_shadow_challenger() {
+    // Anti-vacuity 1: the legitimate setChallenger shape (SHADOW candidate of the routed model).
+    long championId = insertModelVersion("batted_ball", "v-chal-champ-ok", "champion");
+    long shadowId = insertModelVersion("batted_ball", "v-chal-shadow-ok", "shadow");
+    jdbc.update(
+        "INSERT INTO model_routing (model_name, champion_version_id, challenger_version_id)"
+            + " VALUES (?, ?, ?)",
+        "batted_ball",
+        championId,
+        shadowId);
+    Long stored =
+        jdbc.queryForObject(
+            "SELECT challenger_version_id FROM model_routing WHERE model_name = 'batted_ball'",
+            Long.class);
+    assertThat(stored).isEqualTo(shadowId);
+  }
+
+  @Test
+  void model_routing_accepts_insert_with_a_null_challenger() {
+    // Anti-vacuity 2, and the one that pins the NULLABLE fast path: champion-only routing is the
+    // steady state (every prod row today), so the guard must not fire when the slot is empty.
+    long championId = insertModelVersion("batted_ball", "v-chal-null-ok", "champion");
+    jdbc.update(
+        "INSERT INTO model_routing (model_name, champion_version_id, challenger_version_id)"
+            + " VALUES (?, ?, ?)",
+        "batted_ball",
+        championId,
+        null);
+    Integer nullChallengers =
+        jdbc.queryForObject(
+            "SELECT COUNT(*) FROM model_routing WHERE model_name = 'batted_ball'"
+                + " AND challenger_version_id IS NULL",
+            Integer.class);
+    assertThat(nullChallengers).isEqualTo(1);
   }
 
   // --- experiment_results CHECK --------------------------------------------
