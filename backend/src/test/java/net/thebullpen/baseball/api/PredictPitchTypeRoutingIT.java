@@ -6,13 +6,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import io.micrometer.core.instrument.MeterRegistry;
-import java.net.URL;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import javax.sql.DataSource;
@@ -74,9 +71,6 @@ import org.testcontainers.junit.jupiter.Testcontainers;
             + "; set -Dbullpen.it.docker=true to force-run in CI.")
 class PredictPitchTypeRoutingIT {
 
-  private static final Path REPO_ROOT = Path.of(System.getProperty("user.dir")).getParent();
-  private static final Path CONTRACT =
-      REPO_ROOT.resolve("contracts/feature_pipeline_pitchtype.json");
   private static final String MODEL_NAME = "pitch_type_pre";
   private static final String BASELINE = "pitch_type_lr_baseline";
   private static final ZoneId ET = ZoneId.of("America/New_York");
@@ -352,25 +346,9 @@ class PredictPitchTypeRoutingIT {
    * calibrator pointer the loader resolves first.
    */
   private long registerVersion(String modelName, String version) throws Exception {
-    Path src = Files.createDirectories(sourceDir.resolve(modelName + "-" + version));
-    URL onnx = getClass().getResource("/onnx/pitch_type_fixture.onnx");
-    Files.copy(
-        Path.of(Objects.requireNonNull(onnx, "pitch-type fixture missing").toURI()),
-        src.resolve("model.onnx"));
-    Files.writeString(
-        src.resolve("metadata.json"),
-        "{\"model_name\":\""
-            + modelName
-            + "\",\"model_kind\":\"pitch_type\",\"model_version\":\""
-            + version
-            + "\",\"calibrator\":{\"path\":\"calibrator.json\"}}");
-    Files.copy(CONTRACT, src.resolve("feature_pipeline.json"));
-    Files.writeString(
-        src.resolve("calibrator.json"),
-        "{\"kind\":\"temperature\",\"class_labels\":"
-            + "[\"FF\",\"SI\",\"FC\",\"SL\",\"CU\",\"CH\",\"OFF\"],\"temperature\":1.0}");
-    Files.writeString(
-        src.resolve("park_id_mapping.json"), "{\"park_id\":{\"NYY\":0},\"missing_value\":-1}");
+    Path src =
+        net.thebullpen.baseball.inference.PitchTypeSnapshotFixtures.writeStandardSnapshot(
+            sourceDir.resolve(modelName + "-" + version), modelName, version);
 
     return registryService
         .register(
