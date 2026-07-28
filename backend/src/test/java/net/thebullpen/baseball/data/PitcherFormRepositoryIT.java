@@ -6,7 +6,7 @@ import static org.assertj.core.api.Assertions.within;
 
 import java.nio.file.Files;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.Map;
 import java.util.UUID;
 import javax.sql.DataSource;
@@ -41,6 +41,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
         "Docker Desktop on macOS returns malformed /info responses to Testcontainers"
             + "; set -Dbullpen.it.docker=true to force-run in CI.")
 class PitcherFormRepositoryIT {
+
+  private static final ZoneId ET = ZoneId.of("America/New_York");
 
   @Container
   static final ClickHouseContainer CH =
@@ -333,6 +335,85 @@ class PitcherFormRepositoryIT {
     assertThat(String.valueOf(row.get("as_of_date"))).isEqualTo(daysAgo(5));
   }
 
+  /**
+   * WITHIN-TABLE dedup of a re-polled pitch: same canonical key, later {@code ingested_at},
+   * CORRECTED description (ml-leakage-auditor finding 3).
+   *
+   * <p>The two assertions are NOT equally strong, and saying so is the point. The COUNT pins the
+   * dedup: removing {@code LIMIT 1 BY} reds this and the overlap test. The CORRECTION assertion
+   * pins NOTHING, verified rather than assumed - I mutated away the leg {@code FINAL}, then {@code
+   * ingested_at DESC}, then BOTH, and it passed every time, because the leg FINAL and the ordering
+   * are mutually redundant and raw scan order happens to favor the later insert on top. It is kept
+   * as a characterization of intended semantics (the ordering clause is what makes "the newest read
+   * wins" GUARANTEED rather than incidental - ClickHouse promises nothing about duplicate order
+   * without it), explicitly not as a regression pin. A future reader must not mistake this green
+   * for evidence that the ordering clause is protected.
+   */
+  @Test
+  void refresh_window_dedups_a_repolled_live_pitch_keeping_the_correction() {
+    insertPitches(110, daysAgo(3), "ball");
+    insertLivePitch(9110L, 110, 1, 1, daysAgo(2), "ball", "2026-01-01 00:00:00");
+    insertLivePitch(9110L, 110, 1, 1, daysAgo(2), "swinging_strike", "2026-01-02 00:00:00");
+
+    repo.refreshCurrentForm();
+
+    Map<String, Object> row =
+        ch.queryForMap(
+            "SELECT pitches_last_28d, swstrike_rate_28d"
+                + " FROM pitcher_form_current FINAL WHERE pitcher_id = 110");
+    assertThat(num(row, "pitches_last_28d"))
+        .as("the re-poll is the same pitch, not a second one")
+        .isEqualTo(2.0);
+    assertThat(num(row, "swstrike_rate_28d"))
+        .as("the LATER ingested_at wins - the correction, not the superseded read")
+        .isEqualTo(0.5);
+  }
+
+  /**
+   * The rider fix's own pin: {@code pitches_in_game} counts a re-polled pitch ONCE. This count has
+   * no LIMIT 1 BY to fall back on, so FINAL is solely load-bearing here - dropping it made this
+   * number 3 instead of 2 (mutation-verified).
+   */
+  @Test
+  void intra_day_count_dedups_a_repolled_pitch() {
+    insertPitches(111, daysAgo(3), "ball");
+    repo.refreshCurrentForm();
+    insertLivePitch(9111L, 111, 1, 1, daysAgo(0), "ball", "2026-01-01 00:00:00");
+    insertLivePitch(9111L, 111, 1, 2, daysAgo(0), "ball", "2026-01-01 00:00:00");
+    insertLivePitch(9111L, 111, 1, 2, daysAgo(0), "called_strike", "2026-01-02 00:00:00");
+
+    repo.upsertIntraDayForm(111, 9111L);
+
+    assertThat(
+            num(
+                ch.queryForMap(
+                    "SELECT pitches_in_game FROM pitcher_form_current FINAL"
+                        + " WHERE pitcher_id = 111"),
+                "pitches_in_game"))
+        .as("two distinct pitches thrown, one of them polled twice")
+        .isEqualTo(2.0);
+  }
+
+  /**
+   * The INCLUSIVE lower bound (finding 5): a pitch at exactly {@code TODAY_ET - 28} is INSIDE the
+   * window. Regressing {@code >=} to {@code >} would drop it, and no other fixture sits on the edge
+   * to notice.
+   */
+  @Test
+  void refresh_window_includes_the_oldest_in_bound_day() {
+    insertPitches(112, daysAgo(28), "called_strike");
+    insertPitches(112, daysAgo(29), "ball");
+
+    repo.refreshCurrentForm();
+
+    Map<String, Object> row =
+        ch.queryForMap(
+            "SELECT pitches_last_28d, strike_rate_28d"
+                + " FROM pitcher_form_current FINAL WHERE pitcher_id = 112");
+    assertThat(num(row, "pitches_last_28d")).as("d-28 is in bounds, d-29 is not").isEqualTo(1.0);
+    assertThat(num(row, "strike_rate_28d")).isEqualTo(1.0);
+  }
+
   /** The gauge source reads the union edge: a live row newer than the corpus moves it. */
   @Test
   void window_source_max_reads_the_union_edge() {
@@ -455,22 +536,46 @@ class PitcherFormRepositoryIT {
    */
   private void insertLivePitch(
       long gameId, int pitcherId, int atBatIndex, int pitchNumber, String gameDate, String desc) {
+    insertLivePitch(
+        gameId, pitcherId, atBatIndex, pitchNumber, gameDate, desc, "2026-01-01 00:00:00");
+  }
+
+  /**
+   * Same, with an explicit {@code ingested_at} - the ReplacingMergeTree version column. A re-poll
+   * of the same pitch is the SAME canonical key with a LATER ingested_at, which is the only way to
+   * construct the correction case deterministically.
+   */
+  private void insertLivePitch(
+      long gameId,
+      int pitcherId,
+      int atBatIndex,
+      int pitchNumber,
+      String gameDate,
+      String desc,
+      String ingestedAt) {
     ch.update(
         "INSERT INTO pitches_live"
             + " (game_id, pitch_number, pitcher_id, game_date,"
-            + "  at_bat_index, batter_id, description, balls, strikes, outs, inning,"
+            + "  at_bat_index, ingested_at, batter_id, description, balls, strikes, outs, inning,"
             + "  home_score, away_score, home_team, away_team)"
-            + " VALUES (?, ?, ?, ?, ?, 200, ?, 0, 0, 0, 1, 0, 0, 'HOM', 'AWY')",
+            + " VALUES (?, ?, ?, ?, ?, ?, 200, ?, 0, 0, 0, 1, 0, 0, 'HOM', 'AWY')",
         gameId,
         pitchNumber,
         pitcherId,
         gameDate,
         atBatIndex,
+        ingestedAt,
         desc);
   }
 
+  /**
+   * ET, matching the repository's {@code TODAY_ET} basis. NOT UTC: between 20:00 and 23:59 ET the
+   * two calendars disagree, and a UTC fixture against ET bounds would make the strictly-before
+   * tests pass or fail by wall-clock hour. (The container's TZ=UTC pin is now irrelevant to these
+   * queries, which name their zone explicitly - it stays because other reads still use it.)
+   */
   private static String daysAgo(int days) {
-    return LocalDate.now(ZoneOffset.UTC).minusDays(days).toString();
+    return LocalDate.now(ET).minusDays(days).toString();
   }
 
   private static double num(Map<String, Object> row, String col) {

@@ -48,26 +48,45 @@ public class PitcherFormRepository {
    * LowCardinality(String) - the cast is explicit rather than trusting implicit supertype
    * resolution across UNION ALL.
    *
-   * <p>BOTH bounds are the strictly-before contract [186] preserves: {@code <= today() - 1} matches
-   * training's {@code RANGE ... 1 PRECEDING} (exclude the current day). Under the old pitches-only
-   * source this bound was academic (the corpus never held today); with the live leg it is
-   * LOAD-BEARING - an intra-day {@code runOnce} would otherwise pull today's in-progress pitches
+   * <p>BOTH bounds are the strictly-before contract [186] preserves: {@code <= TODAY_ET - 1}
+   * matches training's {@code RANGE ... 1 PRECEDING} (exclude the current day). Under the old
+   * pitches-only source this bound was academic (the corpus never held today); with the live leg it
+   * is LOAD-BEARING - an intra-day {@code runOnce} would otherwise pull today's in-progress pitches
    * into the 28d rates, which training never sees. Today's pitches are the intra-day upsert's job,
    * not this window's.
    */
+  /**
+   * The date basis for every bound below. ClickHouse {@code today()} resolves in the SERVER
+   * timezone (UTC in prod - infra/docker-compose.yml sets none), while this job's schedule and its
+   * freshness gauge are both {@code America/New_York}. Between 20:00 and 23:59 ET those disagree by
+   * a day, which would let a run in that window treat ET-today as "yesterday" and pull tonight's
+   * in-progress live pitches into the 28d rates - exactly what the strictly-before bound exists to
+   * prevent. Unreachable from the 02:40 ET cron (UTC date == ET date at that hour), but the bound
+   * must be true on its own terms, not on its caller's schedule. (ml-leakage-auditor finding 1.)
+   */
+  private static final String TODAY_ET = "toDate(now('America/New_York'))";
+
   private static final String WINDOW_SOURCE =
       "SELECT pitcher_id, game_date, description FROM ("
           + "   SELECT game_id, at_bat_index, pitch_number, pitcher_id, game_date,"
-          + "          toString(description) AS description, 1 AS src"
+          + "          toString(description) AS description, ingested_at, 1 AS src"
           + "   FROM pitches FINAL"
           + "   WHERE description != 'unknown'"
-          + "     AND game_date >= today() - 28 AND game_date <= today() - 1"
+          + "     AND game_date >= "
+          + TODAY_ET
+          + " - 28 AND game_date <= "
+          + TODAY_ET
+          + " - 1"
           + "   UNION ALL"
           + "   SELECT game_id, at_bat_index, pitch_number, pitcher_id, game_date,"
-          + "          description, 2 AS src"
+          + "          description, ingested_at, 2 AS src"
           + "   FROM pitches_live FINAL"
           + "   WHERE description != 'unknown'"
-          + "     AND game_date >= today() - 28 AND game_date <= today() - 1"
+          + "     AND game_date >= "
+          + TODAY_ET
+          + " - 28 AND game_date <= "
+          + TODAY_ET
+          + " - 1"
           // The dedup key includes game_date: pitches' OWN ReplacingMergeTree identity is
           // (game_date, game_id, at_bat_index, pitch_number), and a 3-part key would merge
           // distinct-by-date rows sharing a game_id - data real feeds should never produce but
@@ -75,7 +94,8 @@ public class PitcherFormRepository {
           // (The parity test caught exactly this: a fixture reusing game_id across dates lost
           // rows to the 3-part key.) The same real pitch carries the same game_date in both
           // tables, so cross-table overlap still dedups.
-          + " ) ORDER BY src LIMIT 1 BY game_date, game_id, at_bat_index, pitch_number";
+          + " ) ORDER BY src, ingested_at DESC"
+          + "   LIMIT 1 BY game_date, game_id, at_bat_index, pitch_number";
 
   /**
    * The anchor: newest usable game_date across the UNION, bounded strictly-before like the window.
@@ -86,10 +106,14 @@ public class PitcherFormRepository {
   private static final String ANCHOR_SUBQUERY =
       "(SELECT max(game_date) FROM ("
           + "   SELECT game_date FROM pitches"
-          + "    WHERE description != 'unknown' AND game_date <= today() - 1"
+          + "    WHERE description != 'unknown' AND game_date <= "
+          + TODAY_ET
+          + " - 1"
           + "   UNION ALL"
           + "   SELECT game_date FROM pitches_live"
-          + "    WHERE description != 'unknown' AND game_date <= today() - 1"
+          + "    WHERE description != 'unknown' AND game_date <= "
+          + TODAY_ET
+          + " - 1"
           + " ))";
 
   private static final String REFRESH =
@@ -120,7 +144,10 @@ public class PitcherFormRepository {
           + "        toFloat32(countIf(description = 'swinging_strike') / count())"
           + "                  AS swstrike_rate_28d,"
           + "        toFloat32(countIf(description = 'in_play') / count()) AS inplay_rate_28d,"
-          + "        toUInt16(today() - max(game_date)) AS days_since_last_appearance"
+          + "        toUInt16("
+          + TODAY_ET
+          + " - max(game_date))"
+          + "          AS days_since_last_appearance"
           + " FROM ("
           + WINDOW_SOURCE
           + ")"
