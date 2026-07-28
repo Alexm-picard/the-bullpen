@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -79,8 +80,30 @@ class PitchTypeArsenalParityIT {
   private static final long PID = 4242L;
 
   private static final long DECOY_PID = 9999L;
-  private static final LocalDate AS_OF = LocalDate.of(2024, 4, 30);
-  private static final LocalDate GAME_DATE = LocalDate.of(2024, 5, 1);
+
+  /**
+   * RELATIVE to the wall clock since [186], not the fixed 2024 dates this fixture used to carry.
+   * The snapshot's union bound is {@code toDate(now('America/New_York')) - 1}, so "the current
+   * game" is only outside the snapshot if it is genuinely TODAY. With fixed past dates the live
+   * rows would land INSIDE the snapshot, the anchor would advance to the current game's own date,
+   * and the deriver would (correctly) refuse the composition as a leak - the fixture's fiction has
+   * to match what the bound believes. AS_OF at today-1 also keeps the snapshot inside the 2-day
+   * freshness bound the deriver enforces.
+   */
+  private static final ZoneId ET = ZoneId.of("America/New_York");
+
+  /**
+   * Read from the DATABASE'S OWN CLOCK in {@code seedEverything}, not from a static initializer.
+   * Static init runs at class load - before Testcontainers starts ClickHouse and before Spring
+   * boots - while the snapshot's bound evaluates {@code toDate(now('America/New_York'))} at query
+   * time, seconds to minutes later. An ET-midnight crossing inside that window would make GAME_DATE
+   * stale by a day, put the "current game" inside the bound, and red three tests in a docker-gated
+   * CI job. Reading the basis from the same clock the bound reads removes the window rather than
+   * narrowing it (ml-leakage-auditor).
+   */
+  private static LocalDate GAME_DATE;
+
+  private static LocalDate AS_OF;
   private static final long GAME_ID = 700_001L;
   private static final long GAME_ID_2 = 700_002L; // doubleheader, same date
 
@@ -232,7 +255,14 @@ class PitchTypeArsenalParityIT {
   }
 
   /** The pitch being predicted: game 2, at-bat 1, pitch 3, on a 1-1 count. */
-  private static final P CURRENT = new P(GAME_DATE, GAME_ID_2, 1, 3, "?", 1, 1);
+  /**
+   * The pitch being predicted. A METHOD, not a static field: it derives from GAME_DATE, which is
+   * now read from the database clock after the container starts, so a static field would capture
+   * null at class-load time.
+   */
+  private static P current() {
+    return new P(GAME_DATE, GAME_ID_2, 1, 3, "?", 1, 1);
+  }
 
   @Test
   void serving_derived_arsenal_equals_the_training_sql_value() throws Exception {
@@ -242,12 +272,12 @@ class PitchTypeArsenalParityIT {
     PitchTypeArsenalDeriver.Arsenal served =
         deriver.derive(
             PID,
-            CURRENT.date(),
-            CURRENT.gameId(),
-            CURRENT.ab(),
-            CURRENT.pn(),
-            CURRENT.balls(),
-            CURRENT.str(),
+            current().date(),
+            current().gameId(),
+            current().ab(),
+            current().pn(),
+            current().balls(),
+            current().str(),
             GAME_DATE);
 
     Map<String, Object> expected = trainingReferenceForCurrentPitch();
@@ -339,7 +369,200 @@ class PitchTypeArsenalParityIT {
 
   // --- seeding ---------------------------------------------------------------
 
+  /**
+   * THE [186] PR-2 PIN. Expectations hand-computed FIRST, and every failure mode lands on a
+   * DIFFERENT number: 2 corpus FF + 1 live-only SL = 3, with an OVERLAP row (live claiming CH at
+   * the corpus's own key) and a TODAY-dated live row both excluded. No dedup gives 4; live winning
+   * the overlap gives n_ch=1; a missing live leg gives 2; a lost strictly-before bound gives 4 with
+   * n_cu=1 - and that last one would also push the anchor to today, which the deriver refuses
+   * outright for every game that day.
+   *
+   * <p>Uses its own pitcher id: {@code pitches} is not truncated between tests in this class (only
+   * the snapshot table is recreated), so rows seeded here would otherwise pollute the career counts
+   * the arsenal-parity test asserts.
+   */
+  @Test
+  void snapshot_reads_the_union_dedups_the_overlap_and_excludes_today() throws Exception {
+    ch = new JdbcTemplate(clickhouse);
+    seedEverything();
+    long p = 5555L;
+
+    insertPitches(
+        "pitches",
+        List.of(new P(AS_OF, 630_001L, 1, 1, "FF", 0, 0), new P(AS_OF, 630_001L, 1, 2, "FF", 0, 0)),
+        p,
+        0L);
+    // Live, inside the bound: a pitch the corpus does not have at all.
+    insertPitches("pitches_live", List.of(new P(AS_OF, 630_002L, 1, 1, "SL", 0, 0)), p, 0L);
+    // The OVERLAP: the corpus's first pitch, re-reported by the live feed as a different type.
+    insertPitches("pitches_live", List.of(new P(AS_OF, 630_001L, 1, 1, "CH", 0, 0)), p, 0L);
+    // TODAY: outside the strictly-before bound, and the delta's territory.
+    insertPitches("pitches_live", List.of(new P(GAME_DATE, 630_003L, 1, 1, "CU", 0, 0)), p, 0L);
+
+    refreshSnapshot();
+
+    Map<String, Object> row =
+        ch.queryForMap(
+            "SELECT prior_n, n_ff, n_sl, n_ch, n_cu, as_of_date"
+                + " FROM pitcher_pitchtype_prior_current FINAL WHERE pitcher_id = ?",
+            p);
+    assertThat(((Number) row.get("prior_n")).longValue())
+        .as("2 corpus + 1 live-only; the overlap duplicate and today's pitch are both out")
+        .isEqualTo(3L);
+    assertThat(((Number) row.get("n_ff")).longValue())
+        .as("the HISTORICAL row won the overlap - the live twin said CH")
+        .isEqualTo(2L);
+    assertThat(((Number) row.get("n_sl")).longValue())
+        .as("the live leg genuinely contributes")
+        .isEqualTo(1L);
+    assertThat(((Number) row.get("n_ch")).longValue()).isZero();
+    assertThat(((Number) row.get("n_cu")).longValue())
+        .as("today's live pitch belongs to the in-game delta, never the snapshot")
+        .isZero();
+    assertThat(row.get("as_of_date").toString())
+        .as("the anchor stays strictly behind the delta window")
+        .isEqualTo(AS_OF.toString());
+  }
+
+  /**
+   * {@code pitches_live FINAL} is load-bearing here in a way it is NOT in the sibling form window,
+   * and the auditor proved it pinnable: pitches_live's own ORDER BY is 3-part {@code (game_id,
+   * at_bat_index, pitch_number)} with no game_date, so the 4-part dedup key is STRICTER than that
+   * table's identity. A suspended game re-reported under the same game_pk on a different date is
+   * two distinct rows to LIMIT 1 BY, and only FINAL collapses them - without it the pitch DOUBLE
+   * COUNTS.
+   *
+   * <p>The SECOND pair, seeded in {@code pitches}, is what pins the dedup key's WIDTH - and it has
+   * to be in that table to do so. My first version claimed the live pair doubled as that pin; the
+   * auditor disproved it by mutation: in {@code pitches_live} FINAL collapses the pair BEFORE
+   * {@code LIMIT 1 BY} ever sees a key, so a 3-part key survives unnoticed. In {@code pitches},
+   * whose ReplacingMergeTree identity IS the 4-part key, both rows survive FINAL and a 3-part key
+   * would wrongly drop one.
+   */
+  @Test
+  void a_live_pitch_re_reported_under_a_different_date_counts_once() throws Exception {
+    ch = new JdbcTemplate(clickhouse);
+    seedEverything();
+    long p = 6666L;
+
+    insertPitches("pitches_live", List.of(new P(AS_OF, 640_001L, 1, 1, "CH", 0, 0)), p, 0L);
+    // Same game_pk and same pitch, re-reported a day later (suspended-game shape).
+    insertPitches(
+        "pitches_live", List.of(new P(AS_OF.minusDays(1), 640_001L, 1, 1, "FF", 0, 0)), p, 0L);
+    // The key-WIDTH pair, in pitches: two genuinely distinct rows under that table's own 4-part
+    // identity, which a 3-part dedup key would wrongly collapse to one.
+    // THE DATES ARE LOAD-BEARING, not incidental: the live seed above at AS_OF - 1 forces
+    // live_floor <= AS_OF - 1, which is what routes this pair through the DEDUPED leg where
+    // LIMIT 1 BY exists. Move either date below live_floor and the pair takes the cheap
+    // undeduped leg, where a 3-part key would not bite and this pin silently stops working.
+    insertPitches(
+        "pitches",
+        List.of(
+            new P(AS_OF, 640_002L, 1, 1, "SL", 0, 0),
+            new P(AS_OF.minusDays(1), 640_002L, 1, 1, "SL", 0, 0)),
+        p,
+        0L);
+
+    refreshSnapshot();
+
+    Map<String, Object> row =
+        ch.queryForMap(
+            "SELECT prior_n FROM pitcher_pitchtype_prior_current FINAL WHERE pitcher_id = ?", p);
+    assertThat(((Number) row.get("prior_n")).longValue())
+        .as(
+            "1 live pitch (re-reported; FINAL collapses it) + 2 distinct corpus pitches sharing a"
+                + " game_id across two dates (only a 4-part key keeps both)")
+        .isEqualTo(3L);
+  }
+
+  /**
+   * THE PIN THAT ACTUALLY BITES the live-floor guard. The snapshot-content test below cannot: the
+   * guard decides WHICH LEG runs, not which rows come out, and at fixture scale the global and
+   * scoped legs return identical answers - I confirmed by mutation that the dead {@code
+   * ifNull(min(...))} form passes every content assertion in this class. So this evaluates the
+   * expression itself against an empty table, where the two forms differ visibly: the correct guard
+   * yields the far-future sentinel, the dead one yields ClickHouse's type default of 1970-01-01 and
+   * would route the entire career corpus through the global sort.
+   */
+  @Test
+  void the_live_floor_guard_yields_the_far_future_on_an_empty_live_table() throws Exception {
+    ch = new JdbcTemplate(clickhouse);
+    seedEverything();
+
+    // Compared against the table's OWN min rather than a literal: pitches_live accumulates across
+    // tests in this class (the SEQ fixture seeds its own dates), so the minimum is not knowable
+    // from this test's seeds alone. What matters is that a POPULATED table yields the real
+    // minimum and never the sentinel.
+    LocalDate actualMin =
+        ch.queryForObject("SELECT min(game_date) FROM pitches_live", LocalDate.class);
+    LocalDate populated =
+        ch.queryForObject("SELECT " + PitcherPitchTypePriorSnapshotSql.LIVE_FLOOR, LocalDate.class);
+    // WEAKER THAN IT LOOKS, said out loud so nobody trusts it further than it earns: with rows
+    // present, if(count() = 0, ...) reduces to min(game_date), so this compares an expression
+    // against itself. It still catches an inverted predicate and, via isNotEqualTo, an
+    // unconditional sentinel - but the EMPTY branch below is the half that carries the pin.
+    assertThat(populated)
+        .as("with rows present the floor is the live table's own minimum")
+        .isEqualTo(actualMin)
+        .isNotEqualTo(LocalDate.of(2149, 6, 6));
+
+    ch.execute("TRUNCATE TABLE pitches_live");
+    LocalDate empty =
+        ch.queryForObject("SELECT " + PitcherPitchTypePriorSnapshotSql.LIVE_FLOOR, LocalDate.class);
+    assertThat(empty)
+        .as(
+            "min() over an empty non-Nullable column returns 1970-01-01, NOT null - the guard"
+                + " must not rely on ifNull, or the cheap leg matches nothing")
+        .isEqualTo(LocalDate.of(2149, 6, 6));
+  }
+
+  /**
+   * The CORRECTNESS half of the empty-live-table case: with {@code pitches_live} empty the snapshot
+   * must still be the full career. Deliberately NOT the guard's pin - both legs return identical
+   * rows at any scale, so a broken guard passes every assertion here (verified by mutation). The
+   * pin lives in the guard-expression test above; this one catches a genuinely wrong predicate on
+   * the cheap leg. Empty is not exotic: the 14-day TTL means the entire OFFSEASON, any long ingest
+   * outage, and every fresh or restored box.
+   */
+  @Test
+  void snapshot_is_complete_when_the_live_table_is_empty() throws Exception {
+    ch = new JdbcTemplate(clickhouse);
+    seedEverything();
+    // Ephemeral Testcontainers instance, not live ClickHouse - the same wipe idiom
+    // PitcherFormRepositoryIT uses between tests. NOTE the class is ORDER-COUPLED by this:
+    // pitches / pitches_live are created once by the boot-time migration runner and accumulate
+    // (createTables() only drops the snapshot table), so every test either re-seeds via
+    // seedEverything() or seeds its own. A future test that READS pitches_live without seeding
+    // it would pass or fail on JUnit's method order; a @BeforeEach wipe-and-seed is the fix when
+    // that day comes.
+    ch.execute("TRUNCATE TABLE pitches_live");
+    long p = 7777L;
+    insertPitches(
+        "pitches",
+        List.of(
+            new P(AS_OF, 650_001L, 1, 1, "FF", 0, 0),
+            new P(AS_OF, 650_001L, 1, 2, "SL", 0, 0),
+            new P(AS_OF.minusDays(3), 650_002L, 1, 1, "CH", 0, 0)),
+        p,
+        0L);
+
+    refreshSnapshot();
+
+    Map<String, Object> row =
+        ch.queryForMap(
+            "SELECT prior_n, n_ff, n_sl, n_ch FROM pitcher_pitchtype_prior_current FINAL"
+                + " WHERE pitcher_id = ?",
+            p);
+    assertThat(((Number) row.get("prior_n")).longValue())
+        .as("an empty live table must not cost the corpus a single pitch")
+        .isEqualTo(3L);
+    assertThat(((Number) row.get("n_ff")).longValue()).isEqualTo(1L);
+    assertThat(((Number) row.get("n_sl")).longValue()).isEqualTo(1L);
+    assertThat(((Number) row.get("n_ch")).longValue()).isEqualTo(1L);
+  }
+
   private void seedEverything() throws Exception {
+    initDatesFromDatabaseClock();
     createTables();
     insertPitches("pitches", career(), PID, 0L);
     // THE DECOY MUST NOT SHARE SORT KEYS WITH THE PITCHER UNDER TEST. `pitches` is a
@@ -378,6 +601,18 @@ class PitchTypeArsenalParityIT {
    */
   private void refreshSnapshot() {
     ch.execute(PitcherPitchTypePriorSnapshotSql.refreshInsert(y7Expression()));
+  }
+
+  /**
+   * The fixture's date basis, taken from the clock the SQL bound itself reads. Idempotent so any
+   * entry point can call it.
+   */
+  private void initDatesFromDatabaseClock() {
+    if (GAME_DATE != null) {
+      return;
+    }
+    GAME_DATE = ch.queryForObject("SELECT toDate(now('America/New_York'))", LocalDate.class);
+    AS_OF = GAME_DATE.minusDays(1);
   }
 
   /** The class fold, lifted from the training SQL so a taxonomy change cannot desync the two. */
@@ -431,10 +666,10 @@ class PitchTypeArsenalParityIT {
                 PID,
                 y7Expression(),
                 PID,
-                CURRENT.date(),
-                CURRENT.gameId(),
-                CURRENT.ab(),
-                CURRENT.pn()));
+                current().date(),
+                current().gameId(),
+                current().ab(),
+                current().pn()));
   }
 
   private void createTables() {

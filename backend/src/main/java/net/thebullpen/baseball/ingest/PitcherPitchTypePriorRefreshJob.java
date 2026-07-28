@@ -61,6 +61,9 @@ public class PitcherPitchTypePriorRefreshJob {
   /** Days since the snapshot's as_of_date; -1 until the first successful run this process sees. */
   private final AtomicLong ageDays = new AtomicLong(-1);
 
+  /** Days of history covered by NEITHER table; -1 until the first successful run. */
+  private final AtomicLong coverageGapDays = new AtomicLong(-1);
+
   public PitcherPitchTypePriorRefreshJob(
       PitcherPitchTypePriorRepository repo,
       JobLockRepository jobLocks,
@@ -84,6 +87,26 @@ public class PitcherPitchTypePriorRefreshJob {
                 + " pins it at its last value rather than climbing; it cannot distinguish"
                 + " corpus-stale from job-dead. The climb precedes the deriver refusing"
                 + " predictions at its staleness bound.")
+        .register(meters);
+    // THE SECOND HALF, and the one [186]'s union made necessary. The age gauge above now reads
+    // ~1 in steady state because the live leg dominates the anchor - which means it reads ~1
+    // EVEN WHEN weeks of history are missing from both tables, the exact condition that used to
+    // make the age gauge scream. Age answers "is the newest data recent"; this answers "is the
+    // history contiguous". Shipping the union without this would have traded a loud refusal for
+    // a silent undercount on a career-expanding feature the model reads directly.
+    io.micrometer.core.instrument.Gauge.builder(
+            "bullpen_pitchtype_prior_coverage_gap_days", coverageGapDays, AtomicLong::doubleValue)
+        .description(
+            "Days of history in NEITHER pitches (manually backfilled) nor pitches_live (14-day"
+                + " TTL) - the hole between the corpus edge and the live floor. 0 when the two"
+                + " ranges touch. -1 before the first successful refresh, so an alert rule must"
+                + " be `< 0 or > N` like its sibling. A positive value means the career priors"
+                + " are computed over an incomplete history and prior_n - itself a model feature"
+                + " - is biased low for every pitcher active in the gap; it is fixed by running"
+                + " the backfill, not by waiting, because this window is career-expanding rather"
+                + " than rolling and never ages out. A reading in the tens of thousands is the"
+                + " empty-corpus state (a fresh or just-restored box before the first backfill),"
+                + " not a broken gauge - everything before the live floor is genuinely missing.")
         .register(meters);
   }
 
@@ -112,6 +135,7 @@ public class PitcherPitchTypePriorRefreshJob {
     }
     LocalDate asOf = repo.refreshSnapshot(y7Expression);
     ageDays.set(ChronoUnit.DAYS.between(asOf, LocalDate.now(ET)));
+    coverageGapDays.set(repo.coverageGapDays());
     return asOf;
   }
 }
