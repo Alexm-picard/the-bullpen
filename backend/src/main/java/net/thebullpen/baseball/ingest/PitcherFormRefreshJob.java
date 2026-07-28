@@ -56,15 +56,16 @@ public class PitcherFormRefreshJob {
     // threshold reads in the units the staleness is felt in.
     Gauge.builder("bullpen_pitcher_form_age_days", ageDays, AtomicLong::doubleValue)
         .description(
-            "Days between today and the newest usable game_date in pitches - the corpus the"
-                + " Tier-3 28-day form windows read. -1 before the first refresh this process"
-                + " ran, so any alert rule must be `< 0 or > N` (a bare `> N` reads -1 as fresher"
-                + " than fresh). Climbs between manual backfills; a large value means the nightly"
-                + " full-cohort refresh selects little or nothing and most pitchers serve NaN"
-                + " form. Set only on a successful run: a DEAD job pins it at its last value, so"
-                + " it cannot distinguish corpus-stale from job-dead - the last-success-timestamp"
-                + " companion (the bullpen_ingest_last_poll idiom) is the queued fix for that"
-                + " half.")
+            "Days between today and the newest usable game_date across pitches UNION"
+                + " pitches_live - the [186] source the Tier-3 28-day form windows read. Steady"
+                + " state is ~1 (the live leg keeps the union at yesterday); a climb means the"
+                + " live poller stopped AND the corpus is stale, and past ~14 (the pitches_live"
+                + " TTL) unbackfilled history is falling out of the window entirely. -1 before"
+                + " the first refresh this process ran, so any alert rule must be `< 0 or > N`"
+                + " (a bare `> N` reads -1 as fresher than fresh). Set only on a successful run:"
+                + " a DEAD job pins it at its last value, so it cannot distinguish source-stale"
+                + " from job-dead - the last-success-timestamp companion (the"
+                + " bullpen_ingest_last_poll idiom) is the queued fix for that half.")
         .register(meters);
   }
 
@@ -108,6 +109,6 @@ public class PitcherFormRefreshJob {
   }
 
   private void updateAgeGauge() {
-    ageDays.set(ChronoUnit.DAYS.between(repo.corpusMaxGameDate(), LocalDate.now(ET)));
+    ageDays.set(ChronoUnit.DAYS.between(repo.windowSourceMaxGameDate(), LocalDate.now(ET)));
   }
 }
