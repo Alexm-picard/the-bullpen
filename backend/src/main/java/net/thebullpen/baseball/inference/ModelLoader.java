@@ -110,7 +110,9 @@ public class ModelLoader {
     // metadata head=pre into THIS cache, so pitchPost holds only pitch_outcome_post - 1x);
     // allParks serves battedball_outcome + lr_baseline_batted_ball (both take the park_order
     // branch); pitchType serves pitch_type_pre + pitch_type_lr_baseline. The toy single-float
-    // battedBallCache is one family.
+    // battedBallCache is one family. This map is a snapshot of TODAY's fleet, not a closed set:
+    // battedball_lgbm_per_park also exports park_order and would become allParks' THIRD family if
+    // it ever registers - re-derive the map (and the multipliers) when the fleet changes.
     this.pitchPreCache = buildPitchCache("pre", 2 * cacheSize);
     this.pitchPostCache = buildPitchCache("post", cacheSize);
     this.pitchTypeCache = buildPitchTypeCache(2 * cacheSize);
