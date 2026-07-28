@@ -55,11 +55,29 @@ public final class PitcherPitchTypePriorSnapshotSql {
 
   /**
    * The [186] window SOURCE for the career prior: {@code pitches} UNION {@code pitches_live}, both
-   * FINAL, deduped on the full pitch identity with the historical leg winning overlaps and the
-   * newest read winning same-source duplicates. Mirrors the sibling in {@code
-   * PitcherFormRepository} exactly, minus the {@code toString(description)} cast that one needs
-   * (there {@code description} is Enum8 vs LowCardinality; here {@code pitch_type} is
-   * LowCardinality(String) in BOTH tables, verified against V003 and V015).
+   * FINAL, deduped on the full pitch identity with the HISTORICAL leg winning overlaps.
+   *
+   * <p>ONLY THE OVERLAP IS DEDUPED, and that is a scale requirement rather than an optimisation.
+   * The sibling in {@code PitcherFormRepository} can sort its whole union because a 28-day rolling
+   * window caps it; this feature is CAREER-EXPANDING, so a global {@code ORDER BY} + {@code LIMIT 1
+   * BY} sorts every pitch ever thrown. Measured by ml-leakage-auditor on a 25.4M-row corpus: 3.36
+   * GiB peak and 7-8s global, versus 70 MiB and under a second scoped, with byte-identical output
+   * across all pitcher rows. Prod is ~50M rows (V030 header) under decision [179]'s 6g cap with a
+   * ~2.2 GiB idle parts baseline, and {@code max_bytes_before_external_sort} is 0 on 24.12 - so the
+   * global form does not degrade, it throws MEMORY_LIMIT_EXCEEDED, which the refresh job swallows
+   * into a log line and the freshness gauge cannot see (it only advances on success). Two days
+   * later the deriver refuses every pitch-type prediction: the exact serving outage the bound below
+   * exists to prevent, reached through a door the same change would have opened. This is the C-31
+   * saga's failure class ({@code docs/postmortems/2026-07-15_c31-retrain-saga.md}).
+   *
+   * <p>The two legs can only collide where the live table has rows, so everything strictly older
+   * than {@code min(game_date)} in {@code pitches_live} is UNION ALL'd straight in, undeduped, and
+   * only the overlap window pays for a sort. Correctness is unchanged: a pitch outside that window
+   * cannot exist in both tables.
+   *
+   * <p>No {@code toString} cast here, unlike the sibling: {@code pitch_type} is
+   * LowCardinality(String) in BOTH tables (verified against V003 and V015), where {@code
+   * description} is Enum8 in {@code pitches}.
    *
    * <p>THE UPPER BOUND IS A CORRECTNESS REQUIREMENT HERE, not only training parity, and the reason
    * is specific to this snapshot: the serving composition is snapshot + in-game delta, where {@code
@@ -73,22 +91,66 @@ public final class PitcherPitchTypePriorSnapshotSql {
    * <p>Untyped live rows drop out on their own: GUMBO leaves {@code pitch_type} empty until it
    * types a pitch, and {@code NOT IN ('', 'PO', 'IN')} - the same filter the training SQL uses -
    * excludes them. The anchor carries that filter too, so it reports the newest date with USABLE
-   * typed pitches rather than overstating coverage from a batch of untyped rows.
+   * typed pitches rather than overstating coverage from a batch of untyped rows (an unfiltered
+   * anchor can outrun the aggregate on a day whose only live rows are untyped, stranding them in
+   * neither leg once GUMBO types them - isolated and confirmed by the auditor's probe).
+   *
+   * <p>ASSUMED DATA-MODEL INVARIANT, stated because the code depends on it silently: the dedup key
+   * omits {@code pitcher_id}, so it assumes one pitch key belongs to exactly one pitcher. True for
+   * real feeds; a {@code game_id} collision between the historical and live id spaces, or an
+   * upstream parser bug, would drop a pitcher's row rather than double-count it. Nothing exercises
+   * that case - the parity fixture deliberately offsets its decoy's game_ids to AVOID it.
+   *
+   * <p>COVERAGE IS NOT CONTIGUITY, and V030's own header section (c) ("the snapshot covers (-inf,
+   * as_of_date]") is now too strong: the union's coverage is the corpus range UNION the live TTL
+   * window, and between them sits whatever the last manual backfill did not reach. The date ranges
+   * of snapshot and delta still meet exactly at the anchor - no gap, no double count in the DATE
+   * dimension - but rows can be missing inside the snapshot's own range. That hole is what {@code
+   * PitcherPitchTypePriorRepository.coverageGapDays()} measures and the {@code
+   * bullpen_pitchtype_prior_coverage_gap_days} gauge exposes; the migration file is immutable once
+   * applied, so this is where the correction lives.
+   *
+   * <p>{@code pitches_live FINAL} is load-bearing and NOT redundant, for a reason specific to this
+   * table: its own ORDER BY is 3-part {@code (game_id, at_bat_index, pitch_number)} with no {@code
+   * game_date}, so the 4-part dedup key here is STRICTER than the table's identity. A suspended
+   * game re-reported under the same {@code game_pk} on a different date is two distinct rows to
+   * {@code LIMIT 1 BY} and only FINAL collapses them (probe: 2 rows vs 1). The {@code ingested_at
+   * DESC} tiebreak, by contrast, is DEFENSIVE ONLY - with both legs FINAL each source yields at
+   * most one row per key, so {@code src} alone decides. It stays so that losing a leg's FINAL
+   * degrades to the same answer rather than an arbitrary one.
    */
-  private static String unionSource() {
-    return "  SELECT game_date, game_id, at_bat_index, pitch_number, pitcher_id,"
+  private static String unionSource(String y7Expression) {
+    String projection =
+        "SELECT pitcher_id, balls * 3 + strikes AS slot, " + y7Expression + " AS y7";
+    String filter = "pitch_type NOT IN ('', 'PO', 'IN') AND game_date <= " + TODAY_ET + " - 1";
+    // Empty pitches_live: the guard makes live_floor the far future, so the whole corpus takes
+    // the cheap undeduped leg and the overlap leg matches nothing.
+    return "WITH ifNull((SELECT min(game_date) FROM pitches_live), toDate('2999-12-31'))"
+        + " AS live_floor\n"
+        + projection
+        + "\n  FROM pitches FINAL\n"
+        + "  WHERE "
+        + filter
+        + " AND game_date < live_floor\n"
+        + "UNION ALL\n"
+        + projection
+        + "\n  FROM (\n"
+        + "    SELECT game_date, game_id, at_bat_index, pitch_number, pitcher_id,"
         + " balls, strikes, pitch_type, ingested_at, 1 AS src\n"
-        + "  FROM pitches FINAL\n"
-        + "  WHERE pitch_type NOT IN ('', 'PO', 'IN') AND game_date <= "
-        + TODAY_ET
-        + " - 1\n"
-        + "  UNION ALL\n"
-        + "  SELECT game_date, game_id, at_bat_index, pitch_number, pitcher_id,"
+        + "    FROM pitches FINAL\n"
+        + "    WHERE "
+        + filter
+        + " AND game_date >= live_floor\n"
+        + "    UNION ALL\n"
+        + "    SELECT game_date, game_id, at_bat_index, pitch_number, pitcher_id,"
         + " balls, strikes, pitch_type, ingested_at, 2 AS src\n"
-        + "  FROM pitches_live FINAL\n"
-        + "  WHERE pitch_type NOT IN ('', 'PO', 'IN') AND game_date <= "
-        + TODAY_ET
-        + " - 1\n";
+        + "    FROM pitches_live FINAL\n"
+        + "    WHERE "
+        + filter
+        + " AND game_date >= live_floor\n"
+        + "  )\n"
+        + "  ORDER BY src, ingested_at DESC\n"
+        + "  LIMIT 1 BY game_date, game_id, at_bat_index, pitch_number\n";
   }
 
   /** Newest usable game_date across the same bounded, filtered union the aggregate reads. */
@@ -132,14 +194,7 @@ public final class PitcherPitchTypePriorSnapshotSql {
         + ",\n"
         + "       now64(3)\n"
         + "FROM (\n"
-        + "  SELECT pitcher_id, balls * 3 + strikes AS slot, "
-        + y7Expression
-        + " AS y7\n"
-        + "  FROM (\n"
-        + unionSource()
-        + "  )\n"
-        + "  ORDER BY src, ingested_at DESC\n"
-        + "  LIMIT 1 BY game_date, game_id, at_bat_index, pitch_number\n"
+        + unionSource(y7Expression)
         + ")\n"
         + "GROUP BY pitcher_id\n";
   }

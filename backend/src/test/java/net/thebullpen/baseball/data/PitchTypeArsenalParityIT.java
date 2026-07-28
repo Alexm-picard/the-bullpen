@@ -92,8 +92,18 @@ class PitchTypeArsenalParityIT {
    */
   private static final ZoneId ET = ZoneId.of("America/New_York");
 
-  private static final LocalDate GAME_DATE = LocalDate.now(ET);
-  private static final LocalDate AS_OF = GAME_DATE.minusDays(1);
+  /**
+   * Read from the DATABASE'S OWN CLOCK in {@code seedEverything}, not from a static initializer.
+   * Static init runs at class load - before Testcontainers starts ClickHouse and before Spring
+   * boots - while the snapshot's bound evaluates {@code toDate(now('America/New_York'))} at query
+   * time, seconds to minutes later. An ET-midnight crossing inside that window would make GAME_DATE
+   * stale by a day, put the "current game" inside the bound, and red three tests in a docker-gated
+   * CI job. Reading the basis from the same clock the bound reads removes the window rather than
+   * narrowing it (ml-leakage-auditor).
+   */
+  private static LocalDate GAME_DATE;
+
+  private static LocalDate AS_OF;
   private static final long GAME_ID = 700_001L;
   private static final long GAME_ID_2 = 700_002L; // doubleheader, same date
 
@@ -245,7 +255,14 @@ class PitchTypeArsenalParityIT {
   }
 
   /** The pitch being predicted: game 2, at-bat 1, pitch 3, on a 1-1 count. */
-  private static final P CURRENT = new P(GAME_DATE, GAME_ID_2, 1, 3, "?", 1, 1);
+  /**
+   * The pitch being predicted. A METHOD, not a static field: it derives from GAME_DATE, which is
+   * now read from the database clock after the container starts, so a static field would capture
+   * null at class-load time.
+   */
+  private static P current() {
+    return new P(GAME_DATE, GAME_ID_2, 1, 3, "?", 1, 1);
+  }
 
   @Test
   void serving_derived_arsenal_equals_the_training_sql_value() throws Exception {
@@ -255,12 +272,12 @@ class PitchTypeArsenalParityIT {
     PitchTypeArsenalDeriver.Arsenal served =
         deriver.derive(
             PID,
-            CURRENT.date(),
-            CURRENT.gameId(),
-            CURRENT.ab(),
-            CURRENT.pn(),
-            CURRENT.balls(),
-            CURRENT.str(),
+            current().date(),
+            current().gameId(),
+            current().ab(),
+            current().pn(),
+            current().balls(),
+            current().str(),
             GAME_DATE);
 
     Map<String, Object> expected = trainingReferenceForCurrentPitch();
@@ -407,7 +424,38 @@ class PitchTypeArsenalParityIT {
         .isEqualTo(AS_OF.toString());
   }
 
+  /**
+   * {@code pitches_live FINAL} is load-bearing here in a way it is NOT in the sibling form window,
+   * and the auditor proved it pinnable: pitches_live's own ORDER BY is 3-part {@code (game_id,
+   * at_bat_index, pitch_number)} with no game_date, so the 4-part dedup key is STRICTER than that
+   * table's identity. A suspended game re-reported under the same game_pk on a different date is
+   * two distinct rows to LIMIT 1 BY, and only FINAL collapses them - without it the pitch DOUBLE
+   * COUNTS. This fixture is also the only place in the class where one game_id appears on two
+   * game_dates, so it doubles as the pin distinguishing the 4-part dedup key from a 3-part one.
+   */
+  @Test
+  void a_live_pitch_re_reported_under_a_different_date_counts_once() throws Exception {
+    ch = new JdbcTemplate(clickhouse);
+    seedEverything();
+    long p = 6666L;
+
+    insertPitches("pitches_live", List.of(new P(AS_OF, 640_001L, 1, 1, "CH", 0, 0)), p, 0L);
+    // Same game_pk and same pitch, re-reported a day later (suspended-game shape).
+    insertPitches(
+        "pitches_live", List.of(new P(AS_OF.minusDays(1), 640_001L, 1, 1, "FF", 0, 0)), p, 0L);
+
+    refreshSnapshot();
+
+    Map<String, Object> row =
+        ch.queryForMap(
+            "SELECT prior_n FROM pitcher_pitchtype_prior_current FINAL WHERE pitcher_id = ?", p);
+    assertThat(((Number) row.get("prior_n")).longValue())
+        .as("one physical pitch, re-reported - FINAL collapses it before the 4-part key sees two")
+        .isEqualTo(1L);
+  }
+
   private void seedEverything() throws Exception {
+    initDatesFromDatabaseClock();
     createTables();
     insertPitches("pitches", career(), PID, 0L);
     // THE DECOY MUST NOT SHARE SORT KEYS WITH THE PITCHER UNDER TEST. `pitches` is a
@@ -446,6 +494,18 @@ class PitchTypeArsenalParityIT {
    */
   private void refreshSnapshot() {
     ch.execute(PitcherPitchTypePriorSnapshotSql.refreshInsert(y7Expression()));
+  }
+
+  /**
+   * The fixture's date basis, taken from the clock the SQL bound itself reads. Idempotent so any
+   * entry point can call it.
+   */
+  private void initDatesFromDatabaseClock() {
+    if (GAME_DATE != null) {
+      return;
+    }
+    GAME_DATE = ch.queryForObject("SELECT toDate(now('America/New_York'))", LocalDate.class);
+    AS_OF = GAME_DATE.minusDays(1);
   }
 
   /** The class fold, lifted from the training SQL so a taxonomy change cannot desync the two. */
@@ -499,10 +559,10 @@ class PitchTypeArsenalParityIT {
                 PID,
                 y7Expression(),
                 PID,
-                CURRENT.date(),
-                CURRENT.gameId(),
-                CURRENT.ab(),
-                CURRENT.pn()));
+                current().date(),
+                current().gameId(),
+                current().ab(),
+                current().pn()));
   }
 
   private void createTables() {
