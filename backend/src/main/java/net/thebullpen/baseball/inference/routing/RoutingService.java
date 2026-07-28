@@ -95,10 +95,10 @@ public class RoutingService {
     RoutingConfig current =
         repo.findByModelName(modelName)
             .orElseThrow(() -> new RoutingException.UnknownModel(modelName));
+    assertChampionStage(modelName, current.championVersionId());
     if (current.championVersionId() == challengerVersionId) {
       throw new RoutingException.ChallengerSameAsChampion(challengerVersionId);
     }
-    assertChampionStage(modelName, current.championVersionId());
     ModelVersion candidate =
         registry
             .getById(challengerVersionId)

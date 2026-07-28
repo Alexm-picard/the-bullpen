@@ -2,6 +2,7 @@ package net.thebullpen.baseball.inference.routing;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -9,6 +10,7 @@ import java.sql.Statement;
 import java.util.UUID;
 import net.thebullpen.baseball.Application;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIf;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
 
@@ -27,7 +29,22 @@ import org.springframework.context.ConfigurableApplicationContext;
  * directly-corrupt INSERT impossible), and assert the second boot dies with the integrity message.
  * CH-free (clickhouse disabled), so it runs on every CI pass, not just docker-gated.
  */
+@EnabledIf("toyModelPresent")
 class RoutingIntegrityBootIT {
+
+  /**
+   * Same guard as {@code ApiPairTwoInstanceIT}: the api context cannot start without the on-disk
+   * toy model ({@code ToyBattedBallInference.@PostConstruct} throws), which is gitignored. CI
+   * generates it; a fresh clone skips this class rather than failing on the CLEAN boot - which
+   * would otherwise read as the integrity check being broken when it is the fixture that is
+   * missing.
+   */
+  static boolean toyModelPresent() {
+    return Files.exists(
+        Path.of(System.getProperty("user.dir"))
+            .getParent()
+            .resolve("training/artifacts/_toy/v0/model.onnx"));
+  }
 
   @Test
   void boot_refuses_a_pre_seeded_corrupt_routing_row() throws Exception {
