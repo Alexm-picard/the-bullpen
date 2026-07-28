@@ -25,7 +25,7 @@ class PitcherFormRefreshJobTest {
     // fresh. The gauge is the half that would have caught it in June - an honest as_of_date alone
     // is a truthful column nobody reads.
     LocalDate corpusEdge = LocalDate.now(ET).minusDays(63);
-    when(repo.corpusMaxGameDate()).thenReturn(corpusEdge);
+    when(repo.windowSourceMaxGameDate()).thenReturn(corpusEdge);
     SimpleMeterRegistry meters = new SimpleMeterRegistry();
 
     PitcherFormRefreshJob job = new PitcherFormRefreshJob(repo, meters);

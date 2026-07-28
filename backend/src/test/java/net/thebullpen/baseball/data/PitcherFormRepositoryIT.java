@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 
+import java.nio.file.Files;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.Map;
@@ -236,13 +237,13 @@ class PitcherFormRepositoryIT {
     // The empty case comes FIRST, and comes free: @BeforeEach wiped pitches. It matters because
     // ClickHouse returns the TYPE DEFAULT (1970-01-01), not NULL, for max() over an empty table -
     // so an empty corpus must be a loud fault, never an epoch-dated gauge reading of ~20k days.
-    assertThatThrownBy(repo::corpusMaxGameDate)
+    assertThatThrownBy(repo::windowSourceMaxGameDate)
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("empty");
 
     insertPitches(103, daysAgo(5), "ball");
     insertPitches(104, daysAgo(3), "ball");
-    assertThat(repo.corpusMaxGameDate()).isEqualTo(LocalDate.parse(daysAgo(3)));
+    assertThat(repo.windowSourceMaxGameDate()).isEqualTo(LocalDate.parse(daysAgo(3)));
   }
 
   @Test
@@ -273,6 +274,154 @@ class PitcherFormRepositoryIT {
         .isZero();
   }
 
+  // --- the [186] union window -------------------------------------------
+
+  /**
+   * THE [186] CORE PIN, expectations hand-computed FIRST: corpus (d-10): called_strike + ball; live
+   * (d-2): swinging_strike + ball; plus an OVERLAP row sharing the corpus pitch's FULL key but
+   * claiming 'in_play'. Deduped-with-historical-winning = 4 pitches: strike_rate 2/4, swstr 1/4,
+   * inplay 0/4, anchor d-2, dsla 2. Every failure mode lands on a DIFFERENT number: no dedup -> 5
+   * pitches; live-wins-overlap -> inplay 0.25; live leg ignored -> 2 pitches and anchor d-10.
+   */
+  @Test
+  void refresh_window_reads_the_union_and_dedups_the_overlap_with_historical_winning() {
+    insertPitches(106, daysAgo(10), "called_strike", "ball");
+    insertLivePitch(9106L, 106, 1, 1, daysAgo(2), "swinging_strike");
+    insertLivePitch(9106L, 106, 1, 2, daysAgo(2), "ball");
+    // The overlap: insertPitches uses game_id = pitcherId, at_bat_index 1, pitch_number 1..n -
+    // this live row collides with the FIRST corpus pitch's key and contradicts its description.
+    insertLivePitch(106L, 106, 1, 1, daysAgo(10), "in_play");
+
+    repo.refreshCurrentForm();
+
+    Map<String, Object> row =
+        ch.queryForMap(
+            "SELECT pitches_last_28d, strike_rate_28d, swstrike_rate_28d, inplay_rate_28d,"
+                + " as_of_date, days_since_last_appearance"
+                + " FROM pitcher_form_current FINAL WHERE pitcher_id = 106");
+    assertThat(num(row, "pitches_last_28d")).as("union minus the overlap duplicate").isEqualTo(4.0);
+    assertThat(num(row, "strike_rate_28d")).isEqualTo(0.5);
+    assertThat(num(row, "swstrike_rate_28d")).isEqualTo(0.25);
+    assertThat(num(row, "inplay_rate_28d"))
+        .as("0 proves the HISTORICAL row won the overlap - the live twin said in_play")
+        .isZero();
+    assertThat(String.valueOf(row.get("as_of_date"))).isEqualTo(daysAgo(2));
+    assertThat(num(row, "days_since_last_appearance")).isEqualTo(2.0);
+  }
+
+  /**
+   * Strictly-before ([186]): a live pitch dated TODAY is excluded from the 28d window AND the
+   * anchor - training's frame is RANGE ... 1 PRECEDING, and today's pitches belong to the intra-day
+   * upsert. Load-bearing since the union: an intra-day runOnce would otherwise pull in-progress
+   * pitches into rates training never sees.
+   */
+  @Test
+  void refresh_window_excludes_todays_live_rows() {
+    insertPitches(107, daysAgo(5), "ball", "called_strike");
+    insertLivePitch(9107L, 107, 1, 1, daysAgo(0), "swinging_strike");
+
+    repo.refreshCurrentForm();
+
+    Map<String, Object> row =
+        ch.queryForMap(
+            "SELECT pitches_last_28d, swstrike_rate_28d, as_of_date"
+                + " FROM pitcher_form_current FINAL WHERE pitcher_id = 107");
+    assertThat(num(row, "pitches_last_28d")).isEqualTo(2.0);
+    assertThat(num(row, "swstrike_rate_28d"))
+        .as("today's swinging_strike must not leak in")
+        .isZero();
+    assertThat(String.valueOf(row.get("as_of_date"))).isEqualTo(daysAgo(5));
+  }
+
+  /** The gauge source reads the union edge: a live row newer than the corpus moves it. */
+  @Test
+  void window_source_max_reads_the_union_edge() {
+    insertPitches(108, daysAgo(6), "ball");
+    insertLivePitch(9108L, 108, 1, 1, daysAgo(1), "ball");
+    assertThat(repo.windowSourceMaxGameDate()).isEqualTo(LocalDate.parse(daysAgo(1)));
+  }
+
+  /**
+   * THE [186] PARITY TEST: the serving union window vs the REAL training definition
+   * (compute_tier3.sql, read from disk, binds substituted) on a fixed fixture. The fixture
+   * duplicates one corpus row into pitches_live with an IDENTICAL description (the union must dedup
+   * it away for parity to hold; the different-description overlap above pins who wins), and adds a
+   * reference pitch dated TODAY in pitches: training's frame for that pitch is [today-28, today-1],
+   * exactly the serving window - and the reference pitch is outside both (1 PRECEDING on the
+   * training side, <= today()-1 on the serving side), which this parity would break on if either
+   * bound regressed.
+   */
+  @Test
+  void serving_union_window_matches_the_training_definition_on_fixed_rows() throws Exception {
+    insertPitches(109, daysAgo(20), "called_strike", "in_play", "ball");
+    insertPitches(109, daysAgo(4), "swinging_strike", "foul");
+    // Same key, same description: pure duplicate across the tables.
+    insertLivePitch(109L, 109, 1, 1, daysAgo(20), "called_strike");
+    // The reference pitch (today, distinct game) whose training-side frame is the serving window.
+    ch.update(
+        "INSERT INTO pitches"
+            + " (game_id, game_date, at_bat_index, pitch_number, pitcher_id, description)"
+            + " VALUES (?, ?, ?, ?, ?, ?)",
+        99109L,
+        daysAgo(0),
+        1,
+        1,
+        109,
+        "ball");
+
+    repo.refreshCurrentForm();
+    Map<String, Object> serving =
+        ch.queryForMap(
+            "SELECT pitches_last_28d, strike_rate_28d, swstrike_rate_28d, inplay_rate_28d,"
+                + " days_since_last_appearance"
+                + " FROM pitcher_form_current FINAL WHERE pitcher_id = 109");
+
+    String trainingSql =
+        Files.readString(trainingSql("compute_tier3.sql"))
+            .replace(":test_start", "'" + daysAgo(0) + "'")
+            .replace(":test_end", "'" + daysAgo(0) + "'")
+            .replace("SETTINGS max_memory_usage = 0", "");
+    Map<String, Object> training =
+        ch.queryForMap(
+            "SELECT pitcher_pitches_last_28d, pitcher_strike_rate_28d,"
+                + " pitcher_swstrike_rate_28d, pitcher_inplay_rate_28d,"
+                + " days_since_last_appearance AS dsla"
+                + " FROM ("
+                + trainingSql
+                + ") WHERE game_id = 99109");
+
+    // Anti-vacuity: the hand-computed frame is 5 pitches (3 + 2, duplicate deduped);
+    // strike 3/5 (called_strike, swinging_strike, foul), swstr 1/5, inplay 1/5, dsla 4.
+    assertThat(num(serving, "pitches_last_28d")).isEqualTo(5.0);
+    assertThat(num(training, "pitcher_pitches_last_28d")).isEqualTo(5.0);
+    // Rates: BOTH sides anchored to the hand-computed expectation, with fp tolerance - the
+    // serving column is Float32 while training's division result stays Float64, so exact
+    // cross-equality would fail on representation, not semantics.
+    assertParityRate(serving, "strike_rate_28d", training, "pitcher_strike_rate_28d", 3.0 / 5.0);
+    assertParityRate(
+        serving, "swstrike_rate_28d", training, "pitcher_swstrike_rate_28d", 1.0 / 5.0);
+    assertParityRate(serving, "inplay_rate_28d", training, "pitcher_inplay_rate_28d", 1.0 / 5.0);
+    assertThat(num(serving, "days_since_last_appearance")).isEqualTo(4.0);
+    assertThat(num(training, "dsla")).isEqualTo(4.0);
+  }
+
+  private static void assertParityRate(
+      Map<String, Object> serving,
+      String servingCol,
+      Map<String, Object> training,
+      String trainingCol,
+      double expected) {
+    assertThat(num(serving, servingCol)).isCloseTo(expected, within(1e-6));
+    assertThat(num(training, trainingCol)).isCloseTo(expected, within(1e-6));
+  }
+
+  private static java.nio.file.Path trainingSql(String name) {
+    return java.nio.file.Path.of(System.getProperty("user.dir"))
+        .getParent()
+        .resolve("training/src/bullpen_training/features/sql")
+        .resolve(name);
+  }
+
   // --- helpers ----------------------------------------------------------
 
   private void insertPitches(int pitcherId, String gameDate, String... descriptions) {
@@ -292,22 +441,32 @@ class PitcherFormRepositoryIT {
     }
   }
 
-  /**
-   * One live pitch for the pitcher in a game. All bound values lead the VALUES list and the
-   * constants trail it: clickhouse-jdbc mishandles a literal interleaved among ? placeholders.
-   * game_date is irrelevant to the intra-day count (it keys on game_id + pitcher_id).
-   */
+  /** Intra-day-count shape: today's date, description irrelevant to the count. */
   private void insertLivePitch(long gameId, int pitcherId, int pitchNumber) {
+    insertLivePitch(gameId, pitcherId, 1, pitchNumber, daysAgo(0), "ball");
+  }
+
+  /**
+   * One live pitch with the FULL canonical key {@code (game_id, at_bat_index, pitch_number)}
+   * caller-controlled - the [186] union tests need key collisions with corpus rows (overlap dedup)
+   * and non-today dates (window membership). {@code gameDate} is bound as a STRING for the same
+   * clickhouse-jdbc mis-bind reason insertPitches documents (the old helper hardcoded a
+   * java.sql.Date, harmless only while nothing filtered the live leg by date - the union does).
+   */
+  private void insertLivePitch(
+      long gameId, int pitcherId, int atBatIndex, int pitchNumber, String gameDate, String desc) {
     ch.update(
         "INSERT INTO pitches_live"
             + " (game_id, pitch_number, pitcher_id, game_date,"
             + "  at_bat_index, batter_id, description, balls, strikes, outs, inning,"
             + "  home_score, away_score, home_team, away_team)"
-            + " VALUES (?, ?, ?, ?, 1, 200, 'ball', 0, 0, 0, 1, 0, 0, 'HOM', 'AWY')",
+            + " VALUES (?, ?, ?, ?, ?, 200, ?, 0, 0, 0, 1, 0, 0, 'HOM', 'AWY')",
         gameId,
         pitchNumber,
         pitcherId,
-        java.sql.Date.valueOf("2026-06-13"));
+        gameDate,
+        atBatIndex,
+        desc);
   }
 
   private static String daysAgo(int days) {
