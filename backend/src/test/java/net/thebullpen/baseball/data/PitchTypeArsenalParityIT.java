@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -79,8 +80,20 @@ class PitchTypeArsenalParityIT {
   private static final long PID = 4242L;
 
   private static final long DECOY_PID = 9999L;
-  private static final LocalDate AS_OF = LocalDate.of(2024, 4, 30);
-  private static final LocalDate GAME_DATE = LocalDate.of(2024, 5, 1);
+
+  /**
+   * RELATIVE to the wall clock since [186], not the fixed 2024 dates this fixture used to carry.
+   * The snapshot's union bound is {@code toDate(now('America/New_York')) - 1}, so "the current
+   * game" is only outside the snapshot if it is genuinely TODAY. With fixed past dates the live
+   * rows would land INSIDE the snapshot, the anchor would advance to the current game's own date,
+   * and the deriver would (correctly) refuse the composition as a leak - the fixture's fiction has
+   * to match what the bound believes. AS_OF at today-1 also keeps the snapshot inside the 2-day
+   * freshness bound the deriver enforces.
+   */
+  private static final ZoneId ET = ZoneId.of("America/New_York");
+
+  private static final LocalDate GAME_DATE = LocalDate.now(ET);
+  private static final LocalDate AS_OF = GAME_DATE.minusDays(1);
   private static final long GAME_ID = 700_001L;
   private static final long GAME_ID_2 = 700_002L; // doubleheader, same date
 
@@ -338,6 +351,61 @@ class PitchTypeArsenalParityIT {
   }
 
   // --- seeding ---------------------------------------------------------------
+
+  /**
+   * THE [186] PR-2 PIN. Expectations hand-computed FIRST, and every failure mode lands on a
+   * DIFFERENT number: 2 corpus FF + 1 live-only SL = 3, with an OVERLAP row (live claiming CH at
+   * the corpus's own key) and a TODAY-dated live row both excluded. No dedup gives 4; live winning
+   * the overlap gives n_ch=1; a missing live leg gives 2; a lost strictly-before bound gives 4 with
+   * n_cu=1 - and that last one would also push the anchor to today, which the deriver refuses
+   * outright for every game that day.
+   *
+   * <p>Uses its own pitcher id: {@code pitches} is not truncated between tests in this class (only
+   * the snapshot table is recreated), so rows seeded here would otherwise pollute the career counts
+   * the arsenal-parity test asserts.
+   */
+  @Test
+  void snapshot_reads_the_union_dedups_the_overlap_and_excludes_today() throws Exception {
+    ch = new JdbcTemplate(clickhouse);
+    seedEverything();
+    long p = 5555L;
+
+    insertPitches(
+        "pitches",
+        List.of(new P(AS_OF, 630_001L, 1, 1, "FF", 0, 0), new P(AS_OF, 630_001L, 1, 2, "FF", 0, 0)),
+        p,
+        0L);
+    // Live, inside the bound: a pitch the corpus does not have at all.
+    insertPitches("pitches_live", List.of(new P(AS_OF, 630_002L, 1, 1, "SL", 0, 0)), p, 0L);
+    // The OVERLAP: the corpus's first pitch, re-reported by the live feed as a different type.
+    insertPitches("pitches_live", List.of(new P(AS_OF, 630_001L, 1, 1, "CH", 0, 0)), p, 0L);
+    // TODAY: outside the strictly-before bound, and the delta's territory.
+    insertPitches("pitches_live", List.of(new P(GAME_DATE, 630_003L, 1, 1, "CU", 0, 0)), p, 0L);
+
+    refreshSnapshot();
+
+    Map<String, Object> row =
+        ch.queryForMap(
+            "SELECT prior_n, n_ff, n_sl, n_ch, n_cu, as_of_date"
+                + " FROM pitcher_pitchtype_prior_current FINAL WHERE pitcher_id = ?",
+            p);
+    assertThat(((Number) row.get("prior_n")).longValue())
+        .as("2 corpus + 1 live-only; the overlap duplicate and today's pitch are both out")
+        .isEqualTo(3L);
+    assertThat(((Number) row.get("n_ff")).longValue())
+        .as("the HISTORICAL row won the overlap - the live twin said CH")
+        .isEqualTo(2L);
+    assertThat(((Number) row.get("n_sl")).longValue())
+        .as("the live leg genuinely contributes")
+        .isEqualTo(1L);
+    assertThat(((Number) row.get("n_ch")).longValue()).isZero();
+    assertThat(((Number) row.get("n_cu")).longValue())
+        .as("today's live pitch belongs to the in-game delta, never the snapshot")
+        .isZero();
+    assertThat(row.get("as_of_date").toString())
+        .as("the anchor stays strictly behind the delta window")
+        .isEqualTo(AS_OF.toString());
+  }
 
   private void seedEverything() throws Exception {
     createTables();

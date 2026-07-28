@@ -45,6 +45,68 @@ public final class PitcherPitchTypePriorSnapshotSql {
   public static final int SLOTS = 12;
 
   /**
+   * The date basis, {@code America/New_York}. NOT ClickHouse {@code today()}, which resolves in the
+   * SERVER timezone (UTC in prod) while this job's schedule is ET - between 20:00 and 23:59 ET
+   * those disagree by a day. Deliberately duplicated from {@code PitcherFormRepository}'s constant
+   * rather than shared: the two land in separate [186] PRs and a shared holder would have made them
+   * a merge conflict. Unify once both are on main; until then they must agree by inspection.
+   */
+  private static final String TODAY_ET = "toDate(now('America/New_York'))";
+
+  /**
+   * The [186] window SOURCE for the career prior: {@code pitches} UNION {@code pitches_live}, both
+   * FINAL, deduped on the full pitch identity with the historical leg winning overlaps and the
+   * newest read winning same-source duplicates. Mirrors the sibling in {@code
+   * PitcherFormRepository} exactly, minus the {@code toString(description)} cast that one needs
+   * (there {@code description} is Enum8 vs LowCardinality; here {@code pitch_type} is
+   * LowCardinality(String) in BOTH tables, verified against V003 and V015).
+   *
+   * <p>THE UPPER BOUND IS A CORRECTNESS REQUIREMENT HERE, not only training parity, and the reason
+   * is specific to this snapshot: the serving composition is snapshot + in-game delta, where {@code
+   * SELECT_IN_GAME_DELTA} takes {@code game_date > as_of_date}. The two meet exactly at the anchor.
+   * Aggregating rows the anchor does not cover would break that meet - and if the anchor itself
+   * reached today, {@code PitchTypeArsenalDeriver.assertDeltaWindowIsValid} would refuse EVERY
+   * pitch of every game played that day (gameDate is not after as_of_date), turning a freshness win
+   * into a total serving outage. Bounding both the aggregate and the anchor at {@code TODAY_ET - 1}
+   * keeps the snapshot strictly behind the delta's window.
+   *
+   * <p>Untyped live rows drop out on their own: GUMBO leaves {@code pitch_type} empty until it
+   * types a pitch, and {@code NOT IN ('', 'PO', 'IN')} - the same filter the training SQL uses -
+   * excludes them. The anchor carries that filter too, so it reports the newest date with USABLE
+   * typed pitches rather than overstating coverage from a batch of untyped rows.
+   */
+  private static String unionSource() {
+    return "  SELECT game_date, game_id, at_bat_index, pitch_number, pitcher_id,"
+        + " balls, strikes, pitch_type, ingested_at, 1 AS src\n"
+        + "  FROM pitches FINAL\n"
+        + "  WHERE pitch_type NOT IN ('', 'PO', 'IN') AND game_date <= "
+        + TODAY_ET
+        + " - 1\n"
+        + "  UNION ALL\n"
+        + "  SELECT game_date, game_id, at_bat_index, pitch_number, pitcher_id,"
+        + " balls, strikes, pitch_type, ingested_at, 2 AS src\n"
+        + "  FROM pitches_live FINAL\n"
+        + "  WHERE pitch_type NOT IN ('', 'PO', 'IN') AND game_date <= "
+        + TODAY_ET
+        + " - 1\n";
+  }
+
+  /** Newest usable game_date across the same bounded, filtered union the aggregate reads. */
+  private static String anchor() {
+    return "(SELECT max(game_date) FROM (\n"
+        + "  SELECT game_date FROM pitches\n"
+        + "   WHERE pitch_type NOT IN ('', 'PO', 'IN') AND game_date <= "
+        + TODAY_ET
+        + " - 1\n"
+        + "  UNION ALL\n"
+        + "  SELECT game_date FROM pitches_live\n"
+        + "   WHERE pitch_type NOT IN ('', 'PO', 'IN') AND game_date <= "
+        + TODAY_ET
+        + " - 1\n"
+        + "))";
+  }
+
+  /**
    * The refresh INSERT.
    *
    * @param y7Expression the class fold, which MUST be the training SQL's own multiIf. Passed in
@@ -56,7 +118,9 @@ public final class PitcherPitchTypePriorSnapshotSql {
     // rule to keep a nicer-looking literal is the wrong trade.
     return "INSERT INTO pitcher_pitchtype_prior_current\n"
         + "SELECT pitcher_id,\n"
-        + "       (SELECT max(game_date) FROM pitches) AS as_of_date,\n"
+        + "       "
+        + anchor()
+        + " AS as_of_date,\n"
         + "       count() AS prior_n,\n"
         + "       countIf(y7 = 'FF'), countIf(y7 = 'SI'), countIf(y7 = 'FC'), countIf(y7 = 'SL'),\n"
         + "       countIf(y7 = 'CU'), countIf(y7 = 'CH'), countIf(y7 = 'OFF'),\n"
@@ -71,8 +135,11 @@ public final class PitcherPitchTypePriorSnapshotSql {
         + "  SELECT pitcher_id, balls * 3 + strikes AS slot, "
         + y7Expression
         + " AS y7\n"
-        + "  FROM pitches FINAL\n"
-        + "  WHERE pitch_type NOT IN ('', 'PO', 'IN')\n"
+        + "  FROM (\n"
+        + unionSource()
+        + "  )\n"
+        + "  ORDER BY src, ingested_at DESC\n"
+        + "  LIMIT 1 BY game_date, game_id, at_bat_index, pitch_number\n"
         + ")\n"
         + "GROUP BY pitcher_id\n";
   }
