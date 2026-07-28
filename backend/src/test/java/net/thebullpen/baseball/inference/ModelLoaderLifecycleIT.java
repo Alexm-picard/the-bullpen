@@ -128,6 +128,13 @@ class ModelLoaderLifecycleIT {
       // is the point of the @PreDestroy rewrite; the listener alone gave no such guarantee.
       loader.close();
       assertThat(b1.isRetired()).isTrue();
+      // The DETERMINISTIC pin (registry-guard F2): a did-it-retire check races the async
+      // listener, which wins ~90% of the time even on the reverted implementation. The claiming
+      // THREAD cannot lie: the direct-close sweep claims on this thread; a listener-driven close
+      // claims on a Caffeine executor thread.
+      assertThat(b1.closedBy())
+          .as("the @PreDestroy sweep itself must close, not the async removal listener")
+          .isSameAs(Thread.currentThread());
       assertThatThrownBy(() -> b1.predict(sampleRequest()))
           .isInstanceOf(ModelUnavailableException.class)
           .hasMessageContaining("retired");
@@ -138,6 +145,28 @@ class ModelLoaderLifecycleIT {
           .hasMessageContaining("closed");
     } finally {
       loader.close(); // idempotent; keeps the leak-on-assertion-failure symmetry of the other tests
+    }
+  }
+
+  /**
+   * The 2x sizing's BITING test (registry-guard F3): with cacheSize=1 the shared pitch-type cache
+   * caps at 2 because two registry families share it - both cached bundles must stay live. A
+   * single-budget regression (cap 1) evicts v1 on v2's load, and 300ms is orders of magnitude above
+   * Caffeine's dispatch latency, so the eviction would be observed.
+   */
+  @Test
+  void shared_pitch_type_cache_holds_both_families_budgets() throws Exception {
+    long v1 = registerVersion("v1").id();
+    long v2 = registerVersion("v2").id();
+    ModelLoader loader = new ModelLoader(registryService, 1);
+    try {
+      LoadedPitchTypeModel b1 = loader.loadPitchType(v1);
+      LoadedPitchTypeModel b2 = loader.loadPitchType(v2);
+      Thread.sleep(300);
+      assertThat(b1.isRetired()).as("cap must fit both families' bundles").isFalse();
+      assertThat(b2.isRetired()).isFalse();
+    } finally {
+      loader.close();
     }
   }
 

@@ -195,6 +195,11 @@ public final class LoadedPitchTypeModel implements AutoCloseable {
     return onnx.isRetired();
   }
 
+  /** Test-facing: the thread that claimed this bundle's close (see SessionGuard.closedBy). */
+  Thread closedBy() {
+    return onnx.closedBy();
+  }
+
   @Override
   public void close() throws OrtException {
     onnx.close();

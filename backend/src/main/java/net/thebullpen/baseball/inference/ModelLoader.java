@@ -84,7 +84,9 @@ public class ModelLoader {
             .build();
     this.allParksCache =
         Caffeine.newBuilder()
-            .maximumSize(cacheSize)
+            // 2x: serves TWO registry families (battedball_outcome + lr_baseline_batted_ball) -
+            // see the family-per-cache map comment below.
+            .maximumSize(2L * cacheSize)
             .removalListener(
                 (Long key, LoadedAllParksModel value, RemovalCause cause) -> {
                   if (value == null) {
@@ -100,14 +102,21 @@ public class ModelLoader {
             .build();
     // Two pitch caches keyed by version_id (rule 9: pre + post are separate registry models, so a
     // given version_id loads into exactly one cache; the two never hold the same key).
-    this.pitchPreCache = buildPitchCache("pre", cacheSize);
+    // A5 (task #87): every cache that serves TWO registry families gets BOTH families' budgets -
+    // a single budget halves the champion+shadow+rollback+warmup policy the class javadoc states
+    // and churns under it. The family-per-cache map, verified against RegistryBaselines +
+    // ModelLoadValidator's dispatch: pitchPre serves pitch_outcome_pre + the SHARED
+    // pitch_outcome_lr_baseline (the baseline row both heads declare dispatches by its
+    // metadata head=pre into THIS cache, so pitchPost holds only pitch_outcome_post - 1x);
+    // allParks serves battedball_outcome + lr_baseline_batted_ball (both take the park_order
+    // branch); pitchType serves pitch_type_pre + pitch_type_lr_baseline. The toy single-float
+    // battedBallCache is one family.
+    this.pitchPreCache = buildPitchCache("pre", 2 * cacheSize);
     this.pitchPostCache = buildPitchCache("post", cacheSize);
-    // A5 (task #87): TWO registry families share this cache (pitch_type_pre + its rule-9
-    // pitch_type_lr_baseline), so it gets both families' budgets - a single budget would halve
-    // the champion+shadow+rollback+warmup policy the class javadoc states and churn under it.
     this.pitchTypeCache = buildPitchTypeCache(2 * cacheSize);
     log.info(
-        "ModelLoader ready: per-model cache size={} (pitch-type shared cache size={})",
+        "ModelLoader ready: per-family cache size={} (two-family caches allParks/pitchPre/"
+            + "pitchType sized {})",
         cacheSize,
         2 * cacheSize);
   }
@@ -363,7 +372,11 @@ public class ModelLoader {
     }
     M m = cache.get(versionId, fresh);
     if (retired.test(m)) {
-      cache.invalidate(versionId);
+      // CONDITIONAL removal (remove-if-still-this-instance), not invalidate: an unconditional
+      // invalidate could evict a FRESH bundle another thread just reloaded under the same key,
+      // whose removal listener would retire it - self-inflicting exactly the stale-reference
+      // refusal this recheck exists to eliminate.
+      cache.asMap().remove(versionId, m);
       m = cache.get(versionId, fresh);
     }
     return m;

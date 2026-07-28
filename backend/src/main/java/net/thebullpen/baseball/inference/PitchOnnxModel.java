@@ -44,8 +44,10 @@ public final class PitchOnnxModel implements AutoCloseable {
       // The session is live here; close it before propagating or the native handle leaks (the
       // same construct-order discipline task #87 imposes on the Loaded* bundle classes). A failing
       // close must not EAT the arity diagnostic - suppress it onto the real error instead.
-      IllegalStateException arity =
-          new IllegalStateException(
+      // ModelUnavailableException, not bare ISE: this is a snapshot-integrity refusal like the
+      // rest, and an ISE would escape ModelLoader's IOException|OrtException wrap unframed.
+      ModelUnavailableException arity =
+          new ModelUnavailableException(
               "pitch ONNX must declare exactly one input tensor, got " + inputNames);
       try {
         session.close();
@@ -89,6 +91,11 @@ public final class PitchOnnxModel implements AutoCloseable {
   /** True once {@link #close()} has begun: the bundle is stale and a fresh load should serve. */
   public boolean isRetired() {
     return guard.isRetired();
+  }
+
+  /** Test-facing: the thread that claimed this session's close (see SessionGuard.closedBy). */
+  Thread closedBy() {
+    return guard.closedBy();
   }
 
   /** The resolved input tensor name (visible for tests / diagnostics). */
