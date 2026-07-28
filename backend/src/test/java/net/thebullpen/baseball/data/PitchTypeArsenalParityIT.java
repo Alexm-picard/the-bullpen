@@ -451,6 +451,10 @@ class PitchTypeArsenalParityIT {
         "pitches_live", List.of(new P(AS_OF.minusDays(1), 640_001L, 1, 1, "FF", 0, 0)), p, 0L);
     // The key-WIDTH pair, in pitches: two genuinely distinct rows under that table's own 4-part
     // identity, which a 3-part dedup key would wrongly collapse to one.
+    // THE DATES ARE LOAD-BEARING, not incidental: the live seed above at AS_OF - 1 forces
+    // live_floor <= AS_OF - 1, which is what routes this pair through the DEDUPED leg where
+    // LIMIT 1 BY exists. Move either date below live_floor and the pair takes the cheap
+    // undeduped leg, where a 3-part key would not bite and this pin silently stops working.
     insertPitches(
         "pitches",
         List.of(
@@ -471,15 +475,6 @@ class PitchTypeArsenalParityIT {
         .isEqualTo(3L);
   }
 
-  /**
-   * THE BRANCH NO TEST REACHED, caught by the auditor's second pass: with {@code pitches_live}
-   * EMPTY the snapshot must still be the full career. Routing the corpus down the cheap undeduped
-   * leg depends on {@code live_floor} becoming the far future, and an {@code ifNull(min(...))}
-   * guard could not do that - ClickHouse {@code min()} over an empty non-Nullable column returns
-   * the type DEFAULT (1970-01-01), never NULL - so the routing silently inverted and the whole
-   * corpus took the global sort (measured 3.16 GiB vs 56 MiB). Empty is not exotic: the 14-day TTL
-   * means the entire OFFSEASON, any long ingest outage, and every fresh or restored box.
-   */
   /**
    * THE PIN THAT ACTUALLY BITES the live-floor guard. The snapshot-content test below cannot: the
    * guard decides WHICH LEG runs, not which rows come out, and at fixture scale the global and
@@ -502,6 +497,10 @@ class PitchTypeArsenalParityIT {
         ch.queryForObject("SELECT min(game_date) FROM pitches_live", LocalDate.class);
     LocalDate populated =
         ch.queryForObject("SELECT " + PitcherPitchTypePriorSnapshotSql.LIVE_FLOOR, LocalDate.class);
+    // WEAKER THAN IT LOOKS, said out loud so nobody trusts it further than it earns: with rows
+    // present, if(count() = 0, ...) reduces to min(game_date), so this compares an expression
+    // against itself. It still catches an inverted predicate and, via isNotEqualTo, an
+    // unconditional sentinel - but the EMPTY branch below is the half that carries the pin.
     assertThat(populated)
         .as("with rows present the floor is the live table's own minimum")
         .isEqualTo(actualMin)
@@ -517,12 +516,25 @@ class PitchTypeArsenalParityIT {
         .isEqualTo(LocalDate.of(2149, 6, 6));
   }
 
+  /**
+   * The CORRECTNESS half of the empty-live-table case: with {@code pitches_live} empty the snapshot
+   * must still be the full career. Deliberately NOT the guard's pin - both legs return identical
+   * rows at any scale, so a broken guard passes every assertion here (verified by mutation). The
+   * pin lives in the guard-expression test above; this one catches a genuinely wrong predicate on
+   * the cheap leg. Empty is not exotic: the 14-day TTL means the entire OFFSEASON, any long ingest
+   * outage, and every fresh or restored box.
+   */
   @Test
   void snapshot_is_complete_when_the_live_table_is_empty() throws Exception {
     ch = new JdbcTemplate(clickhouse);
     seedEverything();
     // Ephemeral Testcontainers instance, not live ClickHouse - the same wipe idiom
-    // PitcherFormRepositoryIT uses between tests.
+    // PitcherFormRepositoryIT uses between tests. NOTE the class is ORDER-COUPLED by this:
+    // pitches / pitches_live are created once by the boot-time migration runner and accumulate
+    // (createTables() only drops the snapshot table), so every test either re-seeds via
+    // seedEverything() or seeds its own. A future test that READS pitches_live without seeding
+    // it would pass or fail on JUnit's method order; a @BeforeEach wipe-and-seed is the fix when
+    // that day comes.
     ch.execute("TRUNCATE TABLE pitches_live");
     long p = 7777L;
     insertPitches(
