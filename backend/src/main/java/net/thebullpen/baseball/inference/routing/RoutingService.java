@@ -264,6 +264,32 @@ public class RoutingService {
   }
 
   /**
+   * Clear {@code versionId} out of {@code modelName}'s challenger slot IF it currently occupies it;
+   * no-op otherwise (issue #374). Called by the registry when a version is ARCHIVED: an archived
+   * version left in a challenger slot would keep taking shadow legs (failed loads counted as drops)
+   * and, under mode=AB with traffic, REAL user traffic - a rule-6 violation in substance. Mirrors
+   * {@link #clearChallenger}'s semantics: slot to null, traffic to 0, mode to SHADOW. Reads the
+   * repository directly (not the cached {@code findRouting}) because this runs inside the
+   * registry's archive transaction and must see current state.
+   */
+  @Transactional
+  @CacheEvict(value = CacheConfig.ROUTING_CACHE, allEntries = true)
+  public void clearChallengerIfRouted(String modelName, long versionId) {
+    Optional<RoutingConfig> row = repo.findByModelName(modelName);
+    if (row.isEmpty()
+        || row.get().challengerVersionId() == null
+        || row.get().challengerVersionId() != versionId) {
+      return;
+    }
+    assertChampionStage(modelName, row.get().championVersionId());
+    repo.upsert(modelName, row.get().championVersionId(), null, 0.0, RoutingMode.SHADOW);
+    log.warn(
+        "routing: {} challenger (version {}) was archived - slot cleared, traffic 0, mode SHADOW",
+        modelName,
+        versionId);
+  }
+
+  /**
    * The V011-bypass guard (task #94): every write that stores a {@code champion_version_id} - or
    * carries the current one forward - first proves the referenced version is at {@link
    * Stage#CHAMPION}. A routing row is the registry's serving switch; a row referencing any other

@@ -23,11 +23,24 @@ public class RoutingRepository {
    * model_versions row>"} when the reference is dangling OR points at a version of a different
    * model (the scan's JOIN binds model_name - rule 9).
    */
-  public record ChampionStageRow(String modelName, long championVersionId, String stage) {
+  public record RoutingStageRow(
+      String modelName,
+      long championVersionId,
+      String championStage,
+      Long challengerVersionId,
+      String challengerStage) {
 
-    /** The invariant: a routing row may only reference a {@code 'champion'}-stage version. */
-    public boolean violates() {
-      return !"champion".equals(stage);
+    /** The champion invariant (task #94): only a same-model {@code 'champion'}-stage version. */
+    public boolean championViolates() {
+      return !"champion".equals(championStage);
+    }
+
+    /**
+     * The challenger invariant (issue #374): an OCCUPIED slot must reference a same-model {@code
+     * 'shadow'}-stage version. An empty slot (NULL) is the common healthy state.
+     */
+    public boolean challengerViolates() {
+      return challengerVersionId != null && !"shadow".equals(challengerStage);
     }
   }
 
@@ -35,13 +48,20 @@ public class RoutingRepository {
       "SELECT id, model_name, champion_version_id, challenger_version_id,"
           + " challenger_traffic_pct, mode, updated_at FROM model_routing";
 
-  private static final RowMapper<ChampionStageRow> CHAMPION_STAGE_MAPPER =
+  private static final RowMapper<RoutingStageRow> ROUTING_STAGE_MAPPER =
       (ResultSet rs, int rowNum) -> {
-        String stage = rs.getString("stage");
-        return new ChampionStageRow(
+        String championStage = rs.getString("champion_stage");
+        long challengerId = rs.getLong("challenger_version_id");
+        boolean challengerNull = rs.wasNull();
+        String challengerStage = rs.getString("challenger_stage");
+        return new RoutingStageRow(
             rs.getString("model_name"),
             rs.getLong("champion_version_id"),
-            stage == null ? "<no matching model_versions row>" : stage);
+            championStage == null ? "<no matching model_versions row>" : championStage,
+            challengerNull ? null : challengerId,
+            challengerNull
+                ? null
+                : (challengerStage == null ? "<no matching model_versions row>" : challengerStage));
       };
 
   private final JdbcTemplate jdbc;
@@ -74,15 +94,18 @@ public class RoutingRepository {
    * foreign_keys=true} plus the V020 insert trigger, but the check is total rather than trusting
    * that both survived every connection.
    */
-  public List<ChampionStageRow> findChampionStageRows() {
-    // The JOIN binds model_name as well as id (rule 9): a routing row referencing another model's
-    // champion must read as "no matching version" (NULL stage -> violation), not as healthy.
+  public List<RoutingStageRow> findRoutingStageRows() {
+    // Both JOINs bind model_name as well as id (rule 9): a routing row referencing another
+    // model's version must read as "no matching version" (NULL stage -> violation), not healthy.
     return jdbc.query(
-        "SELECT r.model_name, r.champion_version_id, v.stage"
+        "SELECT r.model_name, r.champion_version_id, v.stage AS champion_stage,"
+            + " r.challenger_version_id, c.stage AS challenger_stage"
             + " FROM model_routing r"
             + " LEFT JOIN model_versions v"
-            + " ON v.id = r.champion_version_id AND v.model_name = r.model_name",
-        CHAMPION_STAGE_MAPPER);
+            + " ON v.id = r.champion_version_id AND v.model_name = r.model_name"
+            + " LEFT JOIN model_versions c"
+            + " ON c.id = r.challenger_version_id AND c.model_name = r.model_name",
+        ROUTING_STAGE_MAPPER);
   }
 
   /**

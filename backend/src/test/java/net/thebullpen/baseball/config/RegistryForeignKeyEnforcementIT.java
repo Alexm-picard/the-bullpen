@@ -62,29 +62,53 @@ class RegistryForeignKeyEnforcementIT {
         .as("PRAGMA foreign_keys must be ON (1) for registry connections")
         .isEqualTo(1);
 
-    // model_routing.challenger_version_id REFERENCES model_versions(id). id 999999 does not exist,
-    // so with enforcement on the INSERT must be rejected instead of silently creating an orphan
-    // row. SQLite raises SQLITE_CONSTRAINT_FOREIGNKEY (error code 19, null SQLState), which
-    // Spring's code translator leaves as an UncategorizedSQLException (a DataAccessException) -
-    // assert on the FK message so this proves enforcement rather than just "some failure".
+    // experiment_results.challenger_version_id REFERENCES model_versions(id). id 999999 does not
+    // exist, so with enforcement on the INSERT must be rejected instead of silently creating an
+    // orphan row. SQLite raises SQLITE_CONSTRAINT_FOREIGNKEY (error code 19, null SQLState),
+    // which Spring's code translator leaves as an UncategorizedSQLException (a
+    // DataAccessException) - assert on the FK message so this proves enforcement rather than just
+    // "some failure".
     //
-    // This probes the CHALLENGER column, not the champion one it used before V020. V020's BEFORE
-    // INSERT trigger on model_routing runs AHEAD of foreign-key enforcement and is NULL-safe, so a
-    // dangling champion_version_id is now rejected by the stage guard and never reaches the FK
-    // check - it would report the invariant message instead, and this test would then pass with
-    // foreign_keys OFF, which would gut its whole purpose. challenger_version_id carries the same
-    // FK to the same table and has no trigger on it, so it is the honest probe.
+    // The probe has now moved TABLES twice, both times chased off by a trigger: V020 claimed
+    // model_routing's champion column (probe moved to its challenger column), and V021 claimed
+    // the challenger column too - model_routing has NO untriggered FK column left, so any probe
+    // there surfaces a stage-guard message and would pass with foreign_keys OFF, gutting the
+    // test. experiment_results.challenger_version_id carries the same FK to the same target table
+    // and has no trigger: the honest probe.
     long championId = insertChampionModelVersion("fk-it-model", "v-fk-1");
     assertThatThrownBy(
             () ->
                 jdbc.update(
-                    "INSERT INTO model_routing(model_name, champion_version_id,"
-                        + " challenger_version_id) VALUES (?, ?, ?)",
+                    "INSERT INTO experiment_results (model_name, champion_version_id,"
+                        + " challenger_version_id, started_at, primary_metric, primary_threshold,"
+                        + " guardrails, sample_size_target, status) VALUES (?, ?, ?,"
+                        + " CURRENT_TIMESTAMP, 'brier', 0.2, '{}', 1000, 'running')",
                     "fk-it-model",
                     championId,
                     999_999))
         .isInstanceOf(DataAccessException.class)
         .hasMessageContaining("FOREIGN KEY constraint failed");
+  }
+
+  /**
+   * Challenger twin of the champion ordering pin below: V021's challenger-stage trigger is
+   * NULL-safe and fires BEFORE foreign-key enforcement, so a dangling non-null
+   * challenger_version_id surfaces as the stage invariant, never as the FK message. Records which
+   * guard owns the case (and would catch an IS NOT -> {@code <>} regression as a message change).
+   */
+  @Test
+  void danglingChallengerVersionIdIsCaughtByTheStageGuardBeforeTheForeignKey() {
+    long championId = insertChampionModelVersion("fk-it-model-chal", "v-fk-chal");
+    assertThatThrownBy(
+            () ->
+                jdbc.update(
+                    "INSERT INTO model_routing(model_name, champion_version_id,"
+                        + " challenger_version_id) VALUES (?, ?, ?)",
+                    "fk-it-model-chal",
+                    championId,
+                    999_999))
+        .isInstanceOf(DataAccessException.class)
+        .hasMessageContaining("model_routing.challenger_version_id, when non-null, must reference");
   }
 
   /**

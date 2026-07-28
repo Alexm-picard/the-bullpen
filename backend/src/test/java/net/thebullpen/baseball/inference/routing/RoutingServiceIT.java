@@ -54,7 +54,7 @@ class RoutingServiceIT {
 
   @Autowired private RegistryService registry;
   @Autowired private RoutingService routing;
-  @Autowired private RoutingChampionIntegrityCheck integrityCheck;
+  @Autowired private RoutingIntegrityCheck integrityCheck;
   @Autowired private JdbcTemplate jdbc;
   @Autowired private CacheManager cacheManager;
 
@@ -401,6 +401,88 @@ class RoutingServiceIT {
     assertThatThrownBy(() -> integrityCheck.afterSingletonsInstantiated())
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("xm_int_model")
+        .hasMessageContaining("<no matching model_versions row>");
+  }
+
+  // --- challenger-slot invariant (issue #374) -----------------------------
+
+  /**
+   * Archiving a version that occupies its model's challenger slot clears the slot in the same
+   * transaction - the in-code path that used to strand an archived challenger (shadow legs kept
+   * loading it; mode=AB would have routed it real traffic).
+   */
+  @Test
+  void archiving_a_routed_challenger_clears_the_slot() throws Exception {
+    ModelVersion v1 = registry.register(sampleRequest("chal_arch_model", "v1"));
+    registry.transitionStage(v1.id(), Stage.CHAMPION);
+    ModelVersion v2 = registry.register(sampleRequest("chal_arch_model", "v2"));
+    registry.transitionStage(v2.id(), Stage.SHADOW);
+    routing.setChallenger("chal_arch_model", v2.id());
+    assertThat(routing.getRouting("chal_arch_model").challengerVersionId())
+        .isEqualTo(v2.id()); // anti-vacuity: the slot is genuinely occupied
+
+    registry.transitionStage(v2.id(), Stage.ARCHIVED);
+
+    RoutingConfig after = routing.getRouting("chal_arch_model");
+    assertThat(after.challengerVersionId()).isNull();
+    assertThat(after.challengerTrafficPct()).isEqualTo(0.0);
+    assertThat(after.mode()).isEqualTo(RoutingMode.SHADOW);
+    assertThat(after.championVersionId()).isEqualTo(v1.id()); // champion untouched
+  }
+
+  @Test
+  void archiving_an_unrouted_shadow_version_leaves_routing_untouched() throws Exception {
+    ModelVersion v1 = registry.register(sampleRequest("chal_noop_model", "v1"));
+    registry.transitionStage(v1.id(), Stage.CHAMPION);
+    ModelVersion v2 = registry.register(sampleRequest("chal_noop_model", "v2"));
+    registry.transitionStage(v2.id(), Stage.SHADOW);
+    // v2 never enters the challenger slot.
+
+    registry.transitionStage(v2.id(), Stage.ARCHIVED);
+
+    RoutingConfig after = routing.getRouting("chal_noop_model");
+    assertThat(after.championVersionId()).isEqualTo(v1.id());
+    assertThat(after.challengerVersionId()).isNull();
+  }
+
+  /**
+   * The boot scan flags an occupied challenger slot referencing a non-SHADOW version. The state is
+   * created by a RAW stage flip (no model_versions trigger, by design) - simulating a row stranded
+   * before the #374 clearing existed, since the in-code archive path now clears it.
+   */
+  @Test
+  void integrity_check_flags_a_stale_challenger() throws Exception {
+    ModelVersion v1 = registry.register(sampleRequest("chal_int_model", "v1"));
+    registry.transitionStage(v1.id(), Stage.CHAMPION);
+    ModelVersion v2 = registry.register(sampleRequest("chal_int_model", "v2"));
+    registry.transitionStage(v2.id(), Stage.SHADOW);
+    routing.setChallenger("chal_int_model", v2.id());
+    jdbc.update("UPDATE model_versions SET stage = 'archived' WHERE id = ?", v2.id());
+
+    assertThatThrownBy(() -> integrityCheck.afterSingletonsInstantiated())
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("chal_int_model")
+        .hasMessageContaining("archived");
+  }
+
+  /**
+   * Cross-model completeness for the challenger scan (mirrors the champion-side test above): a
+   * challenger re-homed to another model must read as a violation via the model-bound JOIN, even
+   * though its stage is still 'shadow' - the V021 trigger refuses WRITING such a row, so raw
+   * versions-side drift is the only way the state can exist.
+   */
+  @Test
+  void integrity_check_flags_a_cross_model_challenger() throws Exception {
+    ModelVersion v1 = registry.register(sampleRequest("chal_xm_model", "v1"));
+    registry.transitionStage(v1.id(), Stage.CHAMPION);
+    ModelVersion v2 = registry.register(sampleRequest("chal_xm_model", "v2"));
+    registry.transitionStage(v2.id(), Stage.SHADOW);
+    routing.setChallenger("chal_xm_model", v2.id());
+    jdbc.update("UPDATE model_versions SET model_name = 'chal_xm_other' WHERE id = ?", v2.id());
+
+    assertThatThrownBy(() -> integrityCheck.afterSingletonsInstantiated())
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("chal_xm_model")
         .hasMessageContaining("<no matching model_versions row>");
   }
 
