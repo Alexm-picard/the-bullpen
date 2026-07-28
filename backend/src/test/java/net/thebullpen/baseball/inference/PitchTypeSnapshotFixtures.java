@@ -19,9 +19,13 @@ import java.util.Objects;
  */
 public final class PitchTypeSnapshotFixtures {
 
-  private static final Path REPO_ROOT = Path.of(System.getProperty("user.dir")).getParent();
+  // Relative to the Gradle working dir (backend/), like the ITs' REPO_ROOT idiom but without
+  // the nullable System.getProperty/getParent chain: this helper's name matches neither SpotBugs
+  // test-exclusion pattern (~.*Test / ~.*IT), so unlike the ITs it IS analyzed, and the NP
+  // detector rejects that chain in a static initializer. A wrong working dir fails loud at
+  // Files.copy with the resolved path in the message.
   private static final Path CONTRACT =
-      REPO_ROOT.resolve("contracts/feature_pipeline_pitchtype.json");
+      Path.of("..", "contracts", "feature_pipeline_pitchtype.json").normalize();
 
   private PitchTypeSnapshotFixtures() {}
 
