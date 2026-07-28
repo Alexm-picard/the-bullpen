@@ -105,8 +105,8 @@ class RegistryForeignKeyEnforcementIT {
                     999_999))
         .isInstanceOf(DataAccessException.class)
         .hasMessageContaining(
-            "model_routing.champion_version_id must reference a model_versions row at stage"
-                + " champion");
+            "model_routing.champion_version_id must reference a model_versions row of the same"
+                + " model_name at stage champion");
   }
 
   @Test

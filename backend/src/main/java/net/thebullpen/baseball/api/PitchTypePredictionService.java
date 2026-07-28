@@ -59,9 +59,10 @@ import org.springframework.web.server.ResponseStatusException;
  * RegistryService.promoteToChampionAtomically}, behind the rule-5 evidence gate, so a model with no
  * champion has no routing config, takes the fallback, and 503s exactly as it did before this
  * change. The false version of this claim is worse than merely wrong: it points a reader who needs
- * first-champion evidence at hand-inserting a {@code model_routing} row, which V011 does not
- * stage-constrain - that would serve an unpromoted model as {@code role=champion} and breach rules
- * 5 and 6 together.
+ * first-champion evidence at hand-inserting a {@code model_routing} row - which would serve an
+ * unpromoted model as {@code role=champion} and breach rules 5 and 6 together. Since task #94 (V020
+ * + the RoutingService write-path check + the boot integrity check) that hand-insert is refused at
+ * every layer, not merely forbidden by convention.
  *
  * <p>The first champion for this family promotes via the OFFLINE GATE ([182]/#334), as {@link
  * net.thebullpen.baseball.registry.RegistryBaselines} already records against this exact model

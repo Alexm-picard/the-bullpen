@@ -50,21 +50,32 @@
 --
 -- Stage literals are LOWERCASE to match V010's model_versions.stage CHECK constraint and
 -- Stage.dbValue().
+--
+-- The subquery binds model_name AS WELL AS stage (rule 9). Stage alone would accept a routing row
+-- naming one model while referencing ANOTHER model's champion - e.g. a 'pitch_type_pre' row
+-- pointing at battedball's champion version - which re-merges the two-heads separation at the
+-- serving switch: the router would serve model B's weights under model A's name, and the boot-time
+-- integrity check would count it healthy. Binding model_name makes a cross-model reference read as
+-- "no such champion" and raise. No legitimate path can regress: ensureRoutingForChampion is always
+-- called with (incoming.modelName(), incoming.id()), and V016 guarantees at most one champion per
+-- model_name.
 
 CREATE TRIGGER trg_model_routing_champion_stage_insert
 BEFORE INSERT ON model_routing
 FOR EACH ROW
-WHEN (SELECT stage FROM model_versions WHERE id = NEW.champion_version_id) IS NOT 'champion'
+WHEN (SELECT stage FROM model_versions
+      WHERE id = NEW.champion_version_id AND model_name = NEW.model_name) IS NOT 'champion'
 BEGIN
     SELECT RAISE(ABORT,
-        'model_routing.champion_version_id must reference a model_versions row at stage champion');
+        'model_routing.champion_version_id must reference a model_versions row of the same model_name at stage champion');
 END;
 
 CREATE TRIGGER trg_model_routing_champion_stage_update
 BEFORE UPDATE ON model_routing
 FOR EACH ROW
-WHEN (SELECT stage FROM model_versions WHERE id = NEW.champion_version_id) IS NOT 'champion'
+WHEN (SELECT stage FROM model_versions
+      WHERE id = NEW.champion_version_id AND model_name = NEW.model_name) IS NOT 'champion'
 BEGIN
     SELECT RAISE(ABORT,
-        'model_routing.champion_version_id must reference a model_versions row at stage champion');
+        'model_routing.champion_version_id must reference a model_versions row of the same model_name at stage champion');
 END;

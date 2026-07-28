@@ -17,9 +17,32 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class RoutingRepository {
 
+  /**
+   * One routing row paired with its champion's stage, for the task-#94 integrity scan. {@code
+   * stage} is the literal found ({@code 'champion'} for a healthy row), or {@code "<no matching
+   * model_versions row>"} when the reference is dangling OR points at a version of a different
+   * model (the scan's JOIN binds model_name - rule 9).
+   */
+  public record ChampionStageRow(String modelName, long championVersionId, String stage) {
+
+    /** The invariant: a routing row may only reference a {@code 'champion'}-stage version. */
+    public boolean violates() {
+      return !"champion".equals(stage);
+    }
+  }
+
   private static final String SELECT_ALL_COLUMNS =
       "SELECT id, model_name, champion_version_id, challenger_version_id,"
           + " challenger_traffic_pct, mode, updated_at FROM model_routing";
+
+  private static final RowMapper<ChampionStageRow> CHAMPION_STAGE_MAPPER =
+      (ResultSet rs, int rowNum) -> {
+        String stage = rs.getString("stage");
+        return new ChampionStageRow(
+            rs.getString("model_name"),
+            rs.getLong("champion_version_id"),
+            stage == null ? "<no matching model_versions row>" : stage);
+      };
 
   private final JdbcTemplate jdbc;
 
@@ -43,30 +66,23 @@ public class RoutingRepository {
   }
 
   /**
-   * One row violating the task-#94 invariant: a {@code model_routing.champion_version_id} whose
-   * referenced version is not at stage {@code 'champion'}. {@code stage} is the literal found, or
-   * {@code "<no model_versions row>"} for a dangling reference (LEFT JOIN miss - should be
-   * impossible with {@code foreign_keys=true}, but the check is total rather than trusting the
-   * pragma survived every connection).
+   * The read behind {@link RoutingChampionIntegrityCheck}: EVERY routing row joined to its
+   * champion's stage, violators and passers alike, so the caller's checked-count and its violation
+   * scan come from the same read (a WHERE-filtered query would force a second count query that
+   * could see a different table state). LEFT JOIN so a dangling reference surfaces as a NULL stage
+   * instead of the row silently vanishing from the scan - should be impossible with {@code
+   * foreign_keys=true} plus the V020 insert trigger, but the check is total rather than trusting
+   * that both survived every connection.
    */
-  public record ChampionStageViolation(String modelName, long championVersionId, String stage) {}
-
-  /**
-   * The read behind {@link RoutingChampionIntegrityCheck}: every routing row joined to its
-   * champion's stage, returning only violators. {@code IS NOT} rather than {@code !=} so a NULL
-   * stage (dangling reference) is a violation instead of a three-valued-logic pass.
-   */
-  public List<ChampionStageViolation> findChampionStageViolations() {
+  public List<ChampionStageRow> findChampionStageRows() {
+    // The JOIN binds model_name as well as id (rule 9): a routing row referencing another model's
+    // champion must read as "no matching version" (NULL stage -> violation), not as healthy.
     return jdbc.query(
         "SELECT r.model_name, r.champion_version_id, v.stage"
             + " FROM model_routing r"
-            + " LEFT JOIN model_versions v ON v.id = r.champion_version_id"
-            + " WHERE v.stage IS NOT 'champion'",
-        (ResultSet rs, int rowNum) ->
-            new ChampionStageViolation(
-                rs.getString("model_name"),
-                rs.getLong("champion_version_id"),
-                rs.getString("stage") == null ? "<no model_versions row>" : rs.getString("stage")));
+            + " LEFT JOIN model_versions v"
+            + " ON v.id = r.champion_version_id AND v.model_name = r.model_name",
+        CHAMPION_STAGE_MAPPER);
   }
 
   /**

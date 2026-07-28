@@ -1,6 +1,7 @@
 package net.thebullpen.baseball.inference.routing;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.file.Files;
@@ -53,6 +54,7 @@ class RoutingServiceIT {
 
   @Autowired private RegistryService registry;
   @Autowired private RoutingService routing;
+  @Autowired private RoutingChampionIntegrityCheck integrityCheck;
   @Autowired private JdbcTemplate jdbc;
   @Autowired private CacheManager cacheManager;
 
@@ -250,8 +252,6 @@ class RoutingServiceIT {
 
   // --- champion-stage invariant (task #94, V011 bypass) -------------------
 
-  @Autowired private RoutingChampionIntegrityCheck integrityCheck;
-
   /**
    * The carry-forward refusal: an admin write that merely preserves the current champion must still
    * refuse if that champion is no longer at CHAMPION stage. The stranded state is created by a RAW
@@ -279,6 +279,27 @@ class RoutingServiceIT {
     jdbc.update("UPDATE model_versions SET stage = 'archived' WHERE id = ?", v1.id());
 
     assertThatThrownBy(() -> routing.setChallenger("stale_champ_sc_model", v2.id()))
+        .isInstanceOf(RoutingException.ChampionNotAtChampionStage.class);
+  }
+
+  @Test
+  void setTrafficPct_refuses_to_perpetuate_a_non_champion_reference() throws Exception {
+    ModelVersion v1 = registry.register(sampleRequest("stale_champ_tp_model", "v1"));
+    registry.transitionStage(v1.id(), Stage.CHAMPION);
+    routing.setMode("stale_champ_tp_model", RoutingMode.AB);
+    jdbc.update("UPDATE model_versions SET stage = 'archived' WHERE id = ?", v1.id());
+
+    assertThatThrownBy(() -> routing.setTrafficPct("stale_champ_tp_model", 10.0))
+        .isInstanceOf(RoutingException.ChampionNotAtChampionStage.class);
+  }
+
+  @Test
+  void clearChallenger_refuses_to_perpetuate_a_non_champion_reference() throws Exception {
+    ModelVersion v1 = registry.register(sampleRequest("stale_champ_cc_model", "v1"));
+    registry.transitionStage(v1.id(), Stage.CHAMPION);
+    jdbc.update("UPDATE model_versions SET stage = 'archived' WHERE id = ?", v1.id());
+
+    assertThatThrownBy(() -> routing.clearChallenger("stale_champ_cc_model"))
         .isInstanceOf(RoutingException.ChampionNotAtChampionStage.class);
   }
 
@@ -335,7 +356,52 @@ class RoutingServiceIT {
   @Test
   void integrity_check_passes_on_a_legitimate_routing_row() throws Exception {
     bootstrapRouting("integrity_ok_model");
-    integrityCheck.afterSingletonsInstantiated(); // must not throw
+    assertThat(routingRowCount("integrity_ok_model")).isEqualTo(1); // the pass is not vacuous
+    assertThatCode(() -> integrityCheck.afterSingletonsInstantiated()).doesNotThrowAnyException();
+  }
+
+  // --- cross-model references (rule 9) ------------------------------------
+
+  /** A champion of the WRONG MODEL is refused even though its stage IS champion. */
+  @Test
+  void ensureRoutingForChampion_refuses_another_models_champion() throws Exception {
+    ModelVersion owner = registry.register(sampleRequest("xm_owner_model", "v1"));
+    registry.transitionStage(owner.id(), Stage.CHAMPION);
+
+    assertThatThrownBy(() -> routing.ensureRoutingForChampion("xm_other_model", owner.id()))
+        .isInstanceOf(RoutingException.ChampionNotAtChampionStage.class)
+        .hasMessageContaining("belongs to model")
+        .hasMessageContaining("xm_owner_model");
+    assertThat(routingRowCount("xm_other_model")).isZero();
+  }
+
+  @Test
+  void setChallenger_refuses_another_models_shadow_version() throws Exception {
+    bootstrapRouting("xm_ch_model");
+    ModelVersion other = registry.register(sampleRequest("xm_ch_other", "v1"));
+    registry.transitionStage(other.id(), Stage.SHADOW);
+
+    assertThatThrownBy(() -> routing.setChallenger("xm_ch_model", other.id()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("rule 9");
+  }
+
+  /**
+   * The boot scan must flag a routing row referencing another model's version. The state is created
+   * by RAW re-homing the version on model_versions (no trigger there, by design) - the routing-side
+   * triggers make the row itself impossible to WRITE cross-model, so drift on the versions side is
+   * the only way this state can exist.
+   */
+  @Test
+  void integrity_check_flags_a_cross_model_reference() throws Exception {
+    ModelVersion v1 = registry.register(sampleRequest("xm_int_model", "v1"));
+    registry.transitionStage(v1.id(), Stage.CHAMPION);
+    jdbc.update("UPDATE model_versions SET model_name = 'xm_int_other' WHERE id = ?", v1.id());
+
+    assertThatThrownBy(() -> integrityCheck.afterSingletonsInstantiated())
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("xm_int_model")
+        .hasMessageContaining("<no matching model_versions row>");
   }
 
   @Test

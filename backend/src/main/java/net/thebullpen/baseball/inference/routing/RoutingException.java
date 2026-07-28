@@ -3,9 +3,16 @@ package net.thebullpen.baseball.inference.routing;
 /**
  * Sealed exception for routing-domain failures. Mirrors the {@code RegistryException} shape from 3a
  * — the admin controller can pattern-match on the subclass to map each failure to a specific HTTP
- * status (validation errors → 400, missing-row → 404).
+ * status (validation errors → 400, missing-row → 404, and {@link ChampionNotAtChampionStage} → 500
+ * because it reports stored-state corruption, not caller error).
+ *
+ * <p>Abstract so that a {@code switch} over the sealed hierarchy is compiler-checked exhaustive (a
+ * non-abstract sealed root needs a default arm - the root itself is a possible runtime type). The
+ * controller currently maps via per-method try/catch, which is hand-maintained, not
+ * compiler-enforced; collapsing those into one {@code @ExceptionHandler} with an exhaustive switch
+ * is the follow-up this change unlocks.
  */
-public sealed class RoutingException extends RuntimeException
+public abstract sealed class RoutingException extends RuntimeException
     permits RoutingException.UnknownModel,
         RoutingException.ChallengerNotInShadow,
         RoutingException.ChallengerSameAsChampion,
@@ -66,6 +73,24 @@ public sealed class RoutingException extends RuntimeException
               + " is at stage "
               + currentStage
               + ", not CHAMPION - routing rows may only reference a promoted champion (rule 5/6);"
+              + " refusing to write or perpetuate this row");
+    }
+
+    /**
+     * The cross-model variant (rule 9): the referenced version may even BE a champion, but of a
+     * DIFFERENT model - serving model B's weights under model A's name re-merges the two-heads
+     * separation at the serving switch. Same subtype (and therefore the same 500 mapping): both are
+     * "the stored champion reference is not this model's promoted champion".
+     */
+    public ChampionNotAtChampionStage(long versionId, String expectedModel, String actualModel) {
+      super(
+          "routing: champion_version_id "
+              + versionId
+              + " belongs to model '"
+              + actualModel
+              + "', not '"
+              + expectedModel
+              + "' - routing rows may only reference a champion OF THE SAME MODEL (rule 9);"
               + " refusing to write or perpetuate this row");
     }
   }

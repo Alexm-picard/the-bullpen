@@ -54,7 +54,8 @@ class RegistrySchemaIT {
    * the STAGE invariant fired, not merely that "some constraint" rejected the statement.
    */
   private static final String CHAMPION_STAGE_INVARIANT =
-      "model_routing.champion_version_id must reference a model_versions row at stage champion";
+      "model_routing.champion_version_id must reference a model_versions row of the same"
+          + " model_name at stage champion";
 
   @Autowired private JdbcTemplate jdbc;
 
@@ -202,7 +203,10 @@ class RegistrySchemaIT {
 
   @Test
   void model_routing_defaults_to_shadow_mode_zero_traffic() {
-    long championId = insertModelVersion("pitch_outcome", "v-routing-default", "champion");
+    // The champion must be a version OF THE ROW'S OWN model_name - the V020 triggers bind
+    // model_name as well as stage (rule 9), and this seed's earlier cross-named form was itself
+    // an instance of the bypass they close.
+    long championId = insertModelVersion("pitch_outcome_default", "v-routing-default", "champion");
     jdbc.update(
         "INSERT INTO model_routing (model_name, champion_version_id) VALUES (?, ?)",
         "pitch_outcome_default",
@@ -238,6 +242,24 @@ class RegistrySchemaIT {
                     "INSERT INTO model_routing (model_name, champion_version_id) VALUES (?, ?)",
                     "batted_ball",
                     shadowId))
+        .isInstanceOf(DataAccessException.class)
+        .hasMessageContaining(CHAMPION_STAGE_INVARIANT);
+  }
+
+  /**
+   * The cross-model bite (rule 9): the referenced version IS a champion, but of a DIFFERENT model.
+   * Stage-only checking waved this through (registry-guard proved it against the pre-fix
+   * migration); the model_name binding in the WHEN subquery makes it read as "no such champion".
+   */
+  @Test
+  void model_routing_rejects_insert_pointing_at_another_models_champion() {
+    long otherChampion = insertModelVersion("batted_ball_xm", "v-guard-xm", "champion");
+    assertThatThrownBy(
+            () ->
+                jdbc.update(
+                    "INSERT INTO model_routing (model_name, champion_version_id) VALUES (?, ?)",
+                    "pitch_outcome_xm",
+                    otherChampion))
         .isInstanceOf(DataAccessException.class)
         .hasMessageContaining(CHAMPION_STAGE_INVARIANT);
   }

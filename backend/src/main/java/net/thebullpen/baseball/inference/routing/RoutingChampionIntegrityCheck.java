@@ -8,9 +8,10 @@ import org.springframework.stereotype.Component;
 
 /**
  * Boot-time half of the task-#94 invariant: every {@code model_routing} row must reference a
- * CHAMPION-stage version. The V020 triggers and the {@link RoutingService} write-path checks gate
- * every FUTURE write, but neither validates rows already present when the process starts - a
- * hand-edited {@code registry.sqlite}, or a row stranded by a stage flip that predates this guard.
+ * CHAMPION-stage version OF ITS OWN MODEL (the scan's JOIN binds model_name - rule 9). The V020
+ * triggers and the {@link RoutingService} write-path checks gate every FUTURE write, but neither
+ * validates rows already present when the process starts - a hand-edited {@code registry.sqlite},
+ * or a row stranded by a stage flip that predates this guard.
  *
  * <p>{@link SmartInitializingSingleton} rather than {@code ApplicationRunner} is deliberate: {@code
  * afterSingletonsInstantiated} fires at the end of singleton pre-instantiation, BEFORE the
@@ -21,9 +22,14 @@ import org.springframework.stereotype.Component;
  * <p>FAIL-HARD IS DELIBERATE, and worth stating because it trades availability for integrity: the
  * alternative to refusing to start is the router silently serving a version that never passed the
  * rule-5/rule-6 promotion gates, which is strictly worse under this project's refuse-loudly posture
- * (same call as the prior-snapshot staleness refusal and the schema-hash hard fail). Recovery is
- * not "weaken this check": fix the row by promoting a legitimate champion, removing the routing
- * row, or restoring {@code registry.sqlite} per the registry-snapshot-recovery runbook.
+ * (same call as the prior-snapshot staleness refusal and the schema-hash hard fail). Note what this
+ * check CANNOT be recovered through: any admin endpoint (the api hosting them is the process
+ * refusing to boot) or {@code transitionStage} (a stranded row's version is typically ARCHIVED,
+ * which is terminal). Recovery is {@code docs/runbooks/registry-routing-integrity.md}: an
+ * out-of-band {@code sqlite3} delete of the offending row on the box (with a {@code .backup} first
+ * - the documented emergency exception to ADR-0006's read-only rule), or restoring {@code
+ * registry.sqlite} from the nightly snapshot's {@code _sqlite/} capture. Never weaken the check
+ * itself.
  *
  * <p>Not profile-restricted: the api serves through the router and the worker's live predictor
  * routes too, so both processes must refuse to start on a corrupt table.
@@ -41,7 +47,11 @@ public class RoutingChampionIntegrityCheck implements SmartInitializingSingleton
 
   @Override
   public void afterSingletonsInstantiated() {
-    List<RoutingRepository.ChampionStageViolation> violations = repo.findChampionStageViolations();
+    // One read: the checked-count and the violation scan come from the same rows, so the log
+    // never reports a count from a different table state than the one that was checked.
+    List<RoutingRepository.ChampionStageRow> rows = repo.findChampionStageRows();
+    List<RoutingRepository.ChampionStageRow> violations =
+        rows.stream().filter(RoutingRepository.ChampionStageRow::violates).toList();
     if (!violations.isEmpty()) {
       throw new IllegalStateException(
           "routing integrity: "
@@ -52,6 +62,6 @@ public class RoutingChampionIntegrityCheck implements SmartInitializingSingleton
     }
     log.info(
         "routing integrity: model_routing champion-stage invariant holds ({} row(s) checked)",
-        repo.findAll().size());
+        rows.size());
   }
 }
