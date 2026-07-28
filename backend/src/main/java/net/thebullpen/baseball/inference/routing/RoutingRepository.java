@@ -18,10 +18,12 @@ import org.springframework.stereotype.Repository;
 public class RoutingRepository {
 
   /**
-   * One routing row paired with its champion's stage, for the task-#94 integrity scan. {@code
-   * stage} is the literal found ({@code 'champion'} for a healthy row), or {@code "<no matching
-   * model_versions row>"} when the reference is dangling OR points at a version of a different
-   * model (the scan's JOIN binds model_name - rule 9).
+   * One routing row paired with BOTH slots' stages, for the integrity scan (task #94 champion +
+   * issue #374 challenger). Each stage is the literal found ({@code 'champion'} / {@code 'shadow'}
+   * for a healthy row), or {@code "<no matching model_versions row>"} when that reference is
+   * dangling OR points at a version of a different model (both JOINs bind model_name - rule 9).
+   * {@code challengerStage} is null exactly when the slot is empty, which is the common healthy
+   * state.
    */
   public record RoutingStageRow(
       String modelName,
@@ -86,13 +88,13 @@ public class RoutingRepository {
   }
 
   /**
-   * The read behind {@link RoutingChampionIntegrityCheck}: EVERY routing row joined to its
-   * champion's stage, violators and passers alike, so the caller's checked-count and its violation
-   * scan come from the same read (a WHERE-filtered query would force a second count query that
-   * could see a different table state). LEFT JOIN so a dangling reference surfaces as a NULL stage
-   * instead of the row silently vanishing from the scan - should be impossible with {@code
-   * foreign_keys=true} plus the V020 insert trigger, but the check is total rather than trusting
-   * that both survived every connection.
+   * The read behind {@link RoutingIntegrityCheck}: EVERY routing row joined to BOTH slots' stages,
+   * violators and passers alike, so the caller's checked-count and its violation scan come from the
+   * same read (a WHERE-filtered query would force a second count query that could see a different
+   * table state). LEFT JOIN so a dangling reference surfaces as a NULL stage instead of the row
+   * silently vanishing from the scan - should be impossible with {@code foreign_keys=true} plus the
+   * V020/V021 insert triggers, but the check is total rather than trusting that both survived every
+   * connection.
    */
   public List<RoutingStageRow> findRoutingStageRows() {
     // Both JOINs bind model_name as well as id (rule 9): a routing row referencing another

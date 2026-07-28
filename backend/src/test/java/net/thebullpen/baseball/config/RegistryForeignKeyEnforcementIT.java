@@ -69,9 +69,10 @@ class RegistryForeignKeyEnforcementIT {
     // DataAccessException) - assert on the FK message so this proves enforcement rather than just
     // "some failure".
     //
-    // The probe has now moved TABLES twice, both times chased off by a trigger: V020 claimed
-    // model_routing's champion column (probe moved to its challenger column), and V021 claimed
-    // the challenger column too - model_routing has NO untriggered FK column left, so any probe
+    // The probe has moved twice, both times chased off by a trigger - once between COLUMNS and
+    // once between TABLES: V020 claimed model_routing's champion column (probe moved to its
+    // challenger column), then V021 claimed the challenger column too, forcing the probe off the
+    // table entirely. model_routing has NO untriggered FK column left, so any probe
     // there surfaces a stage-guard message and would pass with foreign_keys OFF, gutting the
     // test. experiment_results.challenger_version_id carries the same FK to the same target table
     // and has no trigger: the honest probe.

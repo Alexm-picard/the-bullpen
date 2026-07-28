@@ -37,6 +37,9 @@ violating one is whichever stage is not its legit value.
 - **Challenger violation** -> Recovery A2 (CLEAR the slot; the row itself is
   healthy and deleting it would needlessly drop the serving champion to the
   legacy fallback).
+- **BOTH in one row** -> Recovery A. A champion violation blocks the A2 update as well:
+  V020's trigger is `BEFORE UPDATE` on the whole row, not `UPDATE OF champion_version_id`, so
+  clearing the challenger on a row whose champion is corrupt aborts too.
 - **Anything you cannot explain** -> Recovery B.
 
 ## Recovery A - delete the offending row (champion violation)
@@ -107,7 +110,7 @@ anything you cannot explain). The 03:00 snapshot captures the registry at
 2. `.backup` the current file as in Recovery A step 1 (preserve the evidence).
 3. Copy the latest snapshot's `_sqlite/registry.sqlite` over
    `/opt/bullpen/data/registry.sqlite`.
-4. Restart. Flyway will re-apply nothing (the snapshot is post-V020 once this
+4. Restart. Flyway will re-apply nothing (the snapshot is post-V021 once this
    PR has deployed at least one nightly cycle; if restoring an OLDER snapshot,
    Flyway applies the missing migrations at boot - that is fine).
 5. Reconcile: any registration or promotion that happened after the snapshot
@@ -116,7 +119,7 @@ anything you cannot explain). The 03:00 snapshot captures the registry at
 ## Pre-flight (avoid this runbook entirely)
 
 Before every deploy that includes V020 or later, run the read-only check on
-the box (this is exactly `findChampionStageRows`' violation predicate):
+the box (this is exactly `findRoutingStageRows`' violation predicate, both invariants):
 
 ```sql
 SELECT r.model_name,
