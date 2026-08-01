@@ -69,6 +69,12 @@ BASELINE_MODEL: Final[str] = "pitch_type_lr_baseline"
 # *_experiment_results_full*.json glob that publishes to the public /accuracy scorecard.
 DEFAULT_OUT_NAME: Final[str] = "pitch_type_pre_promotion_gate.json"
 
+# The DIRECTORY is the other half of that contract and equally load-bearing: the .gitignore
+# negation is a full repo-relative path, and backend/build.gradle.kts's processResources
+# `from("../training/data/eval/promotion")` bundles this directory. Relative to training/; kept
+# here (not in the un-typechecked shim) so it is pinned by the same contract test as the name.
+DEFAULT_OUT_RELPATH: Final[Path] = Path("data/eval/promotion") / DEFAULT_OUT_NAME
+
 # 0.0, not the declared -0.02 - see the module docstring. Used for BOTH the emitted field and the
 # arithmetic, so the two cannot drift apart.
 IMPORT_THRESHOLD: Final[float] = 0.0
@@ -263,9 +269,19 @@ def build_gate(
     ]
 
     per_fold = challenger.metrics.get("per_fold") or []
+    if not per_fold:
+        raise GateEvidenceError(
+            f"{challenger.path}: metrics.json carries no per_fold entries"
+            " - nothing to size the gate on (was this a --skip-cv run?)"
+        )
     sample_observed = int(per_fold[-1]["test_rows"])
 
-    absolute_ok = c.absolute_ece_bar is not None and chal_primary < c.absolute_ece_bar
+    # The absolute bar is an ECE bar BY NAME, so it reads the ECE metric explicitly - never the
+    # primary. They coincide under [183] today, but re-aiming a declared primary is a live pattern
+    # here (ADR-0014 did it to pitch_outcome_pre), and conflating them would silently apply the
+    # bar to whatever the primary became while still labelling the check "ece".
+    chal_ece = _summary_metric(challenger, DB_TO_BUNDLE["ece"])
+    absolute_ok = c.absolute_ece_bar is not None and chal_ece < c.absolute_ece_bar
     primary_met = chal_primary + IMPORT_THRESHOLD <= champ_primary
     guardrails_ok = all(obs <= guardrails[k] for k, obs in guardrails_observed.items())
     sample_met = sample_observed >= c.sample_size_target
@@ -275,7 +291,7 @@ def build_gate(
             "name": "absolute_ece_phase2_bar",
             "metric": "ece",
             "max_allowed": c.absolute_ece_bar,
-            "observed": chal_primary,
+            "observed": chal_ece,
             "passed": bool(absolute_ok),
             "rationale": (
                 "THE declared [183] primary: TOP-LABEL ECE of the y7 distribution must be below"

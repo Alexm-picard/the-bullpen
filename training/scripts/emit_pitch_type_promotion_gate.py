@@ -20,14 +20,12 @@ import argparse
 from pathlib import Path
 
 from bullpen_training.eval.promotion.pitch_type_gate import (
-    DEFAULT_OUT_NAME,
+    DEFAULT_OUT_RELPATH,
     GateEvidenceError,
     emit,
 )
 
-_DEFAULT_OUT = (
-    Path(__file__).resolve().parents[1] / "data" / "eval" / "promotion" / DEFAULT_OUT_NAME
-)
+_DEFAULT_OUT = Path(__file__).resolve().parents[1] / DEFAULT_OUT_RELPATH
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -199,6 +199,37 @@ def test_absolute_bar_is_strict_and_gates_status(chal_ece: float, expect: str):
     assert gate["status"] == expect
 
 
+def test_absolute_bar_reads_ece_by_name_not_the_primary(monkeypatch: pytest.MonkeyPatch):
+    """registry-guard AD1. The bar is an ECE bar BY NAME; under a re-aimed primary (a live
+    pattern - ADR-0014 re-aimed pitch_outcome_pre's) conflating them would apply the bar to
+    whatever the primary became while still labelling the check "ece".
+    """
+    fake = PromotionCriteria(
+        model_name="pitch_type_pre",
+        primary_metric=PrimaryMetric.BRIER,
+        primary_threshold=0.0,
+        sample_size_target=2_000,
+        guardrails=(GuardrailSpec(metric=PrimaryMetric.LOG_LOSS, max_delta=0.0),),
+        absolute_ece_bar=0.02,
+    )
+    monkeypatch.setattr(gate_mod, "criteria_for", lambda _name: fake)
+
+    # ECE is comfortably under the bar; brier (the primary, 0.70) is far over it. Reading the
+    # primary here would fail the bar; reading ECE passes it - and labels the ECE value.
+    gate = build_gate(*_pair(chal_ece=0.0036))
+    sup = gate["supplementary_checks"][0]
+    assert sup["metric"] == "ece"
+    assert sup["observed"] == 0.0036
+    assert sup["passed"] is True
+    assert gate["status"] == "passed"
+
+    # ...and the converse: a good primary cannot smuggle a bad ECE past the bar.
+    gate = build_gate(*_pair(chal_ece=0.05, champ_ece=0.06))
+    assert gate["supplementary_checks"][0]["observed"] == 0.05
+    assert gate["supplementary_checks"][0]["passed"] is False
+    assert gate["status"] == "failed"
+
+
 @pytest.mark.parametrize(
     ("chal_ll", "champ_ll", "expect"),
     [(1.60, 1.75, "passed"), (1.75, 1.75, "passed"), (1.7500001, 1.75, "failed")],
@@ -249,6 +280,16 @@ def test_empty_per_fold_is_refused_by_name_not_indexerror():
     challenger.metrics["per_fold"] = []
     with pytest.raises(GateEvidenceError, match="no per_fold entries"):
         assert_comparable(challenger, baseline)
+
+
+def test_build_gate_itself_refuses_empty_per_fold(monkeypatch: pytest.MonkeyPatch):
+    """registry-guard AD2: the direct build_gate seam must raise the NAMED refusal too, not
+    IndexError - emit() calls assert_comparable first, but build_gate is public."""
+    challenger, baseline = _pair()
+    challenger.metrics["per_fold"] = []
+    baseline.metrics["per_fold"] = []
+    with pytest.raises(GateEvidenceError, match="no per_fold entries"):
+        build_gate(challenger, baseline)
 
 
 @pytest.mark.parametrize("field", ["feature_pipeline_hash", "training_data_hash"])
@@ -368,9 +409,16 @@ def test_default_out_name_matches_the_gitignore_and_gradle_contracts():
 
     repo_root = Path(__file__).resolve().parents[3]
     gitignore = (repo_root / ".gitignore").read_text()
-    assert f"!training/data/eval/promotion/{gate_mod.DEFAULT_OUT_NAME}" in gitignore, (
+    assert f"!training/{gate_mod.DEFAULT_OUT_RELPATH.as_posix()}" in gitignore, (
         "without the negation the artifact is silently untracked"
     )
+
+    # The DIRECTORY half (registry-guard AD3): the shim writes training/<DEFAULT_OUT_RELPATH>,
+    # and gradle's processResources bundles exactly that directory into offline-gate-evidence/.
+    assert gate_mod.DEFAULT_OUT_RELPATH.name == gate_mod.DEFAULT_OUT_NAME
+    gradle = (repo_root / "backend" / "build.gradle.kts").read_text()
+    gradle_dir = f'from("../training/{gate_mod.DEFAULT_OUT_RELPATH.parent.as_posix()}")'
+    assert gradle_dir in gradle, "the artifact would never be bundled for import-offline"
 
 
 def test_assert_importable_rejects_a_hand_edited_pass():
