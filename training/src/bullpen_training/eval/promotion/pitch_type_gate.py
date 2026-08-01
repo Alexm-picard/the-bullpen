@@ -51,7 +51,7 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, cast
 
 from bullpen_training.eval.promotion.criteria import PromotionCriteria, criteria_for
 
@@ -106,19 +106,19 @@ class Bundle:
 
 def _summary_metric(bundle: Bundle, bundle_key: str) -> float:
     """One CV-mean metric, failing with the file and the keys actually present."""
-    summary = bundle.metrics.get("summary")
-    if not isinstance(summary, dict):
+    if not isinstance(bundle.metrics.get("summary"), dict):
         raise GateEvidenceError(
             f"{bundle.path}: metrics.json has no 'summary' object"
             f" (top-level keys present: {sorted(bundle.metrics)})"
         )
+    summary = cast(dict[str, Any], bundle.metrics["summary"])
     entry = summary.get(bundle_key)
     if not isinstance(entry, dict) or "mean" not in entry:
         raise GateEvidenceError(
             f"{bundle.path}: summary lacks {bundle_key!r}.mean"
             f" (summary keys present: {sorted(summary)})"
         )
-    return float(entry["mean"])
+    return float(cast(dict[str, Any], entry)["mean"])
 
 
 def _per_fold_metric(bundle: Bundle, bundle_key: str) -> list[float]:
@@ -268,7 +268,7 @@ def build_gate(
         )
     ]
 
-    per_fold = challenger.metrics.get("per_fold") or []
+    per_fold = cast(list[dict[str, Any]], challenger.metrics.get("per_fold") or [])
     if not per_fold:
         raise GateEvidenceError(
             f"{challenger.path}: metrics.json carries no per_fold entries"
@@ -303,12 +303,16 @@ def build_gate(
     supplementary_ok = all(bool(s["passed"]) for s in supplementary)
     passed = primary_met and guardrails_ok and supplementary_ok
     status = "passed" if (passed and sample_met) else "failed"
-    if primary_met and guardrails_ok and supplementary_ok:
-        outcome = "would_pass"
-    elif not primary_met or not supplementary_ok:
-        outcome = "would_fail_primary"
-    else:
+    # GUARDRAIL-FIRST, matching criteria.evaluate_challenger_vs_baseline and the Java
+    # ExperimentService ("guardrail check takes precedence") - when the primary and a guardrail
+    # both fail, all three surfaces must agree the answer is would_fail_guardrail. The absolute
+    # bar folds into the primary branch because it IS the declared [183] primary.
+    if not guardrails_ok:
         outcome = "would_fail_guardrail"
+    elif primary_met and supplementary_ok:
+        outcome = "would_pass"
+    else:
+        outcome = "would_fail_primary"
 
     return {
         "schema_version": 1,

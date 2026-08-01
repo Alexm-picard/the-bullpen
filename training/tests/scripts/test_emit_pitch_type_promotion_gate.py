@@ -14,6 +14,7 @@ three-way contract.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 from pathlib import Path
 from typing import Any
@@ -57,8 +58,11 @@ def _metrics(
             {
                 "fold_id": i,
                 "train_rows": 1_000_000 * i,
-                "val_rows": 300_000,
-                "test_rows": test_rows,
+                # +i makes the folds DISTINGUISHABLE, so the artifact's "final fold only" claim
+                # for sample_size_observed is testable: [-1] reads test_rows + 4, [0] would read
+                # test_rows + 1. With identical rows per fold the two were indistinguishable and
+                # the claim was pinned by nothing (reviewer AD-3).
+                "test_rows": test_rows + i,
                 "metrics": dict(per_fold_metrics),
             }
             for i in range(1, 5)
@@ -169,6 +173,15 @@ def test_real_criteria_give_pitch_type_exactly_one_guardrail():
     assert gate["primary_threshold"] == 0.0
 
 
+def test_every_primary_metric_has_a_bundle_mapping():
+    """Reviewer AD-4: the two "no bundle mapping" raises are dead branches TODAY because this
+    invariant holds. If PrimaryMetric gains a member without a DB_TO_BUNDLE entry, a declared
+    guardrail on it would be silently unenforced on BOTH sides (a missing observed entry is
+    skipped by the Java loop too). This reds on exactly the day those branches stop being dead.
+    """
+    assert set(gate_mod.DB_TO_BUNDLE) == {m.db_value for m in PrimaryMetric}
+
+
 # --- the three lanes ----------------------------------------------------------------------
 
 
@@ -182,7 +195,15 @@ def test_real_criteria_give_pitch_type_exactly_one_guardrail():
     ],
 )
 def test_primary_lane_boundaries(chal_ece: float, champ_ece: float, expect: str):
-    assert build_gate(*_pair(chal_ece=chal_ece, champ_ece=champ_ece))["status"] == expect
+    gate = build_gate(*_pair(chal_ece=chal_ece, champ_ece=champ_ece))
+    assert gate["status"] == expect
+    # verdict.passed is one of the importer's THREE redundant declared-pass signals (status &&
+    # verdict.passed && verdict.sampleSizeMet); a hardcoded True here survived every status-only
+    # assertion (reviewer AD-1), silently removing one of the three.
+    assert gate["verdict"]["passed"] is (expect == "passed")
+    assert gate["verdict"]["outcome"] == (
+        "would_pass" if expect == "passed" else "would_fail_primary"
+    )
 
 
 @pytest.mark.parametrize(
@@ -197,6 +218,11 @@ def test_absolute_bar_is_strict_and_gates_status(chal_ece: float, expect: str):
     gate = build_gate(*_pair(chal_ece=chal_ece, champ_ece=0.05))
     assert gate["challenger_metric"] <= gate["champion_metric"]
     assert gate["status"] == expect
+    assert gate["verdict"]["passed"] is (expect == "passed")
+    # The absolute bar IS the declared [183] primary, so its failure is a primary failure.
+    assert gate["verdict"]["outcome"] == (
+        "would_pass" if expect == "passed" else "would_fail_primary"
+    )
 
 
 def test_absolute_bar_reads_ece_by_name_not_the_primary(monkeypatch: pytest.MonkeyPatch):
@@ -237,18 +263,36 @@ def test_absolute_bar_reads_ece_by_name_not_the_primary(monkeypatch: pytest.Monk
 def test_guardrail_lane_boundaries(chal_ll: float, champ_ll: float, expect: str):
     gate = build_gate(*_pair(chal_ll=chal_ll, champ_ll=champ_ll))
     assert gate["status"] == expect
+    assert gate["verdict"]["passed"] is (expect == "passed")
     if expect == "failed":
         assert "log-loss" in gate["guardrails_violated"]
+        assert gate["verdict"]["outcome"] == "would_fail_guardrail"
+
+
+def test_outcome_is_guardrail_first_when_both_lanes_fail():
+    """Reviewer AD-2: criteria.evaluate_challenger_vs_baseline and the Java ExperimentService
+    both resolve guardrail-first; the first version here was primary-first, so the three
+    surfaces would disagree on the one field just aligned to their shared vocabulary."""
+    gate = build_gate(*_pair(chal_ece=0.0190, chal_ll=1.90))
+    assert gate["status"] == "failed"
+    assert gate["verdict"]["outcome"] == "would_fail_guardrail"
 
 
 @pytest.mark.parametrize(
     ("test_rows", "met", "expect"),
-    [(700_000, True, "passed"), (2_000, True, "passed"), (1_999, False, "failed")],
+    # observed = test_rows + 4 (the FINAL fold; the fixture offsets folds by +i), so the exact
+    # boundary against the 2_000 target sits at test_rows = 1_996.
+    [(700_000, True, "passed"), (1_996, True, "passed"), (1_995, False, "failed")],
 )
 def test_sample_size_lane(test_rows: int, met: bool, expect: str):
     gate = build_gate(*_pair(test_rows=test_rows))
+    assert gate["sample_size_observed"] == test_rows + 4
     assert gate["verdict"]["sample_size_met"] is met
     assert gate["status"] == expect
+    # sample size is a SEPARATE signal from verdict.passed: the importer checks all three of
+    # status, verdict.passed and verdict.sampleSizeMet, and a metrics-clean gate under target
+    # must fail status while still reporting passed metrics.
+    assert gate["verdict"]["passed"] is True
 
 
 # --- comparability ------------------------------------------------------------------------
@@ -371,6 +415,8 @@ def test_emit_happy_path_writes_an_importable_artifact(tmp_path: Path):
     assert written["status"] == "passed"
     assert written["verdict"]["passed"] is True
     assert written["verdict"]["sample_size_met"] is True
+    # the FINAL fold's rows (700_000 + 4), pinning the artifact's "final fold only" claim
+    assert written["sample_size_observed"] == 700_004
     assert written["model_name"] == "pitch_type_pre"
     assert written["champion_model_name"] == "pitch_type_lr_baseline"
     assert "carry_gate" not in written  # null == pass; emitting false would fail a non-carry model
@@ -427,3 +473,47 @@ def test_assert_importable_rejects_a_hand_edited_pass():
     gate["guardrails_observed"]["log-loss"] = 0.5  # a regression the status still calls passed
     with pytest.raises(GateEvidenceError, match="guardrail log-loss regressed"):
         assert_importable(gate)
+
+
+# --- the shim ------------------------------------------------------------------------------
+
+
+def _load_shim() -> Any:
+    script = Path(__file__).resolve().parents[2] / "scripts" / "emit_pitch_type_promotion_gate.py"
+    spec = importlib.util.spec_from_file_location("emit_pitch_type_promotion_gate", script)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_shim_main_smoke(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+    """Reviewer AD-5. The shim's print block reads nine keys out of the gate dict AFTER the
+    artifact is written - a renamed key would give the operator a traceback and a non-zero exit
+    with a perfectly valid artifact already on disk, which reads as "the emit failed" mid
+    box hand-off. One smoke call exercises every key at once.
+    """
+    chal = _write_bundle(tmp_path, "pitch_type_pre", ece=0.0036, log_loss=1.60)
+    base = _write_bundle(tmp_path, "pitch_type_lr_baseline", ece=0.0120, log_loss=1.75)
+    out = tmp_path / "gate.json"
+
+    rc = _load_shim().main(
+        ["--challenger-bundle", str(chal), "--baseline-bundle", str(base), "--out", str(out)]
+    )
+
+    assert rc == 0
+    assert out.exists()
+    stdout = capsys.readouterr().out
+    assert f"wrote {out}" in stdout
+    assert "folds won on ece: 4/4" in stdout
+
+
+def test_shim_main_fails_named_and_writes_nothing(tmp_path: Path):
+    chal = _write_bundle(tmp_path, "pitch_type_pre", ece=0.0300, log_loss=1.60)
+    base = _write_bundle(tmp_path, "pitch_type_lr_baseline", ece=0.0120, log_loss=1.75)
+    out = tmp_path / "gate.json"
+    with pytest.raises(SystemExit, match="refusing to write a FAILED gate"):
+        _load_shim().main(
+            ["--challenger-bundle", str(chal), "--baseline-bundle", str(base), "--out", str(out)]
+        )
+    assert not out.exists()
