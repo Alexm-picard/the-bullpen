@@ -40,20 +40,35 @@ _LABELS = ["FF", "SI", "FC", "SL", "CU", "CH", "OFF"]
 
 
 def _metrics(
-    model_name: str, *, ece: float, log_loss: float, brier: float = 0.70, test_rows: int = 700_000
+    model_name: str,
+    *,
+    ece: float,
+    log_loss: float,
+    brier: float = 0.70,
+    test_rows: int = 700_000,
+    per_fold_ece: list[float] | None = None,
 ) -> dict[str, Any]:
-    """A metrics.json carrying the VERBATIM key names cv_harness writes."""
+    """A metrics.json carrying the VERBATIM key names cv_harness writes.
+
+    ``per_fold_ece`` gives each fold its own ECE (the summary mean is then their mean, as
+    cv_harness computes it) - needed to test that a fold individually over the bar is carried
+    while the mean passes.
+    """
     per_fold_metrics = {
         "multiclass_brier": brier,
         "multiclass_log_loss": log_loss,
         "expected_calibration_error": ece,
     }
+    summary_means = dict(per_fold_metrics)
+    if per_fold_ece is not None:
+        assert len(per_fold_ece) == 4
+        summary_means["expected_calibration_error"] = sum(per_fold_ece) / len(per_fold_ece)
     return {
         "model_name": model_name,
         "model_version": "v1",
         "class_labels": list(_LABELS),
         "n_folds": 4,
-        "summary": {k: {"mean": v, "std": 0.0003} for k, v in per_fold_metrics.items()},
+        "summary": {k: {"mean": v, "std": 0.0003} for k, v in summary_means.items()},
         "per_fold": [
             {
                 "fold_id": i,
@@ -63,7 +78,12 @@ def _metrics(
                 # test_rows + 1. With identical rows per fold the two were indistinguishable and
                 # the claim was pinned by nothing (reviewer AD-3).
                 "test_rows": test_rows + i,
-                "metrics": dict(per_fold_metrics),
+                "metrics": dict(per_fold_metrics)
+                | (
+                    {"expected_calibration_error": per_fold_ece[i - 1]}
+                    if per_fold_ece is not None
+                    else {}
+                ),
             }
             for i in range(1, 5)
         ],
@@ -254,6 +274,41 @@ def test_absolute_bar_reads_ece_by_name_not_the_primary(monkeypatch: pytest.Monk
     assert gate["supplementary_checks"][0]["observed"] == 0.05
     assert gate["supplementary_checks"][0]["passed"] is False
     assert gate["status"] == "failed"
+
+
+def test_a_fold_over_the_bar_is_carried_visibly_while_the_mean_passes(tmp_path: Path):
+    """TD directive (2026-08-01 work order), using the REAL v1 numbers: fold-1 ECE 0.0225 (test
+    year 2022) exceeds the declared 0.02 bar while the CV mean 0.016075 passes it. The bar binds
+    the mean, so the gate passes - but an artifact reporting only a passing mean while a fold
+    fails is the "green that isn't evidence" pattern this arc keeps catching. The promotion
+    decision must see the fold, in the CHECK itself, in the written JSON.
+    """
+    folds = [0.0225, 0.0173, 0.0159, 0.0086]
+    chal = _write_bundle(
+        tmp_path, "pitch_type_pre", ece=0.016075, log_loss=1.255978, per_fold_ece=folds
+    )
+    base = _write_bundle(tmp_path, "pitch_type_lr_baseline", ece=0.043618, log_loss=1.399286)
+    out = tmp_path / "gate.json"
+
+    gate_mod.emit(chal, base, out)
+    written = json.loads(out.read_text())
+
+    assert written["status"] == "passed", "the declaration binds the MEAN; the gate passes"
+    sup = written["supplementary_checks"][0]
+    assert sup["passed"] is True
+    assert sup["per_fold_observed"] == folds
+    assert sup["folds_over_bar"] == {"fold_1": 0.0225}
+    # raw per-fold values (not just deltas) ride in provenance for both sides
+    assert written["provenance"]["per_fold_values"]["challenger"]["ece"] == folds
+    assert len(written["provenance"]["per_fold_values"]["baseline"]["log-loss"]) == 4
+
+
+def test_no_folds_over_bar_is_an_empty_map_not_an_absent_key():
+    """The reader must be able to distinguish "checked, none over" from "not recorded"."""
+    gate = build_gate(*_pair())
+    sup = gate["supplementary_checks"][0]
+    assert sup["folds_over_bar"] == {}
+    assert len(sup["per_fold_observed"]) == 4
 
 
 @pytest.mark.parametrize(

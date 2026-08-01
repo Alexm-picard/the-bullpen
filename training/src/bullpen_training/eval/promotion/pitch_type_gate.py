@@ -282,6 +282,18 @@ def build_gate(
     # bar to whatever the primary became while still labelling the check "ece".
     chal_ece = _summary_metric(challenger, DB_TO_BUNDLE["ece"])
     absolute_ok = c.absolute_ece_bar is not None and chal_ece < c.absolute_ece_bar
+
+    # The bar gates on the CV MEAN, but a mean can pass while an individual fold exceeds the
+    # declared bar - the real v1 numbers do exactly that (fold 1, test year 2022: 0.0225 vs the
+    # 0.02 bar, mean 0.0161). TD directive on this artifact: the promotion decision must SEE
+    # that, not just a passing mean. Carried in the check itself, not gating (the declaration
+    # binds the mean; making folds gate would be a criteria change, so /decide).
+    chal_ece_per_fold = _per_fold_metric(challenger, DB_TO_BUNDLE["ece"])
+    folds_over_bar = {
+        f"fold_{pf.get('fold_id')}": v
+        for pf, v in zip(per_fold, chal_ece_per_fold, strict=True)
+        if c.absolute_ece_bar is not None and v >= c.absolute_ece_bar
+    }
     primary_met = chal_primary + IMPORT_THRESHOLD <= champ_primary
     guardrails_ok = all(obs <= guardrails[k] for k, obs in guardrails_observed.items())
     sample_met = sample_observed >= c.sample_size_target
@@ -293,10 +305,15 @@ def build_gate(
             "max_allowed": c.absolute_ece_bar,
             "observed": chal_ece,
             "passed": bool(absolute_ok),
+            "per_fold_observed": chal_ece_per_fold,
+            "folds_over_bar": folds_over_bar,
             "rationale": (
                 "THE declared [183] primary: TOP-LABEL ECE of the y7 distribution must be below"
                 " the bar. Recorded here because OfflineGateEvidence has no field for an absolute"
-                " bar, and folded into `status` so it is not merely decorative."
+                " bar, and folded into `status` so it is not merely decorative. The bar binds the"
+                " CV MEAN; per_fold_observed and folds_over_bar carry the dispersion so a fold"
+                " individually exceeding the bar is visible to the promotion decision rather than"
+                " smoothed into a passing mean."
             ),
         }
     ]
@@ -379,6 +396,14 @@ def build_gate(
                 " evidence for the same mean margin."
             ),
             "per_fold_deltas": per_fold_deltas,
+            "per_fold_values": {
+                "challenger": {
+                    db: _per_fold_metric(challenger, DB_TO_BUNDLE[db]) for db in per_fold_deltas
+                },
+                "baseline": {
+                    db: _per_fold_metric(baseline, DB_TO_BUNDLE[db]) for db in per_fold_deltas
+                },
+            },
             "folds_won": {
                 k: sum(1 for d in deltas if d < 0) for k, deltas in per_fold_deltas.items()
             },
