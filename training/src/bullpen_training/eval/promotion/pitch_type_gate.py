@@ -290,8 +290,8 @@ def build_gate(
     # binds the mean; making folds gate would be a criteria change, so /decide).
     chal_ece_per_fold = _per_fold_metric(challenger, DB_TO_BUNDLE["ece"])
     folds_over_bar = {
-        f"fold_{pf.get('fold_id')}": v
-        for pf, v in zip(per_fold, chal_ece_per_fold, strict=True)
+        f"fold_{pf.get('fold_id', i + 1)}": v
+        for i, (pf, v) in enumerate(zip(per_fold, chal_ece_per_fold, strict=True))
         if c.absolute_ece_bar is not None and v >= c.absolute_ece_bar
     }
     primary_met = chal_primary + IMPORT_THRESHOLD <= champ_primary
@@ -313,7 +313,11 @@ def build_gate(
                 " bar, and folded into `status` so it is not merely decorative. The bar binds the"
                 " CV MEAN; per_fold_observed and folds_over_bar carry the dispersion so a fold"
                 " individually exceeding the bar is visible to the promotion decision rather than"
-                " smoothed into a passing mean."
+                " smoothed into a passing mean. BASIS NOTE: the sibling driver-emitted artifacts"
+                " (pitch_outcome_pre) apply this bar to the FINAL FOLD's ECE, not the mean - two"
+                " conventions coexist, so `observed` means different things across sibling"
+                " artifacts; the final-fold reading is recoverable as per_fold_observed[-1], and"
+                " unifying the basis belongs to the open /decide on fold-level bounds."
             ),
         }
     ]
