@@ -180,3 +180,101 @@ groups:
         annotations:
           summary: "Champion {{ $labels.model }} has no {{ $labels.kind }} drift baseline"
           description: "The daily PSI-{{ $labels.kind }} job found serving champion {{ $labels.model }} with no training-distribution baseline - drift detection is dark for a production model. Run `scripts/backfill_training_distributions.py --model {{ $labels.model }}` against the champion bundle to restore it."
+
+      # --- [186] freshness watchdogs (2026-08-01 P1) ------------------------------------------
+      # Two-layer design, because the two failure modes need different signals:
+      #   JOB-DEAD: the nightly refresh stops completing. The age gauges CANNOT catch this - they
+      #     are set only on success, so a dead job freezes them at their last (fresh-looking)
+      #     value. Caught by the last-success stamps; year-round, no season gating (the job
+      #     should succeed daily regardless). Split into NeverRan vs Stale rather than an
+      #     or-disjunct: `stamp == 0 or time()-stamp > N` is vacuous (time()-0 is always > N)
+      #     and the or would surface the ==0 operand's VALUE, rendering "last succeeded 0s ago"
+      #     on the exact page describing never-ran. Two rules, each with an honest $value.
+      #     NeverRan gates on process age via process_start_time_seconds (Boot's UptimeMetrics):
+      #     the stamp is per-process and reads 0 from boot until the first 02:40/02:50 ET run,
+      #     so without the gate every deploy would page for up to a day. Stale needs no uptime
+      #     gate - a per-process stamp > 0 that is 26h stale implies the process is older.
+      #   CORPUS-STALE: the refresh completes but selects a stale corpus - the June failure [186]
+      #     fixed, and the one that recurs if a backfill is missed while ingest looks healthy.
+      #     The age gauges catch this; gated on live-poller activity within 3d (tighter than the
+      #     LivePollerStuck idiom's window ON PURPOSE: a 7d gate false-pages every All-Star
+      #     break - resumption Thursday reads age 4 with the last poll ~3.2d old - and burns a
+      #     ~3-day burst every season end. A 3d gate closes before age can cross 3 in any
+      #     no-games gap, while the [186] shape - games polling daily, corpus frozen - keeps it
+      #     open). A poller DEAD > 3d closes this gate too; that failure pages through
+      #     LivePollerStuck/WorkerDown when it happens, not through a corpus rule.
+      # NO alert on bullpen_pitchtype_prior_coverage_gap_days: it reads ~49 CORRECTLY today (the
+      # manual-backfill hole the union surfaces rather than hides), so any threshold either pages
+      # permanently or is set above the known gap to avoid it - both worse than reading the gauge
+      # on the dashboard. A growth-trigger belongs to the open /decide on freshness bounds.
+      # Thresholds (3d age / 26h stamp) are PROVISIONAL operational values pending that /decide;
+      # the age gauges' own descriptions say the bound belongs there. The `< 0` never-ran state
+      # the descriptions warn about is owned by the NeverRan rules' `== 0` stamp lane.
+      # Semantics are PINNED BEHAVIORALLY by rules/tests/freshness-alerts.test.yml (promtool
+      # test rules, run in infra.yml) - check config alone proves only that the rules parse.
+
+      - alert: PitcherFormRefreshNeverRan
+        expr: |
+          (bullpen_pitcher_form_last_refresh_timestamp_seconds == 0)
+            and (time() - process_start_time_seconds{job="thebullpen-worker"} > 26 * 3600)
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pitcher_form refresh has never succeeded in this worker process"
+          description: "The worker has been up > 26h and the 02:40 ET pitcher_form refresh has not succeeded once since boot. Tier-3 form for the live pitch path is riding the last deploy's snapshot. Check `journalctl -u bullpen-worker | grep PitcherFormRefreshJob`."
+
+      - alert: PitcherFormRefreshStale
+        expr: |
+          (time() - bullpen_pitcher_form_last_refresh_timestamp_seconds > 26 * 3600)
+            and (bullpen_pitcher_form_last_refresh_timestamp_seconds > 0)
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pitcher_form nightly refresh has stopped succeeding"
+          description: "The 02:40 ET pitcher_form refresh last succeeded {{ $value | humanizeDuration }} ago in this worker process. Tier-3 form for the live pitch path is riding a stale snapshot. Check `journalctl -u bullpen-worker | grep PitcherFormRefreshJob`."
+
+      - alert: PitchTypePriorRefreshNeverRan
+        expr: |
+          (bullpen_pitchtype_prior_last_refresh_timestamp_seconds == 0)
+            and (time() - process_start_time_seconds{job="thebullpen-worker"} > 26 * 3600)
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pitch-type prior refresh has never succeeded in this worker process"
+          description: "The worker has been up > 26h and the 02:50 ET pitcher_pitchtype_prior refresh has not succeeded once since boot. The deriver refuses predictions past its staleness bound, so this precedes a serving refusal. Check `journalctl -u bullpen-worker | grep pitcher_pitchtype_prior_refresh`."
+
+      - alert: PitchTypePriorRefreshStale
+        expr: |
+          (time() - bullpen_pitchtype_prior_last_refresh_timestamp_seconds > 26 * 3600)
+            and (bullpen_pitchtype_prior_last_refresh_timestamp_seconds > 0)
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pitch-type prior nightly refresh has stopped succeeding"
+          description: "The 02:50 ET pitcher_pitchtype_prior refresh last succeeded {{ $value | humanizeDuration }} ago in this worker process. The deriver refuses predictions past its staleness bound, so this precedes a serving refusal. Check `journalctl -u bullpen-worker | grep pitcher_pitchtype_prior_refresh`."
+
+      - alert: PitcherFormCorpusStale
+        expr: |
+          (bullpen_pitcher_form_age_days > 3)
+            and (time() - bullpen_ingest_last_poll_timestamp_seconds < 3 * 24 * 3600)
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pitcher_form corpus is {{ $value }} days behind during the season"
+          description: "The form refresh is running but its source corpus (pitches UNION pitches_live) is {{ $value }} days old while games polled within the last 3d - the [186] failure shape. Past ~14 days, unbackfilled history starts falling out of the pitches_live TTL entirely. Check the live poller, then the manual backfill."
+
+      - alert: PitchTypePriorCorpusStale
+        expr: |
+          (bullpen_pitchtype_prior_age_days > 3)
+            and (time() - bullpen_ingest_last_poll_timestamp_seconds < 3 * 24 * 3600)
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pitch-type prior snapshot is {{ $value }} days behind during the season"
+          description: "The prior refresh is running but its as_of_date is {{ $value }} days old while games polled within the last 3d. The deriver's staleness bound turns this into 503s on the pitch-type endpoint if it keeps climbing. Check the live poller and pitches_live."
