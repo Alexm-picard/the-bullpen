@@ -1,6 +1,7 @@
 package net.thebullpen.baseball.ingest;
 
 import io.micrometer.core.instrument.MeterRegistry;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
@@ -153,9 +154,16 @@ public class PitcherPitchTypePriorRefreshJob {
               + " fold produces a plausible snapshot rather than an obviously broken one.");
     }
     LocalDate asOf = repo.refreshSnapshot(y7Expression);
-    lastRefreshEpochSeconds.set(java.time.Instant.now().getEpochSecond());
-    ageDays.set(ChronoUnit.DAYS.between(asOf, LocalDate.now(ET)));
-    coverageGapDays.set(repo.coverageGapDays());
+    lastRefreshEpochSeconds.set(Instant.now().getEpochSecond());
+    // Separate failure domain, mirroring PitcherFormRefreshJob: the refresh SUCCEEDED (and the
+    // stamp above says so), so a failure in the follow-up gauge queries must not be logged as
+    // "refresh failed" - the log and the metric have to agree.
+    try {
+      ageDays.set(ChronoUnit.DAYS.between(asOf, LocalDate.now(ET)));
+      coverageGapDays.set(repo.coverageGapDays());
+    } catch (RuntimeException e) {
+      log.error("{}: freshness gauges update failed (refresh succeeded)", JOB_NAME, e);
+    }
     return asOf;
   }
 }

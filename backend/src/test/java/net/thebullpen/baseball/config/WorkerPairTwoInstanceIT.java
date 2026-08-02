@@ -248,12 +248,18 @@ class WorkerPairTwoInstanceIT {
     // Freshness family: eager on the two CH-gated refresh jobs. Boot VALUES, not just names -
     // ages read -1 (never ran this process) and the success stamps read 0, which ties the
     // series to the real AtomicLong state rather than to a lucky string match.
+    // Anchored name + numeric value only: the EXACT boot values (-1 / 0) are pinned by the
+    // deterministic three-state unit tests; pinning them here too would flake if a CI run's
+    // window ever overlapped the 02:40/02:50 ET crons firing against the live container.
     assertThat(body)
-        .containsPattern("bullpen_pitcher_form_age_days -1(\\.0)?\\s")
-        .containsPattern("bullpen_pitcher_form_last_refresh_timestamp_seconds 0(\\.0)?\\s")
-        .containsPattern("bullpen_pitchtype_prior_age_days -1(\\.0)?\\s")
-        .containsPattern("bullpen_pitchtype_prior_coverage_gap_days -1(\\.0)?\\s")
-        .containsPattern("bullpen_pitchtype_prior_last_refresh_timestamp_seconds 0(\\.0)?\\s");
+        .containsPattern("(?m)^bullpen_pitcher_form_age_days -?\\d")
+        .containsPattern("(?m)^bullpen_pitcher_form_last_refresh_timestamp_seconds \\d")
+        .containsPattern("(?m)^bullpen_pitchtype_prior_age_days -?\\d")
+        .containsPattern("(?m)^bullpen_pitchtype_prior_coverage_gap_days -?\\d")
+        .containsPattern("(?m)^bullpen_pitchtype_prior_last_refresh_timestamp_seconds \\d")
+        // The staleness alert rules' process-age gate reads this from the WORKER scrape
+        // specifically; absent here, both *RefreshNeverRan rules go permanently dark.
+        .containsPattern("(?m)^process_start_time_seconds[{ ]");
     // Lazy per-event family: absent until the first parse anomaly BY DESIGN - its absence from
     // a healthy scrape is not a wiring failure. Documented here so the next diagnosis starts
     // from the mechanism, not the symptom.

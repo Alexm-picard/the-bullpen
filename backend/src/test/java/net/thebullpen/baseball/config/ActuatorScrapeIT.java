@@ -15,6 +15,7 @@ import net.thebullpen.baseball.Application;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIf;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
 
@@ -40,7 +41,16 @@ import org.springframework.context.ConfigurableApplicationContext;
  * the signature of that trap, not of two registration bugs. The 401 test pins it on a served port,
  * where MockMvc could not.
  */
+@EnabledIf("toyModelPresent")
 class ActuatorScrapeIT {
+
+  /** JUnit5 @EnabledIf hook - the api context cannot start without the on-disk toy model. */
+  static boolean toyModelPresent() {
+    return Files.exists(
+        Path.of(System.getProperty("user.dir"))
+            .getParent()
+            .resolve("training/artifacts/_toy/v0/model.onnx"));
+  }
 
   private static final String METRICS_USER = "it-metrics";
   private static final String METRICS_PASS = "it-metrics-pw";
@@ -70,6 +80,7 @@ class ActuatorScrapeIT {
                 "--bullpen.ratelimit.enabled=false",
                 "--spring.datasource.url=" + url,
                 "--spring.flyway.url=" + url,
+                "--bullpen.admin.basicauth=it-admin:it-admin-pw",
                 "--bullpen.metrics.basicauth=" + METRICS_USER + ":" + METRICS_PASS,
                 "--bullpen.snapshot.local-base-path=" + snapshot);
     String p = ctx.getEnvironment().getProperty("local.server.port");
@@ -79,6 +90,7 @@ class ActuatorScrapeIT {
 
   @AfterAll
   static void shutdown() throws Exception {
+    http.close();
     if (ctx != null) {
       ctx.close();
     }
@@ -87,12 +99,17 @@ class ActuatorScrapeIT {
     }
   }
 
-  private static HttpResponse<String> get(String path, String... authHeader) throws Exception {
-    HttpRequest.Builder req = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path));
-    if (authHeader.length > 0) {
-      req.header("Authorization", authHeader[0]);
-    }
-    return http.send(req.build(), HttpResponse.BodyHandlers.ofString());
+  private static HttpResponse<String> get(String path) throws Exception {
+    HttpRequest req = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path)).build();
+    return http.send(req, HttpResponse.BodyHandlers.ofString());
+  }
+
+  private static HttpResponse<String> get(String path, String authHeader) throws Exception {
+    HttpRequest req =
+        HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
+            .header("Authorization", authHeader)
+            .build();
+    return http.send(req, HttpResponse.BodyHandlers.ofString());
   }
 
   private static String metricsAuth() {
@@ -137,6 +154,10 @@ class ActuatorScrapeIT {
     assertThat(resp.body())
         .doesNotContain("bullpen_ingest_last_poll_timestamp_seconds")
         .doesNotContain("bullpen_pitcher_form_age_days")
-        .doesNotContain("bullpen_pitchtype_prior_age_days");
+        .doesNotContain("bullpen_pitchtype_prior_age_days")
+        // ...including the two series THIS change introduces - they are the ones that most
+        // need a negative control, or their positive assertions are the unfalsifiable kind.
+        .doesNotContain("bullpen_pitcher_form_last_refresh_timestamp_seconds")
+        .doesNotContain("bullpen_pitchtype_prior_last_refresh_timestamp_seconds");
   }
 }

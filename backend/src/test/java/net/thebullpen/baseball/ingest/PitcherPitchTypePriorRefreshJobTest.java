@@ -11,6 +11,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import net.thebullpen.baseball.data.JobLockRepository;
 import net.thebullpen.baseball.data.PitcherPitchTypePriorRepository;
 import org.junit.jupiter.api.Test;
@@ -48,7 +49,8 @@ class PitcherPitchTypePriorRefreshJobTest {
     long beforeEpoch = Instant.now().getEpochSecond();
     assertThat(job.runOnce()).isEqualTo(asOf);
 
-    assertThat(meters.get("bullpen_pitchtype_prior_age_days").gauge().value()).isEqualTo(1.0);
+    assertThat(meters.get("bullpen_pitchtype_prior_age_days").gauge().value())
+        .isEqualTo(ChronoUnit.DAYS.between(asOf, LocalDate.now(ET)));
     assertThat(meters.get("bullpen_pitchtype_prior_coverage_gap_days").gauge().value())
         .as("a standing 49-day gap must be REPORTED at 49, never smoothed")
         .isEqualTo(49.0);
@@ -72,6 +74,28 @@ class PitcherPitchTypePriorRefreshJobTest {
     assertThat(meters.get("bullpen_pitchtype_prior_last_refresh_timestamp_seconds").gauge().value())
         .as("a failed run must not stamp a success - that would blind the job-dead alert")
         .isEqualTo(0.0);
+  }
+
+  @Test
+  void a_gauge_query_failure_after_a_successful_refresh_keeps_the_success_stamp() {
+    // The refresh SUCCEEDED, so the stamp must say so even when the follow-up coverage-gap
+    // query dies - and run() must not relog it as "refresh failed" (the log and the metric
+    // have to agree; the sibling form job split exactly this failure domain).
+    PitcherPitchTypePriorRepository repo = mock(PitcherPitchTypePriorRepository.class);
+    LocalDate asOf = LocalDate.now(ET).minusDays(1);
+    when(repo.refreshSnapshot(anyString())).thenReturn(asOf);
+    when(repo.coverageGapDays()).thenThrow(new RuntimeException("clickhouse hiccup"));
+    SimpleMeterRegistry meters = new SimpleMeterRegistry();
+    PitcherPitchTypePriorRefreshJob job =
+        new PitcherPitchTypePriorRefreshJob(repo, mock(JobLockRepository.class), meters, null);
+
+    assertThat(job.runOnce()).isEqualTo(asOf);
+    assertThat(meters.get("bullpen_pitchtype_prior_last_refresh_timestamp_seconds").gauge().value())
+        .as("the refresh succeeded; the stamp must not be held hostage by the gap query")
+        .isGreaterThan(0.0);
+    assertThat(meters.get("bullpen_pitchtype_prior_coverage_gap_days").gauge().value())
+        .as("the failed gap query must not fabricate a reading")
+        .isEqualTo(-1.0);
   }
 
   @Test

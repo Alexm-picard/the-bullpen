@@ -46,6 +46,18 @@ jobs:
             -v "$RUNNER_TEMP/secrets:/etc/prometheus/secrets:ro" \
             --entrypoint promtool prom/prometheus:v3.0.1 \
             check config /etc/prometheus/prometheus.yml
+      # `check config` proves the rules PARSE; `test rules` proves they FIRE (and stay silent)
+      # in the pinned scenarios - it caught two real semantic bugs (a $value-hijacking
+      # or-disjunct and a gate that false-paged every All-Star break) that check config
+      # accepted happily. rules/tests/ is outside prometheus.yml's non-recursive rule_files
+      # glob, so the box never loads the fixtures as rules.
+      - name: promtool test rules (behavioral - the rules fire and stay silent on the fixtures)
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$PWD/infra/prometheus/rules:/rules:ro" \
+            --entrypoint promtool prom/prometheus:v3.0.1 \
+            test rules /rules/tests/freshness-alerts.test.yml
 
   compose-config:
     name: docker compose config (fail-closed env contract)
