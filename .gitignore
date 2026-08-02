@@ -59,6 +59,12 @@ training/data/eval/promotion/*
 # battedball.mlp.compare_versions): an OfflineGateEvidence artifact read by import-offline + promote,
 # a *_promotion_gate.json (bundled) but NOT the *_experiment_results_full*.json scorecard glob.
 !training/data/eval/promotion/battedball_outcome_v3_promotion_gate.json
+# Same reasoning for the pitch_type_pre FIRST-CHAMPION gate ([183], produced by
+# scripts/emit_pitch_type_promotion_gate.py from the two co-trained bundles): an
+# OfflineGateEvidence artifact read by import-offline + promote, a *_promotion_gate.json
+# (bundled to offline-gate-evidence/, admin-only) and deliberately NOT the
+# *_experiment_results_full*.json glob, which /accuracy publishes.
+!training/data/eval/promotion/pitch_type_pre_promotion_gate.json
 # ...but keep the exploratory temperature calibrations box-local (superseded
 # side-quests). The versioned record is isotonic (the standing best) +
 # per_park_isotonic (the gate-gaming negative); the *_temperature* runs were
