@@ -203,10 +203,13 @@ groups:
       #     no-games gap, while the [186] shape - games polling daily, corpus frozen - keeps it
       #     open). A poller DEAD > 3d closes this gate too; that failure pages through
       #     LivePollerStuck/WorkerDown when it happens, not through a corpus rule.
-      # NO alert on bullpen_pitchtype_prior_coverage_gap_days: it reads ~49 CORRECTLY today (the
-      # manual-backfill hole the union surfaces rather than hides), so any threshold either pages
-      # permanently or is set above the known gap to avoid it - both worse than reading the gauge
-      # on the dashboard. A growth-trigger belongs to the open /decide on freshness bounds.
+      # The coverage gap gets a GROWTH rule, not a LEVEL rule (TD direction 2026-08-03,
+      # correcting this file's first version): a level threshold either pages permanently on the
+      # known backlog or is tuned above it to stay quiet - but the gap is NOT standing. The
+      # pitches_live TTL floor advances daily, so while the manual backfill has not run, the gap
+      # climbs ~1/day and each day of climb is history falling out of BOTH tables permanently.
+      # A monotonically growing gauge with no rule recreates the exact silent-degradation shape
+      # [186] fixed. Growth fires; the accepted level does not.
       # Thresholds (3d age / 26h stamp) are PROVISIONAL operational values pending that /decide;
       # the age gauges' own descriptions say the bound belongs there. The `< 0` never-ran state
       # the descriptions warn about is owned by the NeverRan rules' `== 0` stamp lane.
@@ -278,3 +281,14 @@ groups:
         annotations:
           summary: "pitch-type prior snapshot is {{ $value }} days behind during the season"
           description: "The prior refresh is running but its as_of_date is {{ $value }} days old while games polled within the last 3d. The deriver's staleness bound turns this into 503s on the pitch-type endpoint if it keeps climbing. Check the live poller and pitches_live."
+
+      - alert: PitchTypePriorCoverageGapGrowing
+        expr: |
+          (delta(bullpen_pitchtype_prior_coverage_gap_days[3d]) >= 2)
+            and (min_over_time(bullpen_pitchtype_prior_coverage_gap_days[3d]) >= 0)
+        for: 6h
+        labels:
+          severity: warning
+        annotations:
+          summary: "pitch-type prior coverage gap grew {{ $value | printf \"%.1f\" }} days over the last 3d"
+          description: "The hole between the pitches corpus edge and the pitches_live TTL floor is GROWING - the manual backfill has not run and each day of growth is history leaving both tables permanently (prior_n biases lower for every pitcher active in the gap). The accepted standing level does not fire this; growth does. Run the pitch backfill. The min_over_time guard keeps the -1 boot state from reading as growth after a worker restart."
