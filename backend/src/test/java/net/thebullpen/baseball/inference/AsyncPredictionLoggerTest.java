@@ -277,28 +277,41 @@ class AsyncPredictionLoggerTest {
         .isEqualTo((double) AsyncPredictionLogger.MAX_WRITE_ATTEMPTS);
 
     // ...and the logger is HEALTHY again: new events flow to the (now poison-free) writer.
+    List<PredictionLogEvent> fresh = new ArrayList<>();
     for (int i = 100; i < 105; i++) {
-      logger.enqueue(sampleEvent(i));
+      PredictionLogEvent ev = sampleEvent(i);
+      fresh.add(ev);
+      logger.enqueue(ev);
     }
     assertThat(logger.flushOnce()).isEqualTo(5);
-    assertThat(writer.captured()).hasSize(5);
+    assertThat(writer.captured()).containsExactlyElementsOf(fresh);
     assertThat(counter("thebullpen_prediction_log_dead_lettered_total"))
         .as("recovery adds no further dead letters")
         .isEqualTo(10.0);
   }
 
   @Test
-  void transientOutage_underTheAttemptCap_losesNothing() throws InterruptedException {
+  void transientOutage_underTheAttemptCap_losesNothing_andPreservesEventIdentity()
+      throws InterruptedException {
     FailNTimesWriter writer = new FailNTimesWriter(AsyncPredictionLogger.MAX_WRITE_ATTEMPTS - 1);
     AsyncPredictionLogger logger =
         new AsyncPredictionLogger(Optional.of(writer), registry, props(1_000));
+    List<PredictionLogEvent> enqueued = new ArrayList<>();
     for (int i = 0; i < 100; i++) {
-      logger.enqueue(sampleEvent(i));
+      PredictionLogEvent ev = sampleEvent(i);
+      enqueued.add(ev);
+      logger.enqueue(ev);
     }
     for (int i = 0; i < AsyncPredictionLogger.MAX_WRITE_ATTEMPTS; i++) {
       logger.flushOnce();
     }
-    assertThat(writer.captured()).as("an outage shorter than the cap loses nothing").hasSize(100);
+    // CONTENT, not cardinality: the requeue path wraps and re-wraps events, and a size-only
+    // assertion passed a mutation that replaced every requeued event with batch.get(0)'s -
+    // wrong requestId/modelVersionId/role on every retried row, which are exactly the fields
+    // the rule-5 paired-evidence query (ClickHousePairedPredictionFetcher) keys on.
+    assertThat(writer.captured())
+        .as("an outage shorter than the cap loses nothing AND every event keeps its identity")
+        .containsExactlyElementsOf(enqueued);
     assertThat(counter("thebullpen_prediction_log_dead_lettered_total")).isZero();
   }
 
@@ -317,6 +330,43 @@ class AsyncPredictionLoggerTest {
     assertThat(writer.captured()).hasSize(1_200);
     assertThat(writer.callCount()).as("500-cap bounds the INSERT, so three batches").isEqualTo(3);
     assertThat(logger.queueDepth()).isZero();
+  }
+
+  @Test
+  void flushQuietly_drainsMoreThanOneBatch_theCeilingIsGone() throws InterruptedException {
+    // The SCHEDULED entry point, not the seam underneath: reverting flushCycle to a single
+    // flushOnce inside flushQuietly restored the 500 rows/s ceiling while every guard-level
+    // test stayed green. This pins the wiring where it takes effect.
+    CapturingWriter writer = new CapturingWriter();
+    AsyncPredictionLogger logger =
+        new AsyncPredictionLogger(Optional.of(writer), registry, props(2_000));
+    for (int i = 0; i < 1_200; i++) {
+      logger.enqueue(sampleEvent(i));
+    }
+    logger.flushQuietly();
+    assertThat(writer.captured()).hasSize(1_200);
+    assertThat(logger.queueDepth()).isZero();
+  }
+
+  @Test
+  void flushQuietly_sitsOutTheBackoffWindow_afterAFailure() throws InterruptedException {
+    // Same principle for the other headline behaviour: deleting the shouldAttempt gate from
+    // flushQuietly left every backoff test green, because they exercised the predicate, not
+    // the caller. One failed flush must make the next scheduled tick a no-op.
+    FailNTimesWriter writer = new FailNTimesWriter(1);
+    AsyncPredictionLogger logger =
+        new AsyncPredictionLogger(Optional.of(writer), registry, props(1_000));
+    logger.enqueue(sampleEvent(1));
+
+    logger.flushQuietly();
+    assertThat(writer.callCount()).as("first tick attempted and failed").isEqualTo(1);
+    assertThat(logger.queueDepth()).as("the batch requeued").isEqualTo(1);
+
+    logger.flushQuietly();
+    assertThat(writer.callCount())
+        .as("inside the 2s window the scheduled path must not touch the writer")
+        .isEqualTo(1);
+    assertThat(logger.queueDepth()).isEqualTo(1);
   }
 
   @Test
@@ -390,9 +440,10 @@ class AsyncPredictionLoggerTest {
     }
   }
 
-  /** Fails the first N writeBatch calls, then captures. */
+  /** Fails the first N writeBatch calls, then captures. Counts INVOCATIONS incl. failures. */
   private static final class FailNTimesWriter extends PredictionLogWriter {
     private final List<PredictionLogEvent> captured = new ArrayList<>();
+    private final AtomicInteger calls = new AtomicInteger();
     private int failuresLeft;
 
     FailNTimesWriter(int failures) {
@@ -402,11 +453,16 @@ class AsyncPredictionLoggerTest {
 
     @Override
     public synchronized void writeBatch(List<PredictionLogEvent> batch) {
+      calls.incrementAndGet();
       if (failuresLeft > 0) {
         failuresLeft--;
         throw new RuntimeException("transient ClickHouse outage");
       }
       captured.addAll(batch);
+    }
+
+    int callCount() {
+      return calls.get();
     }
 
     synchronized List<PredictionLogEvent> captured() {

@@ -66,10 +66,19 @@ public class AsyncPredictionLogger {
   // Cap on consecutive failed flushes during shutdown so a persistently-unreachable ClickHouse
   // can't hang @PreDestroy (each failure re-enqueues its batch via flushOnce).
   private static final int MAX_SHUTDOWN_FLUSH_FAILURES = 3;
-  // A batch write is attempted this many times per event before the event is dead-lettered. With
-  // backoff, five attempts tolerate an outage of roughly 2+4+8+16+32s > 1 minute before loss
-  // begins; a longer outage degrades to honest, counted loss rather than a wedged queue.
-  static final int MAX_WRITE_ATTEMPTS = 5;
+  // Bounds one scheduled cycle at one full default queue (20K / 500). Defensive only: a cycle
+  // can exceed the queue's initial depth solely when producers enqueue at writer speed for the
+  // whole cycle, and enqueue's drop path already owns that overload. The bound keeps shutdown
+  // prompt (the flusher finishes its cycle inside awaitTermination) and the tick latency sane.
+  private static final int MAX_BATCHES_PER_CYCLE = 40;
+  // A batch write is attempted this many times per event before the event is dead-lettered. Six
+  // attempts tolerate an IDLE-QUEUE outage of 2+4+8+16+32 = 62s before loss begins - the backoff
+  // that follows the killing failure never elapses, so the sum stops at the fifth window (the
+  // first review of this constant overstated the envelope by counting it). Under load the
+  // envelope is LONGER, not shorter: requeue goes to the back of the queue, so a retried batch
+  // waits behind newer events and its attempts burn slower. A longer outage degrades to honest,
+  // counted loss rather than a wedged queue.
+  static final int MAX_WRITE_ATTEMPTS = 6;
   static final long BACKOFF_CAP_SECONDS = 60L;
 
   /** A queued event plus how many failed batch writes it has been part of. */
@@ -183,15 +192,24 @@ public class AsyncPredictionLogger {
           deadLettered++;
           deadLetteredCounter.increment();
           PredictionLogEvent ev = q.event();
+          // Identity the rule-5 evidence path keys on (ClickHousePairedPredictionFetcher):
+          // modelVersionId is the registry FK (null = V1/legacy-fallback dispatch, NOT
+          // recoverable from name/version) and (gameId, atBatIndex, pitchNumber) is the [143]
+          // truth-join key the paired query joins champion<->challenger rows on.
           log.error(
               "prediction_log event dead-lettered after {} failed writes: requestId={} model={}/{}"
-                  + " role={} requestAt={}",
+                  + " modelVersionId={} role={} requestAt={} gameId={} atBatIndex={}"
+                  + " pitchNumber={}",
               attempts,
               ev.requestId(),
               ev.modelName(),
               ev.modelVersion(),
+              ev.modelVersionId(),
               ev.role(),
-              ev.requestAt());
+              ev.requestAt(),
+              ev.gameId(),
+              ev.atBatIndex(),
+              ev.pitchNumber());
         } else if (queue.offer(new Queued(q.event(), attempts))) {
           requeued++;
         } else {
@@ -218,13 +236,14 @@ public class AsyncPredictionLogger {
    */
   int flushCycle() {
     int total = 0;
-    while (true) {
+    for (int batches = 0; batches < MAX_BATCHES_PER_CYCLE; batches++) {
       int flushed = flushOnce();
       if (flushed <= 0) {
         return flushed < 0 ? -1 : total;
       }
       total += flushed;
     }
+    return total;
   }
 
   /** Pure backoff schedule, package-private so the test pins the math without a clock. */
@@ -238,7 +257,11 @@ public class AsyncPredictionLogger {
     return consecutiveFlushFailures.get() == 0 || nowNanos - nextAttemptNanos >= 0;
   }
 
-  private void flushQuietly() {
+  /**
+   * The scheduled entry point - package-private so the wiring (backoff gate + cycle) is pinned
+   * where it takes effect, not only at the guards underneath.
+   */
+  void flushQuietly() {
     try {
       if (!shouldAttempt(System.nanoTime())) {
         return;
