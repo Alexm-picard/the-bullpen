@@ -118,6 +118,7 @@ class WorkerPairTwoInstanceIT {
             // (off, unset here), so both beans are absent; every other worker @Scheduled job is
             // cron-based (2-4 AM ET / weekly), so nothing reaches the network at boot.
             "--bullpen.ingest.players.enabled=false",
+            "--bullpen.metrics.basicauth=it-metrics:it-metrics-pw",
             "--bullpen.snapshot.local-base-path=" + snapshot);
   }
 
@@ -210,6 +211,53 @@ class WorkerPairTwoInstanceIT {
     assertThat(winners)
         .as("only one worker instance may claim a single queued retrain")
         .isEqualTo(1);
+  }
+
+  @Test
+  void everyEagerWorkerMeterIsOnTheServedPrometheusScrape() throws Exception {
+    // The 2026-08-01 P1: no test anywhere proved a meter visible on the served worker scrape, so
+    // "series absent from prod" had to be diagnosed from source. This is the positive half - the
+    // full worker bean set is up here (CH container, clickhouse.enabled=true), so every eager
+    // registration must be on the endpoint, with its documented boot value. The api-profile
+    // negative half (same series absent where the beans are absent) is ActuatorScrapeIT, which
+    // also pins the 401-on-bare-curl trap that started the incident.
+    String port = ctxA.getEnvironment().getProperty("local.server.port");
+    assertThat(port).isNotNull();
+    java.net.http.HttpClient http = java.net.http.HttpClient.newHttpClient();
+    String auth =
+        "Basic "
+            + java.util.Base64.getEncoder()
+                .encodeToString(
+                    "it-metrics:it-metrics-pw".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    java.net.http.HttpResponse<String> resp =
+        http.send(
+            java.net.http.HttpRequest.newBuilder(
+                    java.net.URI.create("http://localhost:" + port + "/actuator/prometheus"))
+                .header("Authorization", auth)
+                .build(),
+            java.net.http.HttpResponse.BodyHandlers.ofString());
+    assertThat(resp.statusCode()).isEqualTo(200);
+    String body = resp.body();
+    // Ingest family: eager on IngestMetrics construction, no property gate. Boundary-anchored
+    // like ActuatorScrapeIT: bare contains() also matches a renamed series keeping the old name
+    // as a prefix.
+    assertThat(body)
+        .containsPattern("(?m)^bullpen_ingest_last_poll_timestamp_seconds[{ ]")
+        .containsPattern("(?m)^bullpen_ingest_pitches_total[{ ]")
+        .containsPattern("(?m)^bullpen_ingest_post_tier4_incomplete_total[{ ]");
+    // Freshness family: eager on the two CH-gated refresh jobs. Boot VALUES, not just names -
+    // ages read -1 (never ran this process) and the success stamps read 0, which ties the
+    // series to the real AtomicLong state rather than to a lucky string match.
+    assertThat(body)
+        .containsPattern("bullpen_pitcher_form_age_days -1(\\.0)?\\s")
+        .containsPattern("bullpen_pitcher_form_last_refresh_timestamp_seconds 0(\\.0)?\\s")
+        .containsPattern("bullpen_pitchtype_prior_age_days -1(\\.0)?\\s")
+        .containsPattern("bullpen_pitchtype_prior_coverage_gap_days -1(\\.0)?\\s")
+        .containsPattern("bullpen_pitchtype_prior_last_refresh_timestamp_seconds 0(\\.0)?\\s");
+    // Lazy per-event family: absent until the first parse anomaly BY DESIGN - its absence from
+    // a healthy scrape is not a wiring failure. Documented here so the next diagnosis starts
+    // from the mechanism, not the symptom.
+    assertThat(body).doesNotContain("bullpen_ingest_parse_anomalies_total");
   }
 
   // --- helpers ----------------------------------------------------------
