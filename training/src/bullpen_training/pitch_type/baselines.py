@@ -99,7 +99,7 @@ def train_slice_baselines(
             "source": "native_trainer_emission",
             "slice": "train",
             "predictions": "in-sample",
-            "prediction_rows": int(len(pred_frame)),
+            "prediction_rows": len(pred_frame),
             "prediction_row_cap": int(prediction_row_cap),
             "prediction_row_selection": "evenly-spaced positional (np.linspace), deterministic",
             "max_sample": int(max_sample),

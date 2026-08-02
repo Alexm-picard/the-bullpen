@@ -30,6 +30,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
 from bullpen_training.registry_client.distributions import (
     CHAMPIONS,
     decode_pitch_categoricals,
@@ -157,6 +158,7 @@ def _served_proba(model: str, model_dir: Path, frame: pd.DataFrame) -> np.ndarra
         # guardrail compares models, not calibrators). Probabilities are the LAST ONNX output,
         # per the export contract (export_onnx.onnx_raw_probabilities).
         import onnxruntime as ort
+
         from bullpen_training.pitch_type import PITCH_TYPE_FEATURE_COLUMNS
         from bullpen_training.pitch_type.temperature import TemperatureCalibrator
 
@@ -168,6 +170,7 @@ def _served_proba(model: str, model_dir: Path, frame: pd.DataFrame) -> np.ndarra
         return TemperatureCalibrator.from_json(model_dir / "calibrator.json").transform(raw)
 
     import onnxruntime as ort
+
     from bullpen_training.pitch.eval._shared import onnx_probabilities
     from bullpen_training.pitch.isotonic import IsotonicCalibrator
 
@@ -323,7 +326,7 @@ def main(argv: list[str] | None = None) -> int:
             "source": "backfill_cli",
             "slice": "train",
             "predictions": "in-sample",
-            "prediction_rows": int(len(pred_frame)),
+            "prediction_rows": len(pred_frame),
             "prediction_row_selection": "evenly-spaced positional (np.linspace), deterministic",
             "max_sample": int(args.max_sample),
         }
