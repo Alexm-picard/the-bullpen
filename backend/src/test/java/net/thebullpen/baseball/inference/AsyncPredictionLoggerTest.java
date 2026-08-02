@@ -370,6 +370,71 @@ class AsyncPredictionLoggerTest {
   }
 
   @Test
+  void theDocumentedLossEnvelope_isTiedToTheConstantsThatProduceIt() {
+    // Reviewer AD-B: finding 3 was a comment whose arithmetic drifted from the constants; this
+    // ties the documented 62s idle-queue floor to MAX_WRITE_ATTEMPTS and backoffNanos so the
+    // number cannot silently become false again. The final window is excluded - the backoff
+    // after the killing failure never elapses.
+    long idleQueueEnvelopeSeconds =
+        java.util.stream.IntStream.rangeClosed(1, AsyncPredictionLogger.MAX_WRITE_ATTEMPTS - 1)
+            .mapToLong(f -> AsyncPredictionLogger.backoffNanos(f) / 1_000_000_000L)
+            .sum();
+    assertThat(idleQueueEnvelopeSeconds).as("the documented loss envelope").isEqualTo(62L);
+  }
+
+  @Test
+  void deadLetterLogLine_carriesTheRuleFiveIdentity() throws InterruptedException {
+    // Reviewer AD-A: the identity-enriched log line was itself unpinned - deleting
+    // modelVersionId from it would silently reopen the gap. Captures the real logback output
+    // and asserts the registry FK + the [143] truth-join triple survive to the rendered line.
+    ch.qos.logback.classic.Logger loggerUnderTest =
+        (ch.qos.logback.classic.Logger)
+            org.slf4j.LoggerFactory.getLogger(AsyncPredictionLogger.class);
+    ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+        new ch.qos.logback.core.read.ListAppender<>();
+    appender.start();
+    loggerUnderTest.addAppender(appender);
+    try {
+      PoisonAwareWriter writer = new PoisonAwareWriter();
+      AsyncPredictionLogger logger =
+          new AsyncPredictionLogger(Optional.of(writer), registry, props(100));
+      logger.enqueue(
+          new PredictionLogEvent(
+              UUID.randomUUID(),
+              Instant.now(),
+              "_toy_batted_ball",
+              "v0",
+              42L,
+              PredictionLogEvent.Role.SHADOW,
+              "POISON",
+              "{}",
+              "{}",
+              1.0f,
+              "cid-identity",
+              745_444L,
+              3,
+              5));
+      for (int i = 0; i < AsyncPredictionLogger.MAX_WRITE_ATTEMPTS; i++) {
+        logger.flushOnce();
+      }
+      String line =
+          appender.list.stream()
+              .map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage)
+              .filter(m -> m.contains("dead-lettered"))
+              .findFirst()
+              .orElseThrow();
+      assertThat(line)
+          .contains("modelVersionId=42")
+          .contains("role=SHADOW")
+          .contains("gameId=745444")
+          .contains("atBatIndex=3")
+          .contains("pitchNumber=5");
+    } finally {
+      loggerUnderTest.detachAppender(appender);
+    }
+  }
+
+  @Test
   void backoffSchedule_isExponentialAndCapped() {
     assertThat(AsyncPredictionLogger.backoffNanos(1)).isEqualTo(2_000_000_000L);
     assertThat(AsyncPredictionLogger.backoffNanos(2)).isEqualTo(4_000_000_000L);
