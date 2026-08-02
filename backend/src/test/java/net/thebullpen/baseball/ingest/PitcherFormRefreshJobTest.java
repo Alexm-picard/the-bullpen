@@ -34,11 +34,18 @@ class PitcherFormRefreshJobTest {
             "-1 before the first run; NOTE a bare > N alert reads -1 as fresh, so the rule must"
                 + " include < 0")
         .isEqualTo(-1.0);
+    assertThat(meters.get("bullpen_pitcher_form_last_refresh_timestamp_seconds").gauge().value())
+        .as("0 before the first success in this process - the alert rule gates on process age")
+        .isEqualTo(0.0);
 
+    long beforeEpoch = java.time.Instant.now().getEpochSecond();
     assertThat(job.runOnce()).isEqualTo(42L);
     assertThat(meters.get("bullpen_pitcher_form_age_days").gauge().value())
         .as("days between today and max(game_date) in pitches")
         .isEqualTo(ChronoUnit.DAYS.between(corpusEdge, LocalDate.now(ET)));
+    assertThat(meters.get("bullpen_pitcher_form_last_refresh_timestamp_seconds").gauge().value())
+        .as("stamped on success - the job-dead half the frozen age gauge cannot see")
+        .isGreaterThanOrEqualTo(beforeEpoch);
   }
 
   @Test
@@ -52,5 +59,8 @@ class PitcherFormRefreshJobTest {
     assertThat(meters.get("bullpen_pitcher_form_age_days").gauge().value())
         .as("a failed run must not fabricate freshness")
         .isEqualTo(-1.0);
+    assertThat(meters.get("bullpen_pitcher_form_last_refresh_timestamp_seconds").gauge().value())
+        .as("a failed run must not stamp a success - that would blind the job-dead alert")
+        .isEqualTo(0.0);
   }
 }
