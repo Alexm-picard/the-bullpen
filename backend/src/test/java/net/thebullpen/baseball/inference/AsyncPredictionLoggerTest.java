@@ -251,6 +251,169 @@ class AsyncPredictionLoggerTest {
         "cid-shadow-" + seq);
   }
 
+  // --- H3 (issue #90): dead-letter cap, drain loop, backoff -----------------------------------
+
+  @Test
+  void poisonBatch_isDeadLetteredAtTheCap_andTheLoggerRecovers() throws InterruptedException {
+    // A writer that rejects any batch containing the poison event - the realistic shape: one
+    // permanently-bad row fails every batch it lands in. Pre-H3 this cycled FOREVER.
+    PoisonAwareWriter writer = new PoisonAwareWriter();
+    AsyncPredictionLogger logger =
+        new AsyncPredictionLogger(Optional.of(writer), registry, props(1_000));
+    logger.enqueue(poisonEvent());
+    for (int i = 0; i < 9; i++) {
+      logger.enqueue(sampleEvent(i));
+    }
+
+    for (int attempt = 0; attempt < AsyncPredictionLogger.MAX_WRITE_ATTEMPTS; attempt++) {
+      assertThat(logger.flushOnce()).isEqualTo(-1);
+    }
+
+    // The poison event AND its up-to-499 batchmates are dead-lettered together - the documented
+    // best-effort trade-off ([30]): isolating the poison row would need per-row writes.
+    assertThat(counter("thebullpen_prediction_log_dead_lettered_total")).isEqualTo(10.0);
+    assertThat(logger.queueDepth()).as("nothing left cycling").isZero();
+    assertThat(counter("thebullpen_prediction_log_write_failures_total"))
+        .isEqualTo((double) AsyncPredictionLogger.MAX_WRITE_ATTEMPTS);
+
+    // ...and the logger is HEALTHY again: new events flow to the (now poison-free) writer.
+    for (int i = 100; i < 105; i++) {
+      logger.enqueue(sampleEvent(i));
+    }
+    assertThat(logger.flushOnce()).isEqualTo(5);
+    assertThat(writer.captured()).hasSize(5);
+    assertThat(counter("thebullpen_prediction_log_dead_lettered_total"))
+        .as("recovery adds no further dead letters")
+        .isEqualTo(10.0);
+  }
+
+  @Test
+  void transientOutage_underTheAttemptCap_losesNothing() throws InterruptedException {
+    FailNTimesWriter writer = new FailNTimesWriter(AsyncPredictionLogger.MAX_WRITE_ATTEMPTS - 1);
+    AsyncPredictionLogger logger =
+        new AsyncPredictionLogger(Optional.of(writer), registry, props(1_000));
+    for (int i = 0; i < 100; i++) {
+      logger.enqueue(sampleEvent(i));
+    }
+    for (int i = 0; i < AsyncPredictionLogger.MAX_WRITE_ATTEMPTS; i++) {
+      logger.flushOnce();
+    }
+    assertThat(writer.captured()).as("an outage shorter than the cap loses nothing").hasSize(100);
+    assertThat(counter("thebullpen_prediction_log_dead_lettered_total")).isZero();
+  }
+
+  @Test
+  void flushCycle_drainsTheWholeQueue_notOneBatchPerTick() throws InterruptedException {
+    // Pre-H3, one drainTo per 1s tick capped throughput at 500 rows/s; 1200 queued events took
+    // three ticks. The cycle drains them in ONE scheduled pass - batch size bounds INSERT size,
+    // not throughput.
+    CapturingWriter writer = new CapturingWriter();
+    AsyncPredictionLogger logger =
+        new AsyncPredictionLogger(Optional.of(writer), registry, props(2_000));
+    for (int i = 0; i < 1_200; i++) {
+      logger.enqueue(sampleEvent(i));
+    }
+    assertThat(logger.flushCycle()).isEqualTo(1_200);
+    assertThat(writer.captured()).hasSize(1_200);
+    assertThat(writer.callCount()).as("500-cap bounds the INSERT, so three batches").isEqualTo(3);
+    assertThat(logger.queueDepth()).isZero();
+  }
+
+  @Test
+  void backoffSchedule_isExponentialAndCapped() {
+    assertThat(AsyncPredictionLogger.backoffNanos(1)).isEqualTo(2_000_000_000L);
+    assertThat(AsyncPredictionLogger.backoffNanos(2)).isEqualTo(4_000_000_000L);
+    assertThat(AsyncPredictionLogger.backoffNanos(5)).isEqualTo(32_000_000_000L);
+    assertThat(AsyncPredictionLogger.backoffNanos(6))
+        .as("capped at BACKOFF_CAP_SECONDS")
+        .isEqualTo(AsyncPredictionLogger.BACKOFF_CAP_SECONDS * 1_000_000_000L);
+    assertThat(AsyncPredictionLogger.backoffNanos(63))
+        .as("no shift overflow at absurd failure counts")
+        .isEqualTo(AsyncPredictionLogger.BACKOFF_CAP_SECONDS * 1_000_000_000L);
+  }
+
+  @Test
+  void aFailedFlush_opensABackoffWindow_thatSuccessCloses() throws InterruptedException {
+    FailNTimesWriter writer = new FailNTimesWriter(1);
+    AsyncPredictionLogger logger =
+        new AsyncPredictionLogger(Optional.of(writer), registry, props(1_000));
+    logger.enqueue(sampleEvent(1));
+
+    assertThat(logger.shouldAttempt(System.nanoTime())).as("healthy: no gate").isTrue();
+    assertThat(logger.flushOnce()).isEqualTo(-1);
+    assertThat(logger.shouldAttempt(System.nanoTime()))
+        .as("inside the 2s window after one failure")
+        .isFalse();
+
+    // Shutdown-style direct flush ignores the window (stop() calls flushOnce, not flushQuietly);
+    // the retry succeeds and closes the gate.
+    assertThat(logger.flushOnce()).isEqualTo(1);
+    assertThat(logger.shouldAttempt(System.nanoTime())).as("success resets the gate").isTrue();
+  }
+
+  private double counter(String name) {
+    return registry.get(name).counter().count();
+  }
+
+  private static PredictionLogEvent poisonEvent() {
+    return new PredictionLogEvent(
+        UUID.randomUUID(),
+        Instant.now(),
+        "_toy_batted_ball",
+        "v0",
+        PredictionLogEvent.Role.CHAMPION,
+        "POISON",
+        "{\"bad\":true}",
+        "{}",
+        1.0f,
+        "cid-poison");
+  }
+
+  /** Rejects any batch containing the poison event (featureHash marker); captures the rest. */
+  private static final class PoisonAwareWriter extends PredictionLogWriter {
+    private final List<PredictionLogEvent> captured = new ArrayList<>();
+
+    PoisonAwareWriter() {
+      super(null);
+    }
+
+    @Override
+    public synchronized void writeBatch(List<PredictionLogEvent> batch) {
+      if (batch.stream().anyMatch(e -> "POISON".equals(e.featureHash()))) {
+        throw new RuntimeException("ClickHouse permanently rejects this row");
+      }
+      captured.addAll(batch);
+    }
+
+    synchronized List<PredictionLogEvent> captured() {
+      return new ArrayList<>(captured);
+    }
+  }
+
+  /** Fails the first N writeBatch calls, then captures. */
+  private static final class FailNTimesWriter extends PredictionLogWriter {
+    private final List<PredictionLogEvent> captured = new ArrayList<>();
+    private int failuresLeft;
+
+    FailNTimesWriter(int failures) {
+      super(null);
+      this.failuresLeft = failures;
+    }
+
+    @Override
+    public synchronized void writeBatch(List<PredictionLogEvent> batch) {
+      if (failuresLeft > 0) {
+        failuresLeft--;
+        throw new RuntimeException("transient ClickHouse outage");
+      }
+      captured.addAll(batch);
+    }
+
+    synchronized List<PredictionLogEvent> captured() {
+      return new ArrayList<>(captured);
+    }
+  }
+
   /** In-memory writer that captures events written for assertion. Thread-safe. */
   private static final class CapturingWriter extends PredictionLogWriter {
     private final List<PredictionLogEvent> captured = new ArrayList<>();
@@ -268,6 +431,10 @@ class AsyncPredictionLoggerTest {
 
     synchronized List<PredictionLogEvent> captured() {
       return new ArrayList<>(captured);
+    }
+
+    int callCount() {
+      return calls.get();
     }
   }
 
