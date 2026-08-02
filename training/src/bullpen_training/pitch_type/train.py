@@ -193,7 +193,12 @@ class PitchTypeFeatureLoaderClosure:
         # baseline (pitch_type.baselines) must key its reference in REQUEST space (stand "R"/"L",
         # not stand_i 0/1 - the observed side logs raw request values, and PSI joins by exact
         # key AND value space). Model paths are column-selective (predict_proba slices
-        # feature_cols), so the extra columns are inert everywhere else.
+        # feature_cols), so the extra columns are inert elsewhere. DECODED to str here: the
+        # driver can hand FixedString(1) back as bytes, and downstream b"R"-vs-"R" correctness
+        # would otherwise be a pandas-version property, not a guarantee - the same silent
+        # value-space mismatch class the CHAMPIONS key test exists for.
+        for raw_col in ("stand", "p_throws", "park_id"):
+            df[raw_col] = df[raw_col].map(_decode_fixedstring)
         keep = [*PITCH_TYPE_FEATURE_COLUMNS, "label", "stand", "p_throws", "park_id"]
         return cast(pd.DataFrame, df[keep])
 
