@@ -33,6 +33,7 @@ from bullpen_training.eval.metrics import (
 from bullpen_training.logging_config import configure_logging, get_logger
 from bullpen_training.pitch_type import PITCH_TYPE_FEATURE_COLUMNS
 from bullpen_training.pitch_type import train_lr as lr_train
+from bullpen_training.pitch_type.baselines import train_slice_baselines
 from bullpen_training.pitch_type.persist import (
     PitchTypePersistInputs,
     persist_pitch_type_lr_v1,
@@ -139,6 +140,14 @@ def train_and_persist(
         num_boost_round=num_boost_round,
         early_stopping_rounds=early_stopping_rounds,
     )
+    # Native drift-baseline emission, BEFORE CV-MEM-1 frees the train slice: both blocks read
+    # train_df (the feature block in full, the prediction pass row-capped), and the bundle's
+    # parquet snapshot is the TEST slice so there is no second chance at this frame later.
+    baseline_extras = train_slice_baselines(
+        train_df,
+        bundle.predict_proba,
+        train_window=f"{prod_fold.train_start_year}-{prod_fold.train_end_year}",
+    )
     # CV-MEM-1: free train/val before the deferred test load (test only feeds the eval preds).
     del train_df, val_df
     gc.collect()
@@ -161,7 +170,9 @@ def train_and_persist(
         ),
         park_id_mapping=getattr(loader, "park_id_mapping", None),
     )
-    return persist_pitch_type_v1(bundle, inputs, artifacts_dir=artifacts_dir)
+    return persist_pitch_type_v1(
+        bundle, inputs, artifacts_dir=artifacts_dir, metadata_extras=baseline_extras
+    )
 
 
 LR_HYPERPARAMS: dict[str, Any] = {

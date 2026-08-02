@@ -40,6 +40,10 @@ def _frame(n: int = 1_500, seed: int = 0) -> pd.DataFrame:
     trees (parity is signal-independent, but a non-trivial ensemble is a better target)."""
     rng = np.random.default_rng(seed)
     df = pd.DataFrame({c: rng.random(n).astype("float32") for c in PITCH_TYPE_FEATURE_COLUMNS})
+    # Raw request-space sources the loader keeps for the native drift baseline.
+    df["stand"] = np.where(rng.integers(0, 2, n) == 0, "R", "L")
+    df["p_throws"] = np.where(rng.integers(0, 2, n) == 0, "R", "L")
+    df["park_id"] = "PARK00"
     k = len(PITCH_TYPE_CLASSES)
     df["label"] = (df["ars_FF"] * k).astype("int8").clip(0, k - 1)
     return df

@@ -299,8 +299,13 @@ def persist_pitch_type_v1(
     inputs: PitchTypePersistInputs,
     *,
     artifacts_dir: Path | None = None,
+    metadata_extras: dict[str, Any] | None = None,
 ) -> Path:
-    """Write the canonical files + eval/ for the pitch-type LightGBM bundle."""
+    """Write the canonical files + eval/ for the pitch-type LightGBM bundle.
+
+    ``metadata_extras`` carries the native drift baselines (``pitch_type.baselines``); additive
+    keys only - ``_write_metadata`` refuses extras that shadow core fields.
+    """
 
     def _write(out_dir: Path) -> Path:
         path = out_dir / "model.lgb"
@@ -314,6 +319,7 @@ def persist_pitch_type_v1(
         write_model=_write,
         feature_importance=lightgbm_feature_importance(bundle.booster, list(bundle.feature_cols)),
         artifacts_dir=artifacts_dir,
+        metadata_extras=metadata_extras,
     )
 
 

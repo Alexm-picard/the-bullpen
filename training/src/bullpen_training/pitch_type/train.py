@@ -117,7 +117,9 @@ def make_pitch_type_feature_loader(
     """Build a feature_loader bound to a ClickHouse connection.
 
     Returned callable signature: `(start_year, end_year, fold_id) -> DataFrame` with a
-    `label` column (integer-encoded y7) and `PITCH_TYPE_FEATURE_COLUMNS`.
+    `label` column (integer-encoded y7), `PITCH_TYPE_FEATURE_COLUMNS`, and the raw
+    request-space categorical sources (`stand`, `p_throws`, `park_id`) the native drift
+    baseline reads.
     """
     return PitchTypeFeatureLoaderClosure(make_client(settings))
 
@@ -187,7 +189,17 @@ class PitchTypeFeatureLoaderClosure:
         df["throws_i"] = _throws_to_int(cast(pd.Series, df["p_throws"]))
         df["park_i"] = _park_to_int(cast(pd.Series, df["park_id"]), self.park_id_mapping)
         df["label"] = _label_to_int(cast(pd.Series, df["label_pitch_type"]))
-        keep = [*PITCH_TYPE_FEATURE_COLUMNS, "label"]
+        # The raw request-space categorical sources ride along UN-dropped: the native drift
+        # baseline (pitch_type.baselines) must key its reference in REQUEST space (stand "R"/"L",
+        # not stand_i 0/1 - the observed side logs raw request values, and PSI joins by exact
+        # key AND value space). Model paths are column-selective (predict_proba slices
+        # feature_cols), so the extra columns are inert elsewhere. DECODED to str here: the
+        # driver can hand FixedString(1) back as bytes, and downstream b"R"-vs-"R" correctness
+        # would otherwise be a pandas-version property, not a guarantee - the same silent
+        # value-space mismatch class the CHAMPIONS key test exists for.
+        for raw_col in ("stand", "p_throws", "park_id"):
+            df[raw_col] = df[raw_col].map(_decode_fixedstring)
+        keep = [*PITCH_TYPE_FEATURE_COLUMNS, "label", "stand", "p_throws", "park_id"]
         return cast(pd.DataFrame, df[keep])
 
 

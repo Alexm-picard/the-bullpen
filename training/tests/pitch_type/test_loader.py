@@ -101,7 +101,15 @@ def test_loader_encodes_columns_and_decodes_fixedstring() -> None:
         feature_rows=[_feature_row()],
     )
     df = loader(2022, 2022, 0)
-    assert list(df.columns) == [*PITCH_TYPE_FEATURE_COLUMNS, "label"]
+    # Feature columns + label + the raw request-space categorical sources the native drift
+    # baseline reads (kept UN-dropped since the baselines change).
+    assert list(df.columns) == [
+        *PITCH_TYPE_FEATURE_COLUMNS,
+        "label",
+        "stand",
+        "p_throws",
+        "park_id",
+    ]
     assert df.loc[0, "stand_i"] == 1  # b"R" -> "R" -> 1
     assert df.loc[0, "throws_i"] == 0  # b"L" -> "L" -> 0
     assert df.loc[0, "park_i"] == 1  # PARK01 -> vocab index 1
