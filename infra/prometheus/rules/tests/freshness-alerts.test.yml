@@ -143,3 +143,65 @@ tests:
       - eval_time: 1h
         alertname: PitchTypePriorCorpusStale
         exp_alerts: []
+
+  # --- coverage-gap GROWTH (level is accepted; growth is loss) --------------------------------
+  # ~1/day climb while the backfill is unrun: gap 49 at t=0, +1 every 24h.
+  - interval: 1h
+    input_series:
+      - series: 'bullpen_pitchtype_prior_coverage_gap_days{job="thebullpen-worker", instance="w", profile="worker"}'
+        values: "49x23 50x23 51x23 52x23 53x23 54x23"
+    alert_rule_test:
+      # 5 days in: delta over 3d is ~+3 - the growth fires (with the 6h for: satisfied).
+      - eval_time: 120h
+        alertname: PitchTypePriorCoverageGapGrowing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: thebullpen-worker
+              instance: w
+              profile: worker
+            exp_annotations:
+              summary: "pitch-type prior coverage gap grew 3.0 days over the last 3d"
+              description:
+                "The hole between the pitches corpus edge and the pitches_live TTL floor
+                is GROWING - the manual backfill has not run and each day of growth is history
+                leaving both tables permanently (prior_n biases lower for every pitcher active in
+                the gap). The accepted standing level does not fire this; growth does. Run the
+                pitch backfill. The min_over_time guard keeps the -1 boot state from reading as
+                growth after a worker restart."
+
+  # A high but FLAT gap - the accepted backlog - must never page.
+  - interval: 1h
+    input_series:
+      - series: 'bullpen_pitchtype_prior_coverage_gap_days{job="thebullpen-worker", instance="w", profile="worker"}'
+        values: "54x168"
+    alert_rule_test:
+      - eval_time: 120h
+        alertname: PitchTypePriorCoverageGapGrowing
+        exp_alerts: []
+
+  # A worker restart (-1 boot value, then the real reading) must not read as growth: the -1 -> 54
+  # jump is a +55 delta that the min_over_time >= 0 guard suppresses.
+  - interval: 1h
+    input_series:
+      - series: 'bullpen_pitchtype_prior_coverage_gap_days{job="thebullpen-worker", instance="w", profile="worker"}'
+        values: "-1x11 54x157"
+    alert_rule_test:
+      - eval_time: 48h
+        alertname: PitchTypePriorCoverageGapGrowing
+        exp_alerts: []
+      # ...and once the boot value ages out of the window, flat 54 still stays quiet.
+      - eval_time: 120h
+        alertname: PitchTypePriorCoverageGapGrowing
+        exp_alerts: []
+
+  # The backfill runs: the gap collapses. The large NEGATIVE delta must not fire, and the
+  # recovered flat state stays quiet.
+  - interval: 1h
+    input_series:
+      - series: 'bullpen_pitchtype_prior_coverage_gap_days{job="thebullpen-worker", instance="w", profile="worker"}'
+        values: "54x71 0x97"
+    alert_rule_test:
+      - eval_time: 120h
+        alertname: PitchTypePriorCoverageGapGrowing
+        exp_alerts: []
