@@ -53,6 +53,11 @@ def _frame(n: int = 1_200, seed: int = 0, nan_frac: float = 0.08) -> pd.DataFram
     df["stand_i"] = rng.integers(0, 2, n)
     df["throws_i"] = rng.integers(0, 2, n)
     df["park_i"] = rng.integers(0, 3, n)
+    # The raw request-space sources the real loader now keeps alongside their encoded twins -
+    # the native drift baseline reads THESE (the observed side logs "R"/"L", not 0/1).
+    df["stand"] = np.where(df["stand_i"] == 0, "R", "L")
+    df["p_throws"] = np.where(df["throws_i"] == 0, "R", "L")
+    df["park_id"] = "PARK0" + df["park_i"].astype(str)
     for c in _NULLABLE_S:
         df[c] = rng.integers(0, 4, n).astype("float64")
     for c in _ARS:
@@ -421,3 +426,78 @@ def test_cli_model_lr_runs_end_to_end(tmp_path: Path, monkeypatch: pytest.Monkey
     )
     assert result.exit_code == 0, result.output
     assert (tmp_path / "pitch_type_lr_baseline" / "vcli" / "model.pkl").exists()
+
+
+# --- native drift baselines (E-1 part 2, both blocks) ---------------------------------------
+
+
+def test_native_baselines_land_in_metadata(bundle_dir: Path) -> None:
+    """Every produced bundle is PSI-ready at registration; without this, promoting the model
+    fires DriftBaselineMissing on the first nightly PSI pass."""
+    from bullpen_training.registry_client.distributions import CHAMPIONS
+
+    cfg = CHAMPIONS["pitch_type_pre"]
+    meta = json.loads((bundle_dir / "metadata.json").read_text())
+
+    fd = meta["feature_distributions"]
+    assert set(fd) == set(cfg.continuous) | set(cfg.categorical), (
+        "the reference must watch exactly the declared request-DTO keys"
+    )
+    # Request-space VALUES, not the encoded twins: the observed side logs "R"/"L".
+    assert set(fd["stand"]["counts"]) <= {"R", "L"}
+    assert set(fd["parkId"]["counts"]) <= {"PARK00", "PARK01", "PARK02"}
+
+    pred = meta["training_prediction_distribution"]
+    assert set(pred) == set(cfg.class_labels)
+    assert all(len(v) > 0 for v in pred.values())
+
+    assert meta["train_split_seasons"] == "2015-2023"
+    prov = meta["baseline_provenance"]
+    assert prov["slice"] == "train"
+    assert prov["source"] == "native_trainer_emission"
+
+
+def test_native_baselines_read_the_train_slice_not_the_test_snapshot(bundle_dir: Path) -> None:
+    """The bundle's parquet snapshot is the TEST slice for this family; a reference built from
+    the held-out year would re-aim the PSI comparison from live-vs-training to live-vs-2025.
+    The synthetic loader seeds by start_year, so the two slices are distinguishable."""
+    meta = json.loads((bundle_dir / "metadata.json").read_text())
+    balls_counts = {int(k): v for k, v in meta["feature_distributions"]["balls"]["counts"].items()}
+
+    train_counts = _frame(seed=2015)["balls"].value_counts().to_dict()
+    test_counts = _frame(seed=2025)["balls"].value_counts().to_dict()
+    assert balls_counts == {int(k): v for k, v in train_counts.items()}
+    assert balls_counts != {int(k): v for k, v in test_counts.items()}, (
+        "the two slices must be distinguishable or this test proves nothing"
+    )
+
+
+def test_baseline_prediction_pass_is_row_capped_and_deterministic() -> None:
+    from bullpen_training.pitch_type.baselines import train_slice_baselines
+
+    frame = _frame(n=100, seed=7)
+    seen: list[int] = []
+
+    def _proba(df: pd.DataFrame) -> np.ndarray:
+        seen.append(len(df))
+        k = len(PITCH_TYPE_CLASSES)
+        return np.full((len(df), k), 1.0 / k)
+
+    out = train_slice_baselines(frame, _proba, train_window="2015-2023", prediction_row_cap=10)
+    assert seen == [10], "the served-inference pass must see exactly the capped row count"
+    assert out["baseline_provenance"]["prediction_rows"] == 10
+    # under the cap: the full frame goes through
+    seen.clear()
+    train_slice_baselines(frame, _proba, train_window="2015-2023", prediction_row_cap=1_000)
+    assert seen == [100]
+
+
+def test_baseline_refuses_an_empty_train_slice() -> None:
+    from bullpen_training.pitch_type.baselines import train_slice_baselines
+
+    with pytest.raises(ValueError, match="empty"):
+        train_slice_baselines(
+            _frame(n=100).iloc[0:0],
+            lambda df: np.zeros((0, len(PITCH_TYPE_CLASSES))),
+            train_window="2015-2023",
+        )

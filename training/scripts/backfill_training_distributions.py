@@ -111,6 +111,21 @@ def _load_pitch_frame(parquet: Path, model_dir: Path) -> pd.DataFrame:
     return decode_pitch_categoricals(pd.read_parquet(parquet), park_by_int, ptype_by_int)
 
 
+def _load_pitch_type_train_frame() -> pd.DataFrame:
+    """pitch_type_pre: the fold-4 TRAIN slice from the V029 store via local ClickHouse (box-only).
+
+    NOT the bundle's ``training_data.parquet``: for this family that snapshot is the TEST slice
+    (2025), and a reference built from the held-out year would re-aim what drift means - the PSI
+    comparison must be "live vs training", never "live vs 2025".
+    """
+    from bullpen_training.eval.cv_harness import FOLDS
+    from bullpen_training.pitch_type.train import make_pitch_type_feature_loader
+
+    prod_fold = FOLDS[-1]
+    loader = make_pitch_type_feature_loader()
+    return loader(prod_fold.train_start_year, prod_fold.train_end_year, prod_fold.fold_id)
+
+
 def _pitch_feature_cols(model: str) -> tuple[str, ...]:
     """The ONNX input feature order for a pitch head: pre = 31-vector, post = 41-vector.
 
@@ -128,6 +143,22 @@ def _served_proba(model: str, model_dir: Path, frame: pd.DataFrame) -> np.ndarra
         from bullpen_training.battedball.eval.backfill_accuracy import OnnxMlpPredictor
 
         return OnnxMlpPredictor(model_dir).predict_proba(frame)
+
+    if model == "pitch_type_pre":
+        # This family's served chain is ONNX + TEMPERATURE (not isotonic - [183]'s log-loss
+        # guardrail compares models, not calibrators). Probabilities are the LAST ONNX output,
+        # per the export contract (export_onnx.onnx_raw_probabilities).
+        import onnxruntime as ort
+
+        from bullpen_training.pitch_type import PITCH_TYPE_FEATURE_COLUMNS
+        from bullpen_training.pitch_type.temperature import TemperatureCalibrator
+
+        session = ort.InferenceSession(str(model_dir / "model.onnx"))
+        mat = frame[list(PITCH_TYPE_FEATURE_COLUMNS)].to_numpy(np.float32)
+        raw = np.asarray(
+            session.run(None, {session.get_inputs()[0].name: mat})[-1], dtype=np.float64
+        )
+        return TemperatureCalibrator.from_json(model_dir / "calibrator.json").transform(raw)
 
     import onnxruntime as ort
 
@@ -201,6 +232,14 @@ def main(argv: list[str] | None = None) -> int:
     # 1. request-space frame (family source).
     if args.model == "battedball_outcome":
         frame = _load_battedball_frame(_parse_seasons(args.seasons), args.container)
+    elif args.model == "pitch_type_pre":
+        if args.training_parquet is not None:
+            ap.error(
+                "pitch_type_pre: the bundle's training_data.parquet is the TEST slice for this"
+                " family - baselines come from the V029 TRAIN slice via local ClickHouse, so"
+                " do not pass --training-parquet"
+            )
+        frame = _load_pitch_type_train_frame()
     else:
         if args.training_parquet is None:
             ap.error(f"{args.model} requires --training-parquet")
@@ -221,10 +260,21 @@ def main(argv: list[str] | None = None) -> int:
     ]
     if empty:
         print(f"  WARNING: empty continuous sample (all-null source) for: {empty}")
+    # pitch_type's fold-4 train slice is ~5M rows; cap the served-inference pass the same
+    # deterministic way native emission does (evenly-spaced, never random) so backfilled and
+    # native prediction blocks describe the same selection. The feature block above always
+    # reads the FULL frame.
+    pred_frame = frame
+    if args.model == "pitch_type_pre":
+        from bullpen_training.pitch_type.baselines import PREDICTION_ROW_CAP
+
+        if len(frame) > PREDICTION_ROW_CAP:
+            idx = np.linspace(0, len(frame) - 1, PREDICTION_ROW_CAP).astype(np.int64)
+            pred_frame = frame.iloc[idx]
     proba = (
         np.load(args.proba_npy)
         if args.proba_npy is not None
-        else _served_proba(args.model, args.model_dir, frame)
+        else _served_proba(args.model, args.model_dir, pred_frame)
     )
     prediction_block = compute_prediction_distribution(proba, cfg.class_labels, args.max_sample)
 
