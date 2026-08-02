@@ -2,13 +2,19 @@ package net.thebullpen.baseball.api.ops;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import net.thebullpen.baseball.api.dto.ModelAccuracyScorecard;
 import net.thebullpen.baseball.api.dto.OpsEventsPage;
+import net.thebullpen.baseball.api.dto.RollingAccuracyResponse;
+import net.thebullpen.baseball.api.dto.RollingAccuracyResponse.DailyBucket;
+import net.thebullpen.baseball.api.dto.RollingAccuracyResponse.ModelRollingAccuracy;
 import net.thebullpen.baseball.data.OpsEventsRepository;
 import net.thebullpen.baseball.data.PredictionLogRepository;
+import net.thebullpen.baseball.data.RollingAccuracyRepository;
 import net.thebullpen.baseball.domain.LatencyStat;
+import net.thebullpen.baseball.domain.RollingAccuracyBucket;
 import net.thebullpen.baseball.drift.DriftMetricsRepository;
 import net.thebullpen.baseball.drift.TaggedDriftMetric;
 import net.thebullpen.baseball.inference.routing.RoutingConfig;
@@ -66,6 +72,10 @@ public class OpsController {
   // is a full-table-scan DoS on an anonymous public read. Inline check (not class @Validated) so it
   // enforces under standaloneSetup, matching PlayerController's documented pattern.
   private static final int LATENCY_MAX_DAYS = 365;
+  private static final int ROLLING_ACCURACY_MIN_DAYS = 1;
+  // 30 caps the truth-join scan; beyond the 14-day pitches_live TTL there is no joinable truth
+  // anyway, so a larger window would widen the prediction_log scan for zero additional signal.
+  private static final int ROLLING_ACCURACY_MAX_DAYS = 30;
 
   private final DriftMetricsRepository driftRepo;
   private final RoutingRepository routingRepo;
@@ -74,6 +84,7 @@ public class OpsController {
   private final OpsEventsRepository opsEvents;
   private final PredictionLogRepository predictionLog;
   private final AccuracyService accuracyService;
+  private final RollingAccuracyRepository rollingAccuracy;
 
   public OpsController(
       @Autowired(required = false) DriftMetricsRepository driftRepo,
@@ -82,7 +93,8 @@ public class OpsController {
       RegistryService registry,
       OpsEventsRepository opsEvents,
       @Autowired(required = false) PredictionLogRepository predictionLog,
-      AccuracyService accuracyService) {
+      AccuracyService accuracyService,
+      @Autowired(required = false) RollingAccuracyRepository rollingAccuracy) {
     this.driftRepo = driftRepo;
     this.routingRepo = routingRepo;
     this.retrain = retrain;
@@ -90,6 +102,7 @@ public class OpsController {
     this.opsEvents = opsEvents;
     this.predictionLog = predictionLog;
     this.accuracyService = accuracyService;
+    this.rollingAccuracy = rollingAccuracy;
   }
 
   /**
@@ -170,6 +183,88 @@ public class OpsController {
       return List.of();
     }
     return predictionLog.latencyQuantiles(days);
+  }
+
+  /**
+   * The /accuracy Live Scorecard: rolling realized top-1 accuracy for all four families over the
+   * trailing ET-day window (default 7, max 30). The two families without live truth SAY WHY ({@code
+   * status: "no_live_truth"} + reason) rather than being omitted - the endpoint's whole point is
+   * that absence is stated, never implied. Champion-served rows only; dedup + join discipline lives
+   * in {@link RollingAccuracyRepository}.
+   *
+   * <p>Honesty constraints carried into the payload: every live figure travels with its n and the
+   * window; pitch_type_pre is a calibrated PRIOR promoted on calibration ([183]) - its top-1 is
+   * supplementary and the frontend captions it as such and floors rendering at n >= 500;
+   * battedball's [163] reality-gap framing is restated in its reason string.
+   */
+  @GetMapping("/rolling-accuracy")
+  public RollingAccuracyResponse rollingAccuracy(
+      @RequestParam(name = "days", defaultValue = "7") int days) {
+    if (days < ROLLING_ACCURACY_MIN_DAYS || days > ROLLING_ACCURACY_MAX_DAYS) {
+      throw new ResponseStatusException(
+          HttpStatus.BAD_REQUEST,
+          "days must be between "
+              + ROLLING_ACCURACY_MIN_DAYS
+              + " and "
+              + ROLLING_ACCURACY_MAX_DAYS);
+    }
+    List<ModelRollingAccuracy> models =
+        List.of(
+            pitchOutcomeEntry("pitch_outcome_pre", days),
+            pitchOutcomeEntry("pitch_outcome_post", days),
+            new ModelRollingAccuracy(
+                "battedball_outcome",
+                "no_live_truth",
+                "prediction_log rows for this family carry no live pitch keys - the served"
+                    + " surface is the park heatmap, a calibrated physics estimate (decision"
+                    + " [163]) - so realized live accuracy is structurally unavailable, not"
+                    + " merely pending",
+                null,
+                null,
+                null),
+            pitchTypeEntry(days));
+    return new RollingAccuracyResponse(days, Instant.now(), models);
+  }
+
+  private ModelRollingAccuracy pitchOutcomeEntry(String modelName, int days) {
+    if (rollingAccuracy == null) {
+      return noTruth(modelName, "analytical store not configured in this environment");
+    }
+    return liveOrEmpty(
+        modelName,
+        rollingAccuracy.pitchOutcomeDaily(modelName, days),
+        "no truth-joined champion predictions in the window (live volume and the 14-day"
+            + " pitches_live TTL bound what is joinable)");
+  }
+
+  private ModelRollingAccuracy pitchTypeEntry(int days) {
+    if (rollingAccuracy == null) {
+      return noTruth("pitch_type_pre", "analytical store not configured in this environment");
+    }
+    return liveOrEmpty(
+        "pitch_type_pre",
+        rollingAccuracy.pitchTypeDaily(days),
+        "promoted 2026-08-02; live predictions are accumulating and the panel's HTTP path logs"
+            + " no pitch keys, so no truth-joinable volume exists yet");
+  }
+
+  private static ModelRollingAccuracy liveOrEmpty(
+      String modelName, List<RollingAccuracyBucket> buckets, String emptyReason) {
+    long n = RollingAccuracyRepository.totalN(buckets);
+    if (n == 0) {
+      return noTruth(modelName, emptyReason);
+    }
+    double top1 = (double) RollingAccuracyRepository.totalHits(buckets) / (double) n;
+    List<DailyBucket> daily =
+        buckets.stream()
+            .filter(b -> b.n() > 0)
+            .map(b -> new DailyBucket(b.date().toString(), b.n(), b.top1()))
+            .toList();
+    return new ModelRollingAccuracy(modelName, "live", null, top1, n, daily);
+  }
+
+  private static ModelRollingAccuracy noTruth(String modelName, String reason) {
+    return new ModelRollingAccuracy(modelName, "no_live_truth", reason, null, null, null);
   }
 
   /**
