@@ -170,25 +170,28 @@ public class LivePitchesRepository {
           + " ORDER BY pred.at_bat_index ASC, pred.pitch_number ASC"
           + " LIMIT ? OFFSET ?";
 
-  // V031's live current-play matchup, argMax'd off the SAME status row so it is always the pair
-  // the poller wrote together - reading them from separate rows could name a batter from one tick
-  // and an at-bat index from another. Spliced into all three status subqueries so the three read
-  // paths cannot drift apart.
+  // V031's live current-play matchup, read as ONE argMax over a TUPLE rather than five parallel
+  // argMax calls. This is not stylistic: ClickHouse's argMax SKIPS rows whose ARG is NULL, so with
+  // per-column argMax the poller's null-clear write (the one that stops the row advertising a
+  // batter who has finished hitting) was silently ignored for the three Nullable columns while the
+  // two LowCardinality ones took the new row's '' - yielding a TORN record, ids from one tick and
+  // handedness from the next, and a stale batter that persisted forever once a game went final.
+  // A tuple is itself never NULL, so it is never skipped, and the five columns' atomicity becomes
+  // an actual guarantee instead of a comment. (status stays a separate argMax: it is
+  // LowCardinality, never NULL, so it resolves to the same max(updated_at) row.)
   private static final String MATCHUP_SUBQUERY_COLS =
-      ", argMax(current_batter_id, updated_at) AS current_batter_id"
-          + ", argMax(current_pitcher_id, updated_at) AS current_pitcher_id"
-          + ", argMax(current_bat_side, updated_at) AS current_bat_side"
-          + ", argMax(current_pitch_hand, updated_at) AS current_pitch_hand"
-          + ", argMax(current_at_bat_index, updated_at) AS current_at_bat_index";
+      ", argMax(tuple(current_batter_id, current_pitcher_id, current_bat_side,"
+          + " current_pitch_hand, current_at_bat_index), updated_at) AS matchup";
 
-  // The matchup columns projected from the joined status alias. A LEFT JOIN miss yields the column
-  // type's default (NULL for the Nullable ids/index, '' for the LowCardinality sides), and the
-  // mapper treats both as absent - so a game with no status row reports no matchup rather than a
-  // matchup of zeroes.
+  // The tuple unpacked from the joined status alias. A LEFT JOIN miss yields the tuple type's
+  // default - (NULL, NULL, '', '', NULL) - which the mapper reads as absent, so a game with no
+  // status row reports no matchup rather than a matchup of zeroes.
   private static final String MATCHUP_SELECT_COLS =
-      ", s.current_batter_id AS current_batter_id, s.current_pitcher_id AS current_pitcher_id,"
-          + " s.current_bat_side AS current_bat_side, s.current_pitch_hand AS current_pitch_hand,"
-          + " s.current_at_bat_index AS current_at_bat_index";
+      ", tupleElement(s.matchup, 1) AS current_batter_id,"
+          + " tupleElement(s.matchup, 2) AS current_pitcher_id,"
+          + " tupleElement(s.matchup, 3) AS current_bat_side,"
+          + " tupleElement(s.matchup, 4) AS current_pitch_hand,"
+          + " tupleElement(s.matchup, 5) AS current_at_bat_index";
 
   // Latest status per game from the poller (step 7b). argMax over the ReplacingMergeTree gives the
   // current status; a LEFT JOIN miss yields '' -> 'UNKNOWN' (the honest pre-poll answer).
@@ -421,11 +424,13 @@ public class LivePitchesRepository {
   /**
    * Upsert a game's status row together with the LIVE current-play matchup (V031).
    *
-   * <p>The two travel in one row on purpose: they are read back with {@code argMax(.., updated_at)}
-   * off the same row, so writing them separately could pair a batter from one tick with an at-bat
-   * index from another. {@code matchup} is null whenever the feed carries no current play
-   * (pre-game, between plays, final) - and that null is WRITTEN, not skipped, so the row stops
-   * advertising a batter who has already finished hitting.
+   * <p>The two travel in one row on purpose: they are read back with a single {@code
+   * argMax(tuple(..), updated_at)} off that row, so writing them separately could pair a batter
+   * from one tick with an at-bat index from another. {@code matchup} is null whenever the feed
+   * carries no current play (pre-game, between plays, final) - and that absence is WRITTEN, as the
+   * 0/'' sentinels, so the row stops advertising a batter who has already finished hitting. It is
+   * written as 0 rather than SQL NULL for a load-bearing reason: argMax SKIPS null args, so a
+   * NULL-cleared matchup is invisible to the read path entirely (see V031).
    */
   public void upsertGameStatus(
       long gameId, LocalDate gameDate, String status, CurrentMatchup matchup) {
@@ -435,11 +440,11 @@ public class LivePitchesRepository {
         gameId,
         gameDate.toString(),
         status,
-        usable ? matchup.batterId() : null,
-        usable ? matchup.pitcherId() : null,
-        usable ? nullToEmpty(matchup.batSide()) : "",
-        usable ? nullToEmpty(matchup.pitchHand()) : "",
-        usable ? matchup.atBatIndex() : null);
+        usable ? matchup.batterId() : 0L,
+        usable ? matchup.pitcherId() : 0L,
+        usable ? nz(matchup.batSide()) : "",
+        usable ? nz(matchup.pitchHand()) : "",
+        usable ? matchup.atBatIndex() : 0);
   }
 
   /**
@@ -574,30 +579,20 @@ public class LivePitchesRepository {
    * The V031 matchup columns, or NULL when they do not describe a usable matchup.
    *
    * <p>Returns null - not a half-empty record - when the ids are absent, so the api omits the whole
-   * object rather than publishing a matchup a consumer would reasonably half-trust. Absent covers
-   * three real shapes that all mean the same thing: SQL NULL (no status row joined, or a
-   * pre-V031/early-GUMBO row), and 0 (the parser's missing-id value, which {@link
-   * CurrentMatchup#isPopulated()} rejects).
+   * object rather than publishing a matchup a consumer would reasonably half-trust. Absent is ONE
+   * shape now that the columns are non-Nullable: 0, which covers a pre-V031 row, an early-GUMBO
+   * tick (the parser's missing-id value), a cleared matchup between plays, and a LEFT JOIN miss
+   * alike. {@link CurrentMatchup#isPopulated()} is the single place that decision lives.
    */
   private static CurrentMatchup readMatchup(ResultSet rs) throws SQLException {
-    long batterId = rs.getLong("current_batter_id");
-    boolean batterNull = rs.wasNull();
-    long pitcherId = rs.getLong("current_pitcher_id");
-    boolean pitcherNull = rs.wasNull();
-    int atBatIndex = rs.getInt("current_at_bat_index");
-    boolean atBatNull = rs.wasNull();
     CurrentMatchup m =
         new CurrentMatchup(
-            batterNull ? null : batterId,
-            pitcherNull ? null : pitcherId,
-            nullToEmpty(rs.getString("current_bat_side")),
-            nullToEmpty(rs.getString("current_pitch_hand")),
-            atBatNull ? null : atBatIndex);
+            rs.getLong("current_batter_id"),
+            rs.getLong("current_pitcher_id"),
+            nz(rs.getString("current_bat_side")),
+            nz(rs.getString("current_pitch_hand")),
+            rs.getInt("current_at_bat_index"));
     return m.isPopulated() ? m : null;
-  }
-
-  private static String nullToEmpty(String s) {
-    return s == null ? "" : s;
   }
 
   /** GameStatus enum name -> display label: IN_PROGRESS -> "In Progress", UNKNOWN -> "Unknown". */

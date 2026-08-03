@@ -139,7 +139,6 @@ public class LivePollingService {
     }
   }
 
-  /** Poll one game: fetch the feed, adopt its status, write new pitches, predict the next pitch. */
   /**
    * The feed's live current-play matchup, or null when it carries no usable one.
    *
@@ -165,6 +164,7 @@ public class LivePollingService {
     return m == null ? "" : m.atBatIndex() + ":" + m.batterId();
   }
 
+  /** Poll one game: fetch the feed, adopt its status, write new pitches, predict the next pitch. */
   void pollGame(long gamePk) {
     LiveGameFeed feed;
     try {
@@ -200,8 +200,10 @@ public class LivePollingService {
         // No parseable gameData.datetime in the feed: the row cannot key into live_game_status,
         // so /v1/games/today will not surface this game (C-3 replay finding, 2026-06-11).
         metrics.incrementParseAnomaly("missing_game_date");
+        // Reworded for the widened condition: this branch now also fires on a MATCHUP move with
+        // prev == current, where "status transition" would misdescribe what was dropped.
         log.debug(
-            "game {} status transition {} -> {} not persisted: feed carried no gameDate",
+            "game {} status/matchup row not persisted (status {} -> {}): feed carried no gameDate",
             gamePk,
             prev,
             current);

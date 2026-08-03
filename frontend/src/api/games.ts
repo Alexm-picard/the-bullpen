@@ -336,12 +336,25 @@ export function nextPitchRequest(
   if (row.baseState == null || row.parkId === "") return null;
 
   // The LIVE matchup names who is actually standing in; the pitch row names who
-  // took the last pitch. They differ exactly when a batter changed - and the
-  // count below comes from the ROW, so mixing a new batter with the previous
-  // at-bat's count would be incoherent. So the matchup is used only when it
-  // describes the SAME at-bat: that admits the pinch hitter (same index, new
-  // batter, and a pinch hitter really does inherit the count) and excludes the
-  // rollover case, where the row's terminal outcome gates the request anyway.
+  // took the last pitch, and the count below is derived from that row. The
+  // comparison of their at-bat indices is ASYMMETRIC, because the two
+  // directions mean opposite things:
+  //
+  //   matchup AHEAD of the row -> POSITIVE EVIDENCE the row's at-bat is over,
+  //     which the row alone cannot supply. Withhold the request entirely. This
+  //     closes three real sequences the row's own terminal-outcome switch below
+  //     cannot see: an inning-ending caught stealing or pickoff on a non-
+  //     terminal count, a two-strike foul BUNT (call codes O/L, which the
+  //     parser maps to "foul"), and a foul tip caught for strike three. Each
+  //     otherwise logs a prediction_log row keyed to a pitch that will never be
+  //     thrown - against the very baseline the drift postmortem reads.
+  //   matchup BEHIND the row -> the game and pitches queries poll on separate
+  //     schedules, so the matchup can legitimately lag by a tick. The row is
+  //     the fresher source; use it.
+  //   equal -> same at-bat, so the matchup's identity and handedness win. This
+  //     admits the pinch hitter (who genuinely inherits the count) and a
+  //     mid-at-bat pitching change (which re-resolves a switch hitter).
+  if (matchup != null && matchup.atBatIndex > row.atBatIndex) return null;
   const live =
     matchup != null && matchup.atBatIndex === row.atBatIndex ? matchup : null;
 
@@ -365,9 +378,12 @@ export function nextPitchRequest(
       if (strikes >= 3) return null; // strikeout - at-bat over
       break;
     case "foul":
-      // A foul never strikes out - with one KNOWN LEAK: the parser collapses foul-TIP call codes
-      // to "foul" too, so a caught foul tip on strike three (an at-bat-ending K) is indistinguishable
-      // from a live foul here and yields one throwaway request for a pitch that is never thrown.
+      // A foul never strikes out - with TWO KNOWN LEAKS, both now closed whenever a live matchup
+      // is available (see the asymmetric guard above): the parser collapses foul-TIP call codes to
+      // "foul", so a caught foul tip on strike three is indistinguishable from a live foul here;
+      // and it maps the foul-BUNT codes O/L to "foul" too, where a two-strike foul bunt IS strike
+      // three - deterministic, not a tracking blip. Either yields one throwaway request for a pitch
+      // that is never thrown.
       // Accepted: rare, one logged row, and unguardable from a single row (the next poll's
       // atBatIndex advance self-corrects the panel).
       if (strikes < 2) strikes += 1;

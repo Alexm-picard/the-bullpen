@@ -9,24 +9,39 @@
 -- api read path, because live_game_status carried nothing but (game_id, game_date, status).
 -- These five columns are that bridge, written by the same per-tick status adopt.
 --
--- NULLABILITY, following V028's split on the sibling table verbatim:
---   * the two ids and at_bat_index are Nullable, NOT DEFAULT 0 - the same reasoning V028 applied
---     to base_state. 0 is a REAL-LOOKING value here (at-bat 0 is the first at-bat of a game, and
---     MlbFeedParser's asLong() yields 0L for a missing matchup id), so DEFAULT 0 would falsely
---     assert "at-bat 0, batter #0" on both pre-migration rows and every early-GUMBO tick. NULL
---     reads back honestly and the api surfaces the whole matchup as absent.
---   * bat_side / pitch_hand mirror V028's pitch_hand / bat_side idiom exactly:
---     LowCardinality(String) DEFAULT '', where '' marks a pre-migration or unpopulated row and the
---     row mapper leaves it as ''. bat_side may be 'S' (switch hitter) - resolved to L|R downstream
---     against the CURRENT pitcher, which is the thing a last-pitch lookup cannot do.
+-- NULLABILITY: all five are NON-Nullable with 0 / '' sentinels, applying V028's RULE rather than
+-- copying its conclusion. The rule V028 encodes is "is this type's zero distinguishable from
+-- absence?" - for base_state it is not (0 means bases-empty, a real state), so Nullable was right
+-- there. For MLB PLAYER IDS the opposite holds: 0 is already this repo's established absence
+-- sentinel (V020's home/away_pitcher_id and V022's home/away_player_id are both UInt32 DEFAULT 0,
+-- MlbFeedParser's asLong() yields 0L for a missing id, and CurrentMatchup.isPopulated() already
+-- rejects it), so DEFAULT 0 asserts nothing false. at_bat_index rides along because it never
+-- carries absence on its own - isPopulated() gates on the IDS, so index 0 is only ever read when
+-- a real matchup is present.
+--
+-- The deciding factor is not style, it is that a Nullable column CANNOT EXPRESS "the matchup was
+-- cleared" on this read path at all: ClickHouse's argMax SKIPS rows whose argument is NULL, so a
+-- null-clear write was stored and then silently ignored by the read, leaving a finished batter
+-- advertised for the rest of the game and past FINAL - and tearing the record, since the two
+-- non-Nullable side columns DID take the newer row. Reproduced red in CI on this branch before
+-- the fix (LivePitchesRepositoryIT.currentMatchup_nulls_out_when_the_play_completes).
+--
+-- bat_side / pitch_hand keep V028's idiom verbatim: LowCardinality(String) DEFAULT '', where ''
+-- marks an unpopulated row. bat_side may be 'S' (switch hitter) - resolved to L|R downstream
+-- against the CURRENT pitcher, which is the thing a last-pitch lookup cannot do.
+--
+-- at_bat_index is UInt16, matching every other at_bat_index in this schema (V002/V003/V005/V011/
+-- V015/V029) rather than the work order's literal Int32.
 --
 -- WRITE CADENCE: live_game_status is a ReplacingMergeTree(updated_at) ORDER BY (game_id), so each
 -- upsert supersedes the prior row and the argMax(col, updated_at) reads take the latest. The
 -- matchup changes ~once per at-bat while the status changes a handful of times per game, so the
 -- poller's write condition widens from status-transition-only to "status transitioned OR the
--- matchup changed" - roughly 80 rows per game rather than one per 5s tick.
+-- matchup changed". Two writes per at-bat (the matchup populates, then nulls out when the play
+-- completes and currentPlay.isComplete latches), so ~150-160 rows per game rather than one per 5s
+-- tick - trivial for an RMT keyed on game_id alone.
 --
--- Additive ALTER; no backfill DML - rows written before this migration read NULL/'' and the api
+-- Additive ALTER; no backfill DML - rows written before this migration read 0 / '' and the api
 -- reports the matchup as absent, which is the truth about them.
 --
 -- SNAPSHOT PRECONDITION (CLAUDE.md hard rule): any DROP/ALTER against prod ClickHouse must be
@@ -37,8 +52,8 @@
 --
 -- ClickHouseMigrationRunner keys applied migrations by filename and checksums them; this is a NEW
 -- V*.sql file (never an edit to an applied one).
-ALTER TABLE live_game_status ADD COLUMN IF NOT EXISTS current_batter_id Nullable(UInt32) AFTER status;
-ALTER TABLE live_game_status ADD COLUMN IF NOT EXISTS current_pitcher_id Nullable(UInt32) AFTER current_batter_id;
+ALTER TABLE live_game_status ADD COLUMN IF NOT EXISTS current_batter_id UInt32 DEFAULT 0 AFTER status;
+ALTER TABLE live_game_status ADD COLUMN IF NOT EXISTS current_pitcher_id UInt32 DEFAULT 0 AFTER current_batter_id;
 ALTER TABLE live_game_status ADD COLUMN IF NOT EXISTS current_bat_side LowCardinality(String) DEFAULT '' AFTER current_pitcher_id;
 ALTER TABLE live_game_status ADD COLUMN IF NOT EXISTS current_pitch_hand LowCardinality(String) DEFAULT '' AFTER current_bat_side;
-ALTER TABLE live_game_status ADD COLUMN IF NOT EXISTS current_at_bat_index Nullable(Int32) AFTER current_pitch_hand;
+ALTER TABLE live_game_status ADD COLUMN IF NOT EXISTS current_at_bat_index UInt16 DEFAULT 0 AFTER current_pitch_hand;

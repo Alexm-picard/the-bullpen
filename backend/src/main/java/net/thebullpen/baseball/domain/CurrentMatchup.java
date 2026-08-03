@@ -36,6 +36,17 @@ public record CurrentMatchup(
     Long batterId, Long pitcherId, String batSide, String pitchHand, Integer atBatIndex) {
 
   /**
+   * Normalises the two side codes to {@code ""}, making this record's own contract true rather than
+   * aspirational: the parser yields null for a missing code while the storage layer yields {@code
+   * ""}, so without this an in-flight record and the one read back would not be {@link #equals}
+   * despite describing the same matchup.
+   */
+  public CurrentMatchup {
+    batSide = batSide == null ? "" : batSide;
+    pitchHand = pitchHand == null ? "" : pitchHand;
+  }
+
+  /**
    * True when this carries an actually-usable matchup - both ids present and non-zero.
    *
    * <p>Zero is the parser's missing-id value ({@code JsonNode.asLong()} yields {@code 0L}, not

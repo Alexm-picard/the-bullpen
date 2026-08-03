@@ -619,6 +619,103 @@ class LivePollingServiceTest {
   }
 
   /** A current play with an explicit batter id, for pinch-hitter / at-bat-rollover fixtures. */
+  @Test
+  void aMissingGameDateMustNotPoisonTheMatchupKey() throws Exception {
+    // T-1: lastMatchupKey.put lives INSIDE the gameDate guard on purpose. Hoisting it out
+    // compiles and passes every other test here, but permanently drops a matchup whenever one
+    // tick lacks gameDate - the poller would believe it had already written that matchup.
+    MlbStatsApiClient client = mock(MlbStatsApiClient.class);
+    LivePitchesRepository repo = mock(LivePitchesRepository.class);
+    LivePitchPredictor predictor = mock(LivePitchPredictor.class);
+    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    LiveNextPitch np = nextPitchWithBatter(3, 1, 555000L);
+    when(client.fetchLiveFeed(822810L))
+        .thenReturn(
+            new LiveGameFeed(
+                822810L, GameStatus.IN_PROGRESS, null, 1, 2, "TOR", "BAL", List.of(), np))
+        .thenReturn(feed(List.of(pitch(1, 1)), np)); // same matchup, gameDate now present
+
+    LivePollingService svc = service(client, repo, predictor);
+    svc.pollGame(822810L); // dropped: no gameDate
+    svc.pollGame(822810L); // must NOT be considered already-written
+
+    ArgumentCaptor<CurrentMatchup> captor = ArgumentCaptor.forClass(CurrentMatchup.class);
+    verify(repo, times(1)).upsertGameStatus(eq(822810L), any(), any(), captor.capture());
+    assertThat(captor.getValue().batterId()).isEqualTo(555000L);
+  }
+
+  @Test
+  void aRepeatedNullMatchupDoesNotRewriteEveryTick() throws Exception {
+    // T-2: the write-amplification guard for the NULL side. isComplete latches for the whole
+    // between-plays gap, so "" must be as stable a key as a populated one.
+    MlbStatsApiClient client = mock(MlbStatsApiClient.class);
+    LivePitchesRepository repo = mock(LivePitchesRepository.class);
+    LivePitchPredictor predictor = mock(LivePitchPredictor.class);
+    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(client.fetchLiveFeed(822810L))
+        .thenReturn(feed(List.of(pitch(1, 1)), nextPitch(1, 2)))
+        .thenReturn(feed(List.of(pitch(1, 1)), null))
+        .thenReturn(feed(List.of(pitch(1, 1)), null));
+
+    LivePollingService svc = service(client, repo, predictor);
+    svc.pollGame(822810L);
+    svc.pollGame(822810L);
+    svc.pollGame(822810L);
+
+    verify(repo, times(2)).upsertGameStatus(anyLong(), any(), any(), any());
+  }
+
+  @Test
+  void aMatchupMoveOnTheSameTickAsAStatusTransitionWritesExactlyOnce() throws Exception {
+    // T-3: the condition is an OR of independent reasons - it must not double-write when both
+    // fire together.
+    MlbStatsApiClient client = mock(MlbStatsApiClient.class);
+    LivePitchesRepository repo = mock(LivePitchesRepository.class);
+    LivePitchPredictor predictor = mock(LivePitchPredictor.class);
+    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(client.fetchLiveFeed(822810L))
+        .thenReturn(feed(List.of(pitch(1, 1)), nextPitch(1, 2)))
+        .thenReturn(
+            new LiveGameFeed(
+                822810L,
+                GameStatus.MID_INNING,
+                LocalDate.of(2026, 6, 5),
+                1,
+                2,
+                "TOR",
+                "BAL",
+                List.of(pitch(1, 1)),
+                nextPitchWithBatter(2, 1, 640000L)));
+
+    LivePollingService svc = service(client, repo, predictor);
+    svc.pollGame(822810L);
+    svc.pollGame(822810L);
+
+    ArgumentCaptor<CurrentMatchup> captor = ArgumentCaptor.forClass(CurrentMatchup.class);
+    verify(repo, times(2)).upsertGameStatus(anyLong(), any(), any(), captor.capture());
+    assertThat(captor.getAllValues().get(1).batterId()).isEqualTo(640000L);
+  }
+
+  @Test
+  void theFirstPollAfterARestartCarriesTheMatchupNotJustAStatus() throws Exception {
+    // T-4: after a restart both statusPersisted and lastMatchupKey are empty, so a write happens
+    // for two independent reasons - a restart test that only asserts "a write occurred" passes
+    // even with the matchup plumbing deleted. Assert the write CARRIES the matchup.
+    MlbStatsApiClient client = mock(MlbStatsApiClient.class);
+    LivePitchesRepository repo = mock(LivePitchesRepository.class);
+    LivePitchPredictor predictor = mock(LivePitchPredictor.class);
+    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(client.fetchLiveFeed(822810L))
+        .thenReturn(feed(List.of(pitch(1, 1)), nextPitchWithBatter(4, 2, 610000L)));
+
+    service(client, repo, predictor).pollGame(822810L); // a fresh process
+
+    ArgumentCaptor<CurrentMatchup> captor = ArgumentCaptor.forClass(CurrentMatchup.class);
+    verify(repo).upsertGameStatus(eq(822810L), any(), any(), captor.capture());
+    assertThat(captor.getValue()).isNotNull();
+    assertThat(captor.getValue().batterId()).isEqualTo(610000L);
+  }
+
   private static LiveNextPitch nextPitchWithBatter(int atBat, int pitchNumber, long batterId) {
     return new LiveNextPitch(
         822810L,

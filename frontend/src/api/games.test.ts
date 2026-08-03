@@ -245,12 +245,25 @@ describe("nextPitchRequest with the LIVE current matchup (V031)", () => {
     expect(vsRighty?.batterStand).toBe("L");
   });
 
-  it("IGNORES a matchup from a different at-bat rather than mixing it with this count", () => {
-    // The coherence guard. The count comes from the row; a matchup whose at-bat has already
-    // advanced would pair a new batter with the previous at-bat's count - worse than either
-    // source alone. The row's own identity is used instead.
-    const req = nextPitchRequest(row(), GAME_DATE, matchup({ atBatIndex: 6 }));
+  it("WITHHOLDS the request when the matchup has moved PAST the row's at-bat", () => {
+    // The asymmetric guard, direction 1. A matchup ahead of the row is positive evidence the
+    // row's at-bat is over - information the row cannot supply about itself. This closes three
+    // sequences the row's own terminal-outcome switch cannot see (inning-ending caught stealing
+    // or pickoff on a live count, a two-strike foul BUNT, a foul tip caught for strike three),
+    // each of which otherwise logs a prediction for a pitch that will never be thrown.
+    expect(
+      nextPitchRequest(row(), GAME_DATE, matchup({ atBatIndex: 6 })),
+    ).toBeNull();
+  });
+
+  it("falls back to the row when the matchup LAGS it, rather than withholding", () => {
+    // Direction 2. The game and pitches queries poll on separate schedules, so the matchup can
+    // legitimately be a tick behind; here the row is the fresher source and withholding would
+    // gate the panel for no reason.
+    const req = nextPitchRequest(row(), GAME_DATE, matchup({ atBatIndex: 4 }));
+    expect(req).not.toBeNull();
     expect(req?.batterId).toBe(PITCH.batterId);
+    expect(req?.pitcherId).toBe(PITCH.pitcherId);
     expect(req?.pitcherThrows).toBe("R"); // the row's, not the matchup's "L"
   });
 

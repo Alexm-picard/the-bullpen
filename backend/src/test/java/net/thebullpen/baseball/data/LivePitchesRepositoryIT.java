@@ -471,7 +471,11 @@ class LivePitchesRepositoryIT {
         1,
         "pitch_outcome_pre",
         "{\"probabilities\":{\"ball\":0.6},\"winner\":\"ball\"}");
-    Thread.sleep(5); // the POST row lands strictly later
+    // live_game_status.updated_at is DateTime (SECOND resolution) and it is the RMT version
+    // column, so a 5ms gap leaves both writes in the same second and argMax's tie-break is
+    // documented-nondeterministic. Cross a real second boundary so this asserts the ordering the
+    // schema actually guarantees. Prod is safe by cadence (12s polls), not by this sleep.
+    Thread.sleep(1100); // the POST row lands strictly later
     insertPrediction(
         824753L,
         1,
@@ -493,7 +497,11 @@ class LivePitchesRepositoryIT {
     // the latest one by request_at (argMax), not double-count or pick an arbitrary row.
     repo.insertPitches(parseFixture());
     insertPrediction(824753L, 1, 1, "{\"probabilities\":{\"ball\":0.9},\"winner\":\"ball\"}");
-    Thread.sleep(5); // ensure a strictly later request_at
+    // live_game_status.updated_at is DateTime (SECOND resolution) and it is the RMT version
+    // column, so a 5ms gap leaves both writes in the same second and argMax's tie-break is
+    // documented-nondeterministic. Cross a real second boundary so this asserts the ordering the
+    // schema actually guarantees. Prod is safe by cadence (12s polls), not by this sleep.
+    Thread.sleep(1100); // ensure a strictly later request_at
     insertPrediction(824753L, 1, 1, "{\"probabilities\":{\"in_play\":0.7},\"winner\":\"in_play\"}");
 
     assertEquals(
@@ -647,7 +655,11 @@ class LivePitchesRepositoryIT {
     LocalDate date = LocalDate.of(2026, 6, 6);
     insertPitch(702L, date, 1, 1, "BOS", "NYY", 1);
     repo.upsertGameStatus(702L, date, "SCHEDULED", null);
-    Thread.sleep(5);
+    // live_game_status.updated_at is DateTime (SECOND resolution) and it is the RMT version
+    // column, so a 5ms gap leaves both writes in the same second and argMax's tie-break is
+    // documented-nondeterministic. Cross a real second boundary so this asserts the ordering the
+    // schema actually guarantees. Prod is safe by cadence (12s polls), not by this sleep.
+    Thread.sleep(1100);
     repo.upsertGameStatus(702L, date, "IN_PROGRESS", null); // a transition
 
     assertEquals("IN_PROGRESS", repo.findGame(702L).orElseThrow().status());
@@ -693,7 +705,11 @@ class LivePitchesRepositoryIT {
     insertPitch(712L, date, 1, 1, "BOS", "NYY", 1);
     repo.upsertGameStatus(
         712L, date, "IN_PROGRESS", new CurrentMatchup(676391L, 689296L, "R", "R", 7));
-    Thread.sleep(5);
+    // live_game_status.updated_at is DateTime (SECOND resolution) and it is the RMT version
+    // column, so a 5ms gap leaves both writes in the same second and argMax's tie-break is
+    // documented-nondeterministic. Cross a real second boundary so this asserts the ordering the
+    // schema actually guarantees. Prod is safe by cadence (12s polls), not by this sleep.
+    Thread.sleep(1100);
     repo.upsertGameStatus(712L, date, "IN_PROGRESS", null); // play complete
 
     assertNull(
@@ -707,7 +723,11 @@ class LivePitchesRepositoryIT {
     insertPitch(713L, date, 1, 1, "BOS", "NYY", 1);
     repo.upsertGameStatus(
         713L, date, "IN_PROGRESS", new CurrentMatchup(676391L, 689296L, "R", "R", 7));
-    Thread.sleep(5);
+    // live_game_status.updated_at is DateTime (SECOND resolution) and it is the RMT version
+    // column, so a 5ms gap leaves both writes in the same second and argMax's tie-break is
+    // documented-nondeterministic. Cross a real second boundary so this asserts the ordering the
+    // schema actually guarantees. Prod is safe by cadence (12s polls), not by this sleep.
+    Thread.sleep(1100);
     repo.upsertGameStatus(
         713L, date, "IN_PROGRESS", new CurrentMatchup(700000L, 689296L, "L", "R", 8));
 

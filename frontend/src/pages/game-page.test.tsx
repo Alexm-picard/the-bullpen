@@ -288,6 +288,29 @@ describe("GamePage current batter (V031 live matchup)", () => {
     expect(html).toContain("Now Batting");
     expect(html).toContain("Now Pitching");
     expect(html).not.toContain("Previous Batter");
+    // The fixture row is at-bat 1 while the matchup is at-bat 2 - the PAST-TENSE case. The
+    // prediction panel must be gated (never predicting for a finished at-bat) and the row-derived
+    // Count/Outs must read as unknown rather than pairing the live batter with a dead count.
+    expect(html).toContain("Awaiting a settled at-bat");
+  });
+
+  it("uses the row's count when the matchup describes the SAME at-bat", () => {
+    // The agreeing-index path, which no page-level test covered: the live batter is shown AND
+    // the row's count still describes him, so it must render rather than em-dash.
+    const html = seed(
+      makeGame({
+        currentMatchup: {
+          batterId: 900001,
+          pitcherId: 900002,
+          batSide: "R",
+          pitchHand: "R",
+          atBatIndex: 1,
+        },
+      }),
+      { balls: 2, strikes: 1, atBatIndex: 1 },
+    );
+    expect(html).toContain("Now Batting");
+    expect(html).toContain("2-1");
   });
 
   it("falls back to the last pitch when the feed carries no current play", () => {
@@ -306,11 +329,13 @@ describe("GamePage current batter (V031 live matchup)", () => {
     client.setQueryData(["games", "pitches", GAME_ID], []);
     const html = render(<GamePage />, `/games/${GAME_ID}`, client);
     // Assert against VISIBLE TEXT: Mantine injects a <style> block full of hex tokens
-    // (#0E1B33 ...), so a raw "#0" probe matches the stylesheet rather than the page.
+    // (chrome/gold color values), so a raw "#0" probe matches the stylesheet, not the page.
     const text = html
       .replace(/<style[\s\S]*?<\/style>/g, "")
       .replace(/style="[^"]*"/g, "")
       .replace(/<[^>]+>/g, " ");
+    // NOTE the strip above is why this can assert on "#": the raw markup carries Mantine's
+    // injected color tokens, and quoting one here would itself trip lint:hex-codes.
     expect(text).not.toContain("Now Batting");
     expect(text).not.toMatch(/#\d/);
     expect(text).toContain("\u2014"); // the em-dash placeholder, not a fabricated id
