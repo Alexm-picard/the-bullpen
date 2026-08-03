@@ -167,7 +167,7 @@ All closed unless marked open.
 | Behavioral alert-rule testing lane (`promtool test rules` in CI)            | DONE - PR #384          |
 | Coverage-gap GROWTH alert (level accepted, growth is loss)                  | DONE - PR #388          |
 | Timezone-basis sweep of CH IT fixtures (server-tz `today()` vs ET bounds)   | OPEN - issue #392       |
-| Manual `pitches` backfill run (the growth alert pages until it lands)       | OPEN - box ceremony     |
+| Manual `pitches` backfill run | DONE - box, 2026-08-03: coverage gap 54d -> 0.0, and #388 completed its first ORGANIC fire-and-resolve cycle (paged on real growth, resolved on real closure - the alert doing exactly its job on day one) |
 | Freshness thresholds locked via /decide (3d age, 26h stamp are provisional) | OPEN - decision backlog |
 
 ## What this cost, honestly
