@@ -11,6 +11,12 @@
 > [169]'s natural-event-supersedes clause stands: if a real in-season drift
 > event fires and is confirmed, its write-up supersedes this one and this
 > document reclassifies as a drill report.
+>
+> **CLAUSE EXECUTED 2026-08-03.** The confirmed natural event arrived: two
+> months of silent Tier-3 form staleness on the live pitch path, detected by
+> the data-anchored staleness refusal, fixed via decision [186]. This
+> document is now a DRILL REPORT; the flagship drift postmortem is
+> [`2026-08-03_pitcher-form-silent-staleness.md`](2026-08-03_pitcher-form-silent-staleness.md).
 
 # Postmortem: live-path induced feature drift on `battedball_outcome` (E-2)
 
