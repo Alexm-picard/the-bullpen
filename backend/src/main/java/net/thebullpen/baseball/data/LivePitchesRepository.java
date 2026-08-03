@@ -422,21 +422,20 @@ public class LivePitchesRepository {
   }
 
   /**
-   * Upsert a game's current status; the poller (worker) calls this on a transition. The
-   * ReplacingMergeTree supersedes the prior row and findGamesForDate / findGame surface the latest
-   * via argMax. {@code game_date} is bound as an ISO-8601 String (clickhouse-jdbc inlines a bare
-   * date as arithmetic - same lesson as the pitches insert).
-   */
-  /**
    * Upsert a game's status row together with the LIVE current-play matchup (V031).
+   *
+   * <p>Called by the poller (worker) on a status transition, on its first poll of a game, or when
+   * the matchup moves. The ReplacingMergeTree supersedes the prior row and findGamesForDate /
+   * findGame surface the latest. {@code game_date} is bound as an ISO-8601 String (clickhouse-jdbc
+   * inlines a bare date as arithmetic - same lesson as the pitches insert).
    *
    * <p>The two travel in one row on purpose: they are read back with a single {@code
    * argMax(tuple(..), updated_at)} off that row, so writing them separately could pair a batter
    * from one tick with an at-bat index from another. {@code matchup} is null whenever the feed
    * carries no current play (pre-game, between plays, final) - and that absence is WRITTEN, as the
-   * 0/'' sentinels, so the row stops advertising a batter who has already finished hitting. It is
-   * written as 0 rather than SQL NULL for a load-bearing reason: argMax SKIPS null args, so a
-   * NULL-cleared matchup is invisible to the read path entirely (see V031).
+   * 0/'' sentinels, so the row stops advertising a batter who has already finished hitting. The
+   * sentinels are not a choice made here: the V031 columns are non-Nullable, so absence has exactly
+   * one storage shape, and {@code isPopulated()} is what rejects it on the way back out.
    */
   public void upsertGameStatus(
       long gameId, LocalDate gameDate, String status, CurrentMatchup matchup) {

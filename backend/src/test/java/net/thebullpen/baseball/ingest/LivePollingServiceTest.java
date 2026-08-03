@@ -2,10 +2,12 @@ package net.thebullpen.baseball.ingest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -618,21 +620,19 @@ class LivePollingServiceTest {
         next);
   }
 
-  /** A current play with an explicit batter id, for pinch-hitter / at-bat-rollover fixtures. */
   @Test
-  void aMatchupWithRealIdsButNoAtBatIndexIsAbsent_notAnNpe() throws Exception {
+  void aMatchupWithRealIdsButNoAtBatIndexIsAbsent() throws Exception {
     // isPopulated() is TOTAL over the at-bat index for a load-bearing reason: the write path's
     // `usable ? matchup.atBatIndex() : 0` mixes Integer with int, so binary numeric promotion
     // unboxes - a partial guard would pass this record through and NPE on the write. Not
     // reachable from the poller today (LiveNextPitch.atBatIndex is a primitive), but the record
     // is public in domain/ and its contract permits it.
+    // The NPE half of this belongs on the REAL write path, not here: an earlier version asserted
+    // doesNotThrowAnyException against a mock repository, whose unstubbed void method is a no-op,
+    // so it passed identically with the guard deleted - it advertised coverage it did not have.
+    // LivePitchesRepositoryIT.aNullAtBatIndexMatchupIsStoredAsAbsent_notAnNpe carries that.
     CurrentMatchup noIndex = new CurrentMatchup(676391L, 689296L, "R", "R", null);
     assertThat(noIndex.isPopulated()).isFalse();
-
-    LivePitchesRepository repo = mock(LivePitchesRepository.class);
-    assertThatCode(
-            () -> repo.upsertGameStatus(1L, LocalDate.of(2026, 6, 5), "IN_PROGRESS", noIndex))
-        .doesNotThrowAnyException();
   }
 
   @Test
@@ -658,6 +658,45 @@ class LivePollingServiceTest {
     ArgumentCaptor<CurrentMatchup> captor = ArgumentCaptor.forClass(CurrentMatchup.class);
     verify(repo, times(1)).upsertGameStatus(eq(822810L), any(), any(), captor.capture());
     assertThat(captor.getValue().batterId()).isEqualTo(555000L);
+  }
+
+  @Test
+  void aFailedStatusWriteMustNotSuppressTheRetry() throws Exception {
+    // T-1's sibling: lastMatchupKey.put sits AFTER the upsert on purpose. Hoisting it above -
+    // which reads as harmless bookkeeping - records the matchup as written even though the write
+    // threw, and the poller then skips it forever because the key already matches.
+    //
+    // Isolating that requires THREE ticks with a prior SUCCESSFUL write. A first-write failure
+    // cannot show it: a throwing upsert also skips statusPersisted.add, so the next tick rewrites
+    // for that reason whatever the key ordering is, and the assertion passes on a mutant. Only
+    // once the game is already in statusPersisted, with the status steady, is lastMatchupKey the
+    // sole thing that can suppress the retry.
+    MlbStatsApiClient client = mock(MlbStatsApiClient.class);
+    LivePitchesRepository repo = mock(LivePitchesRepository.class);
+    LivePitchPredictor predictor = mock(LivePitchPredictor.class);
+    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    doNothing()
+        .doThrow(new RuntimeException("clickhouse down"))
+        .doNothing()
+        .when(repo)
+        .upsertGameStatus(anyLong(), any(), any(), any());
+    LiveNextPitch first = nextPitchWithBatter(1, 1, 111000L);
+    LiveNextPitch second = nextPitchWithBatter(2, 1, 222000L);
+    when(client.fetchLiveFeed(822810L))
+        .thenReturn(feed(List.of(pitch(1, 1)), first)) // writes, and is remembered
+        .thenReturn(feed(List.of(pitch(1, 1)), second)) // new matchup; the write throws
+        .thenReturn(feed(List.of(pitch(1, 1)), second)); // same matchup - must still be retried
+
+    LivePollingService svc = service(client, repo, predictor);
+    svc.pollGame(822810L);
+    // pollGame propagates; in production tick()'s per-game catch absorbs it and the loop moves to
+    // the next game. Asserting the throw here keeps that boundary visible.
+    assertThatThrownBy(() -> svc.pollGame(822810L)).hasMessage("clickhouse down");
+    svc.pollGame(822810L);
+
+    // Three attempts. With the put hoisted above the upsert this is 2: tick 3 sees a key that
+    // matches a matchup that was never actually stored, and the batter freezes for the game.
+    verify(repo, times(3)).upsertGameStatus(eq(822810L), any(), any(), any());
   }
 
   @Test
@@ -732,6 +771,7 @@ class LivePollingServiceTest {
     assertThat(captor.getValue().batterId()).isEqualTo(610000L);
   }
 
+  /** A current play with an explicit batter id, for pinch-hitter / at-bat-rollover fixtures. */
   private static LiveNextPitch nextPitchWithBatter(int atBat, int pitchNumber, long batterId) {
     return new LiveNextPitch(
         822810L,

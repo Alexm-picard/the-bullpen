@@ -19,9 +19,10 @@
 -- carries absence on its own - isPopulated() gates on the IDS, so index 0 is only ever read when
 -- a real matchup is present.
 --
--- The deciding factor is not style, it is that a Nullable column CANNOT EXPRESS "the matchup was
--- cleared" on this read path at all: ClickHouse's argMax SKIPS rows whose argument is NULL, so a
--- null-clear write was stored and then silently ignored by the read, leaving a finished batter
+-- The deciding factor is not style. Under the PER-COLUMN argMax read this shipped with, a Nullable
+-- column could not express "the matchup was cleared" at all: ClickHouse's argMax SKIPS rows whose
+-- argument is NULL, so a null-clear write was stored and then silently ignored by the read, leaving
+-- a finished batter
 -- advertised for the rest of the game and past FINAL - and tearing the record, since the two
 -- non-Nullable side columns DID take the newer row. Reproduced red in CI on this branch before
 -- the fix (LivePitchesRepositoryIT.currentMatchup_nulls_out_when_the_play_completes).

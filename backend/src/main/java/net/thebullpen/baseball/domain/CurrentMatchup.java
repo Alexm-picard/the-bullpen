@@ -33,10 +33,11 @@ package net.thebullpen.baseball.domain;
  * @param pitchHand {@code "R"} or {@code "L"}; {@code ""} when unpopulated.
  * @param atBatIndex the feed's at-bat index for the current play; null when unknown, which makes
  *     the whole record un-populated. NOT normalised to 0, because index 0 is a REAL at-bat (a
- *     game's first) and would assert a specific one. Reads back as 0 only from storage, where
- *     {@link #isPopulated()}'s id checks have already rejected the row. Pairs with {@code batterId}
- *     as the natural change key - a PINCH HITTER keeps the at-bat index and changes the batter, so
- *     neither field alone detects every matchup change.
+ *     game's first) and normalising would assert that specific one. Storage cannot express the null
+ *     (the V031 column is non-Nullable), so a record read back always carries an index and the id
+ *     checks alone decide absence there; null is reachable only in-flight. Pairs with {@code
+ *     batterId} as the natural change key - a PINCH HITTER keeps the at-bat index and changes the
+ *     batter, so neither field alone detects every matchup change.
  */
 public record CurrentMatchup(
     Long batterId, Long pitcherId, String batSide, String pitchHand, Integer atBatIndex) {
@@ -53,7 +54,8 @@ public record CurrentMatchup(
   }
 
   /**
-   * True when this carries an actually-usable matchup - both ids present and non-zero.
+   * True when this carries an actually-usable matchup - both ids present and non-zero, AND the
+   * at-bat index known.
    *
    * <p>Zero is the parser's missing-id value ({@code JsonNode.asLong()} yields {@code 0L}, not
    * null), so it is checked here rather than trusted: a matchup naming batter 0 is an absent

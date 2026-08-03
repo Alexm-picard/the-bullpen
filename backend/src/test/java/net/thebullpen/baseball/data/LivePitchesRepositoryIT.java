@@ -749,6 +749,23 @@ class LivePitchesRepositoryIT {
   }
 
   @Test
+  void aNullAtBatIndexMatchupIsStoredAsAbsent_notAnNpe() throws Exception {
+    // The ONLY test that drives the real write path with a null at-bat index, which is the site
+    // isPopulated()'s totality actually protects: `usable ? matchup.atBatIndex() : 0` mixes
+    // Integer with int, so binary numeric promotion UNBOXES and a guard covering only the ids
+    // would NPE here. The unit-test twin can assert isPopulated() but not this - a mocked
+    // repository's void method is a no-op and swallows the difference.
+    LocalDate date = LocalDate.of(2026, 6, 6);
+    insertPitch(715L, date, 1, 1, "BOS", "NYY", 1);
+    repo.upsertGameStatus(
+        715L, date, "IN_PROGRESS", new CurrentMatchup(676391L, 689296L, "R", "R", null));
+
+    assertNull(
+        repo.findGame(715L).orElseThrow().currentMatchup(),
+        "a matchup whose at-bat is unknown is not a usable matchup");
+  }
+
+  @Test
   void game_time_utc_round_trips_under_a_non_utc_jvm_timezone() {
     // Regression for the +4h game-time skew. game_time_utc is DateTime('UTC') (V023); the read
     // must NOT depend on the JVM default zone. The bug shipped because CI runs ClickHouse AND the

@@ -145,8 +145,8 @@ public class LivePollingService {
    * <p>{@code parseNextPitch} already yields null between plays and once the game is final; the
    * extra {@link CurrentMatchup#isPopulated()} guard catches the OTHER absence shape - the parser's
    * {@code asLong()} yields {@code 0L}, not null, for a missing id, so an early-GUMBO tick produces
-   * a matchup naming batter 0. Both collapse to "no matchup", which is written as NULL rather than
-   * skipped.
+   * a matchup naming batter 0. Both collapse to "no matchup", which is WRITTEN - as the V031 0/''
+   * sentinels - rather than skipped, so the row stops advertising a finished batter.
    */
   private static CurrentMatchup currentMatchupOf(LiveGameFeed feed) {
     LiveNextPitch next = feed.nextPitch();
@@ -184,10 +184,14 @@ public class LivePollingService {
       // Schema-drift tripwire: the feed's detailedState matched nothing we know.
       metrics.incrementParseAnomaly("unknown_game_status");
     }
-    // Persist status on a transition (step 7b) OR on this process's first poll of the game (L1:
-    // restart-robustness - the schedule prime makes prev == current after a mid-game restart, so
-    // transition-only persistence left the game invisible to /v1/games/today until its next
-    // transition). The ReplacingMergeTree dedups the re-write.
+    // Persist when ANY of four things is true: first-ever observation of the game, a status
+    // transition (step 7b), this process's first poll of it (L1: restart-robustness - the schedule
+    // prime makes prev == current after a mid-game restart, so transition-only persistence left
+    // the game invisible to /v1/games/today until its next transition), OR the MATCHUP MOVED.
+    // That last disjunct is what makes the current batter dynamic (V031): the matchup changes
+    // roughly once per at-bat while the status changes a handful of times per game, so a
+    // transition-only cadence would freeze the batter at whatever he was on the last transition.
+    // The ReplacingMergeTree dedups the re-writes.
     CurrentMatchup matchup = currentMatchupOf(feed);
     String matchupKey = matchupKeyOf(matchup);
     boolean matchupMoved = !matchupKey.equals(lastMatchupKey.get(gamePk));
@@ -200,8 +204,8 @@ public class LivePollingService {
         // No parseable gameData.datetime in the feed: the row cannot key into live_game_status,
         // so /v1/games/today will not surface this game (C-3 replay finding, 2026-06-11).
         metrics.incrementParseAnomaly("missing_game_date");
-        // Reworded for the widened condition: this branch now also fires on a MATCHUP move with
-        // prev == current, where "status transition" would misdescribe what was dropped.
+        // This branch also fires on a MATCHUP move with prev == current, so it must not describe
+        // what was dropped as a "status transition".
         log.debug(
             "game {} status/matchup row not persisted (status {} -> {}): feed carried no gameDate",
             gamePk,
