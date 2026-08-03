@@ -250,7 +250,8 @@ describe("GamePage (broadcast identity)", () => {
  * into an assertion.
  *
  * A tag boundary emits one space, so adjacent elements stay separate tokens and label/value
- * assertions like /Count\s+—/ mean what they look like.
+ * assertions like /Count\s+—/ mean what they look like. Entity references are left ENCODED
+ * (&#x27; stays &#x27;), which is why assertions here compare rendered words, not punctuation.
  */
 function visibleText(html: string): string {
   const out: string[] = [];
@@ -283,8 +284,6 @@ function visibleText(html: string): string {
 }
 
 describe("GamePage current batter (V031 live matchup)", () => {
-  const visible = visibleText;
-
   function seed(game: GameSummary, pitchOver: Partial<LivePitchRow> = {}) {
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
@@ -345,8 +344,8 @@ describe("GamePage current batter (V031 live matchup)", () => {
     // Count/Outs must read as unknown rather than pairing the live batter with a dead count.
     expect(html).toContain("Awaiting a settled at-bat");
     // Anchored to the STAT LABEL, so the pitch board's own count column cannot satisfy it.
-    expect(visible(html)).toMatch(/Count\s+—/);
-    expect(visible(html)).toMatch(/Outs\s+—/);
+    expect(visibleText(html)).toMatch(/Count\s+—/);
+    expect(visibleText(html)).toMatch(/Outs\s+—/);
   });
 
   it("uses the row's count when the matchup describes the SAME at-bat", () => {
@@ -365,7 +364,7 @@ describe("GamePage current batter (V031 live matchup)", () => {
       { balls: 2, strikes: 1, atBatIndex: 1 },
     );
     expect(html).toContain("Now Batting");
-    expect(visible(html)).toMatch(/Count\s+2-1/);
+    expect(visibleText(html)).toMatch(/Count\s+2-1/);
   });
 
   it("resolves a switch hitter's side against the current pitcher, never showing a raw (S)", () => {
@@ -384,7 +383,7 @@ describe("GamePage current batter (V031 live matchup)", () => {
       }),
       { atBatIndex: 1 },
     );
-    const text = visible(html);
+    const text = visibleText(html);
     expect(text).toMatch(/Now Batting\s*\(L\)/);
     expect(text).toMatch(/Now Pitching\s*\(R\)/);
     expect(text).not.toContain("(S)");
@@ -406,7 +405,7 @@ describe("GamePage current batter (V031 live matchup)", () => {
       }),
       { atBatIndex: 1 },
     );
-    const text = visible(html);
+    const text = visibleText(html);
     expect(text).toContain("Now Batting");
     expect(text).not.toContain("()");
     expect(text).not.toContain("(S)");
@@ -432,7 +431,7 @@ describe("GamePage current batter (V031 live matchup)", () => {
       }),
     );
     client.setQueryData(["games", "pitches", GAME_ID], []);
-    const text = visible(render(<GamePage />, `/games/${GAME_ID}`, client));
+    const text = visibleText(render(<GamePage />, `/games/${GAME_ID}`, client));
     expect(text).not.toContain("(L)");
     expect(text).not.toContain("(R)");
   });
@@ -456,7 +455,7 @@ describe("GamePage current batter (V031 live matchup)", () => {
     // (chrome/gold color values), so a raw "#0" probe matches the stylesheet, not the page.
     // The hoisted strip is why this can probe for "#": raw markup carries Mantine's injected
     // color tokens (and quoting one here would itself trip lint:hex-codes).
-    const text = visible(html);
+    const text = visibleText(html);
     expect(text).not.toContain("Now Batting");
     expect(text).not.toMatch(/#\d/);
     expect(text).toContain("\u2014"); // the em-dash placeholder, not a fabricated id

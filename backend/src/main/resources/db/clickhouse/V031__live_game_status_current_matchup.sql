@@ -16,16 +16,18 @@
 -- sentinel (V020's home/away_pitcher_id and V022's home/away_player_id are both UInt32 DEFAULT 0,
 -- MlbFeedParser's asLong() yields 0L for a missing id, and CurrentMatchup.isPopulated() already
 -- rejects it), so DEFAULT 0 asserts nothing false. at_bat_index rides along because it never
--- carries absence on its own - isPopulated() gates on the IDS, so index 0 is only ever read when
--- a real matchup is present.
+-- carries absence on its own: isPopulated() is total over the ids AND the index in-flight, but a
+-- stored row always carries an index (the column is non-Nullable), so on the READ path the id
+-- checks alone decide absence and index 0 is only ever seen when a real matchup is present.
 --
--- The deciding factor is not style. Under the PER-COLUMN argMax read this shipped with, a Nullable
--- column could not express "the matchup was cleared" at all: ClickHouse's argMax SKIPS rows whose
--- argument is NULL, so a null-clear write was stored and then silently ignored by the read, leaving
--- a finished batter
--- advertised for the rest of the game and past FINAL - and tearing the record, since the two
--- non-Nullable side columns DID take the newer row. Reproduced red in CI on this branch before
--- the fix (LivePitchesRepositoryIT.currentMatchup_nulls_out_when_the_play_completes).
+-- The deciding factor is not style. Under the PER-COLUMN argMax read this migration was originally
+-- written against - replaced by argMax(tuple(...)) before merge, see
+-- LivePitchesRepository.MATCHUP_SUBQUERY_COLS - a Nullable column could not express "the matchup
+-- was cleared" at all: ClickHouse's argMax SKIPS rows whose argument is NULL, so a null-clear write
+-- was stored and then silently ignored by the read, leaving a finished batter advertised for the
+-- rest of the game and past FINAL - and tearing the record, since the two non-Nullable side columns
+-- DID take the newer row. Reproduced red in CI on this branch before the fix
+-- (LivePitchesRepositoryIT.currentMatchup_nulls_out_when_the_play_completes).
 --
 -- bat_side / pitch_hand keep V028's idiom verbatim: LowCardinality(String) DEFAULT '', where ''
 -- marks an unpopulated row. bat_side may be 'S' (switch hitter) - resolved to L|R downstream
