@@ -171,21 +171,27 @@ public class LivePitchesRepository {
           + " LIMIT ? OFFSET ?";
 
   // V031's live current-play matchup, read as ONE argMax over a TUPLE rather than five parallel
-  // argMax calls. This is not stylistic: ClickHouse's argMax SKIPS rows whose ARG is NULL, so with
-  // per-column argMax the poller's null-clear write (the one that stops the row advertising a
-  // batter who has finished hitting) was silently ignored for the three Nullable columns while the
-  // two LowCardinality ones took the new row's '' - yielding a TORN record, ids from one tick and
-  // handedness from the next, and a stale batter that persisted forever once a game went final.
-  // A tuple is itself never NULL, so it is never skipped, and the five columns' atomicity becomes
-  // an actual guarantee instead of a comment. (status stays a separate argMax: it is
-  // LowCardinality, never NULL, so it resolves to the same max(updated_at) row.)
+  // argMax calls. WHAT THE TUPLE BUYS, stated in the present tense because a future editor will
+  // judge it on that and not on history: five independent argMax aggregate states can each
+  // resolve a TIED updated_at to a different row, which would tear the record - a batter from one
+  // row paired with an at-bat index from another. One tuple state cannot tear. (The historical
+  // reason this shape arrived - argMax skipping NULL args under the pre-fix Nullable columns - is
+  // recorded in V031's header, and no longer applies: the columns are non-Nullable, verified by
+  // mutating this read back to per-column argMax and watching the ITs still pass.)
+  //
+  // status stays OUTSIDE the tuple. Not because it is non-NULL - that prevents a row being
+  // SKIPPED, not two aggregate states disagreeing on a tie - but because a tie needs two writes
+  // for one game inside one second, and the per-game poll gate makes that unreachable short of a
+  // D-37 lease handover, where both rows would carry the same status anyway.
   private static final String MATCHUP_SUBQUERY_COLS =
       ", argMax(tuple(current_batter_id, current_pitcher_id, current_bat_side,"
           + " current_pitch_hand, current_at_bat_index), updated_at) AS matchup";
 
   // The tuple unpacked from the joined status alias. A LEFT JOIN miss yields the tuple type's
-  // default - (NULL, NULL, '', '', NULL) - which the mapper reads as absent, so a game with no
-  // status row reports no matchup rather than a matchup of zeroes.
+  // default - (0, 0, '', '', 0), verified against the V031 types, NOT nulls - which isPopulated()
+  // rejects, so a game with no status row reports NO matchup rather than a matchup of zeroes.
+  // Naming the mechanism precisely matters here more than usual: NULL-vs-0 on this exact read
+  // path is what made the first version of this feature silently wrong.
   private static final String MATCHUP_SELECT_COLS =
       ", tupleElement(s.matchup, 1) AS current_batter_id,"
           + " tupleElement(s.matchup, 2) AS current_pitcher_id,"

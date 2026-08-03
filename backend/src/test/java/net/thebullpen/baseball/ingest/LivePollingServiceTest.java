@@ -620,6 +620,22 @@ class LivePollingServiceTest {
 
   /** A current play with an explicit batter id, for pinch-hitter / at-bat-rollover fixtures. */
   @Test
+  void aMatchupWithRealIdsButNoAtBatIndexIsAbsent_notAnNpe() throws Exception {
+    // isPopulated() is TOTAL over the at-bat index for a load-bearing reason: the write path's
+    // `usable ? matchup.atBatIndex() : 0` mixes Integer with int, so binary numeric promotion
+    // unboxes - a partial guard would pass this record through and NPE on the write. Not
+    // reachable from the poller today (LiveNextPitch.atBatIndex is a primitive), but the record
+    // is public in domain/ and its contract permits it.
+    CurrentMatchup noIndex = new CurrentMatchup(676391L, 689296L, "R", "R", null);
+    assertThat(noIndex.isPopulated()).isFalse();
+
+    LivePitchesRepository repo = mock(LivePitchesRepository.class);
+    assertThatCode(
+            () -> repo.upsertGameStatus(1L, LocalDate.of(2026, 6, 5), "IN_PROGRESS", noIndex))
+        .doesNotThrowAnyException();
+  }
+
+  @Test
   void aMissingGameDateMustNotPoisonTheMatchupKey() throws Exception {
     // T-1: lastMatchupKey.put lives INSIDE the gameDate guard on purpose. Hoisting it out
     // compiles and passes every other test here, but permanently drops a matchup whenever one

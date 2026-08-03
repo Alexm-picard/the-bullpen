@@ -475,7 +475,7 @@ class LivePitchesRepositoryIT {
     // column, so a 5ms gap leaves both writes in the same second and argMax's tie-break is
     // documented-nondeterministic. Cross a real second boundary so this asserts the ordering the
     // schema actually guarantees. Prod is safe by cadence (12s polls), not by this sleep.
-    Thread.sleep(1100); // the POST row lands strictly later
+    Thread.sleep(5); // prediction_log.request_at is DateTime64(3) - milliseconds are enough
     insertPrediction(
         824753L,
         1,
@@ -501,7 +501,7 @@ class LivePitchesRepositoryIT {
     // column, so a 5ms gap leaves both writes in the same second and argMax's tie-break is
     // documented-nondeterministic. Cross a real second boundary so this asserts the ordering the
     // schema actually guarantees. Prod is safe by cadence (12s polls), not by this sleep.
-    Thread.sleep(1100); // ensure a strictly later request_at
+    Thread.sleep(5); // prediction_log.request_at is DateTime64(3) - milliseconds are enough
     insertPrediction(824753L, 1, 1, "{\"probabilities\":{\"in_play\":0.7},\"winner\":\"in_play\"}");
 
     assertEquals(
