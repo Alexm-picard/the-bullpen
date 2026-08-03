@@ -20,6 +20,7 @@ import { useMemo } from "react";
 import { useParams } from "react-router";
 
 import {
+  matchupIsAheadOf,
   nextPitchRequest,
   useGame,
   useLivePitches,
@@ -243,10 +244,7 @@ export function GamePage() {
   // one moment - stale, but internally consistent; naming the live batter alongside a finished
   // at-bat's count would trade that consistency for a confidently wrong composite ("leadoff
   // hitter, 1-2 count, 2 outs"), which is checkable against the broadcast and worse than stale.
-  const rowIsPastTense =
-    liveMatchup != null &&
-    mostRecent != null &&
-    liveMatchup.atBatIndex > mostRecent.atBatIndex;
+  const rowIsPastTense = matchupIsAheadOf(liveMatchup, mostRecent);
   const shownPitcherId =
     liveMatchup?.pitcherId ?? mostRecent?.pitcherId ?? null;
   const shownBatterId = liveMatchup?.batterId ?? mostRecent?.batterId ?? null;
@@ -339,6 +337,30 @@ export function GamePage() {
   ): string => q.data?.name ?? (q.isPending || id == null ? "—" : `#${id}`);
   const pitcherName = playerName(currentPitcher, shownPitcherId);
   const batterName = playerName(currentBatter, shownBatterId);
+  // Handedness rides the name only when there IS a name: "— (R)" attaches a hand to an unknown
+  // player, and this feature makes that pending window recur at every at-bat, pitching change and
+  // half-inning. "S" is resolved against the current pitcher exactly as nextPitchRequest resolves
+  // it, so the chyron and the model input never disagree about which side a switch hitter bats -
+  // an unresolved "(S)" would read to a viewer as a handedness, which it is not.
+  // The "#id" fallback DOES identify a player, so handedness on it is truthful; only the pending
+  // em-dash names nobody.
+  const named = (n: string) => n !== "—";
+  // Gated on the RESOLVED code, not the raw one: a switch hitter whose pitcher hand has not
+  // arrived resolves to "", and gating on the raw "S" would render an empty " ()".
+  const handSuffix = (resolved: string, name: string) =>
+    resolved !== "" && named(name) ? ` (${resolved})` : "";
+  const livePitchHand = liveMatchup?.pitchHand ?? "";
+  const liveBatSideRaw = liveMatchup?.batSide ?? "";
+  const liveBatSide =
+    liveBatSideRaw === "S"
+      ? livePitchHand === "R"
+        ? "L"
+        : livePitchHand === "L"
+          ? "R"
+          : ""
+      : liveBatSideRaw;
+  const shownPitchHand = handSuffix(livePitchHand, pitcherName);
+  const shownBatSide = handSuffix(liveBatSide, batterName);
   // Per-pitcher pitch count - the CURRENT pitcher only, not the whole-game total. Counted against
   // the pitcher actually on the mound, so a pitching change resets it immediately rather than
   // carrying the reliever's count over from the pitcher he replaced.
@@ -401,13 +423,8 @@ export function GamePage() {
           }}
         >
           Pitching: <strong>{pitcherName}</strong>
-          {liveMatchup && liveMatchup.pitchHand !== ""
-            ? ` (${liveMatchup.pitchHand})`
-            : ""}{" "}
-          &middot; At bat: <strong>{batterName}</strong>
-          {liveMatchup && liveMatchup.batSide !== ""
-            ? ` (${liveMatchup.batSide})`
-            : ""}
+          {shownPitchHand} &middot; At bat: <strong>{batterName}</strong>
+          {shownBatSide}
         </p>
       </header>
 

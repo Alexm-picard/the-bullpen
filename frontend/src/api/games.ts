@@ -328,6 +328,21 @@ function isoDow(gameDate: string): number {
  * of the pitcher's hand, exactly as the server's resolveBatSide does. scoreDiff forwards the
  * row's serving-path constant verbatim (see LivePitchRow.scoreDiff).
  */
+/**
+ * True when the live matchup has moved PAST the pitch row's at-bat - i.e. that row is past tense.
+ *
+ * ONE implementation on purpose: the page em-dashes row-derived state on this predicate and
+ * nextPitchRequest withholds the request on it, and two copies could drift (flip one to >= and the
+ * page would em-dash a count while the request still fired, silently, with nothing failing). The
+ * shared name is also the cross-reference between the two call sites.
+ */
+export function matchupIsAheadOf(
+  matchup: CurrentMatchup | null | undefined,
+  row: { atBatIndex: number } | null | undefined,
+): boolean {
+  return matchup != null && row != null && matchup.atBatIndex > row.atBatIndex;
+}
+
 export function nextPitchRequest(
   row: LivePitchRow,
   gameDate: string,
@@ -354,7 +369,7 @@ export function nextPitchRequest(
   //   equal -> same at-bat, so the matchup's identity and handedness win. This
   //     admits the pinch hitter (who genuinely inherits the count) and a
   //     mid-at-bat pitching change (which re-resolves a switch hitter).
-  if (matchup != null && matchup.atBatIndex > row.atBatIndex) return null;
+  if (matchupIsAheadOf(matchup, row)) return null;
   const live =
     matchup != null && matchup.atBatIndex === row.atBatIndex ? matchup : null;
 
