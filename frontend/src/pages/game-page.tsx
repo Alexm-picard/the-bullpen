@@ -508,10 +508,9 @@ export function GamePage() {
             </>
           ) : (
             <>
-              A static example of the per-park HR model - not this game&rsquo;s
-              batted ball. Live batted-ball capture (exit velo / launch /
-              distance) is pending: the live feed doesn&rsquo;t carry
-              batted-ball physics yet.
+              No ball has been put in play in this game yet. This is a static
+              example of the per-park HR model - not this game&rsquo;s batted
+              ball.
             </>
           )}
         </p>

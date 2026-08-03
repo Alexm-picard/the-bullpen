@@ -1,0 +1,90 @@
+-- V032 - batted-ball physics on the LIVE pitch row (the live batted-ball card).
+--
+-- The game page's batted-ball card has been rendering a static Stanton example, captioned "the
+-- live feed doesn't carry batted-ball physics yet". That caption is false NOW, and this migration
+-- is half of retiring it. Verified 2026-08-03 against a live GUMBO feed (game 823431, In Progress)
+-- and four completed games from 08-02: playEvents[].hitData carries launchSpeed, launchAngle,
+-- totalDistance, trajectory and coordinates on 184/184 balls in play.
+--
+-- BUT IT WAS TRUE WHEN WRITTEN, which is the more useful thing to record. The committed fixture
+-- src/test/resources/mlb/feed_live_824753.json, captured 2026-06-05 from a completed game, has 55
+-- balls in play and ZERO hitData - its in-play events carry only count/details/isPitch/pitchData/
+-- pitchNumber. The upstream feed gained the physics sometime between June and August, and the
+-- caption inverted without anyone touching it. So this is not a careless claim that shipped wrong;
+-- it is a claim about a THIRD PARTY'S capabilities, which has a shelf life, and nothing in CI was
+-- watching for it to change. Worth remembering the next time an honesty caption says "X does not
+-- support Y" - that sentence can become a lie while the repository sits still.
+--
+-- What is ours: MlbFeedParser never read hitData even after it appeared (grep: no reference
+-- anywhere in ingest/ before this change), so the card kept attributing our own gap to the source.
+--
+-- The columns mirror the CANONICAL names in `pitches` (V003) - launch_speed_mph, launch_angle_deg,
+-- hit_distance_ft, hc_x, hc_y, bb_type, events - because the read path coalesces the two sources:
+-- pitches_live for a game in progress, the V003 LEFT JOIN once the overnight handoff has moved the
+-- row. Divergent names here would mean a second vocabulary for one concept on one read.
+--
+-- NULLABILITY: non-Nullable with sentinels, applying V028's RULE ("is this type's zero
+-- distinguishable from absence?") and the V031 lesson that a Nullable column cannot express a
+-- clear under an argMax read. But the rule does NOT resolve field-by-field here, and pretending it
+-- does would be the trap:
+--
+--   launch_speed_mph  0 is SAFE as absence - a batted ball is never 0 mph (observed 59.9-106.8).
+--   events            '' is SAFE - the V028 LowCardinality idiom.
+--   launch_angle_deg  0 is a REAL value (a line drive off the bat at 0 degrees). NOT safe alone.
+--   hit_distance_ft   1.0 ft was observed. 0 is not meaningfully distinguishable. NOT safe alone.
+--   hc_x / hc_y       observed 31.3-219.0 / 30.4-202.5, so 0 is outside the real range, but it is
+--                     a coordinate origin rather than a natural absence. NOT safe alone.
+--
+-- So absence is decided at the GROUP level, not per column - the same shape as CurrentMatchup's
+-- isPopulated() in V031. The presence predicate is:
+--
+--     launch_speed_mph > 0 AND events != ''
+--
+-- and the other five are read ONLY when it holds. That is what keeps launch_angle_deg = 0 an
+-- honest line drive rather than an ambiguous "maybe missing", without a Nullable column that an
+-- argMax could skip.
+--
+-- WHY `events` IS IN THE PREDICATE (not just for display): it is the COMPLETENESS marker. hitData
+-- populates transiently while a play is still in flight - the observed partial (physics present,
+-- coordinates and result.event absent) was an in-flight currentPlay, not a data-quality gap.
+-- Across two games every one of 62 hitData-carrying events was (isComplete, has event, has
+-- coordinates); the in-flight currentPlay carried no hitData at all. Requiring a non-empty
+-- `events` therefore filters to COMPLETED plays, which is both the honest display value
+-- ("Home Run" vs "Groundout") and the gate that keeps a half-populated in-flight row from being
+-- read as a finished batted ball. The parser also declines to write physics before the play
+-- completes, so this is two independent layers, not one.
+--
+-- bb_type carries the feed's `trajectory` verbatim: ground_ball | fly_ball | line_drive | popup |
+-- bunt_popup - already the Statcast bb_type vocabulary the card's descriptor consumes, so no
+-- mapping table and no vocabulary of our own to drift.
+--
+-- hit_distance_ft is Statcast's PROJECTED landing distance, which is small and correct for balls
+-- that were never in the air: observed 1-429 ft, with a 102.7 mph single at 12 ft and a groundout
+-- at 7 ft. Stored verbatim; the display layer is responsible for not presenting 12 ft the way it
+-- presents a 429 ft home run. Do NOT "fix" this with a floor or a substitution - see the Tier-4
+-- `_in`-suffix misnomer in CLAUDE.md for what happens when a storage layer corrects a value it
+-- does not own.
+--
+-- WRITE PATH: pitches_live is ReplacingMergeTree(ingested_at) ORDER BY (game_id, at_bat_index,
+-- pitch_number), so a re-insert on the same key supersedes. NOTE that V015's header claims polling
+-- re-inserts already correct earlier rows - that capability exists but the poller does not use it:
+-- writeNewPitches filters `cursor(p) > since`, writing each pitch exactly ONCE. A ball in play
+-- first seen while its play is still in flight would therefore keep empty physics forever. The
+-- poller gains a targeted BIP backfill in this change (one extra write per ball in play, keyed on
+-- BIP identity) rather than a rolling re-write window, which would be ~80x write amplification
+-- into a 14-day TTL table.
+--
+-- Additive ALTER; no backfill DML. Rows written before this migration read the sentinels, the
+-- presence predicate is false for them, and the api reports no batted ball - the truth about them.
+--
+-- SNAPSHOT PRECONDITION (CLAUDE.md hard rule) applies before this first runs against prod. The
+-- decision-[171] least-priv grant covers ALTER ADD COLUMN (verified in the users.d grants block,
+-- not assumed). New V*.sql file, never an edit to an applied one (ClickHouseMigrationRunner keys
+-- applied migrations by filename and hard-fails on checksum drift).
+ALTER TABLE pitches_live ADD COLUMN IF NOT EXISTS launch_speed_mph Float32 DEFAULT 0 AFTER plate_z_in;
+ALTER TABLE pitches_live ADD COLUMN IF NOT EXISTS launch_angle_deg Float32 DEFAULT 0 AFTER launch_speed_mph;
+ALTER TABLE pitches_live ADD COLUMN IF NOT EXISTS hit_distance_ft Float32 DEFAULT 0 AFTER launch_angle_deg;
+ALTER TABLE pitches_live ADD COLUMN IF NOT EXISTS hc_x Float32 DEFAULT 0 AFTER hit_distance_ft;
+ALTER TABLE pitches_live ADD COLUMN IF NOT EXISTS hc_y Float32 DEFAULT 0 AFTER hc_x;
+ALTER TABLE pitches_live ADD COLUMN IF NOT EXISTS bb_type LowCardinality(String) DEFAULT '' AFTER hc_y;
+ALTER TABLE pitches_live ADD COLUMN IF NOT EXISTS events LowCardinality(String) DEFAULT '' AFTER bb_type;

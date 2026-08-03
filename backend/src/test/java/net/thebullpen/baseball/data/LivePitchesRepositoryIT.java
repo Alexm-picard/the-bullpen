@@ -170,7 +170,8 @@ class LivePitchesRepositoryIT {
         /* spinAxisDeg= */ null,
         /* releasePosXIn= */ null,
         /* releasePosZIn= */ null,
-        /* terminal= */ false);
+        /* terminal= */ false,
+        /* battedBall= */ null);
   }
 
   private static LivePitchRow pitch(List<LivePitchRow> rows, int atBat, int pitchNumber) {

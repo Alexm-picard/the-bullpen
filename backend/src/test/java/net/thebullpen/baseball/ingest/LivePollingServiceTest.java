@@ -68,7 +68,8 @@ class LivePollingServiceTest {
         200.0,
         -1.6,
         5.9,
-        false);
+        false,
+        null); // battedBall: these fixtures are not balls in play
   }
 
   // --- V031: the live current matchup rides the status row -------------------------------
@@ -583,7 +584,8 @@ class LivePollingServiceTest {
         200.0,
         -1.6,
         5.9,
-        false);
+        false,
+        null); // battedBall: these fixtures are not balls in play
   }
 
   private static LiveNextPitch nextPitchFor(long gameId, int atBat, int pitchNumber) {

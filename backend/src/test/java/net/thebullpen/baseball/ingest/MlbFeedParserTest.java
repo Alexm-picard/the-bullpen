@@ -15,6 +15,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
+import net.thebullpen.baseball.domain.BattedBall;
 import net.thebullpen.baseball.domain.GameStatus;
 import net.thebullpen.baseball.domain.LivePitch;
 import net.thebullpen.baseball.domain.ScheduledGame;
@@ -343,5 +344,157 @@ class MlbFeedParserTest {
   @Test
   void parsePlayers_returns_empty_for_a_document_without_people() throws IOException {
     assertTrue(parser.parsePlayers("{}").isEmpty());
+  }
+
+  // ---- batted-ball physics (V032) -------------------------------------------------------------
+  // Fixtures are REAL captures, not hand-built JSON: a synthetic feed would have been shaped to
+  // match whatever the extraction already did.
+
+  private List<LivePitch> battedBallFixture() throws IOException {
+    return parser.parseLiveFeed(resource("/mlb/feed_live_battedball.json")).pitches();
+  }
+
+  @Test
+  void extracts_hit_data_onto_the_pitch_that_was_put_in_play() throws IOException {
+    BattedBall hr =
+        battedBallFixture().stream()
+            .map(LivePitch::battedBall)
+            .filter(b -> b != null && "Home Run".equals(b.event()))
+            .findFirst()
+            .orElseThrow();
+
+    // Verbatim pass-through of the feed's own values - no rounding, no unit conversion.
+    assertEquals(102.4, hr.launchSpeedMph(), 1e-6);
+    assertEquals(24.0, hr.launchAngleDeg(), 1e-6);
+    assertEquals(403.0, hr.hitDistanceFt(), 1e-6);
+    assertEquals("fly_ball", hr.bbType(), "trajectory IS the bb_type vocabulary; no mapping table");
+  }
+
+  @Test
+  void carries_a_batted_ball_only_on_the_in_play_pitch_of_that_play() throws IOException {
+    List<LivePitch> pitches = battedBallFixture();
+    long withBattedBall = pitches.stream().filter(p -> p.battedBall() != null).count();
+    long inPlay = pitches.stream().filter(p -> "in_play".equals(p.description())).count();
+
+    assertEquals(3, withBattedBall, "the fixture has exactly three completed balls in play");
+    assertEquals(inPlay, withBattedBall, "every in-play pitch, and ONLY those, carry the physics");
+    // A strikeout's pitches must not inherit the physics of some other play.
+    assertTrue(
+        pitches.stream()
+            .filter(p -> !"in_play".equals(p.description()))
+            .allMatch(p -> p.battedBall() == null));
+  }
+
+  @Test
+  void preserves_a_tiny_projected_distance_rather_than_flooring_it() throws IOException {
+    // The 1 ft, -81 degree groundout. Statcast's projected distance is genuinely small for balls
+    // that were never in the air, and the storage layer does not own that value: "fixing" it here
+    // is the Tier-4 `_in` misnomer mistake (CLAUDE.md). Presenting it sensibly is the display's
+    // job, and this pins that the raw number survives the trip.
+    BattedBall grounder =
+        battedBallFixture().stream()
+            .map(LivePitch::battedBall)
+            .filter(b -> b != null && "ground_ball".equals(b.bbType()))
+            .findFirst()
+            .orElseThrow();
+
+    assertEquals(1.0, grounder.hitDistanceFt(), 1e-6);
+    assertEquals(-81.0, grounder.launchAngleDeg(), 1e-6);
+  }
+
+  @Test
+  void invents_nothing_on_a_feed_that_carries_no_hit_data() throws IOException {
+    // The June 2026 capture: 55 balls in play, ZERO hitData - its in-play events carry only
+    // count/details/isPitch/pitchData/pitchNumber. This is the negative that matters, because it
+    // proves the extraction reads the feed rather than deriving physics from launch-adjacent
+    // fields it happens to have. It is also the evidence that the card's old caption was TRUE when
+    // written: the upstream feed gained hitData between June and August.
+    List<LivePitch> pitches =
+        parser.parseLiveFeed(resource("/mlb/feed_live_824753.json")).pitches();
+
+    assertTrue(
+        pitches.stream().anyMatch(p -> "in_play".equals(p.description())), "fixture has BIP");
+    assertTrue(
+        pitches.stream().allMatch(p -> p.battedBall() == null),
+        "no hitData in the feed means no batted ball, however many balls were put in play");
+  }
+
+  /**
+   * The HR play's fixture text with one hitData field replaced, so each required-field test starts
+   * from a REAL row and differs from it in exactly one way.
+   */
+  private String hrFixtureWith(String find, String replaceWith) throws IOException {
+    String feed = resource("/mlb/feed_live_battedball.json");
+    assertTrue(feed.contains(find), "fixture must contain " + find + " or the edit is a no-op");
+    return feed.replace(find, replaceWith);
+  }
+
+  private boolean parsesTheHomeRun(String feed) throws IOException {
+    return parser.parseLiveFeed(feed).pitches().stream()
+        .map(LivePitch::battedBall)
+        .anyMatch(b -> b != null && "Home Run".equals(b.event()));
+  }
+
+  @Test
+  void requires_every_measurement_present_rather_than_defaulting_the_missing_one()
+      throws IOException {
+    // BattedBall promises consumers that a record which exists is entirely real, and the parser is
+    // where that promise is kept. The live feed never produced a partial in 184 balls in play, so
+    // these are real rows with exactly one field nulled - the only way to exercise a contract the
+    // upstream currently has no reason to violate. Without them the all-or-nothing guarantee is a
+    // comment, not a behaviour.
+    assertTrue(parsesTheHomeRun(resource("/mlb/feed_live_battedball.json")), "baseline must parse");
+
+    assertFalse(parsesTheHomeRun(hrFixtureWith("\"launchSpeed\": 102.4", "\"launchSpeed\": null")));
+    assertFalse(parsesTheHomeRun(hrFixtureWith("\"launchAngle\": 24.0", "\"launchAngle\": null")));
+    assertFalse(
+        parsesTheHomeRun(hrFixtureWith("\"totalDistance\": 403.0", "\"totalDistance\": null")));
+  }
+
+  @Test
+  void treats_a_zero_exit_velocity_as_absence_not_as_a_batted_ball() throws IOException {
+    // 0 mph is not a batted ball, AND it is the sentinel V032 stores for absence. Letting one
+    // through would write a row that reads back as absent - a silent hole rather than a loud one.
+    assertFalse(parsesTheHomeRun(hrFixtureWith("\"launchSpeed\": 102.4", "\"launchSpeed\": 0.0")));
+    assertFalse(parsesTheHomeRun(hrFixtureWith("\"launchSpeed\": 102.4", "\"launchSpeed\": -1.0")));
+  }
+
+  @Test
+  void ignores_hit_data_hanging_off_a_pitch_that_was_not_put_in_play() throws IOException {
+    // Defence against the feed attaching hitData somewhere unexpected (a foul, a checked swing).
+    // Today hitData appears only on the in-play event, so this gate is unfalsifiable against an
+    // unmodified capture - which is precisely why the fixture is modified to create the case.
+    String feed = resource("/mlb/feed_live_battedball.json");
+    int hrEvent = feed.indexOf("\"launchSpeed\": 102.4");
+    int flag = feed.lastIndexOf("\"isInPlay\": true", hrEvent);
+    assertTrue(flag > 0, "expected the HR's in-play flag before its hitData");
+    String notInPlay =
+        feed.substring(0, flag)
+            + "\"isInPlay\": false"
+            + feed.substring(flag + "\"isInPlay\": true".length());
+
+    assertFalse(
+        parsesTheHomeRun(notInPlay),
+        "physics attached to a pitch the feed does not call in-play must not become a batted ball");
+  }
+
+  @Test
+  void declines_a_play_that_has_not_finished_being_measured() throws IOException {
+    // The in-flight window: hitData populates transiently before the play resolves, and the
+    // observed partial (physics present, result absent) was exactly that. Simulated by removing
+    // result.event from a REAL play rather than authoring a feed, so every other byte is genuine.
+    String inFlight =
+        resource("/mlb/feed_live_battedball.json")
+            .replace("\"event\": \"Home Run\"", "\"event\": \"\"");
+    // Guard the EDIT, not just the outcome: a replace that silently matched nothing would leave
+    // this asserting that the parser declines a play it never actually altered.
+    assertTrue(inFlight.contains("\"event\": \"\""), "the fixture edit must actually apply");
+
+    assertTrue(
+        parser.parseLiveFeed(inFlight).pitches().stream()
+            .map(LivePitch::battedBall)
+            .filter(b -> b != null)
+            .noneMatch(b -> b.launchSpeedMph() == 102.4),
+        "a play with no result event is still in flight; its physics must not be stored");
   }
 }
