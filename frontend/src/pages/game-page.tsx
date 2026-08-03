@@ -20,6 +20,7 @@ import { useMemo } from "react";
 import { useParams } from "react-router";
 
 import {
+  matchupIsAheadOf,
   nextPitchRequest,
   useGame,
   useLivePitches,
@@ -233,16 +234,33 @@ export function GamePage() {
     game.data?.status,
   );
   const mostRecent = pitches.pitches[0];
-  // Current pitcher + batter (id -> name). Hooks run before the early return; null id disables them.
-  const currentPitcher = usePlayer(mostRecent?.pitcherId ?? null);
-  const currentBatter = usePlayer(mostRecent?.batterId ?? null);
+  // WHO IS BATTING: the live currentPlay matchup when the feed has one, the last thrown pitch
+  // otherwise. The fallback is why this can never render worse than before - it IS the old
+  // behaviour - but when the matchup is present the page flips to the new batter within one poll
+  // of him stepping in, instead of a plate appearance later when his first pitch lands.
+  const liveMatchup = game.data?.currentMatchup ?? null;
+  // The matchup has moved PAST the newest stored pitch: that pitch is now past tense, so anything
+  // derived from it describes a moment that is over. Before this feature the whole page described
+  // one moment - stale, but internally consistent; naming the live batter alongside a finished
+  // at-bat's count would trade that consistency for a confidently wrong composite ("leadoff
+  // hitter, 1-2 count, 2 outs"), which is checkable against the broadcast and worse than stale.
+  const rowIsPastTense = matchupIsAheadOf(liveMatchup, mostRecent);
+  const shownPitcherId =
+    liveMatchup?.pitcherId ?? mostRecent?.pitcherId ?? null;
+  const shownBatterId = liveMatchup?.batterId ?? mostRecent?.batterId ?? null;
+  // Hooks run before the early return; null id disables them.
+  const currentPitcher = usePlayer(shownPitcherId);
+  const currentBatter = usePlayer(shownBatterId);
 
   // A6: the forward-looking next-pitch estimate (ADR-0014). nextPitchRequest returns null unless
   // the at-bat is settled (mid-at-bat, full V028 context), and the query additionally gates on the
   // game being live - both required, because every fired request logs to prediction_log.
+  // NOTE the matchup is applied CONDITIONALLY here, unlike the display above: nextPitchRequest
+  // derives the count from the row, so it uses the matchup only when the two describe the same
+  // at-bat, and withholds the request entirely once the matchup has moved past it.
   const nextReq =
     mostRecent && game.data
-      ? nextPitchRequest(mostRecent, game.data.gameDate)
+      ? nextPitchRequest(mostRecent, game.data.gameDate, liveMatchup)
       : null;
   const nextPitchEnabled = isLive(game.data) && nextReq != null;
   const nextPitch = usePitchPrediction(nextReq, { enabled: nextPitchEnabled });
@@ -306,15 +324,50 @@ export function GamePage() {
   }
 
   const summary = game.data;
-  const pitcherName =
-    currentPitcher.data?.name ??
-    (mostRecent ? `#${mostRecent.pitcherId}` : "—");
-  const batterName =
-    currentBatter.data?.name ?? (mostRecent ? `#${mostRecent.batterId}` : "—");
-  // Per-pitcher pitch count - the CURRENT pitcher only, not the whole-game total.
-  const pitcherPitchCount = mostRecent
-    ? pitches.pitches.filter((p) => p.pitcherId === mostRecent.pitcherId).length
-    : 0;
+  // While the lookup for a JUST-CHANGED player is in flight, show the em-dash rather than a raw
+  // MLB id: this feature makes identity flip at every at-bat, pitching change and half-inning, so
+  // what used to be a rare glimpse of a bare numeric player id would now be a regular one in the
+  // page's most prominent live line. (An MLB id is six digits, so a literal example here reads as
+  // a color to lint:hex-codes - hence the prose.) Deliberately NOT keeping the previous name as placeholder data - that
+  // would re-introduce, for a few hundred milliseconds, exactly the wrong-batter display this
+  // whole change exists to remove.
+  const playerName = (
+    q: { data?: { name?: string }; isPending: boolean },
+    id: number | null,
+  ): string => q.data?.name ?? (q.isPending || id == null ? "—" : `#${id}`);
+  const pitcherName = playerName(currentPitcher, shownPitcherId);
+  const batterName = playerName(currentBatter, shownBatterId);
+  // Handedness rides the name only when there IS a name: "— (R)" attaches a hand to an unknown
+  // player, and this feature makes that pending window recur at every at-bat, pitching change and
+  // half-inning. "S" is resolved against the current pitcher exactly as nextPitchRequest resolves
+  // it, so the chyron and the model input never disagree about which side a switch hitter bats -
+  // an unresolved "(S)" would read to a viewer as a handedness, which it is not.
+  // The "#id" fallback DOES identify a player, so handedness on it is truthful; only the pending
+  // em-dash names nobody.
+  const named = (n: string) => n !== "—";
+  // Gated on the RESOLVED code, not the raw one: a switch hitter whose pitcher hand has not
+  // arrived resolves to "", and gating on the raw "S" would render an empty " ()".
+  const handSuffix = (resolved: string, name: string) =>
+    resolved !== "" && named(name) ? ` (${resolved})` : "";
+  const livePitchHand = liveMatchup?.pitchHand ?? "";
+  const liveBatSideRaw = liveMatchup?.batSide ?? "";
+  const liveBatSide =
+    liveBatSideRaw === "S"
+      ? livePitchHand === "R"
+        ? "L"
+        : livePitchHand === "L"
+          ? "R"
+          : ""
+      : liveBatSideRaw;
+  const shownPitchHand = handSuffix(livePitchHand, pitcherName);
+  const shownBatSide = handSuffix(liveBatSide, batterName);
+  // Per-pitcher pitch count - the CURRENT pitcher only, not the whole-game total. Counted against
+  // the pitcher actually on the mound, so a pitching change resets it immediately rather than
+  // carrying the reliever's count over from the pitcher he replaced.
+  const pitcherPitchCount =
+    shownPitcherId != null
+      ? pitches.pitches.filter((p) => p.pitcherId === shownPitcherId).length
+      : 0;
 
   // Live batted ball when this game has one; otherwise the showcase empty-state.
   const battedBall = liveBattedBall ?? SHOWCASE_BATTED_BALL;
@@ -369,8 +422,9 @@ export function GamePage() {
             color: colors.text,
           }}
         >
-          Pitching: <strong>{pitcherName}</strong> &middot; At bat:{" "}
-          <strong>{batterName}</strong>
+          Pitching: <strong>{pitcherName}</strong>
+          {shownPitchHand} &middot; At bat: <strong>{batterName}</strong>
+          {shownBatSide}
         </p>
       </header>
 
@@ -383,19 +437,29 @@ export function GamePage() {
 
       <BroadcastPanel cut>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 40 }}>
+          {/* Count and Outs are derived from the newest STORED pitch, so once the live matchup
+              has moved past that pitch's at-bat they describe a moment that is over. Naming the
+              live batter beside a finished at-bat's count would read as one confident composite
+              ("leadoff hitter, 1-2 count, 2 outs") that is checkable against the broadcast and
+              wrong - worse than the stale-but-consistent page this replaced. Em-dash is this
+              page's existing way of saying "not known right now". */}
           <BigStat
             label="Count"
             value={
-              mostRecent ? `${mostRecent.balls}-${mostRecent.strikes}` : "—"
+              mostRecent && !rowIsPastTense
+                ? `${mostRecent.balls}-${mostRecent.strikes}`
+                : "—"
             }
           />
           <BigStat
             label="Outs"
-            value={mostRecent ? String(mostRecent.outs) : "—"}
+            value={
+              mostRecent && !rowIsPastTense ? String(mostRecent.outs) : "—"
+            }
           />
           <BigStat label="Last Pitch" value={lastPitchRead(mostRecent)} />
           <BigStat
-            label="Pitcher Pitches"
+            label="Pitch Count"
             value={String(pitcherPitchCount)}
             tone="gold"
           />

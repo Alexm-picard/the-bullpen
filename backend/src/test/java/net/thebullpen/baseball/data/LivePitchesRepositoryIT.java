@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.TimeZone;
 import java.util.UUID;
+import net.thebullpen.baseball.domain.CurrentMatchup;
 import net.thebullpen.baseball.domain.GameStatus;
 import net.thebullpen.baseball.domain.GameSummary;
 import net.thebullpen.baseball.domain.LivePitch;
@@ -470,7 +471,11 @@ class LivePitchesRepositoryIT {
         1,
         "pitch_outcome_pre",
         "{\"probabilities\":{\"ball\":0.6},\"winner\":\"ball\"}");
-    Thread.sleep(5); // the POST row lands strictly later
+    // live_game_status.updated_at is DateTime (SECOND resolution) and it is the RMT version
+    // column, so a 5ms gap leaves both writes in the same second and argMax's tie-break is
+    // documented-nondeterministic. Cross a real second boundary so this asserts the ordering the
+    // schema actually guarantees. Prod is safe by cadence (12s polls), not by this sleep.
+    Thread.sleep(5); // prediction_log.request_at is DateTime64(3) - milliseconds are enough
     insertPrediction(
         824753L,
         1,
@@ -492,7 +497,11 @@ class LivePitchesRepositoryIT {
     // the latest one by request_at (argMax), not double-count or pick an arbitrary row.
     repo.insertPitches(parseFixture());
     insertPrediction(824753L, 1, 1, "{\"probabilities\":{\"ball\":0.9},\"winner\":\"ball\"}");
-    Thread.sleep(5); // ensure a strictly later request_at
+    // live_game_status.updated_at is DateTime (SECOND resolution) and it is the RMT version
+    // column, so a 5ms gap leaves both writes in the same second and argMax's tie-break is
+    // documented-nondeterministic. Cross a real second boundary so this asserts the ordering the
+    // schema actually guarantees. Prod is safe by cadence (12s polls), not by this sleep.
+    Thread.sleep(5); // prediction_log.request_at is DateTime64(3) - milliseconds are enough
     insertPrediction(824753L, 1, 1, "{\"probabilities\":{\"in_play\":0.7},\"winner\":\"in_play\"}");
 
     assertEquals(
@@ -626,7 +635,7 @@ class LivePitchesRepositoryIT {
   void findGamesForDate_surfaces_the_pollers_upserted_status() throws Exception {
     LocalDate date = LocalDate.of(2026, 6, 6);
     insertPitch(700L, date, 1, 1, "BOS", "NYY", 1);
-    repo.upsertGameStatus(700L, date, "IN_PROGRESS");
+    repo.upsertGameStatus(700L, date, "IN_PROGRESS", null);
 
     GameSummary g = repo.findGamesForDate(date).get(0);
     assertEquals("IN_PROGRESS", g.status());
@@ -645,11 +654,115 @@ class LivePitchesRepositoryIT {
   void upsertGameStatus_keeps_the_latest_status_under_replacing_merge_tree() throws Exception {
     LocalDate date = LocalDate.of(2026, 6, 6);
     insertPitch(702L, date, 1, 1, "BOS", "NYY", 1);
-    repo.upsertGameStatus(702L, date, "SCHEDULED");
-    Thread.sleep(5);
-    repo.upsertGameStatus(702L, date, "IN_PROGRESS"); // a transition
+    repo.upsertGameStatus(702L, date, "SCHEDULED", null);
+    // live_game_status.updated_at is DateTime (SECOND resolution) and it is the RMT version
+    // column, so a 5ms gap leaves both writes in the same second and argMax's tie-break is
+    // documented-nondeterministic. Cross a real second boundary so this asserts the ordering the
+    // schema actually guarantees. Prod is safe by cadence (12s polls), not by this sleep.
+    Thread.sleep(1100);
+    repo.upsertGameStatus(702L, date, "IN_PROGRESS", null); // a transition
 
     assertEquals("IN_PROGRESS", repo.findGame(702L).orElseThrow().status());
+  }
+
+  // --- V031: the live current matchup on the status row --------------------------------
+
+  @Test
+  void currentMatchup_round_trips_on_both_read_paths() throws Exception {
+    LocalDate date = LocalDate.of(2026, 6, 6);
+    insertPitch(710L, date, 1, 1, "BOS", "NYY", 1);
+    repo.upsertGameStatus(
+        710L, date, "IN_PROGRESS", new CurrentMatchup(676391L, 689296L, "S", "R", 42));
+
+    // The detail endpoint's path...
+    CurrentMatchup detail = repo.findGame(710L).orElseThrow().currentMatchup();
+    assertNotNull(detail, "the matchup must survive the argMax read");
+    assertEquals(676391L, detail.batterId());
+    assertEquals(689296L, detail.pitcherId());
+    assertEquals("S", detail.batSide(), "a switch hitter's side is carried verbatim, unresolved");
+    assertEquals("R", detail.pitchHand());
+    assertEquals(42, detail.atBatIndex());
+
+    // ...and the slate's, which must agree - one type, one meaning, both endpoints.
+    CurrentMatchup slate = repo.findGamesForDate(date).get(0).currentMatchup();
+    assertNotNull(slate);
+    assertEquals(detail, slate);
+  }
+
+  @Test
+  void currentMatchup_is_absent_without_a_status_row() throws Exception {
+    LocalDate date = LocalDate.of(2026, 6, 6);
+    insertPitch(711L, date, 1, 1, "BOS", "NYY", 1);
+
+    // The LEFT JOIN misses entirely: absent, never a matchup of zeroes.
+    assertNull(repo.findGame(711L).orElseThrow().currentMatchup());
+    assertNull(repo.findGamesForDate(date).get(0).currentMatchup());
+  }
+
+  @Test
+  void currentMatchup_nulls_out_when_the_play_completes() throws Exception {
+    LocalDate date = LocalDate.of(2026, 6, 6);
+    insertPitch(712L, date, 1, 1, "BOS", "NYY", 1);
+    repo.upsertGameStatus(
+        712L, date, "IN_PROGRESS", new CurrentMatchup(676391L, 689296L, "R", "R", 7));
+    // live_game_status.updated_at is DateTime (SECOND resolution) and it is the RMT version
+    // column, so a 5ms gap leaves both writes in the same second and argMax's tie-break is
+    // documented-nondeterministic. Cross a real second boundary so this asserts the ordering the
+    // schema actually guarantees. Prod is safe by cadence (12s polls), not by this sleep.
+    Thread.sleep(1100);
+    repo.upsertGameStatus(712L, date, "IN_PROGRESS", null); // play complete
+
+    assertNull(
+        repo.findGame(712L).orElseThrow().currentMatchup(),
+        "the latest row wins under argMax - a finished batter must not linger");
+  }
+
+  @Test
+  void currentMatchup_advances_with_the_at_bat_under_replacing_merge_tree() throws Exception {
+    LocalDate date = LocalDate.of(2026, 6, 6);
+    insertPitch(713L, date, 1, 1, "BOS", "NYY", 1);
+    repo.upsertGameStatus(
+        713L, date, "IN_PROGRESS", new CurrentMatchup(676391L, 689296L, "R", "R", 7));
+    // live_game_status.updated_at is DateTime (SECOND resolution) and it is the RMT version
+    // column, so a 5ms gap leaves both writes in the same second and argMax's tie-break is
+    // documented-nondeterministic. Cross a real second boundary so this asserts the ordering the
+    // schema actually guarantees. Prod is safe by cadence (12s polls), not by this sleep.
+    Thread.sleep(1100);
+    repo.upsertGameStatus(
+        713L, date, "IN_PROGRESS", new CurrentMatchup(700000L, 689296L, "L", "R", 8));
+
+    CurrentMatchup m = repo.findGame(713L).orElseThrow().currentMatchup();
+    assertEquals(700000L, m.batterId(), "argMax(updated_at) takes the newest matchup");
+    assertEquals(8, m.atBatIndex());
+    assertEquals("L", m.batSide());
+  }
+
+  @Test
+  void aZeroIdMatchupIsStoredAsAbsent() throws Exception {
+    LocalDate date = LocalDate.of(2026, 6, 6);
+    insertPitch(714L, date, 1, 1, "BOS", "NYY", 1);
+    repo.upsertGameStatus(714L, date, "IN_PROGRESS", new CurrentMatchup(0L, 0L, "", "", 0));
+
+    assertNull(
+        repo.findGame(714L).orElseThrow().currentMatchup(),
+        "batter 0 is an absent matchup wearing a number - it must not round-trip as real");
+  }
+
+  @Test
+  void aNullAtBatIndexMatchupIsStoredAsAbsent_notAnNpe() throws Exception {
+    // The ONLY test that drives the real write path with a null at-bat index, which is the site
+    // isPopulated()'s totality actually protects: `usable ? matchup.atBatIndex() : 0` mixes
+    // Integer with int, so binary numeric promotion UNBOXES and a guard covering only the ids
+    // would NPE here. The unit-test twin can assert isPopulated() but not this - a mocked
+    // repository's void method is a no-op and swallows the difference.
+    LocalDate date = LocalDate.of(2026, 6, 6);
+    insertPitch(715L, date, 1, 1, "BOS", "NYY", 1);
+    repo.upsertGameStatus(
+        715L, date, "IN_PROGRESS", new CurrentMatchup(676391L, 689296L, "R", "R", null));
+
+    assertNull(
+        repo.findGame(715L).orElseThrow().currentMatchup(),
+        "a matchup whose at-bat is unknown is not a usable matchup");
   }
 
   @Test

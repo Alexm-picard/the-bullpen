@@ -98,6 +98,18 @@ const GAME: Record<string, unknown> = {
   inning: 6,
   status: "IN_PROGRESS",
   detailedState: "In Progress",
+  // V031 live matchup. UNTYPED fixture (Record<string, unknown>), so tsc cannot flag a missing
+  // field here - hand-kept in step with the GameSummary DTO (#309 two-mock-layers lesson).
+  // A DIFFERENT batter from this file's fixture pitches (batterId 2): the page must show THIS
+  // one. Display coverage is asserted in game-page.test.tsx; here the two player routes below
+  // make the name resolvable so the e2e proves the precedence end-to-end rather than shape only.
+  currentMatchup: {
+    batterId: 900001,
+    pitcherId: 900002,
+    batSide: "R",
+    pitchHand: "R",
+    atBatIndex: 1,
+  },
 };
 
 function pitch(atBat: number, n: number, desc: string, type: string) {
@@ -158,9 +170,32 @@ test("live game page renders the pitch log when the feed has pitches", async ({
     }),
   );
 
+  // Resolve the LIVE matchup's players so the header renders names, not #ids - without these the
+  // spec could not tell a correct page from one that reverted to the last-pitch batter.
+  await page.route(`**/v1/players/900001`, (route) =>
+    json(route, {
+      id: 900001,
+      name: "Now Batting",
+      primaryPosition: "1B",
+      active: true,
+      team: "BAL",
+    }),
+  );
+  await page.route(`**/v1/players/900002`, (route) =>
+    json(route, {
+      id: 900002,
+      name: "Now Pitching",
+      primaryPosition: "P",
+      active: true,
+      team: "BOS",
+    }),
+  );
+
   await page.goto(`/games/${GAME_ID}`);
 
   await expect(page.locator("h1").first()).toBeVisible();
+  await expect(page.getByText("Now Batting")).toBeVisible();
+  await expect(page.getByText("Now Pitching")).toBeVisible();
   // The slug-era guard must not fire on a numeric id.
   await expect(page.getByText("Invalid game id")).toHaveCount(0);
   // The live pitch-log section + the pitch-count stat render against real rows.

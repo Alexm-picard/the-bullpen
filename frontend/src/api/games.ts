@@ -15,6 +15,23 @@ import { useMemo, useRef } from "react";
 
 import { API_BASE, ApiError } from "./base";
 
+/**
+ * The LIVE current-play matchup (V031) - who is standing in RIGHT NOW, from the
+ * feed's currentPlay rather than from the last pitch thrown. Absent (null on the
+ * parent) before first pitch, in the gap after a completed play, once the game is
+ * final, and on rows written before V031: treat null as "fall back to what you
+ * knew", never as an error.
+ */
+export type CurrentMatchup = {
+  batterId: number;
+  pitcherId: number;
+  /** "R" | "L" | "S" (switch, unresolved), or "" when the feed omitted it. */
+  batSide: string;
+  /** "R" | "L", or "" when the feed omitted it. */
+  pitchHand: string;
+  atBatIndex: number;
+};
+
 export type GameSummary = {
   gameId: number;
   gameDate: string; // YYYY-MM-DD
@@ -25,6 +42,8 @@ export type GameSummary = {
   inning: number;
   status: string; // GameStatus enum value (uppercase)
   detailedState: string;
+  /** Null whenever the feed carries no current play - see CurrentMatchup. */
+  currentMatchup: CurrentMatchup | null;
 };
 
 export type LivePitchRow = {
@@ -309,14 +328,55 @@ function isoDow(gameDate: string): number {
  * of the pitcher's hand, exactly as the server's resolveBatSide does. scoreDiff forwards the
  * row's serving-path constant verbatim (see LivePitchRow.scoreDiff).
  */
+/**
+ * True when the live matchup has moved PAST the pitch row's at-bat - i.e. that row is past tense.
+ *
+ * ONE implementation on purpose: the page em-dashes row-derived state on this predicate and
+ * nextPitchRequest withholds the request on it, and two copies could drift (flip one to >= and the
+ * page would em-dash a count while the request still fired, silently, with nothing failing). The
+ * shared name is also the cross-reference between the two call sites.
+ */
+export function matchupIsAheadOf(
+  matchup: CurrentMatchup | null | undefined,
+  row: { atBatIndex: number } | null | undefined,
+): boolean {
+  return matchup != null && row != null && matchup.atBatIndex > row.atBatIndex;
+}
+
 export function nextPitchRequest(
   row: LivePitchRow,
   gameDate: string,
+  matchup?: CurrentMatchup | null,
 ): PitchPredictionRequest | null {
   if (row.baseState == null || row.parkId === "") return null;
-  const throws = row.pitcherThrows;
+
+  // The LIVE matchup names who is actually standing in; the pitch row names who
+  // took the last pitch, and the count below is derived from that row. The
+  // comparison of their at-bat indices is ASYMMETRIC, because the two
+  // directions mean opposite things:
+  //
+  //   matchup AHEAD of the row -> POSITIVE EVIDENCE the row's at-bat is over,
+  //     which the row alone cannot supply. Withhold the request entirely. This
+  //     closes three real sequences the row's own terminal-outcome switch below
+  //     cannot see: an inning-ending caught stealing or pickoff on a non-
+  //     terminal count, a two-strike foul BUNT (call codes O/L, which the
+  //     parser maps to "foul"), and a foul tip caught for strike three. Each
+  //     otherwise logs a prediction_log row keyed to a pitch that will never be
+  //     thrown - against the very baseline the drift postmortem reads.
+  //   matchup BEHIND the row -> the game and pitches queries poll on separate
+  //     schedules, so the matchup can legitimately lag by a tick. The row is
+  //     the fresher source; use it.
+  //   equal -> same at-bat, so the matchup's identity and handedness win. This
+  //     admits the pinch hitter (who genuinely inherits the count) and a
+  //     mid-at-bat pitching change (which re-resolves a switch hitter).
+  if (matchupIsAheadOf(matchup, row)) return null;
+  const live =
+    matchup != null && matchup.atBatIndex === row.atBatIndex ? matchup : null;
+
+  const throws =
+    live && live.pitchHand !== "" ? live.pitchHand : row.pitcherThrows;
   if (throws !== "R" && throws !== "L") return null; // "" = pre-V028 row
-  let stand = row.batterStand;
+  let stand = live && live.batSide !== "" ? live.batSide : row.batterStand;
   if (stand === "S") stand = throws === "R" ? "L" : "R";
   if (stand !== "R" && stand !== "L") return null;
 
@@ -333,9 +393,12 @@ export function nextPitchRequest(
       if (strikes >= 3) return null; // strikeout - at-bat over
       break;
     case "foul":
-      // A foul never strikes out - with one KNOWN LEAK: the parser collapses foul-TIP call codes
-      // to "foul" too, so a caught foul tip on strike three (an at-bat-ending K) is indistinguishable
-      // from a live foul here and yields one throwaway request for a pitch that is never thrown.
+      // A foul never strikes out - with TWO KNOWN LEAKS, both now closed whenever a live matchup
+      // is available (see the asymmetric guard above): the parser collapses foul-TIP call codes to
+      // "foul", so a caught foul tip on strike three is indistinguishable from a live foul here;
+      // and it maps the foul-BUNT codes O/L to "foul" too, where a two-strike foul bunt IS strike
+      // three - deterministic, not a tracking blip. Either yields one throwaway request for a pitch
+      // that is never thrown.
       // Accepted: rare, one logged row, and unguardable from a single row (the next poll's
       // atBatIndex advance self-corrects the panel).
       if (strikes < 2) strikes += 1;
@@ -355,8 +418,8 @@ export function nextPitchRequest(
     pitcherThrows: throws,
     batterStand: stand,
     parkId: row.parkId,
-    pitcherId: row.pitcherId,
-    batterId: row.batterId,
+    pitcherId: live ? live.pitcherId : row.pitcherId,
+    batterId: live ? live.batterId : row.batterId,
   };
 }
 

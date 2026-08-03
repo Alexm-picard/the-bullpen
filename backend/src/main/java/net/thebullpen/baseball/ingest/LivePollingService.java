@@ -12,6 +12,7 @@ import net.thebullpen.baseball.config.IngestProperties;
 import net.thebullpen.baseball.data.JobLeaseRepository;
 import net.thebullpen.baseball.data.LivePitchesRepository;
 import net.thebullpen.baseball.data.PitcherFormRepository;
+import net.thebullpen.baseball.domain.CurrentMatchup;
 import net.thebullpen.baseball.domain.GameStatus;
 import net.thebullpen.baseball.domain.LivePitch;
 import net.thebullpen.baseball.domain.ScheduledGame;
@@ -72,6 +73,14 @@ public class LivePollingService {
   // first write (restart mid-game left the game invisible to /v1/games/today until its next
   // transition).
   private final java.util.Set<Long> statusPersisted = ConcurrentHashMap.newKeySet();
+  // The matchup key (at-bat index + batter id) last WRITTEN to live_game_status for a game, so the
+  // status row is re-upserted when the matchup moves - not only when the game's STATUS transitions.
+  // Without this the matchup would be written once (at the first transition of a game) and then sit
+  // frozen for nine innings, which is the very staleness this feature exists to remove. Keyed on
+  // BOTH fields because a pinch hitter keeps the at-bat index and changes the batter. The empty
+  // string encodes "no current play", so the null transition is written too and the row stops
+  // naming a batter who has finished hitting.
+  private final Map<Long, String> lastMatchupKey = new ConcurrentHashMap<>();
   private final Map<Long, Instant> lastPollAt = new ConcurrentHashMap<>();
   private final Map<Long, Long> lastCursorByGame = new ConcurrentHashMap<>();
   private final Map<Long, Long> lastPredictedKeyByGame = new ConcurrentHashMap<>();
@@ -130,6 +139,31 @@ public class LivePollingService {
     }
   }
 
+  /**
+   * The feed's live current-play matchup, or null when it carries no usable one.
+   *
+   * <p>{@code parseNextPitch} already yields null between plays and once the game is final; the
+   * extra {@link CurrentMatchup#isPopulated()} guard catches the OTHER absence shape - the parser's
+   * {@code asLong()} yields {@code 0L}, not null, for a missing id, so an early-GUMBO tick produces
+   * a matchup naming batter 0. Both collapse to "no matchup", which is WRITTEN - as the V031 0/''
+   * sentinels - rather than skipped, so the row stops advertising a finished batter.
+   */
+  private static CurrentMatchup currentMatchupOf(LiveGameFeed feed) {
+    LiveNextPitch next = feed.nextPitch();
+    if (next == null) {
+      return null;
+    }
+    CurrentMatchup m =
+        new CurrentMatchup(
+            next.batterId(), next.pitcherId(), next.batSide(), next.pitchHand(), next.atBatIndex());
+    return m.isPopulated() ? m : null;
+  }
+
+  /** Change key for the write gate; {@code ""} means "no current play" so null transitions fire. */
+  private static String matchupKeyOf(CurrentMatchup m) {
+    return m == null ? "" : m.atBatIndex() + ":" + m.batterId();
+  }
+
   /** Poll one game: fetch the feed, adopt its status, write new pitches, predict the next pitch. */
   void pollGame(long gamePk) {
     LiveGameFeed feed;
@@ -150,20 +184,30 @@ public class LivePollingService {
       // Schema-drift tripwire: the feed's detailedState matched nothing we know.
       metrics.incrementParseAnomaly("unknown_game_status");
     }
-    // Persist status on a transition (step 7b) OR on this process's first poll of the game (L1:
-    // restart-robustness - the schedule prime makes prev == current after a mid-game restart, so
-    // transition-only persistence left the game invisible to /v1/games/today until its next
-    // transition). The ReplacingMergeTree dedups the re-write.
-    if (prev == null || prev != current || !statusPersisted.contains(gamePk)) {
+    // Persist when ANY of four things is true: first-ever observation of the game, a status
+    // transition (step 7b), this process's first poll of it (L1: restart-robustness - the schedule
+    // prime makes prev == current after a mid-game restart, so transition-only persistence left
+    // the game invisible to /v1/games/today until its next transition), OR the MATCHUP MOVED.
+    // That last disjunct is what makes the current batter dynamic (V031): the matchup changes
+    // roughly once per at-bat while the status changes a handful of times per game, so a
+    // transition-only cadence would freeze the batter at whatever he was on the last transition.
+    // The ReplacingMergeTree dedups the re-writes.
+    CurrentMatchup matchup = currentMatchupOf(feed);
+    String matchupKey = matchupKeyOf(matchup);
+    boolean matchupMoved = !matchupKey.equals(lastMatchupKey.get(gamePk));
+    if (prev == null || prev != current || !statusPersisted.contains(gamePk) || matchupMoved) {
       if (feed.gameDate() != null) {
-        repo.upsertGameStatus(gamePk, feed.gameDate(), current.name());
+        repo.upsertGameStatus(gamePk, feed.gameDate(), current.name(), matchup);
         statusPersisted.add(gamePk);
+        lastMatchupKey.put(gamePk, matchupKey);
       } else {
         // No parseable gameData.datetime in the feed: the row cannot key into live_game_status,
         // so /v1/games/today will not surface this game (C-3 replay finding, 2026-06-11).
         metrics.incrementParseAnomaly("missing_game_date");
+        // This branch also fires on a MATCHUP move with prev == current, so it must not describe
+        // what was dropped as a "status transition".
         log.debug(
-            "game {} status transition {} -> {} not persisted: feed carried no gameDate",
+            "game {} status/matchup row not persisted (status {} -> {}): feed carried no gameDate",
             gamePk,
             prev,
             current);

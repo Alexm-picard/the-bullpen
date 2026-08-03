@@ -38,6 +38,7 @@ const GAME: GameSummary = {
   inning: 5,
   status: "IN_PROGRESS",
   detailedState: "In Progress",
+  currentMatchup: null,
 };
 
 function pitch(over: Partial<LivePitchRow> = {}): LivePitchRow {

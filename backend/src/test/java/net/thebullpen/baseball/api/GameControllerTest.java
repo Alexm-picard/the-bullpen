@@ -52,7 +52,8 @@ class GameControllerTest {
                     2,
                     7,
                     "IN_PROGRESS",
-                    "In Progress")));
+                    "In Progress",
+                    null)));
 
     mvc.perform(get("/v1/games/today"))
         .andExpect(status().isOk())
@@ -83,7 +84,8 @@ class GameControllerTest {
                     2,
                     7,
                     "IN_PROGRESS",
-                    "In Progress")));
+                    "In Progress",
+                    null)));
 
     mvc.perform(get("/v1/games/777001"))
         .andExpect(status().isOk())

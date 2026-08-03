@@ -59,6 +59,7 @@ function makeGame(overrides: Partial<GameSummary> = {}): GameSummary {
     inning: 5,
     status: "IN_PROGRESS",
     detailedState: "In Progress",
+    currentMatchup: null,
     ...overrides,
   };
 }
@@ -228,5 +229,235 @@ describe("GamePage (broadcast identity)", () => {
     expect(html).toContain("A static example of the per-park HR model");
     expect(html).toContain("MODEL EXAMPLE");
     expect(html).not.toContain("LIVE BIP");
+  });
+});
+
+/**
+ * The visible text of a rendered fragment - what a reader would actually see.
+ *
+ * Assertions on this page MUST run against this rather than raw markup: Mantine injects a
+ * stylesheet, and the live pitch board renders the same pitch's count in its own `Cnt` column, so
+ * a bare `toContain("2-1")` matches the BOARD and passes even when the Count stat correctly
+ * em-dashes. That is exactly how the first version of the past-tense assertion could not fail.
+ *
+ * Scanned rather than regex-stripped, deliberately. The obvious
+ * `.replace(/<style[\s\S]*?<\/style>/g, "").replace(/<[^>]+>/g, " ")` chain is shaped like an
+ * HTML sanitizer, and CodeQL flags it as one (js/incomplete-multi-character-sanitization, high) -
+ * correctly in general, even though nothing untrusted reaches this helper and its output is only
+ * ever asserted on. Rewriting removes the finding at its root instead of dismissing it. The scan
+ * is also simply more accurate: it skips a <style> element's CONTENT rather than hoping a lazy
+ * quantifier lines up, and drops attributes wholesale so no inline style= value can leak a token
+ * into an assertion.
+ *
+ * A tag boundary emits one space, so adjacent elements stay separate tokens and label/value
+ * assertions like /Count\s+—/ mean what they look like. Entity references are left ENCODED
+ * (&#x27; stays &#x27;), which is why assertions here compare rendered words, not punctuation.
+ */
+function visibleText(html: string): string {
+  const out: string[] = [];
+  let i = 0;
+  while (i < html.length) {
+    const lt = html.indexOf("<", i);
+    if (lt === -1) {
+      out.push(html.slice(i));
+      break;
+    }
+    out.push(html.slice(i, lt));
+    const gt = html.indexOf(">", lt);
+    if (gt === -1) break; // truncated final tag: nothing visible can follow it
+    const name = html
+      .slice(lt + 1, gt)
+      .trim()
+      .toLowerCase()
+      .split(/[\s/]/)[0];
+    if (name === "style" || name === "script") {
+      // Skip the whole ELEMENT: its content is CSS/JS, never page text.
+      const close = html.toLowerCase().indexOf(`</${name}`, gt);
+      const closeEnd = close === -1 ? -1 : html.indexOf(">", close);
+      i = closeEnd === -1 ? html.length : closeEnd + 1;
+    } else {
+      i = gt + 1;
+    }
+    out.push(" ");
+  }
+  return out.join("");
+}
+
+describe("GamePage current batter (V031 live matchup)", () => {
+  function seed(game: GameSummary, pitchOver: Partial<LivePitchRow> = {}) {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    client.setQueryData(["games", "byId", GAME_ID], game);
+    client.setQueryData(["games", "pitches", GAME_ID], [makePitch(pitchOver)]);
+    // 111/200 = the LAST PITCH's batter/pitcher; 900001/900002 = who is standing in NOW.
+    client.setQueryData(["players", "byId", 111], {
+      id: 111,
+      name: "Previous Batter",
+      primaryPosition: "RF",
+      active: true,
+      team: "NYY",
+    });
+    client.setQueryData(["players", "byId", 200], {
+      id: 200,
+      name: "Previous Pitcher",
+      primaryPosition: "P",
+      active: true,
+      team: "DET",
+    });
+    client.setQueryData(["players", "byId", 900001], {
+      id: 900001,
+      name: "Now Batting",
+      primaryPosition: "1B",
+      active: true,
+      team: "NYY",
+    });
+    client.setQueryData(["players", "byId", 900002], {
+      id: 900002,
+      name: "Now Pitching",
+      primaryPosition: "P",
+      active: true,
+      team: "DET",
+    });
+    return render(<GamePage />, `/games/${GAME_ID}`, client);
+  }
+
+  it("shows the batter STANDING IN, not the one who took the last pitch", () => {
+    // The whole defect: at an at-bat rollover the page named the previous batter until the new
+    // one's first pitch landed. With a live matchup it flips immediately.
+    const html = seed(
+      makeGame({
+        currentMatchup: {
+          batterId: 900001,
+          pitcherId: 900002,
+          batSide: "R",
+          pitchHand: "R",
+          atBatIndex: 2,
+        },
+      }),
+    );
+    expect(html).toContain("Now Batting");
+    expect(html).toContain("Now Pitching");
+    expect(html).not.toContain("Previous Batter");
+    // The fixture row is at-bat 1 while the matchup is at-bat 2 - the PAST-TENSE case. The
+    // prediction panel must be gated (never predicting for a finished at-bat) and the row-derived
+    // Count/Outs must read as unknown rather than pairing the live batter with a dead count.
+    expect(html).toContain("Awaiting a settled at-bat");
+    // Anchored to the STAT LABEL, so the pitch board's own count column cannot satisfy it.
+    expect(visibleText(html)).toMatch(/Count\s+—/);
+    expect(visibleText(html)).toMatch(/Outs\s+—/);
+  });
+
+  it("uses the row's count when the matchup describes the SAME at-bat", () => {
+    // The agreeing-index path, which no page-level test covered: the live batter is shown AND
+    // the row's count still describes him, so it must render rather than em-dash.
+    const html = seed(
+      makeGame({
+        currentMatchup: {
+          batterId: 900001,
+          pitcherId: 900002,
+          batSide: "R",
+          pitchHand: "R",
+          atBatIndex: 1,
+        },
+      }),
+      { balls: 2, strikes: 1, atBatIndex: 1 },
+    );
+    expect(html).toContain("Now Batting");
+    expect(visibleText(html)).toMatch(/Count\s+2-1/);
+  });
+
+  it("resolves a switch hitter's side against the current pitcher, never showing a raw (S)", () => {
+    // "S" is a roster fact, not a handedness for THIS matchup. nextPitchRequest already resolves
+    // it against the pitcher before the model sees it; if the chyron printed the raw code the
+    // header would claim (S) while the model input said L - the page contradicting itself.
+    const html = seed(
+      makeGame({
+        currentMatchup: {
+          batterId: 900001,
+          pitcherId: 900002,
+          batSide: "S",
+          pitchHand: "R",
+          atBatIndex: 1,
+        },
+      }),
+      { atBatIndex: 1 },
+    );
+    const text = visibleText(html);
+    expect(text).toMatch(/Now Batting\s*\(L\)/);
+    expect(text).toMatch(/Now Pitching\s*\(R\)/);
+    expect(text).not.toContain("(S)");
+  });
+
+  it("omits the side entirely when a switch hitter's pitcher hand is unknown", () => {
+    // Storage yields '' for an unpopulated hand while isPopulated() gates only on the IDS, so
+    // this row IS reachable. "S" with nothing to resolve against must print no parenthetical -
+    // not an empty " ()", and not a guessed side.
+    const html = seed(
+      makeGame({
+        currentMatchup: {
+          batterId: 900001,
+          pitcherId: 900002,
+          batSide: "S",
+          pitchHand: "",
+          atBatIndex: 1,
+        },
+      }),
+      { atBatIndex: 1 },
+    );
+    const text = visibleText(html);
+    expect(text).toContain("Now Batting");
+    expect(text).not.toContain("()");
+    expect(text).not.toContain("(S)");
+  });
+
+  it("never attaches handedness to a name that has not resolved yet", () => {
+    // This feature makes the pending window RECUR - every at-bat, pitching change and
+    // half-inning re-keys the player lookups - so "- (R)" would be a routine sight, handedness
+    // hanging off nobody.
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    client.setQueryData(
+      ["games", "byId", GAME_ID],
+      makeGame({
+        currentMatchup: {
+          batterId: 900007,
+          pitcherId: 900008,
+          batSide: "L",
+          pitchHand: "R",
+          atBatIndex: 1,
+        },
+      }),
+    );
+    client.setQueryData(["games", "pitches", GAME_ID], []);
+    const text = visibleText(render(<GamePage />, `/games/${GAME_ID}`, client));
+    expect(text).not.toContain("(L)");
+    expect(text).not.toContain("(R)");
+  });
+
+  it("falls back to the last pitch when the feed carries no current play", () => {
+    // Pre-game, between plays, final, and every pre-V031 row. The page must never render worse
+    // than it did before this feature existed.
+    const html = seed(makeGame({ currentMatchup: null }));
+    expect(html).toContain("Previous Batter");
+    expect(html).toContain("Previous Pitcher");
+  });
+
+  it("does not fabricate a name when neither source has one", () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    client.setQueryData(["games", "byId", GAME_ID], makeGame());
+    client.setQueryData(["games", "pitches", GAME_ID], []);
+    const html = render(<GamePage />, `/games/${GAME_ID}`, client);
+    // Assert against VISIBLE TEXT: Mantine injects a <style> block full of hex tokens
+    // (chrome/gold color values), so a raw "#0" probe matches the stylesheet, not the page.
+    // The hoisted strip is why this can probe for "#": raw markup carries Mantine's injected
+    // color tokens (and quoting one here would itself trip lint:hex-codes).
+    const text = visibleText(html);
+    expect(text).not.toContain("Now Batting");
+    expect(text).not.toMatch(/#\d/);
+    expect(text).toContain("\u2014"); // the em-dash placeholder, not a fabricated id
   });
 });

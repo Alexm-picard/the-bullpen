@@ -19,6 +19,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import javax.sql.DataSource;
+import net.thebullpen.baseball.domain.CurrentMatchup;
 import net.thebullpen.baseball.domain.GameStatus;
 import net.thebullpen.baseball.domain.GameSummary;
 import net.thebullpen.baseball.domain.LivePitch;
@@ -169,10 +170,40 @@ public class LivePitchesRepository {
           + " ORDER BY pred.at_bat_index ASC, pred.pitch_number ASC"
           + " LIMIT ? OFFSET ?";
 
+  // V031's live current-play matchup, read as ONE argMax over a TUPLE rather than five parallel
+  // argMax calls. WHAT THE TUPLE BUYS, stated in the present tense because a future editor will
+  // judge it on that and not on history: five independent argMax aggregate states can each
+  // resolve a TIED updated_at to a different row, which would tear the record - a batter from one
+  // row paired with an at-bat index from another. One tuple state cannot tear. (The historical
+  // reason this shape arrived - argMax skipping NULL args under the pre-fix Nullable columns - is
+  // recorded in V031's header, and no longer applies: the columns are non-Nullable, verified by
+  // mutating this read back to per-column argMax and watching the ITs still pass.)
+  //
+  // status stays OUTSIDE the tuple. Not because it is non-NULL - that prevents a row being
+  // SKIPPED, not two aggregate states disagreeing on a tie - but because a tie needs two writes
+  // for one game inside one second, and the per-game poll gate makes that unreachable short of a
+  // D-37 lease handover, where both rows would carry the same status anyway.
+  private static final String MATCHUP_SUBQUERY_COLS =
+      ", argMax(tuple(current_batter_id, current_pitcher_id, current_bat_side,"
+          + " current_pitch_hand, current_at_bat_index), updated_at) AS matchup";
+
+  // The tuple unpacked from the joined status alias. A LEFT JOIN miss yields the tuple type's
+  // default - (0, 0, '', '', 0), verified against the V031 types, NOT nulls - which isPopulated()
+  // rejects, so a game with no status row reports NO matchup rather than a matchup of zeroes.
+  // Naming the mechanism precisely matters here more than usual: NULL-vs-0 on this exact read
+  // path is what made the first version of this feature silently wrong.
+  private static final String MATCHUP_SELECT_COLS =
+      ", tupleElement(s.matchup, 1) AS current_batter_id,"
+          + " tupleElement(s.matchup, 2) AS current_pitcher_id,"
+          + " tupleElement(s.matchup, 3) AS current_bat_side,"
+          + " tupleElement(s.matchup, 4) AS current_pitch_hand,"
+          + " tupleElement(s.matchup, 5) AS current_at_bat_index";
+
   // Latest status per game from the poller (step 7b). argMax over the ReplacingMergeTree gives the
   // current status; a LEFT JOIN miss yields '' -> 'UNKNOWN' (the honest pre-poll answer).
   private static final String LATEST_STATUS_SUBQUERY =
       " LEFT JOIN ( SELECT game_id, argMax(status, updated_at) AS status"
+          + MATCHUP_SUBQUERY_COLS
           + " FROM live_game_status GROUP BY game_id ) AS s ON s.game_id = g.game_id";
 
   // The slate UNIONs both sources so a game appears whether it is pre-game (in scheduled_games,
@@ -192,7 +223,8 @@ public class LivePitchesRepository {
           + " if(p.away_team != '', p.away_team,"
           + "    if(sg.away_team != '', sg.away_team, sg.away_name)) AS away_team,"
           + " p.home_score AS home_score, p.away_score AS away_score, p.inning AS inning,"
-          + " if(s.status != '', s.status, if(sg.status != '', sg.status, 'UNKNOWN')) AS status";
+          + " if(s.status != '', s.status, if(sg.status != '', sg.status, 'UNKNOWN')) AS status"
+          + MATCHUP_SELECT_COLS;
 
   private static final String SLATE_SCHEDULED_JOIN =
       " LEFT JOIN ( SELECT game_id, game_date, home_team, away_team, home_name, away_name, status"
@@ -208,6 +240,7 @@ public class LivePitchesRepository {
 
   private static final String SLATE_STATUS_JOIN =
       " LEFT JOIN ( SELECT game_id, argMax(status, updated_at) AS status"
+          + MATCHUP_SUBQUERY_COLS
           + "   FROM live_game_status GROUP BY game_id ) AS s ON s.game_id = ids.game_id";
 
   private static final String FIND_GAMES_FOR_DATE =
@@ -229,15 +262,18 @@ public class LivePitchesRepository {
           + " if(sg.away_team != '', sg.away_team, sg.away_name) AS away_team,"
           + " 0 AS home_score, 0 AS away_score, 0 AS inning,"
           + " if(s.status != '', s.status, if(sg.status != '', sg.status, 'SCHEDULED')) AS status"
+          + MATCHUP_SELECT_COLS
           + " FROM ( SELECT game_id, game_date, home_team, away_team, home_name, away_name, status"
           + "        FROM scheduled_games FINAL WHERE game_id = ? ) AS sg"
           + " LEFT JOIN ( SELECT game_id, argMax(status, updated_at) AS status"
+          + MATCHUP_SUBQUERY_COLS
           + "   FROM live_game_status GROUP BY game_id ) AS s ON s.game_id = sg.game_id";
 
   private static final String FIND_GAME =
       "SELECT g.game_id AS game_id, g.game_date AS game_date, g.home_team AS home_team,"
           + " g.away_team AS away_team, g.home_score AS home_score, g.away_score AS away_score,"
           + " g.inning AS inning, if(s.status = '', 'UNKNOWN', s.status) AS status"
+          + MATCHUP_SELECT_COLS
           + " FROM ("
           + "   SELECT game_id, game_date, home_team, away_team,"
           + "          max(home_score) AS home_score, max(away_score) AS away_score,"
@@ -248,7 +284,9 @@ public class LivePitchesRepository {
           + LATEST_STATUS_SUBQUERY;
 
   private static final String INSERT_GAME_STATUS =
-      "INSERT INTO live_game_status (game_id, game_date, status) VALUES (?, ?, ?)";
+      "INSERT INTO live_game_status (game_id, game_date, status, current_batter_id,"
+          + " current_pitcher_id, current_bat_side, current_pitch_hand, current_at_bat_index)"
+          + " VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
 
   private static final String INSERT_SCHEDULED_GAME =
       "INSERT INTO scheduled_games"
@@ -384,13 +422,34 @@ public class LivePitchesRepository {
   }
 
   /**
-   * Upsert a game's current status; the poller (worker) calls this on a transition. The
-   * ReplacingMergeTree supersedes the prior row and findGamesForDate / findGame surface the latest
-   * via argMax. {@code game_date} is bound as an ISO-8601 String (clickhouse-jdbc inlines a bare
-   * date as arithmetic - same lesson as the pitches insert).
+   * Upsert a game's status row together with the LIVE current-play matchup (V031).
+   *
+   * <p>Called by the poller (worker) on a status transition, on its first poll of a game, or when
+   * the matchup moves. The ReplacingMergeTree supersedes the prior row and findGamesForDate /
+   * findGame surface the latest. {@code game_date} is bound as an ISO-8601 String (clickhouse-jdbc
+   * inlines a bare date as arithmetic - same lesson as the pitches insert).
+   *
+   * <p>The two travel in one row on purpose: they are read back with a single {@code
+   * argMax(tuple(..), updated_at)} off that row, so writing them separately could pair a batter
+   * from one tick with an at-bat index from another. {@code matchup} is null whenever the feed
+   * carries no current play (pre-game, between plays, final) - and that absence is WRITTEN, as the
+   * 0/'' sentinels, so the row stops advertising a batter who has already finished hitting. The
+   * sentinels are not a choice made here: the V031 columns are non-Nullable, so absence has exactly
+   * one storage shape, and {@code isPopulated()} is what rejects it on the way back out.
    */
-  public void upsertGameStatus(long gameId, LocalDate gameDate, String status) {
-    jdbc.update(INSERT_GAME_STATUS, gameId, gameDate.toString(), status);
+  public void upsertGameStatus(
+      long gameId, LocalDate gameDate, String status, CurrentMatchup matchup) {
+    boolean usable = matchup != null && matchup.isPopulated();
+    jdbc.update(
+        INSERT_GAME_STATUS,
+        gameId,
+        gameDate.toString(),
+        status,
+        usable ? matchup.batterId() : 0L,
+        usable ? matchup.pitcherId() : 0L,
+        usable ? nz(matchup.batSide()) : "",
+        usable ? nz(matchup.pitchHand()) : "",
+        usable ? matchup.atBatIndex() : 0);
   }
 
   /**
@@ -517,8 +576,29 @@ public class LivePitchesRepository {
             rs.getInt("away_score"),
             rs.getInt("inning"),
             status,
-            humanizeStatus(status));
+            humanizeStatus(status),
+            readMatchup(rs));
       };
+
+  /**
+   * The V031 matchup columns, or NULL when they do not describe a usable matchup.
+   *
+   * <p>Returns null - not a half-empty record - when the ids are absent, so the api omits the whole
+   * object rather than publishing a matchup a consumer would reasonably half-trust. Absent is ONE
+   * shape now that the columns are non-Nullable: 0, which covers a pre-V031 row, an early-GUMBO
+   * tick (the parser's missing-id value), a cleared matchup between plays, and a LEFT JOIN miss
+   * alike. {@link CurrentMatchup#isPopulated()} is the single place that decision lives.
+   */
+  private static CurrentMatchup readMatchup(ResultSet rs) throws SQLException {
+    CurrentMatchup m =
+        new CurrentMatchup(
+            rs.getLong("current_batter_id"),
+            rs.getLong("current_pitcher_id"),
+            nz(rs.getString("current_bat_side")),
+            nz(rs.getString("current_pitch_hand")),
+            rs.getInt("current_at_bat_index"));
+    return m.isPopulated() ? m : null;
+  }
 
   /** GameStatus enum name -> display label: IN_PROGRESS -> "In Progress", UNKNOWN -> "Unknown". */
   static String humanizeStatus(String status) {
