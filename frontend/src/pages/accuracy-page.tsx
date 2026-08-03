@@ -1,21 +1,27 @@
 /**
- * /accuracy - Held-Out Accuracy (Phase 3 PR-gamma).
+ * /accuracy - Model Accuracy (Phase 3 PR-gamma + the Live Scorecard).
  *
- * A public, single-column broadcast page that surfaces the project's OFFLINE
- * held-out evaluation numbers and, when served, the batted-ball retrodiction
- * backfill. The governing constraint is HONESTY: every number on this page is
- * labelled OFFLINE / rolling-origin CV / backfill - NEVER "live game accuracy".
+ * A public, single-column broadcast page with TWO deliberately separate
+ * surfaces. On top: the Live Scorecard - realized top-1 accuracy of
+ * champion-served LIVE predictions, truth-joined against what actually
+ * happened. Below: the OFFLINE held-out evaluation numbers and, when served,
+ * the batted-ball retrodiction backfill. The governing constraint is HONESTY:
+ * every number is labelled with WHICH surface it came from - live truth-join
+ * or offline rolling-origin CV - and the two never mix in one table.
  *
  * Composition (top -> bottom, inside the bordered field column):
  *   1. header ............. mono eyebrow + single <h1> + the honesty sub-line
- *   2. methodology note ... distinguishes OFFLINE held-out eval from live truth
- *                           and flags batted-ball reality-ECE vs ece_vs_retro
- *   3. Section A .......... Held-Out Scorecard (GET /v1/ops/accuracy) -> StatTable
+ *   2. methodology note ... names BOTH surfaces and their separation, and
+ *                           flags batted-ball reality-ECE vs ece_vs_retro
+ *   3. Live Scorecard ..... GET /v1/ops/rolling-accuracy -> <LiveScorecard>
+ *                           four-card grid (data-first: a failed poll shows a
+ *                           stale marker, never discards populated cards)
+ *   4. Section A .......... Held-Out Scorecard (GET /v1/ops/accuracy) -> StatTable
  *                           with an honest NoHistoryNote empty state
- *   4. Section B .......... Batted-Ball Backfill (GET /v1/ops/backfill-accuracy)
+ *   5. Section B .......... Batted-Ball Backfill (GET /v1/ops/backfill-accuracy)
  *                           -> ConfusionMatrix + aggregate StatTable + verbatim
  *                           disclaimer; 204/null -> NoHistoryNote empty state
- *   5. footer ribbon ...... copies the ops-page chrome
+ *   6. footer ribbon ...... copies the ops-page chrome
  *
  * Data sourcing:
  *   - Scorecard: LIVE via useModelScorecard (GET /v1/ops/accuracy). Offline CV
@@ -39,6 +45,11 @@ import {
   type BattedBallBackfillReport,
   type ModelScorecardRow,
 } from "../api/accuracy";
+import { useRollingAccuracy } from "../api/rolling-accuracy";
+import {
+  DEFAULT_WINDOW_DAYS,
+  LiveScorecard,
+} from "../components/accuracy/live-scorecard";
 import { LowerThird } from "../components/broadcast/lower-third";
 import { NoHistoryNote } from "../components/scouting/no-history-note";
 import { ConfusionMatrix } from "../components/accuracy/confusion-matrix";
@@ -97,6 +108,25 @@ const fmtSigned3 = (v: unknown): string => {
 
 const fmtInt = (v: unknown): string =>
   typeof v === "number" && Number.isFinite(v) ? v.toLocaleString() : String(v);
+
+/**
+ * The LIVE section's as-of stamp. Validated: an unparseable or missing
+ * generatedAt renders NOTHING - a thrown RangeError would take the whole page
+ * (offline sections included) to the ErrorBoundary, and a null coalesced into
+ * Dec 31 1969 would be a fabricated date on the one section labeled LIVE -
+ * the same defect class as a fabricated 0.0%.
+ */
+function asOfStamp(generatedAt: string | null | undefined): string {
+  if (generatedAt == null) return "";
+  const d = new Date(generatedAt);
+  if (!Number.isFinite(d.getTime())) return "";
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "America/New_York",
+  });
+  return ` As of ${fmt.format(d)} ET.`;
+}
 
 const fmtPct = (v: unknown): string =>
   typeof v === "number" && Number.isFinite(v)
@@ -177,6 +207,7 @@ function backfillAggregateRows(
 export default function AccuracyPage() {
   const scorecard = useModelScorecard();
   const backfill = useBattedBallBackfill();
+  const rolling = useRollingAccuracy();
 
   const scoreRows = scorecard.data ?? [];
   const hasScores = scoreRows.length > 0;
@@ -205,7 +236,7 @@ export default function AccuracyPage() {
             color: colors.goldInk,
           }}
         >
-          Model Accuracy
+          Live + Held-Out Scorecards
         </span>
         <h1
           style={{
@@ -220,7 +251,7 @@ export default function AccuracyPage() {
             color: colors.ink,
           }}
         >
-          Held-Out Accuracy
+          Model Accuracy
         </h1>
         <p
           style={{
@@ -231,21 +262,67 @@ export default function AccuracyPage() {
             lineHeight: 1.5,
           }}
         >
-          Offline rolling-origin CV on held-out folds - not live game accuracy.
+          Live realized accuracy on top; offline rolling-origin CV below. The
+          two surfaces never mix.
         </p>
       </header>
 
       <p style={noteStyle}>
-        These are OFFLINE numbers: each model is scored by rolling-origin
-        temporal cross-validation on held-out folds (2015-2025), never on live
-        in-production outcomes. There is no live truth-join behind this page - a
-        model's user-facing calibration is measured offline here, separately
-        from any future live verification. For the batted-ball model in
-        particular, read its REALITY ECE (calibration against realized outcomes)
-        as the honest figure; its {`ece_vs_retro`} is a self-referential gap
-        against the retrodiction target and is NOT a claim of real-world
-        calibration.
+        Two surfaces, deliberately separate. The LIVE SCORECARD is a real
+        truth-join: champion-served live predictions, deduped to one per
+        pitch, scored against what actually happened - and where a family has
+        no live truth, the card says why instead of inventing a number. The
+        OFFLINE sections below are rolling-origin temporal cross-validation on
+        held-out folds (2015-2025), never live outcomes; live numbers never
+        appear in those tables. For the batted-ball model in particular, read
+        its REALITY ECE (calibration against realized outcomes) as the honest
+        figure; its {`ece_vs_retro`} is a self-referential gap against the
+        retrodiction target and is NOT a claim of real-world calibration.
       </p>
+
+      <section aria-labelledby="live-scorecard-label">
+        <div style={{ marginBottom: 12 }}>
+          <LowerThird id="live-scorecard-label" meta="LIVE TRUTH-JOIN">
+            {`Live Scorecard (rolling ${rolling.data?.windowDays ?? DEFAULT_WINDOW_DAYS}d)`}
+          </LowerThird>
+        </div>
+        <p style={sectionNoteStyle}>
+          Realized top-1 accuracy of champion-served LIVE predictions against
+          what actually happened, deduped to one prediction per pitch and
+          truth-joined to the live feed. This section and the OFFLINE tables
+          below are deliberately separate surfaces - live numbers never mix
+          into held-out evaluation rows.
+          {rolling.data ? asOfStamp(rolling.data.generatedAt) : ""}
+        </p>
+        {rolling.data ? (
+          // DATA-FIRST: with refetchInterval polling, a transient failed poll
+          // is routine - it must never replace populated cards with an
+          // "unavailable" line (the query retains data across failed
+          // refetches). A stale marker says so instead.
+          <>
+            {rolling.isError ? (
+              <p style={sectionNoteStyle}>
+                The last refresh failed - showing the previous window.
+              </p>
+            ) : null}
+            <LiveScorecard
+              models={rolling.data.models}
+              windowDays={rolling.data.windowDays}
+              battedBallOfflineEce={
+                scoreRows.find((r) => r.modelName === "battedball_outcome")
+                  ?.ece ?? null
+              }
+            />
+          </>
+        ) : rolling.isLoading ? (
+          <p style={sectionNoteStyle}>Loading live scorecard...</p>
+        ) : (
+          <p style={sectionNoteStyle}>
+            Live scorecard unavailable right now - the OFFLINE held-out numbers
+            below are unaffected.
+          </p>
+        )}
+      </section>
 
       <section aria-labelledby="accuracy-scorecard-label">
         <div style={{ marginBottom: 12 }}>
