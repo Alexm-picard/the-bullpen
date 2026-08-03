@@ -28,9 +28,29 @@ function renderEmpty(): string {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  // Seed both queries as resolved-empty (the pre-evidence / 204 reality).
+  // Seed all three queries as resolved-empty (the pre-evidence / 204 reality).
+  // The live scorecard seeds ALL-no-truth: the honest pre-volume state, which
+  // must render reasons and never a fabricated %.
   client.setQueryData(["ops", "accuracy"], []);
   client.setQueryData(["ops", "backfill-accuracy"], null);
+  client.setQueryData(["ops", "rolling-accuracy"], {
+    windowDays: 7,
+    generatedAt: "2026-08-03T00:00:00Z",
+    models: [
+      "pitch_outcome_pre",
+      "pitch_outcome_post",
+      "battedball_outcome",
+      "pitch_type_pre",
+    ].map((modelName) => ({
+      modelName,
+      status: "no_live_truth",
+      reason: "no truth-joined volume in this environment",
+      top1: null,
+      n: null,
+      buckets: null,
+      note: null,
+    })),
+  });
   return renderToStaticMarkup(
     <QueryClientProvider client={client}>
       <MemoryRouter>
@@ -49,10 +69,21 @@ describe("AccuracyPage", () => {
     expect(h1Count).toBe(1);
   });
 
-  it("renders both LowerThird section labels", () => {
+  it("renders all three LowerThird section labels", () => {
     const html = renderEmpty();
+    expect(html).toContain("Live Scorecard (rolling 7d)");
     expect(html).toContain("Held-Out Scorecard");
     expect(html).toContain("Batted-Ball Backfill");
+  });
+
+  it("keeps the live and OFFLINE surfaces as separate sections", () => {
+    // The page's whole integrity is the hard separation: the live section is
+    // its own <section> ABOVE the offline one, never one table mixing both.
+    const html = renderEmpty();
+    const liveIdx = html.indexOf("Live Scorecard (rolling 7d)");
+    const offlineIdx = html.indexOf("Held-Out Scorecard");
+    expect(liveIdx).toBeGreaterThan(-1);
+    expect(offlineIdx).toBeGreaterThan(liveIdx);
   });
 
   it("renders the OFFLINE honesty sub-line", () => {

@@ -39,6 +39,8 @@ import {
   type BattedBallBackfillReport,
   type ModelScorecardRow,
 } from "../api/accuracy";
+import { useRollingAccuracy } from "../api/rolling-accuracy";
+import { LiveScorecard } from "../components/accuracy/live-scorecard";
 import { LowerThird } from "../components/broadcast/lower-third";
 import { NoHistoryNote } from "../components/scouting/no-history-note";
 import { ConfusionMatrix } from "../components/accuracy/confusion-matrix";
@@ -177,6 +179,7 @@ function backfillAggregateRows(
 export default function AccuracyPage() {
   const scorecard = useModelScorecard();
   const backfill = useBattedBallBackfill();
+  const rolling = useRollingAccuracy();
 
   const scoreRows = scorecard.data ?? [];
   const hasScores = scoreRows.length > 0;
@@ -246,6 +249,38 @@ export default function AccuracyPage() {
         against the retrodiction target and is NOT a claim of real-world
         calibration.
       </p>
+
+      <section aria-labelledby="live-scorecard-label">
+        <div style={{ marginBottom: 12 }}>
+          <LowerThird id="live-scorecard-label" meta="LIVE TRUTH-JOIN">
+            {`Live Scorecard (rolling ${rolling.data?.windowDays ?? 7}d)`}
+          </LowerThird>
+        </div>
+        <p style={sectionNoteStyle}>
+          Realized top-1 accuracy of champion-served LIVE predictions against
+          what actually happened, deduped to one prediction per pitch and
+          truth-joined to the live feed. This section and the OFFLINE tables
+          below are deliberately separate surfaces - live numbers never mix
+          into held-out evaluation rows.
+        </p>
+        {rolling.isLoading ? (
+          <p style={sectionNoteStyle}>Loading live scorecard...</p>
+        ) : rolling.isError || !rolling.data ? (
+          <p style={sectionNoteStyle}>
+            Live scorecard unavailable right now - the OFFLINE held-out numbers
+            below are unaffected.
+          </p>
+        ) : (
+          <LiveScorecard
+            models={rolling.data.models}
+            windowDays={rolling.data.windowDays}
+            battedBallOfflineEce={
+              scoreRows.find((r) => r.modelName === "battedball_outcome")
+                ?.ece ?? null
+            }
+          />
+        )}
+      </section>
 
       <section aria-labelledby="accuracy-scorecard-label">
         <div style={{ marginBottom: 12 }}>
