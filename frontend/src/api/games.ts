@@ -15,6 +15,23 @@ import { useMemo, useRef } from "react";
 
 import { API_BASE, ApiError } from "./base";
 
+/**
+ * The LIVE current-play matchup (V031) - who is standing in RIGHT NOW, from the
+ * feed's currentPlay rather than from the last pitch thrown. Absent (null on the
+ * parent) before first pitch, in the gap after a completed play, once the game is
+ * final, and on rows written before V031: treat null as "fall back to what you
+ * knew", never as an error.
+ */
+export type CurrentMatchup = {
+  batterId: number;
+  pitcherId: number;
+  /** "R" | "L" | "S" (switch, unresolved), or "" when the feed omitted it. */
+  batSide: string;
+  /** "R" | "L", or "" when the feed omitted it. */
+  pitchHand: string;
+  atBatIndex: number;
+};
+
 export type GameSummary = {
   gameId: number;
   gameDate: string; // YYYY-MM-DD
@@ -25,6 +42,8 @@ export type GameSummary = {
   inning: number;
   status: string; // GameStatus enum value (uppercase)
   detailedState: string;
+  /** Null whenever the feed carries no current play - see CurrentMatchup. */
+  currentMatchup: CurrentMatchup | null;
 };
 
 export type LivePitchRow = {
@@ -312,11 +331,24 @@ function isoDow(gameDate: string): number {
 export function nextPitchRequest(
   row: LivePitchRow,
   gameDate: string,
+  matchup?: CurrentMatchup | null,
 ): PitchPredictionRequest | null {
   if (row.baseState == null || row.parkId === "") return null;
-  const throws = row.pitcherThrows;
+
+  // The LIVE matchup names who is actually standing in; the pitch row names who
+  // took the last pitch. They differ exactly when a batter changed - and the
+  // count below comes from the ROW, so mixing a new batter with the previous
+  // at-bat's count would be incoherent. So the matchup is used only when it
+  // describes the SAME at-bat: that admits the pinch hitter (same index, new
+  // batter, and a pinch hitter really does inherit the count) and excludes the
+  // rollover case, where the row's terminal outcome gates the request anyway.
+  const live =
+    matchup != null && matchup.atBatIndex === row.atBatIndex ? matchup : null;
+
+  const throws =
+    live && live.pitchHand !== "" ? live.pitchHand : row.pitcherThrows;
   if (throws !== "R" && throws !== "L") return null; // "" = pre-V028 row
-  let stand = row.batterStand;
+  let stand = live && live.batSide !== "" ? live.batSide : row.batterStand;
   if (stand === "S") stand = throws === "R" ? "L" : "R";
   if (stand !== "R" && stand !== "L") return null;
 
@@ -355,8 +387,8 @@ export function nextPitchRequest(
     pitcherThrows: throws,
     batterStand: stand,
     parkId: row.parkId,
-    pitcherId: row.pitcherId,
-    batterId: row.batterId,
+    pitcherId: live ? live.pitcherId : row.pitcherId,
+    batterId: live ? live.batterId : row.batterId,
   };
 }
 

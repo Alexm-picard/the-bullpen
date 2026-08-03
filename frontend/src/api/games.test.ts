@@ -9,6 +9,7 @@ import {
   nextPitchRequest,
   statusPollIntervalMs,
   type GameSummary,
+  type CurrentMatchup,
   type LivePitchRow,
 } from "./games";
 
@@ -22,6 +23,7 @@ const SUMMARY: GameSummary = {
   inning: 7,
   status: "IN_PROGRESS",
   detailedState: "In Progress",
+  currentMatchup: null,
 };
 
 const PITCH: LivePitchRow = {
@@ -185,6 +187,98 @@ describe("mergePitchesNewestFirst", () => {
     const out = mergePitchesNewestFirst(new Map(), many);
     expect(out[0]?.cursor).toBe(159); // most recent, not the opener
     expect(out.slice(0, 50)[0]?.cursor).toBe(159); // slice keeps the newest, never cuts it
+  });
+});
+
+describe("nextPitchRequest with the LIVE current matchup (V031)", () => {
+  const GAME_DATE = "2026-07-20";
+
+  function row(over: Partial<LivePitchRow> = {}): LivePitchRow {
+    return {
+      ...PITCH,
+      atBatIndex: 5,
+      description: "ball",
+      balls: 1,
+      strikes: 1,
+      pitcherThrows: "R",
+      batterStand: "L",
+      baseState: 5,
+      parkId: "BOS",
+      scoreDiff: 0,
+      ...over,
+    };
+  }
+
+  const matchup = (over: Partial<CurrentMatchup> = {}): CurrentMatchup => ({
+    batterId: 900001,
+    pitcherId: 900002,
+    batSide: "R",
+    pitchHand: "L",
+    atBatIndex: 5,
+    ...over,
+  });
+
+  it("predicts for the batter STANDING IN, not the one who took the last pitch", () => {
+    // The pinch-hitter case: same at-bat, new batter. The count carries over (a pinch hitter
+    // really does inherit it), so the live identity AND handedness must win.
+    const req = nextPitchRequest(row(), GAME_DATE, matchup());
+    expect(req?.batterId).toBe(900001);
+    expect(req?.pitcherId).toBe(900002);
+    expect(req?.pitcherThrows).toBe("L");
+    expect(req?.batterStand).toBe("R");
+  });
+
+  it("resolves a switch hitter against the CURRENT pitcher", () => {
+    // The thing a last-pitch lookup cannot do: "S" is only meaningful against the pitcher now
+    // on the mound. Live pitchHand L -> the switch hitter bats R.
+    const req = nextPitchRequest(
+      row(),
+      GAME_DATE,
+      matchup({ batSide: "S", pitchHand: "L" }),
+    );
+    expect(req?.batterStand).toBe("R");
+    const vsRighty = nextPitchRequest(
+      row(),
+      GAME_DATE,
+      matchup({ batSide: "S", pitchHand: "R" }),
+    );
+    expect(vsRighty?.batterStand).toBe("L");
+  });
+
+  it("IGNORES a matchup from a different at-bat rather than mixing it with this count", () => {
+    // The coherence guard. The count comes from the row; a matchup whose at-bat has already
+    // advanced would pair a new batter with the previous at-bat's count - worse than either
+    // source alone. The row's own identity is used instead.
+    const req = nextPitchRequest(row(), GAME_DATE, matchup({ atBatIndex: 6 }));
+    expect(req?.batterId).toBe(PITCH.batterId);
+    expect(req?.pitcherThrows).toBe("R"); // the row's, not the matchup's "L"
+  });
+
+  it("falls back to the row when there is no live matchup at all", () => {
+    const withNull = nextPitchRequest(row(), GAME_DATE, null);
+    const withNothing = nextPitchRequest(row(), GAME_DATE);
+    expect(withNull).toEqual(withNothing);
+    expect(withNull?.batterId).toBe(PITCH.batterId);
+  });
+
+  it("falls back per-field when the feed omitted a handedness code", () => {
+    // "" is V031's unpopulated marker, not a value - it must not overwrite a good row value.
+    const req = nextPitchRequest(
+      row(),
+      GAME_DATE,
+      matchup({ batSide: "", pitchHand: "" }),
+    );
+    expect(req?.pitcherThrows).toBe("R"); // row's
+    expect(req?.batterStand).toBe("L"); // row's
+    expect(req?.batterId).toBe(900001); // identity still live
+  });
+
+  it("still gates on the row's terminal outcome - a live matchup does not force a request", () => {
+    // Ball four ends the at-bat; the request must stay null even though a matchup exists, so
+    // the panel gates rather than logging a prediction for a pitch that will not be thrown.
+    expect(
+      nextPitchRequest(row({ balls: 3 }), GAME_DATE, matchup()),
+    ).toBeNull();
   });
 });
 

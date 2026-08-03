@@ -59,6 +59,7 @@ function makeGame(overrides: Partial<GameSummary> = {}): GameSummary {
     inning: 5,
     status: "IN_PROGRESS",
     detailedState: "In Progress",
+    currentMatchup: null,
     ...overrides,
   };
 }
@@ -228,5 +229,90 @@ describe("GamePage (broadcast identity)", () => {
     expect(html).toContain("A static example of the per-park HR model");
     expect(html).toContain("MODEL EXAMPLE");
     expect(html).not.toContain("LIVE BIP");
+  });
+});
+
+describe("GamePage current batter (V031 live matchup)", () => {
+  function seed(game: GameSummary, pitchOver: Partial<LivePitchRow> = {}) {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    client.setQueryData(["games", "byId", GAME_ID], game);
+    client.setQueryData(["games", "pitches", GAME_ID], [makePitch(pitchOver)]);
+    // 111/200 = the LAST PITCH's batter/pitcher; 900001/900002 = who is standing in NOW.
+    client.setQueryData(["players", "byId", 111], {
+      id: 111,
+      name: "Previous Batter",
+      primaryPosition: "RF",
+      active: true,
+      team: "NYY",
+    });
+    client.setQueryData(["players", "byId", 200], {
+      id: 200,
+      name: "Previous Pitcher",
+      primaryPosition: "P",
+      active: true,
+      team: "DET",
+    });
+    client.setQueryData(["players", "byId", 900001], {
+      id: 900001,
+      name: "Now Batting",
+      primaryPosition: "1B",
+      active: true,
+      team: "NYY",
+    });
+    client.setQueryData(["players", "byId", 900002], {
+      id: 900002,
+      name: "Now Pitching",
+      primaryPosition: "P",
+      active: true,
+      team: "DET",
+    });
+    return render(<GamePage />, `/games/${GAME_ID}`, client);
+  }
+
+  it("shows the batter STANDING IN, not the one who took the last pitch", () => {
+    // The whole defect: at an at-bat rollover the page named the previous batter until the new
+    // one's first pitch landed. With a live matchup it flips immediately.
+    const html = seed(
+      makeGame({
+        currentMatchup: {
+          batterId: 900001,
+          pitcherId: 900002,
+          batSide: "R",
+          pitchHand: "R",
+          atBatIndex: 2,
+        },
+      }),
+    );
+    expect(html).toContain("Now Batting");
+    expect(html).toContain("Now Pitching");
+    expect(html).not.toContain("Previous Batter");
+  });
+
+  it("falls back to the last pitch when the feed carries no current play", () => {
+    // Pre-game, between plays, final, and every pre-V031 row. The page must never render worse
+    // than it did before this feature existed.
+    const html = seed(makeGame({ currentMatchup: null }));
+    expect(html).toContain("Previous Batter");
+    expect(html).toContain("Previous Pitcher");
+  });
+
+  it("does not fabricate a name when neither source has one", () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    client.setQueryData(["games", "byId", GAME_ID], makeGame());
+    client.setQueryData(["games", "pitches", GAME_ID], []);
+    const html = render(<GamePage />, `/games/${GAME_ID}`, client);
+    // Assert against VISIBLE TEXT: Mantine injects a <style> block full of hex tokens
+    // (#0E1B33 ...), so a raw "#0" probe matches the stylesheet rather than the page.
+    const text = html
+      .replace(/<style[\s\S]*?<\/style>/g, "")
+      .replace(/style="[^"]*"/g, "")
+      .replace(/<[^>]+>/g, " ");
+    expect(text).not.toContain("Now Batting");
+    expect(text).not.toMatch(/#\d/);
+    expect(text).toContain("\u2014"); // the em-dash placeholder, not a fabricated id
   });
 });

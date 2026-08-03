@@ -65,6 +65,8 @@ const SLATE_GAME = {
   inning: 6,
   status: "IN_PROGRESS",
   detailedState: "In Progress",
+  // V031: the slate carries the same nullable field; null is the honest pre-first-pitch shape.
+  currentMatchup: null,
 };
 
 test("games slate degrades to the showcase slate when the live API is empty", async ({

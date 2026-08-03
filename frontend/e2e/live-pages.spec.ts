@@ -98,6 +98,16 @@ const GAME: Record<string, unknown> = {
   inning: 6,
   status: "IN_PROGRESS",
   detailedState: "In Progress",
+  // V031 live matchup. UNTYPED fixture (Record<string, unknown>), so tsc cannot flag a missing
+  // field here - hand-kept in step with the GameSummary DTO (#309 two-mock-layers lesson).
+  // Deliberately a DIFFERENT batter from the fixture pitches' 111: the page must show THIS one.
+  currentMatchup: {
+    batterId: 900001,
+    pitcherId: 900002,
+    batSide: "R",
+    pitchHand: "R",
+    atBatIndex: 1,
+  },
 };
 
 function pitch(atBat: number, n: number, desc: string, type: string) {

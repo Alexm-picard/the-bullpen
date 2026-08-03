@@ -233,16 +233,24 @@ export function GamePage() {
     game.data?.status,
   );
   const mostRecent = pitches.pitches[0];
-  // Current pitcher + batter (id -> name). Hooks run before the early return; null id disables them.
-  const currentPitcher = usePlayer(mostRecent?.pitcherId ?? null);
-  const currentBatter = usePlayer(mostRecent?.batterId ?? null);
+  // WHO IS BATTING: the live currentPlay matchup when the feed has one, the last thrown pitch
+  // otherwise. The fallback is why this can never render worse than before - it IS the old
+  // behaviour - but when the matchup is present the page flips to the new batter the moment he
+  // steps in, instead of a plate appearance later when his first pitch lands.
+  const liveMatchup = game.data?.currentMatchup ?? null;
+  const shownPitcherId =
+    liveMatchup?.pitcherId ?? mostRecent?.pitcherId ?? null;
+  const shownBatterId = liveMatchup?.batterId ?? mostRecent?.batterId ?? null;
+  // Hooks run before the early return; null id disables them.
+  const currentPitcher = usePlayer(shownPitcherId);
+  const currentBatter = usePlayer(shownBatterId);
 
   // A6: the forward-looking next-pitch estimate (ADR-0014). nextPitchRequest returns null unless
   // the at-bat is settled (mid-at-bat, full V028 context), and the query additionally gates on the
   // game being live - both required, because every fired request logs to prediction_log.
   const nextReq =
     mostRecent && game.data
-      ? nextPitchRequest(mostRecent, game.data.gameDate)
+      ? nextPitchRequest(mostRecent, game.data.gameDate, liveMatchup)
       : null;
   const nextPitchEnabled = isLive(game.data) && nextReq != null;
   const nextPitch = usePitchPrediction(nextReq, { enabled: nextPitchEnabled });
@@ -308,13 +316,17 @@ export function GamePage() {
   const summary = game.data;
   const pitcherName =
     currentPitcher.data?.name ??
-    (mostRecent ? `#${mostRecent.pitcherId}` : "—");
+    (shownPitcherId != null ? `#${shownPitcherId}` : "—");
   const batterName =
-    currentBatter.data?.name ?? (mostRecent ? `#${mostRecent.batterId}` : "—");
-  // Per-pitcher pitch count - the CURRENT pitcher only, not the whole-game total.
-  const pitcherPitchCount = mostRecent
-    ? pitches.pitches.filter((p) => p.pitcherId === mostRecent.pitcherId).length
-    : 0;
+    currentBatter.data?.name ??
+    (shownBatterId != null ? `#${shownBatterId}` : "—");
+  // Per-pitcher pitch count - the CURRENT pitcher only, not the whole-game total. Counted against
+  // the pitcher actually on the mound, so a pitching change resets it immediately rather than
+  // carrying the reliever's count over from the pitcher he replaced.
+  const pitcherPitchCount =
+    shownPitcherId != null
+      ? pitches.pitches.filter((p) => p.pitcherId === shownPitcherId).length
+      : 0;
 
   // Live batted ball when this game has one; otherwise the showcase empty-state.
   const battedBall = liveBattedBall ?? SHOWCASE_BATTED_BALL;
