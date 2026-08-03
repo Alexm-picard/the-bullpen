@@ -144,10 +144,13 @@ class RollingAccuracyRepositoryIT {
   }
 
   /**
-   * Inserts and RETURNS the {@code game_date} the SERVER actually wrote ({@code today() - ?} in the
-   * container's timezone). Assertions must compare against this round-tripped value, never a
-   * Java-side date computation: between 00:00 and 04:00 UTC the container's {@code today()-1}
-   * aliases onto ET-today - exactly the skew that made the first A1 pin unable to fire.
+   * Inserts and RETURNS the {@code game_date} the server actually wrote - computed in ET ({@code
+   * toDate(now('America/New_York')) - ?}), the same basis as the repository's window bounds AND
+   * production semantics (ingest writes MLB's officialDate, a real baseball date). A server-TZ
+   * {@code today()} fixture re-entered the documented TODAY_ET trap twice in this review: round 1
+   * it aliased the A1 pin blind, round 3 it collided with the today-ET upper bound and failed five
+   * tests for the 00:00-04:59 UTC fifth of every CI day. Assertions compare against this
+   * round-tripped value, never a Java-side date computation.
    */
   private java.time.LocalDate insertRealized(
       long gameId,
@@ -163,7 +166,8 @@ class RollingAccuracyRepositoryIT {
                 "INSERT INTO pitches_live (game_id, at_bat_index, pitch_number, game_date,"
                     + " pitcher_id, batter_id, description, pitch_type, balls, strikes, outs,"
                     + " inning, home_score, away_score, home_team, away_team) VALUES"
-                    + " (?, ?, ?, today() - ?, 1, 2, ?, ?, 0, 0, 0, 1, 0, 0, 'HOME', 'AWAY')")) {
+                    + " (?, ?, ?, toDate(now('America/New_York')) - ?, 1, 2, ?, ?, 0, 0, 0, 1, 0, 0,"
+                    + " 'HOME', 'AWAY')")) {
       ps.setLong(1, gameId);
       ps.setInt(2, abIndex);
       ps.setInt(3, pitchNumber);
@@ -173,7 +177,7 @@ class RollingAccuracyRepositoryIT {
       ps.execute();
     }
     try (var conn = clickhouseDs.getConnection();
-        var ps = conn.prepareStatement("SELECT toDate(today() - ?)")) {
+        var ps = conn.prepareStatement("SELECT toDate(now('America/New_York')) - ?")) {
       ps.setInt(1, gameDateDaysAgo);
       try (var rs = ps.executeQuery()) {
         rs.next();
