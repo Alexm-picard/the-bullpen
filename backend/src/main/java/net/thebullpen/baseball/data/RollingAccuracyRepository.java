@@ -60,7 +60,10 @@ public class RollingAccuracyRepository {
   // Shared query scaffold. Holes: %1$s = the prediction-side winner projection, %2$s = the
   // scorable predicate over alias p, %3$s = the winner expression over alias p, %4$s = the truth
   // subquery (must project the join key + game_date + truth_class). Binds, in order:
-  // model_name, days+1 (prediction-side scan bound), days-1 (ET calendar-day window).
+  // model_name, days+1 (prediction-side scan bound), days-1 (ET calendar-day window). The truth
+  // side is also upper-bounded at today-ET: the parser's rare officialDate-absent fallback stamps
+  // the UTC first-pitch date, which for a late PT game is TOMORROW - without the bound that row
+  // would render a future sparkline bucket.
   private static final String SHAPE =
       "SELECT t.game_date AS d,"
           + " countIf(%2$s) AS n,"
@@ -94,7 +97,8 @@ public class RollingAccuracyRepository {
               + "   FROM pitches_live FINAL"
               + "   WHERE description IN"
               + "     ('ball', 'called_strike', 'swinging_strike', 'foul', 'in_play')"
-              + "     AND game_date >= toDate(now('America/New_York')) - ?");
+              + "     AND game_date >= toDate(now('America/New_York')) - ?"
+              + " AND game_date <= toDate(now('America/New_York'))");
 
   /**
    * y7 truth side: the realized Statcast {@code pitch_type} folded through the SAME canonical y7
@@ -116,7 +120,8 @@ public class RollingAccuracyRepository {
               + " AS truth_class"
               + "   FROM pitches_live FINAL"
               + "   WHERE pitch_type != ''"
-              + "     AND game_date >= toDate(now('America/New_York')) - ?");
+              + "     AND game_date >= toDate(now('America/New_York')) - ?"
+              + " AND game_date <= toDate(now('America/New_York'))");
 
   private static final RowMapper<RollingAccuracyBucket> BUCKET_MAPPER =
       (rs, i) ->

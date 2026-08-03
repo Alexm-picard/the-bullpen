@@ -140,10 +140,16 @@ class RollingAccuracyRepositoryIT {
   private void insertRealized(
       long gameId, int abIndex, int pitchNumber, String description, String pitchType)
       throws Exception {
-    insertRealized(gameId, abIndex, pitchNumber, description, pitchType, 0);
+    var unused = insertRealized(gameId, abIndex, pitchNumber, description, pitchType, 0);
   }
 
-  private void insertRealized(
+  /**
+   * Inserts and RETURNS the {@code game_date} the SERVER actually wrote ({@code today() - ?} in the
+   * container's timezone). Assertions must compare against this round-tripped value, never a
+   * Java-side date computation: between 00:00 and 04:00 UTC the container's {@code today()-1}
+   * aliases onto ET-today - exactly the skew that made the first A1 pin unable to fire.
+   */
+  private java.time.LocalDate insertRealized(
       long gameId,
       int abIndex,
       int pitchNumber,
@@ -165,6 +171,14 @@ class RollingAccuracyRepositoryIT {
       ps.setString(5, description);
       ps.setString(6, pitchType);
       ps.execute();
+    }
+    try (var conn = clickhouseDs.getConnection();
+        var ps = conn.prepareStatement("SELECT toDate(today() - ?)")) {
+      ps.setInt(1, gameDateDaysAgo);
+      try (var rs = ps.executeQuery()) {
+        rs.next();
+        return rs.getDate(1).toLocalDate();
+      }
     }
   }
 
@@ -257,26 +271,28 @@ class RollingAccuracyRepositoryIT {
   }
 
   @Test
-  void bucketsKeyOnTheGameDate_soACrossMidnightRelogCannotMigrateThem() throws Exception {
-    // Review A1, demonstrated against real CH: bucketing on the kept row's request_at let a
-    // 23:58 -> 00:05 ET re-log MOVE a pitch between daily buckets (window total stable, so the
-    // restart-stability pin alone could not see it). Buckets key on the truth side's game_date;
-    // yesterday's game must stay in yesterday's bucket no matter when the poller re-logs.
-    insertRealized(600L, 1, 1, "ball", "FF", 1); // game played YESTERDAY
+  void bucketsKeyOnTheGameDate_notTheKeptRelogsRequestTime() throws Exception {
+    // Review A1, round 2: the first version of this pin compared after-to-before (self-
+    // referential) with a yesterday fixture that UTC/ET skew aliased onto today - PROVEN unable
+    // to fail on the reverted implementation. This fixture forces the divergence: a game played
+    // THREE days ago (outside any TZ-skew window) whose prediction was logged NOW. Keying on
+    // game_date puts the bucket three days back; keying on the kept row's request_at would put
+    // it TODAY. The expected date is the server's own round-tripped write, never a Java-side
+    // date computation.
+    java.time.LocalDate gameDay = insertRealized(600L, 1, 1, "ball", "FF", 3);
     insertPrediction("pitch_outcome_pre", 600L, 1, 1, y5Prediction("ball"), 60);
 
     List<RollingAccuracyBucket> before = repo.pitchOutcomeDaily("pitch_outcome_pre", 7);
     assertThat(before).hasSize(1);
-    java.time.LocalDate bucketDate = before.getFirst().date();
+    assertThat(before.getFirst().date())
+        .as("the GAME's day - request_at-keyed bucketing would land today")
+        .isEqualTo(gameDay);
 
-    // The "cross-midnight" re-log: same pitch, much later request_at (a different clock day in
-    // the pathological case). The bucket date must NOT move.
+    // A later re-log must not migrate the bucket (the sparkline half of restart-stability).
     insertPrediction("pitch_outcome_pre", 600L, 1, 1, y5Prediction("ball"), 5);
     List<RollingAccuracyBucket> after = repo.pitchOutcomeDaily("pitch_outcome_pre", 7);
     assertThat(after).hasSize(1);
-    assertThat(after.getFirst().date())
-        .as("the game's day, not the re-log's")
-        .isEqualTo(bucketDate);
+    assertThat(after.getFirst().date()).isEqualTo(gameDay);
     assertThat(n(after)).isEqualTo(1);
   }
 

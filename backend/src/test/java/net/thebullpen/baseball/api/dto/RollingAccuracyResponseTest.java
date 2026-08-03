@@ -42,6 +42,7 @@ class RollingAccuracyResponseTest {
     assertThat(empty.top1()).isNull();
     assertThat(empty.n()).isNull();
     assertThat(empty.buckets()).isNull();
+    assertThat(empty.note()).isNull();
   }
 
   @Test
