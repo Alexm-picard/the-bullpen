@@ -13,8 +13,9 @@
  *                    never restates them as literals of its own
  *   accumulating ... pitch_type live but n < PITCH_TYPE_RENDER_FLOOR: NO %
  *                    renders (a % over a handful of predictions is noise
- *                    wearing a number) - the floor is the one fact the FE
- *                    owns, so the FE states it
+ *                    wearing a number) - the floor is an FE-owned fact, so
+ *                    the FE states it (class counts are the only other
+ *                    FE-owned model fact; no endpoint field carries them)
  *   degraded ....... a "live" entry missing its numbers, or a family missing
  *                    from the payload entirely: stated, never implied and
  *                    NEVER a fabricated 0.0% (top1 ?? 0 was the exact bug)
@@ -67,6 +68,9 @@ const cardStyle: React.CSSProperties = {
 const liveCardStyle: React.CSSProperties = {
   ...cardStyle,
   borderTop: `3px solid ${colors.gold}`,
+  // 2px less top padding compensates the 3px-vs-1px border so the first
+  // baseline stays aligned with the no-truth cards in the same grid row.
+  padding: "12px 16px 14px",
 };
 
 const modelNameStyle: React.CSSProperties = {
@@ -107,7 +111,7 @@ const qualifierStyle: React.CSSProperties = {
   paddingTop: 6,
   borderTop: `1px solid ${colors.rule}`,
   fontFamily: typography.fonts.mono,
-  fontSize: 11.5,
+  fontSize: 11,
   color: colors.text,
   lineHeight: 1.5,
 };
@@ -378,6 +382,13 @@ export function LiveScorecard({
     return pitchOutcomeCard(m, windowDays);
   });
 
+  // The mirror of the omission case: a family the endpoint ADDS beyond the
+  // contracted four renders through the generic pitch-outcome shape (its own
+  // status/reason/note) rather than silently vanishing.
+  const extras = models
+    .filter((m) => !(EXPECTED_MODELS as readonly string[]).includes(m.modelName))
+    .map((m) => pitchOutcomeCard(m, windowDays));
+
   return (
     <div
       style={{
@@ -387,6 +398,7 @@ export function LiveScorecard({
       }}
     >
       {cards}
+      {extras}
     </div>
   );
 }

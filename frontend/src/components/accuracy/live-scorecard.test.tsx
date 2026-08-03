@@ -200,6 +200,17 @@ describe("LiveScorecard", () => {
     expect(html).toContain("omitted this family");
   });
 
+  it("a family the endpoint ADDS beyond the contracted four still renders", () => {
+    // The mirror of the omission case: extras render through the generic
+    // shape rather than silently vanishing.
+    const html = render([
+      BATTED,
+      noTruth("some_future_model", "registered but not yet contracted here"),
+    ]);
+    expect(html).toContain("some_future_model");
+    expect(html).toContain("registered but not yet contracted here");
+  });
+
   it("a no_live_truth entry with a null reason states that the reason is missing", () => {
     const html = render([noTruth("pitch_outcome_post", null)]);
     expect(html).toContain("reported no reason");

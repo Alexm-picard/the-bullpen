@@ -62,7 +62,49 @@ function renderEmpty(): string {
   );
 }
 
+function renderWithGeneratedAt(generatedAt: unknown): string {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  client.setQueryData(["ops", "accuracy"], []);
+  client.setQueryData(["ops", "backfill-accuracy"], null);
+  client.setQueryData(["ops", "rolling-accuracy"], {
+    windowDays: 7,
+    generatedAt,
+    models: [],
+  });
+  return renderToStaticMarkup(
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        <MantineProvider theme={theme}>
+          <AccuracyPage />
+        </MantineProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
 describe("AccuracyPage", () => {
+  it("an unparseable generatedAt renders no stamp and does NOT take the page down", () => {
+    // Unvalidated, new Date("not-a-date") -> Intl.format throws RangeError and
+    // the ENTIRE page - offline sections included - goes to the ErrorBoundary.
+    const html = renderWithGeneratedAt("not-a-date");
+    expect(html).toContain(">Held-Out Scorecard<"); // the page survived
+    expect(html).not.toContain("As of");
+  });
+
+  it("a null generatedAt renders no stamp - never a fabricated 1969 date", () => {
+    const html = renderWithGeneratedAt(null);
+    expect(html).not.toContain("1969");
+    expect(html).not.toContain("As of");
+  });
+
+  it("a valid generatedAt renders the ET as-of stamp", () => {
+    const html = renderWithGeneratedAt("2026-08-02T22:00:00Z");
+    expect(html).toContain("As of");
+    expect(html).toContain("ET.");
+  });
+
   it("has exactly one <h1> on the page", () => {
     const html = renderEmpty();
     const h1Count = (html.match(/<h1/g) ?? []).length;
@@ -72,7 +114,9 @@ describe("AccuracyPage", () => {
   it("renders all three LowerThird section labels", () => {
     const html = renderEmpty();
     expect(html).toContain("Live Scorecard (rolling 7d)");
-    expect(html).toContain("Held-Out Scorecard");
+    // The exact-label form: a bare substring would match the header eyebrow
+    // ("Live + Held-Out Scorecards") and could never fail for the section.
+    expect(html).toContain(">Held-Out Scorecard<");
     expect(html).toContain("Batted-Ball Backfill");
   });
 

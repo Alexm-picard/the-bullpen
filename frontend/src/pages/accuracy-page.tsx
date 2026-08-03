@@ -11,14 +11,17 @@
  *
  * Composition (top -> bottom, inside the bordered field column):
  *   1. header ............. mono eyebrow + single <h1> + the honesty sub-line
- *   2. methodology note ... distinguishes OFFLINE held-out eval from live truth
- *                           and flags batted-ball reality-ECE vs ece_vs_retro
- *   3. Section A .......... Held-Out Scorecard (GET /v1/ops/accuracy) -> StatTable
+ *   2. methodology note ... names BOTH surfaces and their separation, and
+ *                           flags batted-ball reality-ECE vs ece_vs_retro
+ *   3. Live Scorecard ..... GET /v1/ops/rolling-accuracy -> <LiveScorecard>
+ *                           four-card grid (data-first: a failed poll shows a
+ *                           stale marker, never discards populated cards)
+ *   4. Section A .......... Held-Out Scorecard (GET /v1/ops/accuracy) -> StatTable
  *                           with an honest NoHistoryNote empty state
- *   4. Section B .......... Batted-Ball Backfill (GET /v1/ops/backfill-accuracy)
+ *   5. Section B .......... Batted-Ball Backfill (GET /v1/ops/backfill-accuracy)
  *                           -> ConfusionMatrix + aggregate StatTable + verbatim
  *                           disclaimer; 204/null -> NoHistoryNote empty state
- *   5. footer ribbon ...... copies the ops-page chrome
+ *   6. footer ribbon ...... copies the ops-page chrome
  *
  * Data sourcing:
  *   - Scorecard: LIVE via useModelScorecard (GET /v1/ops/accuracy). Offline CV
@@ -105,6 +108,25 @@ const fmtSigned3 = (v: unknown): string => {
 
 const fmtInt = (v: unknown): string =>
   typeof v === "number" && Number.isFinite(v) ? v.toLocaleString() : String(v);
+
+/**
+ * The LIVE section's as-of stamp. Validated: an unparseable or missing
+ * generatedAt renders NOTHING - a thrown RangeError would take the whole page
+ * (offline sections included) to the ErrorBoundary, and a null coalesced into
+ * Dec 31 1969 would be a fabricated date on the one section labeled LIVE -
+ * the same defect class as a fabricated 0.0%.
+ */
+function asOfStamp(generatedAt: string | null | undefined): string {
+  if (generatedAt == null) return "";
+  const d = new Date(generatedAt);
+  if (!Number.isFinite(d.getTime())) return "";
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "America/New_York",
+  });
+  return ` As of ${fmt.format(d)} ET.`;
+}
 
 const fmtPct = (v: unknown): string =>
   typeof v === "number" && Number.isFinite(v)
@@ -270,30 +292,35 @@ export default function AccuracyPage() {
           truth-joined to the live feed. This section and the OFFLINE tables
           below are deliberately separate surfaces - live numbers never mix
           into held-out evaluation rows.
-          {rolling.data
-            ? ` As of ${new Intl.DateTimeFormat("en-US", {
-                dateStyle: "medium",
-                timeStyle: "short",
-                timeZone: "America/New_York",
-              }).format(new Date(rolling.data.generatedAt))} ET.`
-            : ""}
+          {rolling.data ? asOfStamp(rolling.data.generatedAt) : ""}
         </p>
-        {rolling.isLoading ? (
+        {rolling.data ? (
+          // DATA-FIRST: with refetchInterval polling, a transient failed poll
+          // is routine - it must never replace populated cards with an
+          // "unavailable" line (the query retains data across failed
+          // refetches). A stale marker says so instead.
+          <>
+            {rolling.isError ? (
+              <p style={sectionNoteStyle}>
+                The last refresh failed - showing the previous window.
+              </p>
+            ) : null}
+            <LiveScorecard
+              models={rolling.data.models}
+              windowDays={rolling.data.windowDays}
+              battedBallOfflineEce={
+                scoreRows.find((r) => r.modelName === "battedball_outcome")
+                  ?.ece ?? null
+              }
+            />
+          </>
+        ) : rolling.isLoading ? (
           <p style={sectionNoteStyle}>Loading live scorecard...</p>
-        ) : rolling.isError || !rolling.data ? (
+        ) : (
           <p style={sectionNoteStyle}>
             Live scorecard unavailable right now - the OFFLINE held-out numbers
             below are unaffected.
           </p>
-        ) : (
-          <LiveScorecard
-            models={rolling.data.models}
-            windowDays={rolling.data.windowDays}
-            battedBallOfflineEce={
-              scoreRows.find((r) => r.modelName === "battedball_outcome")
-                ?.ece ?? null
-            }
-          />
         )}
       </section>
 
