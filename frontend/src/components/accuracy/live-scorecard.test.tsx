@@ -216,13 +216,17 @@ describe("LiveScorecard", () => {
     expect(html).toContain("reported no reason");
   });
 
-  it("the sparkline itself is aria-hidden - the svg, not some other element", () => {
+  it("the sparkline svg itself carries the house image semantics", () => {
+    // role="img" + aria-label ON THE SVG (the CI-enforced house convention,
+    // matching reliability-diagram/spray-chart) - anchored to the element so
+    // an attribute moved elsewhere cannot satisfy it.
     const html = render([
       live("pitch_outcome_pre", 0.41, 1000, [
         { date: "2026-08-01", n: 500, top1: 0.4 },
         { date: "2026-08-02", n: 500, top1: 0.42 },
       ]),
     ]);
-    expect(html).toMatch(/<svg[^>]*aria-hidden="true"/);
+    expect(html).toMatch(/<svg[^>]*role="img"/);
+    expect(html).toMatch(/<svg[^>]*aria-label="daily top-1/);
   });
 });

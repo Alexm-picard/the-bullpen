@@ -129,9 +129,11 @@ const fmtPct1 = (fraction: number): string => `${(fraction * 100).toFixed(1)}%`;
 // -- Sparkline -------------------------------------------------------------
 
 /**
- * Minimal inline polyline over the daily top-1 fractions. Decorative
- * (aria-hidden): the % and n are always printed as text, so the graphic is
- * never the sole carrier of the data.
+ * Minimal inline polyline over the daily top-1 fractions. Labeled image per
+ * the house SVG convention (role="img" + aria-label - CI-enforced by
+ * audit-a11y-static, matching reliability-diagram and spray-chart); the % and
+ * n are always printed as text, so the graphic is never the sole carrier of
+ * the data.
  *
  * The y-scale is ABSOLUTE 0..1 on purpose: auto-scaling would exaggerate
  * day-to-day noise, exactly what this feature exists not to do. Known
@@ -158,7 +160,8 @@ function Sparkline({ buckets }: { buckets: RollingDailyBucket[] }) {
       width={w}
       height={h}
       viewBox={`0 0 ${w} ${h}`}
-      aria-hidden="true"
+      role="img"
+      aria-label="daily top-1 realized accuracy trend, absolute 0 to 1 scale"
       style={{ display: "block", marginTop: 8 }}
     >
       <polyline
