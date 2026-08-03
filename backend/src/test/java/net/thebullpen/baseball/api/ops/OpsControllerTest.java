@@ -70,7 +70,8 @@ class OpsControllerTest {
                     registry,
                     opsEvents,
                     predictionLog,
-                    accuracyService))
+                    accuracyService,
+                    null))
             .setControllerAdvice(new ApiErrorAdvice())
             .build();
   }
@@ -142,7 +143,8 @@ class OpsControllerTest {
                     registry,
                     opsEvents,
                     predictionLog,
-                    accuracyService))
+                    accuracyService,
+                    null))
             .setControllerAdvice(new ApiErrorAdvice())
             .build();
     m.perform(get("/v1/ops/drift").param("model", "any")).andExpect(status().isOk());
@@ -298,11 +300,47 @@ class OpsControllerTest {
   }
 
   @Test
+  void rollingAccuracy_rejects_days_outside_1_to_30() throws Exception {
+    // Same anonymous-scan-DoS fence as latency, tighter cap: past the 14-day pitches_live TTL a
+    // wider window only widens the prediction_log scan for zero additional joinable truth.
+    mvc.perform(get("/v1/ops/rolling-accuracy").param("days", "31"))
+        .andExpect(status().isBadRequest());
+    mvc.perform(get("/v1/ops/rolling-accuracy").param("days", "0"))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void rollingAccuracy_withoutClickHouse_statesWhyForAllFourModels() throws Exception {
+    // The endpoint's honesty contract: absence is STATED, never implied. With no analytical
+    // store every family says why there is no live figure - no fabricated zeros, no omissions.
+    mvc.perform(get("/v1/ops/rolling-accuracy"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.windowDays").value(7))
+        .andExpect(jsonPath("$.models.length()").value(4))
+        .andExpect(jsonPath("$.models[0].modelName").value("pitch_outcome_pre"))
+        .andExpect(jsonPath("$.models[0].status").value("no_live_truth"))
+        .andExpect(jsonPath("$.models[0].top1").doesNotExist())
+        .andExpect(jsonPath("$.models[1].modelName").value("pitch_outcome_post"))
+        .andExpect(jsonPath("$.models[2].modelName").value("battedball_outcome"))
+        .andExpect(
+            jsonPath("$.models[2].reason").value(org.hamcrest.Matchers.containsString("[163]")))
+        .andExpect(jsonPath("$.models[3].modelName").value("pitch_type_pre"))
+        .andExpect(jsonPath("$.models[3].status").value("no_live_truth"));
+  }
+
+  @Test
   void latency_returns_empty_when_prediction_log_bean_is_absent() throws Exception {
     MockMvc m =
         MockMvcBuilders.standaloneSetup(
                 new OpsController(
-                    driftRepo, routingRepo, retrain, registry, opsEvents, null, accuracyService))
+                    driftRepo,
+                    routingRepo,
+                    retrain,
+                    registry,
+                    opsEvents,
+                    null,
+                    accuracyService,
+                    null))
             .setControllerAdvice(new ApiErrorAdvice())
             .build();
     m.perform(get("/v1/ops/latency")).andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
