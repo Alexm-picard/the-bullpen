@@ -58,5 +58,10 @@ export function useRollingAccuracy(): UseQueryResult<
     queryKey: ["ops", "rolling-accuracy"],
     queryFn: fetchRollingAccuracy,
     staleTime: 300_000,
+    // refetchOnWindowFocus is globally off (polling owns freshness); without
+    // an interval this section would be mount-only and a tab left open would
+    // never update. TTL-matched polling (the matchups idiom): at most one
+    // origin miss per edge-cache window.
+    refetchInterval: 300_000,
   });
 }

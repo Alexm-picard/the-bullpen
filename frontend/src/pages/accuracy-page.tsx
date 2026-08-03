@@ -1,10 +1,13 @@
 /**
- * /accuracy - Held-Out Accuracy (Phase 3 PR-gamma).
+ * /accuracy - Model Accuracy (Phase 3 PR-gamma + the Live Scorecard).
  *
- * A public, single-column broadcast page that surfaces the project's OFFLINE
- * held-out evaluation numbers and, when served, the batted-ball retrodiction
- * backfill. The governing constraint is HONESTY: every number on this page is
- * labelled OFFLINE / rolling-origin CV / backfill - NEVER "live game accuracy".
+ * A public, single-column broadcast page with TWO deliberately separate
+ * surfaces. On top: the Live Scorecard - realized top-1 accuracy of
+ * champion-served LIVE predictions, truth-joined against what actually
+ * happened. Below: the OFFLINE held-out evaluation numbers and, when served,
+ * the batted-ball retrodiction backfill. The governing constraint is HONESTY:
+ * every number is labelled with WHICH surface it came from - live truth-join
+ * or offline rolling-origin CV - and the two never mix in one table.
  *
  * Composition (top -> bottom, inside the bordered field column):
  *   1. header ............. mono eyebrow + single <h1> + the honesty sub-line
@@ -40,7 +43,10 @@ import {
   type ModelScorecardRow,
 } from "../api/accuracy";
 import { useRollingAccuracy } from "../api/rolling-accuracy";
-import { LiveScorecard } from "../components/accuracy/live-scorecard";
+import {
+  DEFAULT_WINDOW_DAYS,
+  LiveScorecard,
+} from "../components/accuracy/live-scorecard";
 import { LowerThird } from "../components/broadcast/lower-third";
 import { NoHistoryNote } from "../components/scouting/no-history-note";
 import { ConfusionMatrix } from "../components/accuracy/confusion-matrix";
@@ -208,7 +214,7 @@ export default function AccuracyPage() {
             color: colors.goldInk,
           }}
         >
-          Model Accuracy
+          Live + Held-Out Scorecards
         </span>
         <h1
           style={{
@@ -223,7 +229,7 @@ export default function AccuracyPage() {
             color: colors.ink,
           }}
         >
-          Held-Out Accuracy
+          Model Accuracy
         </h1>
         <p
           style={{
@@ -234,26 +240,28 @@ export default function AccuracyPage() {
             lineHeight: 1.5,
           }}
         >
-          Offline rolling-origin CV on held-out folds - not live game accuracy.
+          Live realized accuracy on top; offline rolling-origin CV below. The
+          two surfaces never mix.
         </p>
       </header>
 
       <p style={noteStyle}>
-        These are OFFLINE numbers: each model is scored by rolling-origin
-        temporal cross-validation on held-out folds (2015-2025), never on live
-        in-production outcomes. There is no live truth-join behind this page - a
-        model's user-facing calibration is measured offline here, separately
-        from any future live verification. For the batted-ball model in
-        particular, read its REALITY ECE (calibration against realized outcomes)
-        as the honest figure; its {`ece_vs_retro`} is a self-referential gap
-        against the retrodiction target and is NOT a claim of real-world
-        calibration.
+        Two surfaces, deliberately separate. The LIVE SCORECARD is a real
+        truth-join: champion-served live predictions, deduped to one per
+        pitch, scored against what actually happened - and where a family has
+        no live truth, the card says why instead of inventing a number. The
+        OFFLINE sections below are rolling-origin temporal cross-validation on
+        held-out folds (2015-2025), never live outcomes; live numbers never
+        appear in those tables. For the batted-ball model in particular, read
+        its REALITY ECE (calibration against realized outcomes) as the honest
+        figure; its {`ece_vs_retro`} is a self-referential gap against the
+        retrodiction target and is NOT a claim of real-world calibration.
       </p>
 
       <section aria-labelledby="live-scorecard-label">
         <div style={{ marginBottom: 12 }}>
           <LowerThird id="live-scorecard-label" meta="LIVE TRUTH-JOIN">
-            {`Live Scorecard (rolling ${rolling.data?.windowDays ?? 7}d)`}
+            {`Live Scorecard (rolling ${rolling.data?.windowDays ?? DEFAULT_WINDOW_DAYS}d)`}
           </LowerThird>
         </div>
         <p style={sectionNoteStyle}>
@@ -262,6 +270,13 @@ export default function AccuracyPage() {
           truth-joined to the live feed. This section and the OFFLINE tables
           below are deliberately separate surfaces - live numbers never mix
           into held-out evaluation rows.
+          {rolling.data
+            ? ` As of ${new Intl.DateTimeFormat("en-US", {
+                dateStyle: "medium",
+                timeStyle: "short",
+                timeZone: "America/New_York",
+              }).format(new Date(rolling.data.generatedAt))} ET.`
+            : ""}
         </p>
         {rolling.isLoading ? (
           <p style={sectionNoteStyle}>Loading live scorecard...</p>

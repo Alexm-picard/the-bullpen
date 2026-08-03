@@ -1,22 +1,29 @@
 /**
  * The /accuracy Live Scorecard section (Alex's ask): rolling realized top-1
  * accuracy for all four families, LIVE truth-join numbers only - rendered
- * ABOVE and visually separate from the OFFLINE held-out table, because that
- * separation is the page's whole integrity.
+ * ABOVE and structurally separate from the OFFLINE held-out tables, because
+ * that separation is the page's whole integrity.
  *
- * Card states (all four exercised by tests):
- *   live ........... big % (top-1 realized), n + window beneath, sparkline
- *                    when the endpoint provides >= 2 daily buckets
- *   no-truth ....... battedball: the OFFLINE figure labeled exactly as the
- *                    table labels it, plus the [163] calibrated-physics line
- *   accumulating ... pitch_type before any truth-joinable volume
- *   below-floor .... pitch_type live but n < 500: NO % renders (a % over a
- *                    handful of predictions is noise wearing a number)
+ * Card states (all exercised by tests):
+ *   live ........... big % (top-1 realized), class count + n + window
+ *                    beneath, sparkline when >= 2 daily buckets
+ *   no-truth ....... the endpoint's own reason rendered VERBATIM - the
+ *                    backend owns the facts (the [163] framing, the
+ *                    promotion date, the store-down state); this component
+ *                    never restates them as literals of its own
+ *   accumulating ... pitch_type live but n < PITCH_TYPE_RENDER_FLOOR: NO %
+ *                    renders (a % over a handful of predictions is noise
+ *                    wearing a number) - the floor is the one fact the FE
+ *                    owns, so the FE states it
+ *   degraded ....... a "live" entry missing its numbers, or a family missing
+ *                    from the payload entirely: stated, never implied and
+ *                    NEVER a fabricated 0.0% (top1 ?? 0 was the exact bug)
  *
  * Honesty constraints (non-negotiable, from the work order): pitch-type is a
  * calibrated prior promoted on calibration ([183]) - its top-1 is
- * supplementary and captioned, never the claim; batted-ball's reality gap
- * stays stated ([163]); every rendered % carries its n and window.
+ * supplementary and captioned (the endpoint's own note, FE fallback only if
+ * absent); batted-ball's reality gap stays stated in the backend's words;
+ * every rendered % carries its class count, n and window.
  */
 import type {
   ModelRollingAccuracy,
@@ -30,11 +37,36 @@ import { colors, typography } from "../../design/broadcast";
  */
 export const PITCH_TYPE_RENDER_FLOOR = 500;
 
+/** The backend's default window; used only while the response is in flight. */
+export const DEFAULT_WINDOW_DAYS = 7;
+
+/** The four families the endpoint contracts to report, in display order. */
+const EXPECTED_MODELS = [
+  "pitch_outcome_pre",
+  "pitch_outcome_post",
+  "battedball_outcome",
+  "pitch_type_pre",
+] as const;
+
+/** Outcome-class counts, the anchor a bare % lacks (top-1 of HOW MANY?). */
+const CLASS_COUNT: Record<string, number> = {
+  pitch_outcome_pre: 5,
+  pitch_outcome_post: 5,
+  pitch_type_pre: 7,
+};
+
 const cardStyle: React.CSSProperties = {
   border: `1px solid ${colors.rule}`,
   background: colors.panel,
   padding: "14px 16px",
   minWidth: 0,
+};
+
+// LIVE cards carry the sanctioned live-state mark: a gold edge FILL on the
+// frame (energy in the frame, restraint in the cells) - never gold text.
+const liveCardStyle: React.CSSProperties = {
+  ...cardStyle,
+  borderTop: `3px solid ${colors.gold}`,
 };
 
 const modelNameStyle: React.CSSProperties = {
@@ -47,12 +79,14 @@ const modelNameStyle: React.CSSProperties = {
   color: colors.textMuted,
 };
 
+// scale[5], deliberately NOT scale[6]: a card stat competing at h1 size
+// flattens the page hierarchy; 32px still dominates within the card.
 const bigPctStyle: React.CSSProperties = {
   margin: "6px 0 0",
   fontFamily: typography.fonts.display,
   fontStyle: "italic",
   fontWeight: typography.weights.heavy,
-  fontSize: typography.scale[6],
+  fontSize: typography.scale[5],
   lineHeight: 1.1,
   color: colors.ink,
 };
@@ -65,7 +99,20 @@ const subStyle: React.CSSProperties = {
   lineHeight: 1.45,
 };
 
-const captionStyle: React.CSSProperties = {
+// The qualifier is contractually required reading, not a footnote: mono, full
+// text color, and a hairline rule so it cannot dissolve into the metadata
+// line above it (the "big claim, small disclaimer" trap).
+const qualifierStyle: React.CSSProperties = {
+  margin: "8px 0 0",
+  paddingTop: 6,
+  borderTop: `1px solid ${colors.rule}`,
+  fontFamily: typography.fonts.mono,
+  fontSize: 11.5,
+  color: colors.text,
+  lineHeight: 1.5,
+};
+
+const detailStyle: React.CSSProperties = {
   margin: "8px 0 0",
   fontFamily: typography.fonts.body,
   fontSize: 12,
@@ -81,6 +128,12 @@ const fmtPct1 = (fraction: number): string => `${(fraction * 100).toFixed(1)}%`;
  * Minimal inline polyline over the daily top-1 fractions. Decorative
  * (aria-hidden): the % and n are always printed as text, so the graphic is
  * never the sole carrier of the data.
+ *
+ * The y-scale is ABSOLUTE 0..1 on purpose: auto-scaling would exaggerate
+ * day-to-day noise, exactly what this feature exists not to do. Known
+ * trade-off, accepted: every plotted day weighs equally regardless of its n,
+ * so a thin day can draw the same spike as a heavy one - the honest total
+ * is always the printed %, not the line.
  */
 function Sparkline({ buckets }: { buckets: RollingDailyBucket[] }) {
   const w = 120;
@@ -118,45 +171,173 @@ function Sparkline({ buckets }: { buckets: RollingDailyBucket[] }) {
 
 function LivePctCard({
   model,
+  top1,
+  n,
   windowDays,
-  caption,
+  qualifier,
 }: {
   model: ModelRollingAccuracy;
+  top1: number;
+  n: number;
   windowDays: number;
-  caption?: string;
+  qualifier?: string | null;
 }) {
   const buckets = model.buckets ?? [];
+  const classCount = CLASS_COUNT[model.modelName];
   return (
-    <article style={cardStyle} aria-label={`${model.modelName} live accuracy`}>
+    <article
+      style={liveCardStyle}
+      aria-label={`${model.modelName} live accuracy`}
+    >
       <p style={modelNameStyle}>{model.modelName}</p>
-      <p style={bigPctStyle}>{fmtPct1(model.top1 ?? 0)}</p>
+      <p style={bigPctStyle}>{fmtPct1(top1)}</p>
       <p style={subStyle}>
-        top-1 realized · n = {(model.n ?? 0).toLocaleString()} · rolling{" "}
-        {windowDays}d
+        top-1 realized{classCount ? ` of ${classCount} classes` : ""} · n ={" "}
+        {n.toLocaleString()} · rolling {windowDays}d
       </p>
       {buckets.length >= 2 ? <Sparkline buckets={buckets} /> : null}
-      {caption ? <p style={captionStyle}>{caption}</p> : null}
+      {qualifier ? <p style={qualifierStyle}>{qualifier}</p> : null}
     </article>
   );
 }
 
 function NoTruthCard({
-  model,
+  modelName,
   headline,
   detail,
+  note,
 }: {
-  model: ModelRollingAccuracy;
+  modelName: string;
   headline: string;
   detail: string | null;
+  note?: string | null;
 }) {
   return (
-    <article style={cardStyle} aria-label={`${model.modelName} no live truth`}>
-      <p style={modelNameStyle}>{model.modelName}</p>
+    <article style={cardStyle} aria-label={`${modelName} no live truth`}>
+      <p style={modelNameStyle}>{modelName}</p>
       <p style={{ ...subStyle, marginTop: 6, color: colors.text }}>
         {headline}
       </p>
-      {detail ? <p style={captionStyle}>{detail}</p> : null}
+      <p style={detailStyle}>
+        {detail ?? "the endpoint reported no reason for this state"}
+      </p>
+      {note ? <p style={qualifierStyle}>{note}</p> : null}
     </article>
+  );
+}
+
+// -- Per-family rendering --------------------------------------------------
+
+/** A "live" entry is renderable only when its numbers actually exist. */
+function renderableLive(
+  m: ModelRollingAccuracy,
+): { top1: number; n: number } | null {
+  if (m.status !== "live" || m.top1 == null || m.n == null) {
+    return null;
+  }
+  return { top1: m.top1, n: m.n };
+}
+
+function pitchOutcomeCard(m: ModelRollingAccuracy, windowDays: number) {
+  const nums = renderableLive(m);
+  if (nums) {
+    return (
+      <LivePctCard
+        key={m.modelName}
+        model={m}
+        top1={nums.top1}
+        n={nums.n}
+        windowDays={windowDays}
+        qualifier={m.note}
+      />
+    );
+  }
+  // no_live_truth, OR a "live" entry whose numbers are missing: stated,
+  // never a fabricated 0.0% (top1 ?? 0 was the exact bug this replaces).
+  return (
+    <NoTruthCard
+      key={m.modelName}
+      modelName={m.modelName}
+      headline="no live truth"
+      detail={
+        m.status === "live"
+          ? "the endpoint reported a live status without its numbers - treated as no truth"
+          : m.reason
+      }
+      note={m.note}
+    />
+  );
+}
+
+function battedBallCard(
+  m: ModelRollingAccuracy,
+  battedBallOfflineEce: number | null,
+) {
+  // Deliberately ALWAYS the no-truth card, whatever the status says: this
+  // family's live realized accuracy is structurally unavailable ([163]), and
+  // if the endpoint ever claimed otherwise that is a contract change to
+  // review, not silently render.
+  return (
+    <NoTruthCard
+      key={m.modelName}
+      modelName={m.modelName}
+      headline={
+        battedBallOfflineEce != null
+          ? `offline ECE ${battedBallOfflineEce.toFixed(3)} (calibration error)`
+          : "no live truth"
+      }
+      detail={
+        m.reason ?? "no live truth-join - calibrated physics estimate ([163])"
+      }
+      note={m.note}
+    />
+  );
+}
+
+function pitchTypeCard(m: ModelRollingAccuracy, windowDays: number) {
+  const nums = renderableLive(m);
+  if (nums && nums.n >= PITCH_TYPE_RENDER_FLOOR) {
+    return (
+      <LivePctCard
+        key={m.modelName}
+        model={m}
+        top1={nums.top1}
+        n={nums.n}
+        windowDays={windowDays}
+        // The endpoint's own [183] note is the caption; the FE fallback
+        // exists only for an older payload without one.
+        qualifier={
+          m.note ??
+          "calibrated prior; top-1 is supplementary, never the claim ([183])"
+        }
+      />
+    );
+  }
+  if (nums) {
+    // Below the floor: the floor is the one fact the FE owns, so the FE
+    // states it - everything else (the promotion date, the [183] framing)
+    // stays in the backend's reason/note.
+    return (
+      <NoTruthCard
+        key={m.modelName}
+        modelName={m.modelName}
+        headline="accumulating"
+        detail={`n = ${nums.n.toLocaleString()} so far; a % renders at n >= ${PITCH_TYPE_RENDER_FLOOR.toLocaleString()} - a percentage over a handful of predictions is noise wearing a number`}
+        note={m.note}
+      />
+    );
+  }
+  // no_live_truth: the endpoint's reason is the headline fact (it says
+  // whether this is accumulation, a store outage, or anything else) - the
+  // FE must not caption an infrastructure state as progress.
+  return (
+    <NoTruthCard
+      key={m.modelName}
+      modelName={m.modelName}
+      headline="no live truth yet"
+      detail={m.reason}
+      note={m.note}
+    />
   );
 }
 
@@ -169,14 +350,33 @@ export function LiveScorecard({
 }: {
   models: ModelRollingAccuracy[];
   windowDays: number;
-  /** The OFFLINE table's batted-ball ECE, echoed on its card with the same label. */
+  /** The OFFLINE table's batted-ball ECE, echoed on its card with its label. */
   battedBallOfflineEce: number | null;
 }) {
   const byName = new Map(models.map((m) => [m.modelName, m]));
-  const pre = byName.get("pitch_outcome_pre");
-  const post = byName.get("pitch_outcome_post");
-  const battedBall = byName.get("battedball_outcome");
-  const pitchType = byName.get("pitch_type_pre");
+
+  const cards = EXPECTED_MODELS.map((name) => {
+    const m = byName.get(name);
+    if (!m) {
+      // The endpoint contracts "absence is stated, never implied"; a family
+      // it failed to return must not silently vanish from the page either.
+      return (
+        <NoTruthCard
+          key={name}
+          modelName={name}
+          headline="not reported"
+          detail="the endpoint omitted this family from its response"
+        />
+      );
+    }
+    if (name === "battedball_outcome") {
+      return battedBallCard(m, battedBallOfflineEce);
+    }
+    if (name === "pitch_type_pre") {
+      return pitchTypeCard(m, windowDays);
+    }
+    return pitchOutcomeCard(m, windowDays);
+  });
 
   return (
     <div
@@ -186,55 +386,7 @@ export function LiveScorecard({
         gap: 12,
       }}
     >
-      {pre && pre.status === "live" ? (
-        <LivePctCard model={pre} windowDays={windowDays} />
-      ) : pre ? (
-        <NoTruthCard model={pre} headline="no live truth" detail={pre.reason} />
-      ) : null}
-
-      {post && post.status === "live" ? (
-        <LivePctCard model={post} windowDays={windowDays} />
-      ) : post ? (
-        <NoTruthCard
-          model={post}
-          headline="no live truth"
-          detail={post.reason}
-        />
-      ) : null}
-
-      {battedBall ? (
-        <NoTruthCard
-          model={battedBall}
-          headline={
-            battedBallOfflineEce != null
-              ? `ECE ${battedBallOfflineEce.toFixed(3)} (offline)`
-              : "no live truth"
-          }
-          detail="no live truth-join - calibrated physics estimate ([163])"
-        />
-      ) : null}
-
-      {pitchType && pitchType.status === "live" ? (
-        (pitchType.n ?? 0) >= PITCH_TYPE_RENDER_FLOOR ? (
-          <LivePctCard
-            model={pitchType}
-            windowDays={windowDays}
-            caption="calibrated prior; top-1 is supplementary, never the claim ([183])"
-          />
-        ) : (
-          <NoTruthCard
-            model={pitchType}
-            headline="accumulating - promoted 2026-08-02"
-            detail={`n = ${(pitchType.n ?? 0).toLocaleString()} so far; a % renders at n >= ${PITCH_TYPE_RENDER_FLOOR.toLocaleString()} - a percentage over a handful of predictions is noise wearing a number`}
-          />
-        )
-      ) : pitchType ? (
-        <NoTruthCard
-          model={pitchType}
-          headline="accumulating - promoted 2026-08-02"
-          detail={pitchType.reason}
-        />
-      ) : null}
+      {cards}
     </div>
   );
 }

@@ -80,17 +80,29 @@ describe("AccuracyPage", () => {
     // The page's whole integrity is the hard separation: the live section is
     // its own <section> ABOVE the offline one, never one table mixing both.
     const html = renderEmpty();
-    const liveIdx = html.indexOf("Live Scorecard (rolling 7d)");
-    const offlineIdx = html.indexOf("Held-Out Scorecard");
+    // Anchor on the section-label IDs, not display text: the header eyebrow
+    // ("Live + Held-Out Scorecards") contains the offline label as a
+    // substring, which made a text-based probe match the wrong element.
+    const liveIdx = html.indexOf('id="live-scorecard-label"');
+    const offlineIdx = html.indexOf('id="accuracy-scorecard-label"');
     expect(liveIdx).toBeGreaterThan(-1);
     expect(offlineIdx).toBeGreaterThan(liveIdx);
   });
 
-  it("renders the OFFLINE honesty sub-line", () => {
+  it("renders the two-surface honesty sub-line", () => {
     const html = renderEmpty();
     expect(html).toContain(
-      "Offline rolling-origin CV on held-out folds - not live game accuracy.",
+      "Live realized accuracy on top; offline rolling-origin CV below.",
     );
+    expect(html).toContain("The two surfaces never mix.");
+  });
+
+  it("no longer claims there is no live truth-join behind the page", () => {
+    // The pre-Live-Scorecard methodology paragraph said exactly that; with a
+    // real truth-join on the page the sentence would be false, and this suite
+    // must never again defend an untrue honesty line.
+    const html = renderEmpty();
+    expect(html).not.toContain("There is no live truth-join behind this page");
   });
 
   it("renders both honest empty states when the data is empty", () => {
