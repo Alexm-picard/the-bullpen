@@ -8,13 +8,11 @@ import java.util.Map;
 import net.thebullpen.baseball.api.dto.ModelAccuracyScorecard;
 import net.thebullpen.baseball.api.dto.OpsEventsPage;
 import net.thebullpen.baseball.api.dto.RollingAccuracyResponse;
-import net.thebullpen.baseball.api.dto.RollingAccuracyResponse.DailyBucket;
 import net.thebullpen.baseball.api.dto.RollingAccuracyResponse.ModelRollingAccuracy;
 import net.thebullpen.baseball.data.OpsEventsRepository;
 import net.thebullpen.baseball.data.PredictionLogRepository;
 import net.thebullpen.baseball.data.RollingAccuracyRepository;
 import net.thebullpen.baseball.domain.LatencyStat;
-import net.thebullpen.baseball.domain.RollingAccuracyBucket;
 import net.thebullpen.baseball.drift.DriftMetricsRepository;
 import net.thebullpen.baseball.drift.TaggedDriftMetric;
 import net.thebullpen.baseball.inference.routing.RoutingConfig;
@@ -212,59 +210,43 @@ public class OpsController {
         List.of(
             pitchOutcomeEntry("pitch_outcome_pre", days),
             pitchOutcomeEntry("pitch_outcome_post", days),
-            new ModelRollingAccuracy(
+            ModelRollingAccuracy.noTruth(
                 "battedball_outcome",
-                "no_live_truth",
                 "prediction_log rows for this family carry no live pitch keys - the served"
                     + " surface is the park heatmap, a calibrated physics estimate (decision"
                     + " [163]) - so realized live accuracy is structurally unavailable, not"
-                    + " merely pending",
-                null,
-                null,
-                null),
+                    + " merely pending"),
             pitchTypeEntry(days));
     return new RollingAccuracyResponse(days, Instant.now(), models);
   }
 
   private ModelRollingAccuracy pitchOutcomeEntry(String modelName, int days) {
     if (rollingAccuracy == null) {
-      return noTruth(modelName, "analytical store not configured in this environment");
+      return ModelRollingAccuracy.noTruth(
+          modelName, "analytical store not configured in this environment");
     }
-    return liveOrEmpty(
+    return ModelRollingAccuracy.live(
         modelName,
         rollingAccuracy.pitchOutcomeDaily(modelName, days),
         "no truth-joined champion predictions in the window (live volume and the 14-day"
-            + " pitches_live TTL bound what is joinable)");
+            + " pitches_live TTL bound what is joinable)",
+        null);
   }
 
   private ModelRollingAccuracy pitchTypeEntry(int days) {
     if (rollingAccuracy == null) {
-      return noTruth("pitch_type_pre", "analytical store not configured in this environment");
+      return ModelRollingAccuracy.noTruth(
+          "pitch_type_pre", "analytical store not configured in this environment");
     }
-    return liveOrEmpty(
+    return ModelRollingAccuracy.live(
         "pitch_type_pre",
         rollingAccuracy.pitchTypeDaily(days),
         "promoted 2026-08-02; live predictions are accumulating and the panel's HTTP path logs"
-            + " no pitch keys, so no truth-joinable volume exists yet");
-  }
-
-  private static ModelRollingAccuracy liveOrEmpty(
-      String modelName, List<RollingAccuracyBucket> buckets, String emptyReason) {
-    long n = RollingAccuracyRepository.totalN(buckets);
-    if (n == 0) {
-      return noTruth(modelName, emptyReason);
-    }
-    double top1 = (double) RollingAccuracyRepository.totalHits(buckets) / (double) n;
-    List<DailyBucket> daily =
-        buckets.stream()
-            .filter(b -> b.n() > 0)
-            .map(b -> new DailyBucket(b.date().toString(), b.n(), b.top1()))
-            .toList();
-    return new ModelRollingAccuracy(modelName, "live", null, top1, n, daily);
-  }
-
-  private static ModelRollingAccuracy noTruth(String modelName, String reason) {
-    return new ModelRollingAccuracy(modelName, "no_live_truth", reason, null, null, null);
+            + " no pitch keys, so no truth-joinable volume exists yet",
+        // The endpoint is public and self-describing (its own honesty contract): a direct API
+        // caller sees the [183] framing without needing the frontend's caption.
+        "calibrated prior ([183]): top-1 is supplementary, never the claim; the site renders no"
+            + " % below n = 500");
   }
 
   /**

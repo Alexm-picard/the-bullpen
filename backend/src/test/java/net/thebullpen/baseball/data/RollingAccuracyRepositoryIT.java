@@ -83,7 +83,11 @@ class RollingAccuracyRepositoryIT {
 
   // --- fixture helpers ----------------------------------------------------
 
-  /** A y5 probabilities JSON with a single UNTIED argmax at {@code winner}. */
+  /**
+   * A y5 prediction JSON in the SERVED shape: probabilities + the persisted winner the user was
+   * shown (PitchPredictionService writes both; the y5 arm scores the persisted winner, never a
+   * re-derived argmax - A3).
+   */
   private static String y5Prediction(String winner) {
     StringBuilder sb = new StringBuilder("{\"probabilities\":{");
     String[] classes = {"ball", "called_strike", "swinging_strike", "foul", "in_play"};
@@ -92,7 +96,7 @@ class RollingAccuracyRepositoryIT {
       sb.append('"').append(classes[i]).append("\":").append(p);
       if (i < classes.length - 1) sb.append(',');
     }
-    return sb.append("}}").toString();
+    return sb.append("},\"winner\":\"").append(winner).append("\"}").toString();
   }
 
   /** A y7 probabilities JSON with a single UNTIED argmax at {@code winner}. */
@@ -121,7 +125,7 @@ class RollingAccuracyRepositoryIT {
                 "INSERT INTO prediction_log (request_id, request_at, model_name, model_version,"
                     + " role, feature_hash, features, prediction, latency_ms, correlation_id,"
                     + " game_id, at_bat_index, pitch_number) VALUES"
-                    + " (generateUUIDv4(), now() - ?, ?, 'v1', 'champion', 'h', '{}', ?, 1.0,"
+                    + " (generateUUIDv4(), now64(3) - ?, ?, 'v1', 'champion', 'h', '{}', ?, 1.0,"
                     + " 'cid', ?, ?, ?)")) {
       ps.setInt(1, atOffsetSec);
       ps.setString(2, modelName);
@@ -136,28 +140,40 @@ class RollingAccuracyRepositoryIT {
   private void insertRealized(
       long gameId, int abIndex, int pitchNumber, String description, String pitchType)
       throws Exception {
+    insertRealized(gameId, abIndex, pitchNumber, description, pitchType, 0);
+  }
+
+  private void insertRealized(
+      long gameId,
+      int abIndex,
+      int pitchNumber,
+      String description,
+      String pitchType,
+      int gameDateDaysAgo)
+      throws Exception {
     try (var conn = clickhouseDs.getConnection();
         var ps =
             conn.prepareStatement(
                 "INSERT INTO pitches_live (game_id, at_bat_index, pitch_number, game_date,"
                     + " pitcher_id, batter_id, description, pitch_type, balls, strikes, outs,"
                     + " inning, home_score, away_score, home_team, away_team) VALUES"
-                    + " (?, ?, ?, today(), 1, 2, ?, ?, 0, 0, 0, 1, 0, 0, 'HOME', 'AWAY')")) {
+                    + " (?, ?, ?, today() - ?, 1, 2, ?, ?, 0, 0, 0, 1, 0, 0, 'HOME', 'AWAY')")) {
       ps.setLong(1, gameId);
       ps.setInt(2, abIndex);
       ps.setInt(3, pitchNumber);
-      ps.setString(4, description);
-      ps.setString(5, pitchType);
+      ps.setInt(4, gameDateDaysAgo);
+      ps.setString(5, description);
+      ps.setString(6, pitchType);
       ps.execute();
     }
   }
 
   private static long n(List<RollingAccuracyBucket> buckets) {
-    return RollingAccuracyRepository.totalN(buckets);
+    return buckets.stream().mapToLong(RollingAccuracyBucket::n).sum();
   }
 
   private static long hits(List<RollingAccuracyBucket> buckets) {
-    return RollingAccuracyRepository.totalHits(buckets);
+    return buckets.stream().mapToLong(RollingAccuracyBucket::hits).sum();
   }
 
   // --- the load-bearing case: restart-stable accuracy ----------------------
@@ -238,6 +254,41 @@ class RollingAccuracyRepositoryIT {
   void theModelAllowlistFailsLoud() {
     assertThatThrownBy(() -> repo.pitchOutcomeDaily("pitch_type_pre", 7))
         .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  void bucketsKeyOnTheGameDate_soACrossMidnightRelogCannotMigrateThem() throws Exception {
+    // Review A1, demonstrated against real CH: bucketing on the kept row's request_at let a
+    // 23:58 -> 00:05 ET re-log MOVE a pitch between daily buckets (window total stable, so the
+    // restart-stability pin alone could not see it). Buckets key on the truth side's game_date;
+    // yesterday's game must stay in yesterday's bucket no matter when the poller re-logs.
+    insertRealized(600L, 1, 1, "ball", "FF", 1); // game played YESTERDAY
+    insertPrediction("pitch_outcome_pre", 600L, 1, 1, y5Prediction("ball"), 60);
+
+    List<RollingAccuracyBucket> before = repo.pitchOutcomeDaily("pitch_outcome_pre", 7);
+    assertThat(before).hasSize(1);
+    java.time.LocalDate bucketDate = before.getFirst().date();
+
+    // The "cross-midnight" re-log: same pitch, much later request_at (a different clock day in
+    // the pathological case). The bucket date must NOT move.
+    insertPrediction("pitch_outcome_pre", 600L, 1, 1, y5Prediction("ball"), 5);
+    List<RollingAccuracyBucket> after = repo.pitchOutcomeDaily("pitch_outcome_pre", 7);
+    assertThat(after).hasSize(1);
+    assertThat(after.getFirst().date())
+        .as("the game's day, not the re-log's")
+        .isEqualTo(bucketDate);
+    assertThat(n(after)).isEqualTo(1);
+  }
+
+  @Test
+  void aPredictionWithoutAPersistedWinnerIsExcludedNotMiscounted() throws Exception {
+    // The y5 arm scores the PERSISTED winner (the class the user was shown). A row carrying
+    // probabilities but no winner field is unscorable - excluded from n and hits alike, never
+    // re-derived.
+    insertRealized(700L, 1, 1, "ball", "FF");
+    insertPrediction("pitch_outcome_pre", 700L, 1, 1, "{\"probabilities\":{\"ball\":0.9}}", 60);
+
+    assertThat(n(repo.pitchOutcomeDaily("pitch_outcome_pre", 7))).isZero();
   }
 
   // --- the y7 fold ---------------------------------------------------------
