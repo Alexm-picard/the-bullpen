@@ -19,6 +19,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import javax.sql.DataSource;
+import net.thebullpen.baseball.domain.CurrentMatchup;
 import net.thebullpen.baseball.domain.GameStatus;
 import net.thebullpen.baseball.domain.GameSummary;
 import net.thebullpen.baseball.domain.LivePitch;
@@ -169,10 +170,31 @@ public class LivePitchesRepository {
           + " ORDER BY pred.at_bat_index ASC, pred.pitch_number ASC"
           + " LIMIT ? OFFSET ?";
 
+  // V031's live current-play matchup, argMax'd off the SAME status row so it is always the pair
+  // the poller wrote together - reading them from separate rows could name a batter from one tick
+  // and an at-bat index from another. Spliced into all three status subqueries so the three read
+  // paths cannot drift apart.
+  private static final String MATCHUP_SUBQUERY_COLS =
+      ", argMax(current_batter_id, updated_at) AS current_batter_id"
+          + ", argMax(current_pitcher_id, updated_at) AS current_pitcher_id"
+          + ", argMax(current_bat_side, updated_at) AS current_bat_side"
+          + ", argMax(current_pitch_hand, updated_at) AS current_pitch_hand"
+          + ", argMax(current_at_bat_index, updated_at) AS current_at_bat_index";
+
+  // The matchup columns projected from the joined status alias. A LEFT JOIN miss yields the column
+  // type's default (NULL for the Nullable ids/index, '' for the LowCardinality sides), and the
+  // mapper treats both as absent - so a game with no status row reports no matchup rather than a
+  // matchup of zeroes.
+  private static final String MATCHUP_SELECT_COLS =
+      ", s.current_batter_id AS current_batter_id, s.current_pitcher_id AS current_pitcher_id,"
+          + " s.current_bat_side AS current_bat_side, s.current_pitch_hand AS current_pitch_hand,"
+          + " s.current_at_bat_index AS current_at_bat_index";
+
   // Latest status per game from the poller (step 7b). argMax over the ReplacingMergeTree gives the
   // current status; a LEFT JOIN miss yields '' -> 'UNKNOWN' (the honest pre-poll answer).
   private static final String LATEST_STATUS_SUBQUERY =
       " LEFT JOIN ( SELECT game_id, argMax(status, updated_at) AS status"
+          + MATCHUP_SUBQUERY_COLS
           + " FROM live_game_status GROUP BY game_id ) AS s ON s.game_id = g.game_id";
 
   // The slate UNIONs both sources so a game appears whether it is pre-game (in scheduled_games,
@@ -192,7 +214,8 @@ public class LivePitchesRepository {
           + " if(p.away_team != '', p.away_team,"
           + "    if(sg.away_team != '', sg.away_team, sg.away_name)) AS away_team,"
           + " p.home_score AS home_score, p.away_score AS away_score, p.inning AS inning,"
-          + " if(s.status != '', s.status, if(sg.status != '', sg.status, 'UNKNOWN')) AS status";
+          + " if(s.status != '', s.status, if(sg.status != '', sg.status, 'UNKNOWN')) AS status"
+          + MATCHUP_SELECT_COLS;
 
   private static final String SLATE_SCHEDULED_JOIN =
       " LEFT JOIN ( SELECT game_id, game_date, home_team, away_team, home_name, away_name, status"
@@ -208,6 +231,7 @@ public class LivePitchesRepository {
 
   private static final String SLATE_STATUS_JOIN =
       " LEFT JOIN ( SELECT game_id, argMax(status, updated_at) AS status"
+          + MATCHUP_SUBQUERY_COLS
           + "   FROM live_game_status GROUP BY game_id ) AS s ON s.game_id = ids.game_id";
 
   private static final String FIND_GAMES_FOR_DATE =
@@ -229,15 +253,18 @@ public class LivePitchesRepository {
           + " if(sg.away_team != '', sg.away_team, sg.away_name) AS away_team,"
           + " 0 AS home_score, 0 AS away_score, 0 AS inning,"
           + " if(s.status != '', s.status, if(sg.status != '', sg.status, 'SCHEDULED')) AS status"
+          + MATCHUP_SELECT_COLS
           + " FROM ( SELECT game_id, game_date, home_team, away_team, home_name, away_name, status"
           + "        FROM scheduled_games FINAL WHERE game_id = ? ) AS sg"
           + " LEFT JOIN ( SELECT game_id, argMax(status, updated_at) AS status"
+          + MATCHUP_SUBQUERY_COLS
           + "   FROM live_game_status GROUP BY game_id ) AS s ON s.game_id = sg.game_id";
 
   private static final String FIND_GAME =
       "SELECT g.game_id AS game_id, g.game_date AS game_date, g.home_team AS home_team,"
           + " g.away_team AS away_team, g.home_score AS home_score, g.away_score AS away_score,"
           + " g.inning AS inning, if(s.status = '', 'UNKNOWN', s.status) AS status"
+          + MATCHUP_SELECT_COLS
           + " FROM ("
           + "   SELECT game_id, game_date, home_team, away_team,"
           + "          max(home_score) AS home_score, max(away_score) AS away_score,"
@@ -248,7 +275,9 @@ public class LivePitchesRepository {
           + LATEST_STATUS_SUBQUERY;
 
   private static final String INSERT_GAME_STATUS =
-      "INSERT INTO live_game_status (game_id, game_date, status) VALUES (?, ?, ?)";
+      "INSERT INTO live_game_status (game_id, game_date, status, current_batter_id,"
+          + " current_pitcher_id, current_bat_side, current_pitch_hand, current_at_bat_index)"
+          + " VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
 
   private static final String INSERT_SCHEDULED_GAME =
       "INSERT INTO scheduled_games"
@@ -389,8 +418,28 @@ public class LivePitchesRepository {
    * via argMax. {@code game_date} is bound as an ISO-8601 String (clickhouse-jdbc inlines a bare
    * date as arithmetic - same lesson as the pitches insert).
    */
-  public void upsertGameStatus(long gameId, LocalDate gameDate, String status) {
-    jdbc.update(INSERT_GAME_STATUS, gameId, gameDate.toString(), status);
+  /**
+   * Upsert a game's status row together with the LIVE current-play matchup (V031).
+   *
+   * <p>The two travel in one row on purpose: they are read back with {@code argMax(.., updated_at)}
+   * off the same row, so writing them separately could pair a batter from one tick with an at-bat
+   * index from another. {@code matchup} is null whenever the feed carries no current play
+   * (pre-game, between plays, final) - and that null is WRITTEN, not skipped, so the row stops
+   * advertising a batter who has already finished hitting.
+   */
+  public void upsertGameStatus(
+      long gameId, LocalDate gameDate, String status, CurrentMatchup matchup) {
+    boolean usable = matchup != null && matchup.isPopulated();
+    jdbc.update(
+        INSERT_GAME_STATUS,
+        gameId,
+        gameDate.toString(),
+        status,
+        usable ? matchup.batterId() : null,
+        usable ? matchup.pitcherId() : null,
+        usable ? nullToEmpty(matchup.batSide()) : "",
+        usable ? nullToEmpty(matchup.pitchHand()) : "",
+        usable ? matchup.atBatIndex() : null);
   }
 
   /**
@@ -517,8 +566,39 @@ public class LivePitchesRepository {
             rs.getInt("away_score"),
             rs.getInt("inning"),
             status,
-            humanizeStatus(status));
+            humanizeStatus(status),
+            readMatchup(rs));
       };
+
+  /**
+   * The V031 matchup columns, or NULL when they do not describe a usable matchup.
+   *
+   * <p>Returns null - not a half-empty record - when the ids are absent, so the api omits the whole
+   * object rather than publishing a matchup a consumer would reasonably half-trust. Absent covers
+   * three real shapes that all mean the same thing: SQL NULL (no status row joined, or a
+   * pre-V031/early-GUMBO row), and 0 (the parser's missing-id value, which {@link
+   * CurrentMatchup#isPopulated()} rejects).
+   */
+  private static CurrentMatchup readMatchup(ResultSet rs) throws SQLException {
+    long batterId = rs.getLong("current_batter_id");
+    boolean batterNull = rs.wasNull();
+    long pitcherId = rs.getLong("current_pitcher_id");
+    boolean pitcherNull = rs.wasNull();
+    int atBatIndex = rs.getInt("current_at_bat_index");
+    boolean atBatNull = rs.wasNull();
+    CurrentMatchup m =
+        new CurrentMatchup(
+            batterNull ? null : batterId,
+            pitcherNull ? null : pitcherId,
+            nullToEmpty(rs.getString("current_bat_side")),
+            nullToEmpty(rs.getString("current_pitch_hand")),
+            atBatNull ? null : atBatIndex);
+    return m.isPopulated() ? m : null;
+  }
+
+  private static String nullToEmpty(String s) {
+    return s == null ? "" : s;
+  }
 
   /** GameStatus enum name -> display label: IN_PROGRESS -> "In Progress", UNKNOWN -> "Unknown". */
   static String humanizeStatus(String status) {

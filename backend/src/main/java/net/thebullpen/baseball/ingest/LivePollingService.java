@@ -12,6 +12,7 @@ import net.thebullpen.baseball.config.IngestProperties;
 import net.thebullpen.baseball.data.JobLeaseRepository;
 import net.thebullpen.baseball.data.LivePitchesRepository;
 import net.thebullpen.baseball.data.PitcherFormRepository;
+import net.thebullpen.baseball.domain.CurrentMatchup;
 import net.thebullpen.baseball.domain.GameStatus;
 import net.thebullpen.baseball.domain.LivePitch;
 import net.thebullpen.baseball.domain.ScheduledGame;
@@ -72,6 +73,14 @@ public class LivePollingService {
   // first write (restart mid-game left the game invisible to /v1/games/today until its next
   // transition).
   private final java.util.Set<Long> statusPersisted = ConcurrentHashMap.newKeySet();
+  // The matchup key (at-bat index + batter id) last WRITTEN to live_game_status for a game, so the
+  // status row is re-upserted when the matchup moves - not only when the game's STATUS transitions.
+  // Without this the matchup would be written once (at the first transition of a game) and then sit
+  // frozen for nine innings, which is the very staleness this feature exists to remove. Keyed on
+  // BOTH fields because a pinch hitter keeps the at-bat index and changes the batter. The empty
+  // string encodes "no current play", so the null transition is written too and the row stops
+  // naming a batter who has finished hitting.
+  private final Map<Long, String> lastMatchupKey = new ConcurrentHashMap<>();
   private final Map<Long, Instant> lastPollAt = new ConcurrentHashMap<>();
   private final Map<Long, Long> lastCursorByGame = new ConcurrentHashMap<>();
   private final Map<Long, Long> lastPredictedKeyByGame = new ConcurrentHashMap<>();
@@ -131,6 +140,31 @@ public class LivePollingService {
   }
 
   /** Poll one game: fetch the feed, adopt its status, write new pitches, predict the next pitch. */
+  /**
+   * The feed's live current-play matchup, or null when it carries no usable one.
+   *
+   * <p>{@code parseNextPitch} already yields null between plays and once the game is final; the
+   * extra {@link CurrentMatchup#isPopulated()} guard catches the OTHER absence shape - the parser's
+   * {@code asLong()} yields {@code 0L}, not null, for a missing id, so an early-GUMBO tick produces
+   * a matchup naming batter 0. Both collapse to "no matchup", which is written as NULL rather than
+   * skipped.
+   */
+  private static CurrentMatchup currentMatchupOf(LiveGameFeed feed) {
+    LiveNextPitch next = feed.nextPitch();
+    if (next == null) {
+      return null;
+    }
+    CurrentMatchup m =
+        new CurrentMatchup(
+            next.batterId(), next.pitcherId(), next.batSide(), next.pitchHand(), next.atBatIndex());
+    return m.isPopulated() ? m : null;
+  }
+
+  /** Change key for the write gate; {@code ""} means "no current play" so null transitions fire. */
+  private static String matchupKeyOf(CurrentMatchup m) {
+    return m == null ? "" : m.atBatIndex() + ":" + m.batterId();
+  }
+
   void pollGame(long gamePk) {
     LiveGameFeed feed;
     try {
@@ -154,10 +188,14 @@ public class LivePollingService {
     // restart-robustness - the schedule prime makes prev == current after a mid-game restart, so
     // transition-only persistence left the game invisible to /v1/games/today until its next
     // transition). The ReplacingMergeTree dedups the re-write.
-    if (prev == null || prev != current || !statusPersisted.contains(gamePk)) {
+    CurrentMatchup matchup = currentMatchupOf(feed);
+    String matchupKey = matchupKeyOf(matchup);
+    boolean matchupMoved = !matchupKey.equals(lastMatchupKey.get(gamePk));
+    if (prev == null || prev != current || !statusPersisted.contains(gamePk) || matchupMoved) {
       if (feed.gameDate() != null) {
-        repo.upsertGameStatus(gamePk, feed.gameDate(), current.name());
+        repo.upsertGameStatus(gamePk, feed.gameDate(), current.name(), matchup);
         statusPersisted.add(gamePk);
+        lastMatchupKey.put(gamePk, matchupKey);
       } else {
         // No parseable gameData.datetime in the feed: the row cannot key into live_game_status,
         // so /v1/games/today will not surface this game (C-3 replay finding, 2026-06-11).

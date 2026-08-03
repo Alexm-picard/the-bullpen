@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -19,11 +20,13 @@ import java.util.Optional;
 import net.thebullpen.baseball.config.IngestProperties;
 import net.thebullpen.baseball.data.JobLeaseRepository;
 import net.thebullpen.baseball.data.LivePitchesRepository;
+import net.thebullpen.baseball.domain.CurrentMatchup;
 import net.thebullpen.baseball.domain.GameStatus;
 import net.thebullpen.baseball.domain.LivePitch;
 import net.thebullpen.baseball.domain.ScheduledGame;
 import net.thebullpen.baseball.inference.ModelUnavailableException;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 /**
  * Orchestration coverage for the live poll loop (issue #1 step 6): fetch -> write-new-pitches ->
@@ -64,6 +67,123 @@ class LivePollingServiceTest {
         -1.6,
         5.9,
         false);
+  }
+
+  // --- V031: the live current matchup rides the status row -------------------------------
+
+  @Test
+  void pollGame_writes_the_live_matchup_alongside_the_status() throws Exception {
+    MlbStatsApiClient client = mock(MlbStatsApiClient.class);
+    LivePitchesRepository repo = mock(LivePitchesRepository.class);
+    LivePitchPredictor predictor = mock(LivePitchPredictor.class);
+    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(client.fetchLiveFeed(822810L)).thenReturn(feed(List.of(pitch(1, 1)), nextPitch(1, 2)));
+
+    service(client, repo, predictor).pollGame(822810L);
+
+    ArgumentCaptor<CurrentMatchup> captor = ArgumentCaptor.forClass(CurrentMatchup.class);
+    verify(repo).upsertGameStatus(eq(822810L), any(), eq("IN_PROGRESS"), captor.capture());
+    CurrentMatchup m = captor.getValue();
+    assertThat(m).isNotNull();
+    assertThat(m.batterId()).isEqualTo(676391L);
+    assertThat(m.pitcherId()).isEqualTo(689296L);
+    assertThat(m.batSide()).isEqualTo("R");
+    assertThat(m.pitchHand()).isEqualTo("R");
+    assertThat(m.atBatIndex()).isEqualTo(1);
+  }
+
+  @Test
+  void pollGame_rewrites_the_status_row_when_the_at_bat_rolls_over_though_status_is_unchanged()
+      throws Exception {
+    // THE cadence fix. The status row was written only on a STATUS transition (or the process's
+    // first poll), so hanging the matchup on it would freeze the batter at whatever was standing in
+    // when the game went IN_PROGRESS - stale for nine innings, which is the exact defect this
+    // feature removes. A moved matchup must itself trigger the write.
+    MlbStatsApiClient client = mock(MlbStatsApiClient.class);
+    LivePitchesRepository repo = mock(LivePitchesRepository.class);
+    LivePitchPredictor predictor = mock(LivePitchPredictor.class);
+    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(client.fetchLiveFeed(822810L))
+        .thenReturn(feed(List.of(pitch(1, 1)), nextPitch(1, 2)))
+        .thenReturn(feed(List.of(pitch(1, 1)), nextPitchWithBatter(2, 1, 700000L)));
+
+    LivePollingService svc = service(client, repo, predictor);
+    svc.pollGame(822810L); // at-bat 1
+    svc.pollGame(822810L); // at-bat 2, SAME status
+
+    ArgumentCaptor<CurrentMatchup> captor = ArgumentCaptor.forClass(CurrentMatchup.class);
+    verify(repo, times(2))
+        .upsertGameStatus(eq(822810L), any(), eq("IN_PROGRESS"), captor.capture());
+    assertThat(captor.getAllValues().get(0).batterId()).isEqualTo(676391L);
+    assertThat(captor.getAllValues().get(1).batterId())
+        .as("the new batter must reach the row without waiting for a status transition")
+        .isEqualTo(700000L);
+  }
+
+  @Test
+  void pollGame_rewrites_when_a_pinch_hitter_keeps_the_at_bat_index() throws Exception {
+    // The change key is (atBatIndex, batterId) precisely because a pinch hitter mid-PA keeps the
+    // index and changes the batter - an index-only key would miss it and serve the replaced batter.
+    MlbStatsApiClient client = mock(MlbStatsApiClient.class);
+    LivePitchesRepository repo = mock(LivePitchesRepository.class);
+    LivePitchPredictor predictor = mock(LivePitchPredictor.class);
+    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(client.fetchLiveFeed(822810L))
+        .thenReturn(feed(List.of(pitch(1, 1)), nextPitchWithBatter(1, 2, 676391L)))
+        .thenReturn(feed(List.of(pitch(1, 1)), nextPitchWithBatter(1, 2, 999111L)));
+
+    LivePollingService svc = service(client, repo, predictor);
+    svc.pollGame(822810L);
+    svc.pollGame(822810L);
+
+    ArgumentCaptor<CurrentMatchup> captor = ArgumentCaptor.forClass(CurrentMatchup.class);
+    verify(repo, times(2)).upsertGameStatus(eq(822810L), any(), any(), captor.capture());
+    assertThat(captor.getAllValues().get(1).batterId()).isEqualTo(999111L);
+    assertThat(captor.getAllValues().get(1).atBatIndex())
+        .as("same at-bat, different batter")
+        .isEqualTo(1);
+  }
+
+  @Test
+  void pollGame_writes_a_null_matchup_when_the_play_completes_rather_than_leaving_a_stale_batter()
+      throws Exception {
+    // parseNextPitch returns null between plays and once final. That null must be WRITTEN, not
+    // skipped: a skipped write leaves the row advertising a batter who has finished hitting.
+    MlbStatsApiClient client = mock(MlbStatsApiClient.class);
+    LivePitchesRepository repo = mock(LivePitchesRepository.class);
+    LivePitchPredictor predictor = mock(LivePitchPredictor.class);
+    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(client.fetchLiveFeed(822810L))
+        .thenReturn(feed(List.of(pitch(1, 1)), nextPitch(1, 2)))
+        .thenReturn(feed(List.of(pitch(1, 1)), null)); // play complete / game over
+
+    LivePollingService svc = service(client, repo, predictor);
+    svc.pollGame(822810L);
+    svc.pollGame(822810L);
+
+    ArgumentCaptor<CurrentMatchup> captor = ArgumentCaptor.forClass(CurrentMatchup.class);
+    verify(repo, times(2)).upsertGameStatus(eq(822810L), any(), any(), captor.capture());
+    assertThat(captor.getAllValues().get(1))
+        .as("the row must stop naming the finished batter")
+        .isNull();
+  }
+
+  @Test
+  void pollGame_treats_a_zero_id_early_gumbo_matchup_as_absent() throws Exception {
+    // MlbFeedParser's asLong() yields 0L (never null) for a missing matchup id, so an early-GUMBO
+    // tick produces a matchup naming batter 0 - a fabricated value if written as-is.
+    MlbStatsApiClient client = mock(MlbStatsApiClient.class);
+    LivePitchesRepository repo = mock(LivePitchesRepository.class);
+    LivePitchPredictor predictor = mock(LivePitchPredictor.class);
+    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(client.fetchLiveFeed(822810L))
+        .thenReturn(feed(List.of(pitch(1, 1)), nextPitchWithBatter(0, 1, 0L)));
+
+    service(client, repo, predictor).pollGame(822810L);
+
+    ArgumentCaptor<CurrentMatchup> captor = ArgumentCaptor.forClass(CurrentMatchup.class);
+    verify(repo).upsertGameStatus(eq(822810L), any(), any(), captor.capture());
+    assertThat(captor.getValue()).isNull();
   }
 
   private static LiveNextPitch nextPitch(int atBat, int pitchNumber) {
@@ -161,7 +281,7 @@ class LivePollingServiceTest {
     assertThatCode(() -> service(client, repo, predictor).pollGame(822810L))
         .doesNotThrowAnyException();
 
-    verify(repo, never()).upsertGameStatus(anyLong(), any(), any());
+    verify(repo, never()).upsertGameStatus(anyLong(), any(), any(), any());
   }
 
   @Test
@@ -181,7 +301,7 @@ class LivePollingServiceTest {
     verify(repo, times(1)).insertPitches(any());
     verify(predictor, times(1)).predictAndLog(any());
     // status upserts only on a transition (null -> IN_PROGRESS on poll 1; unchanged on poll 2).
-    verify(repo, times(1)).upsertGameStatus(anyLong(), any(), any());
+    verify(repo, times(1)).upsertGameStatus(anyLong(), any(), any(), any());
   }
 
   @Test
@@ -315,11 +435,11 @@ class LivePollingServiceTest {
 
     LivePollingService svc = service(client, repo, predictor);
     svc.tick();
-    verify(repo, times(1)).upsertGameStatus(anyLong(), any(), any());
+    verify(repo, times(1)).upsertGameStatus(anyLong(), any(), any(), any());
 
     // A later poll of the same game (no transition, already persisted) does not re-write.
     svc.pollGame(822810L);
-    verify(repo, times(1)).upsertGameStatus(anyLong(), any(), any());
+    verify(repo, times(1)).upsertGameStatus(anyLong(), any(), any(), any());
   }
 
   @Test
@@ -496,6 +616,28 @@ class LivePollingServiceTest {
         "BAL",
         pitches,
         next);
+  }
+
+  /** A current play with an explicit batter id, for pinch-hitter / at-bat-rollover fixtures. */
+  private static LiveNextPitch nextPitchWithBatter(int atBat, int pitchNumber, long batterId) {
+    return new LiveNextPitch(
+        822810L,
+        atBat,
+        pitchNumber,
+        9,
+        false,
+        689296L,
+        batterId,
+        "R",
+        "R",
+        0,
+        0,
+        0,
+        false,
+        false,
+        false,
+        "TOR",
+        LocalDate.of(2026, 6, 5));
   }
 
   private static LiveNextPitch nullMatchupNextPitch(int atBat, int pitchNumber) {

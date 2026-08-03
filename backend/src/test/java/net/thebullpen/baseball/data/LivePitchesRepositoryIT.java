@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.TimeZone;
 import java.util.UUID;
+import net.thebullpen.baseball.domain.CurrentMatchup;
 import net.thebullpen.baseball.domain.GameStatus;
 import net.thebullpen.baseball.domain.GameSummary;
 import net.thebullpen.baseball.domain.LivePitch;
@@ -626,7 +627,7 @@ class LivePitchesRepositoryIT {
   void findGamesForDate_surfaces_the_pollers_upserted_status() throws Exception {
     LocalDate date = LocalDate.of(2026, 6, 6);
     insertPitch(700L, date, 1, 1, "BOS", "NYY", 1);
-    repo.upsertGameStatus(700L, date, "IN_PROGRESS");
+    repo.upsertGameStatus(700L, date, "IN_PROGRESS", null);
 
     GameSummary g = repo.findGamesForDate(date).get(0);
     assertEquals("IN_PROGRESS", g.status());
@@ -645,11 +646,86 @@ class LivePitchesRepositoryIT {
   void upsertGameStatus_keeps_the_latest_status_under_replacing_merge_tree() throws Exception {
     LocalDate date = LocalDate.of(2026, 6, 6);
     insertPitch(702L, date, 1, 1, "BOS", "NYY", 1);
-    repo.upsertGameStatus(702L, date, "SCHEDULED");
+    repo.upsertGameStatus(702L, date, "SCHEDULED", null);
     Thread.sleep(5);
-    repo.upsertGameStatus(702L, date, "IN_PROGRESS"); // a transition
+    repo.upsertGameStatus(702L, date, "IN_PROGRESS", null); // a transition
 
     assertEquals("IN_PROGRESS", repo.findGame(702L).orElseThrow().status());
+  }
+
+  // --- V031: the live current matchup on the status row --------------------------------
+
+  @Test
+  void currentMatchup_round_trips_on_both_read_paths() throws Exception {
+    LocalDate date = LocalDate.of(2026, 6, 6);
+    insertPitch(710L, date, 1, 1, "BOS", "NYY", 1);
+    repo.upsertGameStatus(
+        710L, date, "IN_PROGRESS", new CurrentMatchup(676391L, 689296L, "S", "R", 42));
+
+    // The detail endpoint's path...
+    CurrentMatchup detail = repo.findGame(710L).orElseThrow().currentMatchup();
+    assertNotNull(detail, "the matchup must survive the argMax read");
+    assertEquals(676391L, detail.batterId());
+    assertEquals(689296L, detail.pitcherId());
+    assertEquals("S", detail.batSide(), "a switch hitter's side is carried verbatim, unresolved");
+    assertEquals("R", detail.pitchHand());
+    assertEquals(42, detail.atBatIndex());
+
+    // ...and the slate's, which must agree - one type, one meaning, both endpoints.
+    CurrentMatchup slate = repo.findGamesForDate(date).get(0).currentMatchup();
+    assertNotNull(slate);
+    assertEquals(detail, slate);
+  }
+
+  @Test
+  void currentMatchup_is_absent_without_a_status_row() throws Exception {
+    LocalDate date = LocalDate.of(2026, 6, 6);
+    insertPitch(711L, date, 1, 1, "BOS", "NYY", 1);
+
+    // The LEFT JOIN misses entirely: absent, never a matchup of zeroes.
+    assertNull(repo.findGame(711L).orElseThrow().currentMatchup());
+    assertNull(repo.findGamesForDate(date).get(0).currentMatchup());
+  }
+
+  @Test
+  void currentMatchup_nulls_out_when_the_play_completes() throws Exception {
+    LocalDate date = LocalDate.of(2026, 6, 6);
+    insertPitch(712L, date, 1, 1, "BOS", "NYY", 1);
+    repo.upsertGameStatus(
+        712L, date, "IN_PROGRESS", new CurrentMatchup(676391L, 689296L, "R", "R", 7));
+    Thread.sleep(5);
+    repo.upsertGameStatus(712L, date, "IN_PROGRESS", null); // play complete
+
+    assertNull(
+        repo.findGame(712L).orElseThrow().currentMatchup(),
+        "the latest row wins under argMax - a finished batter must not linger");
+  }
+
+  @Test
+  void currentMatchup_advances_with_the_at_bat_under_replacing_merge_tree() throws Exception {
+    LocalDate date = LocalDate.of(2026, 6, 6);
+    insertPitch(713L, date, 1, 1, "BOS", "NYY", 1);
+    repo.upsertGameStatus(
+        713L, date, "IN_PROGRESS", new CurrentMatchup(676391L, 689296L, "R", "R", 7));
+    Thread.sleep(5);
+    repo.upsertGameStatus(
+        713L, date, "IN_PROGRESS", new CurrentMatchup(700000L, 689296L, "L", "R", 8));
+
+    CurrentMatchup m = repo.findGame(713L).orElseThrow().currentMatchup();
+    assertEquals(700000L, m.batterId(), "argMax(updated_at) takes the newest matchup");
+    assertEquals(8, m.atBatIndex());
+    assertEquals("L", m.batSide());
+  }
+
+  @Test
+  void aZeroIdMatchupIsStoredAsAbsent() throws Exception {
+    LocalDate date = LocalDate.of(2026, 6, 6);
+    insertPitch(714L, date, 1, 1, "BOS", "NYY", 1);
+    repo.upsertGameStatus(714L, date, "IN_PROGRESS", new CurrentMatchup(0L, 0L, "", "", 0));
+
+    assertNull(
+        repo.findGame(714L).orElseThrow().currentMatchup(),
+        "batter 0 is an absent matchup wearing a number - it must not round-trip as real");
   }
 
   @Test
