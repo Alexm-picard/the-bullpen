@@ -28,6 +28,7 @@ import {
   usePostPredictions,
   type GameSummary,
   type LivePitchRow,
+  type RecentBattedBall,
 } from "../api/games";
 import {
   CANONICAL_BBE_INPUT,
@@ -45,9 +46,7 @@ import { BattedBallExplorer } from "../components/games/batted-ball-explorer";
 import { LivePitchBoard } from "../components/games/live-pitch-board";
 import { NextPitchPanel } from "../components/games/next-pitch-panel";
 import { PostPredictionPanel } from "../components/games/post-prediction-panel";
-import { estimateLandingDistanceFt } from "../components/parks/estimate-landing";
 import {
-  SHOWCASE_BATTED_BALL,
   type BattedBall,
   type ParkOutcome,
   type ParkOutcomeTone,
@@ -146,17 +145,14 @@ function outcomeForProb(p: number): { outcome: string; tone: ParkOutcomeTone } {
  * BIP's own (estimated) distance; xBA is a placeholder (the endpoint has none).
  */
 function buildLiveBattedBall(
-  inPlay: LivePitchRow,
+  inPlay: RecentBattedBall,
   pred: AllParksResponse,
   batterName: string | undefined,
   homeTeam: string | undefined,
 ): BattedBall {
-  const exitVeloMph = inPlay.launchSpeedMph ?? 0;
-  const launchAngleDeg = inPlay.launchAngleDeg ?? 0;
-  const distanceFt = Math.round(
-    inPlay.hitDistanceFt ??
-      estimateLandingDistanceFt(exitVeloMph, launchAngleDeg),
-  );
+  const exitVeloMph = inPlay.launchSpeedMph;
+  const launchAngleDeg = inPlay.launchAngleDeg;
+  const distanceFt = Math.round(inPlay.hitDistanceFt);
 
   const rowById = new Map(PARK_ROWS.map((row) => [row.id, row]));
   const carry = pred.carryFtByPark;
@@ -267,12 +263,11 @@ export function GamePage() {
 
   // Phase 1.2: the most recent in-play batted ball carrying launch physics. The
   // pitch store is newest-first, so .find() yields the LATEST qualifying BIP.
-  const inPlay = pitches.pitches.find(
-    (p) =>
-      p.description === "in_play" &&
-      p.launchSpeedMph != null &&
-      p.launchAngleDeg != null,
-  );
+  // The most recent COMPLETED ball in play, from the game summary rather than a scan of the pitch
+  // list. That list is the newest 50 pitches - a window, not the game - so scanning it found a
+  // batted ball only while it happened to still be inside, and failed by looking like "no batted
+  // ball yet" rather than like a bug.
+  const inPlay = game.data?.mostRecentBattedBall ?? null;
   // The BIP's batter, keyed to the in-play pitch (NOT mostRecent, which may be a
   // later non-BIP pitch in the same at-bat or a new one).
   const inPlayBatter = usePlayer(inPlay?.batterId ?? null);
@@ -285,8 +280,7 @@ export function GamePage() {
   // NEVER fetched (the gate is off); it only keeps the hook's arg typed.
   const allParksReq = useMemo<AllParksRequest>(() => {
     if (
-      inPlay?.launchSpeedMph == null ||
-      inPlay.launchAngleDeg == null ||
+      inPlay == null ||
       // Spray is REQUIRED and cannot be invented. The server declines it where the geometry
       // degenerates (a ball tracked at or behind the plate, or an angle outside the foul lines),
       // and the honest response to a declined value is to not ask the model - not to send 0.
@@ -301,17 +295,15 @@ export function GamePage() {
     // it. Previously hardcoded "R": harmless only while the card almost never rendered live, and a
     // live-scored left-hander would otherwise be modelled as a right-hander on the page whose
     // entire purpose is showing the real batted ball.
-    const throws = inPlay.pitcherThrows;
-    let stand = inPlay.batterStand;
-    if (stand === "S") stand = throws === "R" ? "L" : "R";
+    // Switch hitters are already resolved server-side, at the source, so the page does not
+    // re-derive a side the model input might disagree with.
+    const stand = inPlay.stand;
     if (stand !== "R" && stand !== "L") return CANONICAL_BBE_INPUT;
     return {
       launchSpeedMph: inPlay.launchSpeedMph,
       launchAngleDeg: inPlay.launchAngleDeg,
       sprayAngleDeg: inPlay.sprayAngleDeg,
-      hitDistanceFt:
-        inPlay.hitDistanceFt ??
-        estimateLandingDistanceFt(inPlay.launchSpeedMph, inPlay.launchAngleDeg),
+      hitDistanceFt: inPlay.hitDistanceFt,
       stand,
       baseState: inPlay.baseState,
       outs: inPlay.outs,
@@ -392,8 +384,11 @@ export function GamePage() {
       ? pitches.pitches.filter((p) => p.pitcherId === shownPitcherId).length
       : 0;
 
-  // Live batted ball when this game has one; otherwise the showcase empty-state.
-  const battedBall = liveBattedBall ?? SHOWCASE_BATTED_BALL;
+  // No fixture fallback. A labelled static example was defensible while no real batted ball could
+  // ever render here; now that one can, a Stanton card sitting on a live game page is the
+  // fixtures-presented-as-content defect the audit named. When there is no ball in play yet the
+  // page says so and shows nothing, which is the truth about the game.
+  const battedBall = liveBattedBall;
   const battedBallLive = liveBattedBall != null;
 
   return (
@@ -510,7 +505,9 @@ export function GamePage() {
         <div style={{ marginBottom: 12 }}>
           <LowerThird
             id="batted-ball-label"
-            meta={battedBallLive ? "LIVE BIP" : "MODEL EXAMPLE"}
+            // Not "MODEL EXAMPLE" any more - there is no example. The fixture is retired, so
+            // the un-live state is an absence of data, not a substitute for it.
+            meta={battedBallLive ? "LIVE BIP" : "AWAITING BIP"}
           >
             Batted-Ball Model
           </LowerThird>
@@ -537,7 +534,7 @@ export function GamePage() {
             </>
           )}
         </p>
-        <BattedBallExplorer data={battedBall} />
+        {battedBall ? <BattedBallExplorer data={battedBall} /> : null}
       </section>
 
       <section aria-labelledby="game-pitch-log-label">

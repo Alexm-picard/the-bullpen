@@ -39,6 +39,7 @@ function game(o: Partial<GameSummary> = {}): GameSummary {
     status: "IN_PROGRESS",
     detailedState: "In Progress",
     currentMatchup: null,
+    mostRecentBattedBall: null,
     ...o,
   };
 }

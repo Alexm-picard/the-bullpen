@@ -109,7 +109,8 @@ const GAME: Record<string, unknown> = {
     batSide: "R",
     pitchHand: "R",
     atBatIndex: 1,
-  },
+  }, // Untyped route mock - tsc cannot force this field; hand-maintained by necessity.
+  mostRecentBattedBall: null,
 };
 
 function pitch(atBat: number, n: number, desc: string, type: string) {

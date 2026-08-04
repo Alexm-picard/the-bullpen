@@ -24,6 +24,7 @@ const SUMMARY: GameSummary = {
   status: "IN_PROGRESS",
   detailedState: "In Progress",
   currentMatchup: null,
+  mostRecentBattedBall: null,
 };
 
 const PITCH: LivePitchRow = {

@@ -18,6 +18,7 @@ function game(over: Partial<GameSummary>): GameSummary {
     status: "SCHEDULED",
     detailedState: "Scheduled",
     currentMatchup: null,
+    mostRecentBattedBall: null,
     ...over,
   };
 }

@@ -32,6 +32,26 @@ export type CurrentMatchup = {
   atBatIndex: number;
 };
 
+/** Mirrors the backend `RecentBattedBall` record. */
+export type RecentBattedBall = {
+  batterId: number;
+  atBatIndex: number;
+  pitchNumber: number;
+  /** Ingestion instant - the caption needs it, since "most recent" is a claim about time. */
+  ts: string;
+  event: string;
+  bbType: string;
+  launchSpeedMph: number;
+  launchAngleDeg: number;
+  hitDistanceFt: number;
+  /** Null when it cannot be honestly derived; withhold the comparison, never substitute 0. */
+  sprayAngleDeg: number | null;
+  stand: string;
+  baseState: number | null;
+  parkId: string;
+  outs: number;
+};
+
 export type GameSummary = {
   gameId: number;
   gameDate: string; // YYYY-MM-DD
@@ -44,6 +64,19 @@ export type GameSummary = {
   detailedState: string;
   /** Null whenever the feed carries no current play - see CurrentMatchup. */
   currentMatchup: CurrentMatchup | null;
+  /**
+   * The most recent COMPLETED ball in play, or null when the game has had none yet (a normal
+   * early-innings state, and the only state a scheduled game has).
+   *
+   * Authoritative regardless of the pitch window: the page's pitch list is the newest 50 pitches,
+   * so scanning it finds a batted ball only while it happens to still be inside - failing silently,
+   * and looking like "no batted ball yet" rather than a bug.
+   *
+   * Carries BOTH display and model-input fields on purpose. The card shows a ball and scores THAT
+   * ball across 30 parks; two sources could show ball A while comparing ball B, precisely when they
+   * diverged.
+   */
+  mostRecentBattedBall: RecentBattedBall | null;
 };
 
 export type LivePitchRow = {

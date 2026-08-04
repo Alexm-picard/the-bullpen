@@ -60,6 +60,7 @@ function makeGame(overrides: Partial<GameSummary> = {}): GameSummary {
     status: "IN_PROGRESS",
     detailedState: "In Progress",
     currentMatchup: null,
+    mostRecentBattedBall: null,
     ...overrides,
   };
 }
@@ -144,24 +145,31 @@ describe("GamePage (broadcast identity)", () => {
     expect(html).toContain("Invalid game id.");
   });
 
-  it("renders the LIVE batted ball when a recent in-play pitch carries launch data", () => {
+  it("renders the batted ball the SUMMARY names, not one scavenged from the pitch list", () => {
+    // The source moved: the page reads game.mostRecentBattedBall rather than scanning its newest-50
+    // pitch window, which found a ball only while it happened to still be inside.
     const client = seededClient();
-    client.setQueryData(["games", "byId", GAME_ID], makeGame());
-    // Newest-first store: the qualifying in-play BIP is the only/first row.
-    const bip = makePitch({
-      cursor: 100,
-      description: "in_play",
+    const bb = {
       batterId: 111,
-      pitcherId: 200,
-      outs: 2,
+      atBatIndex: 4,
+      pitchNumber: 3,
+      ts: "2026-08-04T23:10:00Z",
+      event: "Field Out",
+      bbType: "fly_ball",
       launchSpeedMph: 104.3,
-      sprayAngleDeg: 18.4,
       launchAngleDeg: 27,
       hitDistanceFt: 389,
-      bbType: "line_drive",
-      event: "field_out",
-    });
-    client.setQueryData(["games", "pitches", GAME_ID], [bip]);
+      sprayAngleDeg: 18.4,
+      stand: "L",
+      baseState: 0,
+      parkId: "TOR",
+      outs: 2,
+    };
+    client.setQueryData(
+      ["games", "byId", GAME_ID],
+      makeGame({ mostRecentBattedBall: bb }),
+    );
+    client.setQueryData(["games", "pitches", GAME_ID], []);
     client.setQueryData(["players", "byId", 111], {
       id: 111,
       name: "Live Batter",
@@ -169,20 +177,8 @@ describe("GamePage (broadcast identity)", () => {
       active: true,
       team: "NYY",
     });
-    client.setQueryData(["players", "byId", 200], {
-      id: 200,
-      name: "Live Pitcher",
-      primaryPosition: "P",
-      active: true,
-      team: "DET",
-    });
-    // The exact all-parks request the page derives for this BIP (hitDistanceFt is
-    // the row's own value, stand defaults to R, outs flow through). React Query
-    // hashes keys deterministically, so structural equality is what matters.
-    // This literal is the seeded QUERY KEY, so it must equal what the page now builds. Spray and
-    // baseState come from the row instead of being hardcoded, and stand is the row's batterStand
-    // resolved for switch hitters - so a fabricated 0/"R" here would no longer match and the seed
-    // would silently miss.
+    // The seeded key must equal what the page builds - spray, stand and baseState all come from the
+    // summary record now, so a fabricated 0/"R" would no longer match and the seed would miss.
     const req: AllParksRequest = {
       launchSpeedMph: 104.3,
       launchAngleDeg: 27,
@@ -193,51 +189,35 @@ describe("GamePage (broadcast identity)", () => {
       outs: 2,
     };
     client.setQueryData(["parks", "all-parks", req], {
-      probHrByPark: { DET: 0.2, NYY: 0.72, BOS: 0.55, COL: 0.9 },
-      carryFtByPark: { DET: 401, NYY: 404, BOS: 402, COL: 419 },
-      modelName: "batted_ball",
-      modelVersion: "v1.4",
-      latencyMicros: 1234,
-      correlationId: "test-corr",
+      modelName: "battedball_outcome",
+      modelVersion: "v2",
+      probHrByPark: { TOR: 0.61, BOS: 0.4 },
+      carryFtByPark: { TOR: 401, BOS: 388 },
     });
 
     const html = render(<GamePage />, `/games/${GAME_ID}`, client);
-    // The live BIP card replaces the showcase: live batter + humanized event +
-    // the BIP's own metrics, and the live caption + meta swap in.
     expect(html).toContain("Live Batter");
     expect(html).toContain("Field Out");
     expect(html).toContain("104.3");
     expect(html).toContain("LIVE BIP");
-    expect(html).toContain("most recent in-play batted ball this game");
     expect(html).not.toContain("Giancarlo Stanton");
   });
 
-  it("falls back to the showcase batted ball when no in-play pitch carries launch data", () => {
+  it("shows NO card at all when the game has had no ball in play", () => {
+    // The fixture is retired from this page. A labelled static example was defensible while no real
+    // batted ball could ever render here; once one can, a Stanton card on a live game page is the
+    // fixtures-presented-as-content defect. The honest empty state is the caption and nothing else.
     const client = seededClient();
-    client.setQueryData(["games", "byId", GAME_ID], makeGame());
-    // A called strike (not in_play) and an in_play row with NULL launch data:
-    // neither satisfies the launch-data predicate, so the showcase stays.
     client.setQueryData(
-      ["games", "pitches", GAME_ID],
-      [
-        makePitch({ cursor: 2, description: "called_strike" }),
-        makePitch({
-          cursor: 1,
-          description: "in_play",
-          launchSpeedMph: null,
-          launchAngleDeg: null,
-        }),
-      ],
+      ["games", "byId", GAME_ID],
+      makeGame({ mostRecentBattedBall: null }),
     );
+    client.setQueryData(["games", "pitches", GAME_ID], []);
 
     const html = render(<GamePage />, `/games/${GAME_ID}`, client);
-    expect(html).toContain("Giancarlo Stanton");
-    // Copy corrected on this branch: the old caption blamed the live feed for carrying no
-    // batted-ball physics, which stopped being true when MLB's feed changed under it.
     expect(html).toContain("No ball has been put in play in this game yet");
-    expect(html).toContain("static example of the per-park HR model");
-    expect(html).not.toContain("doesn't carry");
-    expect(html).toContain("MODEL EXAMPLE");
+    expect(html).not.toContain("Giancarlo Stanton");
+    expect(html).not.toContain("MODEL EXAMPLE");
     expect(html).not.toContain("LIVE BIP");
   });
 });

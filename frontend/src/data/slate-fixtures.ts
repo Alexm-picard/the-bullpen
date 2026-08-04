@@ -24,6 +24,7 @@ export const SHOWCASE_GAMES: GameSummary[] = [
     status: "IN_PROGRESS",
     detailedState: "In Progress",
     currentMatchup: null,
+    mostRecentBattedBall: null,
   },
   {
     gameId: 823388, // PIT @ MIL - final
@@ -36,5 +37,6 @@ export const SHOWCASE_GAMES: GameSummary[] = [
     status: "COMPLETED",
     detailedState: "Final",
     currentMatchup: null,
+    mostRecentBattedBall: null,
   },
 ];
