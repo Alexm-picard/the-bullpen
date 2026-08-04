@@ -35,6 +35,36 @@ class ArchitectureTest {
    * domain/}, which drained the baseline to zero, so the rule is now enforced outright and carries
    * no store entry. A new web-DTO reach-in from {@code data/} fails immediately.
    */
+  /**
+   * Decision [188] / ADR-0016, enforced STRUCTURALLY rather than by convention.
+   *
+   * <p>An internal aggregate evaluates the champion many times to produce ONE displayed number, so
+   * the individual evaluations are intermediates and must not reach {@code prediction_log}. Logging
+   * them would not merely add volume - it would redefine the population the drift PSI,
+   * promotion-evidence and truth-join consumers all measure.
+   *
+   * <p>A behavioural test ("assert no rows were written") is the obvious pin and the weaker one: it
+   * passes only for the inputs it exercises. This asserts the aggregator cannot REACH the logging
+   * path at all, so no input can make it log. It also reds the moment someone wires the
+   * orchestrator in "just to reuse the routing", which is the plausible regression - the two paths
+   * are the same model and differ only in obligation.
+   */
+  @ArchTest
+  static final ArchRule aggregatesMustNotReachThePredictionLog =
+      ArchRuleDefinition.noClasses()
+          .that()
+          .haveSimpleNameEndingWith("Aggregator")
+          .should()
+          .dependOnClassesThat()
+          .haveSimpleNameEndingWith("AsyncPredictionLogger")
+          .orShould()
+          .dependOnClassesThat()
+          .haveSimpleNameEndingWith("PredictionOrchestrator")
+          .because(
+              "decision [188]: an internal aggregate's evaluations are intermediates, not served"
+                  + " predictions - logging them redefines the population drift and promotion"
+                  + " evidence measure");
+
   @ArchTest
   static final ArchRule dataMustNotDependOnApiDtos =
       ArchRuleDefinition.noClasses()
