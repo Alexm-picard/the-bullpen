@@ -81,6 +81,24 @@ public class LivePollingService {
   // string encodes "no current play", so the null transition is written too and the row stops
   // naming a batter who has finished hitting.
   private final Map<Long, String> lastMatchupKey = new ConcurrentHashMap<>();
+
+  /**
+   * Highest pitch cursor already written WITH batted-ball physics, per game.
+   *
+   * <p>This exists because {@link #writeNewPitches} writes each pitch EXACTLY ONCE - it filters on
+   * {@code cursor(p) > since}, so a pitch never gets a second look. That is fine for pitch data,
+   * which is complete when the pitch lands, but batted-ball physics is not: hitData populates while
+   * the play is still in flight and the parser declines it until the play completes. A ball in play
+   * first seen mid-flight would therefore keep empty physics for the rest of the game, and the live
+   * batted-ball card would stay empty for exactly the games it exists to serve.
+   *
+   * <p>Tracking the MAX key rather than a set of keys is sound because at-bats are monotonic: a
+   * later BIP always has a higher cursor, so "greater than the highest already written" is
+   * equivalent to "not yet written" without unbounded growth per game. (Per-game map growth across
+   * a season is tracked in issue 399, which covers all of this class's per-game maps.)
+   */
+  private final Map<Long, Long> lastBattedBallKey = new ConcurrentHashMap<>();
+
   private final Map<Long, Instant> lastPollAt = new ConcurrentHashMap<>();
   private final Map<Long, Long> lastCursorByGame = new ConcurrentHashMap<>();
   private final Map<Long, Long> lastPredictedKeyByGame = new ConcurrentHashMap<>();
@@ -214,7 +232,52 @@ public class LivePollingService {
       }
     }
     writeNewPitches(gamePk, feed);
+    backfillCompletedBattedBalls(gamePk, feed);
     predictNextPitch(gamePk, feed);
+  }
+
+  /**
+   * Re-write balls in play that have GAINED physics since their pitch was first stored.
+   *
+   * <p>Ordered AFTER {@link #writeNewPitches} on purpose: that call may have just written this BIP
+   * complete on its first sighting, in which case it has already bumped the key and there is
+   * nothing here to do. What remains is the case the cursor gate cannot serve - a pitch stored
+   * while its play was in flight, whose hitData only became complete on a later poll.
+   *
+   * <p>Targeted rather than a rolling re-write window: roughly ONE extra insert per ball in play
+   * (~50 per game) instead of re-writing the last N pitches every 5s tick, which would be ~80x
+   * write amplification into a 14-day TTL table. The ReplacingMergeTree supersedes on (game_id,
+   * at_bat_index, pitch_number), so the re-insert replaces the physics-less row rather than
+   * duplicating it - the capability V015's header always claimed and nothing exercised.
+   */
+  private void backfillCompletedBattedBalls(long gamePk, LiveGameFeed feed) {
+    long lastKey = lastBattedBallKey.getOrDefault(gamePk, 0L);
+    List<LivePitch> completed =
+        feed.pitches().stream().filter(p -> p.battedBall() != null && cursor(p) > lastKey).toList();
+    if (completed.isEmpty()) {
+      return;
+    }
+    repo.insertPitches(withPitches(feed, completed));
+    metrics.incrementPitchesIngested(completed.size());
+    completed.stream()
+        .mapToLong(LivePollingService::cursor)
+        .max()
+        .ifPresent(key -> bumpBattedBallKey(gamePk, key));
+  }
+
+  /**
+   * Raise the watermark.
+   *
+   * <p>Uses max rather than a plain put, but HONESTLY: with today's callers a lower key cannot
+   * arrive. Cursors are monotonic within a game, and both call sites bump with the max of a set
+   * already filtered to values above the watermark, so no mutation of this line changes any
+   * observable behaviour - I checked, and replacing it with put() reds nothing. It is kept because
+   * it states the invariant the field depends on at the point that depends on it, not because it is
+   * guarding a case anyone has found. Do not add a test asserting it fires; there is no input that
+   * makes it fire.
+   */
+  private void bumpBattedBallKey(long gamePk, long key) {
+    lastBattedBallKey.merge(gamePk, key, Math::max);
   }
 
   private void writeNewPitches(long gamePk, LiveGameFeed feed) {
@@ -232,6 +295,12 @@ public class LivePollingService {
         fresh.stream().filter(p -> "unknown".equals(p.description())).count());
     lastCursorByGame.put(
         gamePk, fresh.stream().mapToLong(LivePollingService::cursor).max().orElse(since));
+    // A pitch that ALREADY carried physics on its first sighting needs no backfill later.
+    fresh.stream()
+        .filter(p -> p.battedBall() != null)
+        .mapToLong(LivePollingService::cursor)
+        .max()
+        .ifPresent(key -> bumpBattedBallKey(gamePk, key));
     refreshIntraDayForm(gamePk, fresh);
     predictPostForCompletedPitches(gamePk, feed, fresh);
   }
