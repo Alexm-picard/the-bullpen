@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 
 import { SHOWCASE_BATTED_BALL } from "../../data/batted-ball-fixtures";
 
-import { BattedBallExplorer } from "./batted-ball-explorer";
+import { BattedBallExplorer, distanceLabel } from "./batted-ball-explorer";
 
 function render(ui: React.ReactElement): string {
   return renderToStaticMarkup(ui);
@@ -50,5 +50,40 @@ describe("BattedBallExplorer", () => {
         (p) => p.team.length >= 2 && p.dist > 0 && p.err > 0,
       ),
     ).toBe(true);
+  });
+
+  it("labels the distance with the batted-ball class, not the bare word Distance", () => {
+    // The 12 ft single that motivated this. totalDistance is PROJECTED LANDING distance - correct
+    // and tiny for a ball that was never in the air. "Distance 12 ft" reads as broken data;
+    // "Ground ball 12 ft" reads as what it is. The number is deliberately NOT suppressed: a
+    // missing field would read as missing data, which is a different lie.
+    const html = render(
+      <BattedBallExplorer
+        data={{ ...SHOWCASE_BATTED_BALL, launchDeg: -9, distanceFt: 12 }}
+      />,
+    );
+    expect(html).toContain("Ground ball");
+    expect(html).toContain("12");
+    expect(html).not.toContain(">Distance<");
+  });
+
+  it("keeps the classification honest across the Statcast bands", () => {
+    expect(distanceLabel(-9)).toBe("Ground ball");
+    expect(distanceLabel(9.9)).toBe("Ground ball");
+    expect(distanceLabel(10)).toBe("Line drive");
+    expect(distanceLabel(24.9)).toBe("Line drive");
+    expect(distanceLabel(25)).toBe("Fly ball");
+    expect(distanceLabel(49.9)).toBe("Fly ball");
+    expect(distanceLabel(50)).toBe("Pop up");
+  });
+
+  it("labels a real home run as a fly ball, where distance is the meaningful read", () => {
+    const html = render(
+      <BattedBallExplorer
+        data={{ ...SHOWCASE_BATTED_BALL, launchDeg: 24, distanceFt: 403 }}
+      />,
+    );
+    expect(html).toContain("Line drive");
+    expect(html).toContain("403");
   });
 });

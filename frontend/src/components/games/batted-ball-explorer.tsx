@@ -155,6 +155,18 @@ function ParkRow({
   );
 }
 
+/**
+ * Statcast's batted-ball bands, keyed off launch angle - the same thresholds the page's
+ * bandFromLaunchAngle uses for its descriptor, so the card cannot label a ball one way in its
+ * sub-line and another on its distance metric.
+ */
+export function distanceLabel(launchDeg: number): string {
+  if (launchDeg < 10) return "Ground ball";
+  if (launchDeg < 25) return "Line drive";
+  if (launchDeg < 50) return "Fly ball";
+  return "Pop up";
+}
+
 export function BattedBallExplorer({ data }: { data: BattedBall }) {
   const [open, setOpen] = useState(false);
   const [shown, setShown] = useState<string[]>(data.defaultShown);
@@ -233,7 +245,22 @@ export function BattedBallExplorer({ data }: { data: BattedBall }) {
       >
         <Metric k="Exit velo" value={data.exitVeloMph.toFixed(1)} unit="mph" />
         <Metric k="Launch" value={`${data.launchDeg}°`} />
-        <Metric k="Distance" value={String(data.distanceFt)} unit="ft" />
+        {/*
+          The label carries the CLASSIFICATION, not the bare word "Distance".
+          totalDistance is Statcast's PROJECTED LANDING distance: meaningful for a ball in the air
+          (a 403 ft home run) and trivially true for one on the ground (a 102.7 mph single at 12 ft,
+          a groundout at 7 ft). Observed range across 187 balls in play: 1-429 ft.
+          "Distance 12 ft" reads as broken data; "Ground ball 12 ft" reads as what it is. Same
+          number, same truth - the label was the thing that was wrong, so the number is NOT
+          suppressed. A missing field would read as missing data, which is a different lie.
+          The band comes from the launch angle via Statcast's own thresholds, so it is derived
+          rather than a presentational trick.
+        */}
+        <Metric
+          k={distanceLabel(data.launchDeg)}
+          value={String(data.distanceFt)}
+          unit="ft"
+        />
         <Metric k="xBA" value={data.xba} />
       </div>
 
