@@ -12,6 +12,7 @@ import net.thebullpen.baseball.inference.ModelLoader;
 import net.thebullpen.baseball.registry.RegistryService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
@@ -41,6 +42,10 @@ import org.springframework.stereotype.Component;
  * quantity, which is what an aggregate should be.
  */
 @Component
+// Same ClickHouse gate as GameController and LivePitchesRepository, which this depends on. Without
+// it the bean is unsatisfiable in every ClickHouse-free profile (registry-it and friends) and the
+// whole application context fails to load - which is exactly what happened on the first attempt.
+@ConditionalOnProperty(name = "bullpen.clickhouse.enabled", havingValue = "true")
 public class TeamContactAggregator {
 
   private static final Logger log = LoggerFactory.getLogger(TeamContactAggregator.class);
