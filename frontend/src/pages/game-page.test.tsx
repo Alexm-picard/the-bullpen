@@ -203,6 +203,36 @@ describe("GamePage (broadcast identity)", () => {
     expect(html).not.toContain("Giancarlo Stanton");
   });
 
+  it("never promises a static example it no longer renders", () => {
+    // THE REGRESSION THIS FILE MISSED. Retiring the fixture removed the card and the
+    // "MODEL EXAMPLE" meta, but left the caption saying "This is a static example of the per-park
+    // HR model" - describing a thing that was no longer on the page. The existing assertions all
+    // passed, because they pinned what I remembered to check (no Stanton, no MODEL EXAMPLE) and
+    // never asserted the sentence I forgot to delete.
+    const client = seededClient();
+    client.setQueryData(
+      ["games", "byId", GAME_ID],
+      makeGame({ mostRecentBattedBall: null }),
+    );
+    client.setQueryData(["games", "pitches", GAME_ID], []);
+    const html = render(<GamePage />, `/games/${GAME_ID}`, client);
+    expect(html).not.toMatch(/static example/i);
+    expect(html).not.toMatch(/not this game/i);
+  });
+
+  it("says a FINISHED game had no ball in play, without promising more baseball", () => {
+    // "yet" is a claim about the future. A completed game has no more at-bats.
+    const client = seededClient();
+    client.setQueryData(
+      ["games", "byId", GAME_ID],
+      makeGame({ mostRecentBattedBall: null, status: "COMPLETED" }),
+    );
+    client.setQueryData(["games", "pitches", GAME_ID], []);
+    const html = render(<GamePage />, `/games/${GAME_ID}`, client);
+    expect(html).toContain("No ball was put in play in this game.");
+    expect(html).not.toContain("in this game yet");
+  });
+
   it("shows NO card at all when the game has had no ball in play", () => {
     // The fixture is retired from this page. A labelled static example was defensible while no real
     // batted ball could ever render here; once one can, a Stanton card on a live game page is the

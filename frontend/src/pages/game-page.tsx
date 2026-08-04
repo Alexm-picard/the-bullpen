@@ -526,12 +526,17 @@ export function GamePage() {
               per-park batted-ball champion: the same contact at all 30 parks,
               carry and outcome shifting with each park.
             </>
+          ) : game.isError ? (
+            // NOT "no ball in play yet": that asserts a fact about the game when we simply failed
+            // to load it. An error state must say what it knows, which is nothing.
+            <>Could not load this game&rsquo;s batted balls.</>
+          ) : game.isPending ? (
+            <>Loading this game&rsquo;s batted balls&hellip;</>
+          ) : summary?.status === "COMPLETED" ? (
+            // "yet" promises more baseball. A finished game with no ball in play is finished.
+            <>No ball was put in play in this game.</>
           ) : (
-            <>
-              No ball has been put in play in this game yet. This is a static
-              example of the per-park HR model - not this game&rsquo;s batted
-              ball.
-            </>
+            <>No ball has been put in play in this game yet.</>
           )}
         </p>
         {battedBall ? <BattedBallExplorer data={battedBall} /> : null}
