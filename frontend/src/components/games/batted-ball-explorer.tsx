@@ -117,7 +117,15 @@ function ParkRow({
             whiteSpace: "nowrap",
           }}
         >
-          {park.dist} ± {park.err} ft
+          {/*
+            The uncertainty band renders ONLY when the data carries one. AllParksResponse has no
+            per-park uncertainty, so on the live path `err` is null and this prints a bare figure -
+            an invented confidence interval beside a real model carry is the same defect as
+            sprayAngleDeg: 0, and would be read as the model's own precision. The showcase fixture
+            still carries a band because it is an illustration that says so.
+          */}
+          {park.dist}
+          {park.err != null ? ` ± ${park.err}` : ""} ft
         </span>
         <span
           style={{
@@ -153,18 +161,6 @@ function ParkRow({
       </span>
     </div>
   );
-}
-
-/**
- * Statcast's batted-ball bands, keyed off launch angle - the same thresholds the page's
- * bandFromLaunchAngle uses for its descriptor, so the card cannot label a ball one way in its
- * sub-line and another on its distance metric.
- */
-export function distanceLabel(launchDeg: number): string {
-  if (launchDeg < 10) return "Ground ball";
-  if (launchDeg < 25) return "Line drive";
-  if (launchDeg < 50) return "Fly ball";
-  return "Pop up";
 }
 
 export function BattedBallExplorer({ data }: { data: BattedBall }) {
@@ -256,11 +252,7 @@ export function BattedBallExplorer({ data }: { data: BattedBall }) {
           The band comes from the launch angle via Statcast's own thresholds, so it is derived
           rather than a presentational trick.
         */}
-        <Metric
-          k={distanceLabel(data.launchDeg)}
-          value={String(data.distanceFt)}
-          unit="ft"
-        />
+        <Metric k={data.band} value={String(data.distanceFt)} unit="ft" />
         <Metric k="xBA" value={data.xba} />
       </div>
 

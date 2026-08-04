@@ -19,7 +19,7 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { describe, expect, it } from "vitest";
 
 import { type GameSummary, type LivePitchRow } from "../api/games";
-import { type AllParksRequest } from "../api/parks";
+import { CANONICAL_BBE_INPUT, type AllParksRequest } from "../api/parks";
 import { colors } from "../design/broadcast";
 import { theme } from "../design/theme";
 
@@ -201,6 +201,115 @@ describe("GamePage (broadcast identity)", () => {
     expect(html).toContain("104.3");
     expect(html).toContain("LIVE BIP");
     expect(html).not.toContain("Giancarlo Stanton");
+  });
+
+  it("cannot borrow another page's prediction from cache for a withheld ball", () => {
+    // B1. `enabled: false` suppresses FETCHING, not cache reads, and the all-parks key hashes
+    // STRUCTURALLY. /parks fires exactly CANONICAL_BBE_INPUT on mount - 110/28/0, stand R, and
+    // estimateLandingDistanceFt(110,28) is exactly 400 - so a game page gated off with that same
+    // placeholder subscribed to /parks' cache entry and rendered a REAL batted ball scored as a
+    // 110 mph straightaway one, under a LIVE chip. Fixed by passing null: no key, nothing to
+    // collide with. This test fails against the placeholder version.
+    const client = seededClient();
+    client.setQueryData(["parks", "all-parks", CANONICAL_BBE_INPUT], {
+      modelName: "battedball_outcome",
+      modelVersion: "v2",
+      probHrByPark: { TOR: 0.99, BOS: 0.99 },
+      carryFtByPark: { TOR: 460, BOS: 455 },
+    });
+    client.setQueryData(
+      ["games", "byId", GAME_ID],
+      makeGame({
+        mostRecentBattedBall: {
+          batterId: 111,
+          atBatIndex: 4,
+          pitchNumber: 3,
+          ts: "2026-08-04T23:10:00Z",
+          event: "Groundout",
+          bbType: "ground_ball",
+          launchSpeedMph: 71.7,
+          launchAngleDeg: -12,
+          hitDistanceFt: 9,
+          sprayAngleDeg: null, // DECLINED - the comparison must be withheld
+          stand: "R",
+          baseState: 0,
+          parkId: "TOR",
+          outs: 1,
+        },
+      }),
+    );
+    client.setQueryData(["games", "pitches", GAME_ID], []);
+
+    const html = render(<GamePage />, `/games/${GAME_ID}`, client);
+    expect(html).not.toContain("LIVE BIP");
+    expect(html).not.toContain("460"); // the other page's carry must not surface
+    expect(html).not.toMatch(/home run in \d+ of 30/i);
+  });
+
+  it("derives ONE band, so the sub-line and the distance metric cannot disagree", () => {
+    // Q4. The metric used to re-derive its own band from the ROUNDED angle while the sub-line used
+    // the descriptor, so a raw 9.6 degrees read "Ground ball" in one place and "Line drive" in the
+    // other - and a present bbType made them disagree by SOURCE too. The earlier version of this
+    // pin fed `band` straight to the explorer and therefore never exercised this computation at
+    // all: it was vacuous against a page-side change.
+    const client = seededClient();
+    const bb = {
+      batterId: 111,
+      atBatIndex: 4,
+      pitchNumber: 3,
+      ts: "2026-08-04T23:10:00Z",
+      event: "Single",
+      bbType: "line_drive", // Statcast says line drive...
+      launchSpeedMph: 96.2,
+      launchAngleDeg: 9.6, // ...while a raw-angle band would say ground ball
+      hitDistanceFt: 212,
+      sprayAngleDeg: 12.1,
+      stand: "R",
+      baseState: 0,
+      parkId: "TOR",
+      outs: 1,
+    };
+    client.setQueryData(
+      ["games", "byId", GAME_ID],
+      makeGame({ mostRecentBattedBall: bb }),
+    );
+    client.setQueryData(["games", "pitches", GAME_ID], []);
+    client.setQueryData(["players", "byId", 111], {
+      id: 111,
+      name: "Live Batter",
+      primaryPosition: "RF",
+      active: true,
+      team: "NYY",
+    });
+    client.setQueryData(
+      [
+        "parks",
+        "all-parks",
+        {
+          launchSpeedMph: 96.2,
+          launchAngleDeg: 9.6,
+          sprayAngleDeg: 12.1,
+          hitDistanceFt: 212,
+          stand: "R",
+          baseState: 0,
+          outs: 1,
+        },
+      ],
+      {
+        modelName: "battedball_outcome",
+        modelVersion: "v2",
+        probHrByPark: { TOR: 0.02 },
+        carryFtByPark: { TOR: 215 },
+      },
+    );
+
+    const text = visibleText(render(<GamePage />, `/games/${GAME_ID}`, client));
+    // Statcast's classification appears TWICE - once in the sub-line, once as the metric key -
+    // and it is the same string by construction. A raw-angle re-derivation would print
+    // "Line drive" in one place and "Ground ball" in the other; a rounded one, "Line drive" and
+    // "Line drive" from two sources that can drift apart. Counting both is what pins the SHARING.
+    expect(text.split("Line Drive").length - 1).toBe(2);
+    expect(text).not.toMatch(/ground ball/i);
   });
 
   it("never promises a static example it no longer renders", () => {

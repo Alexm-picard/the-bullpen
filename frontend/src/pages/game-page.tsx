@@ -31,7 +31,6 @@ import {
   type RecentBattedBall,
 } from "../api/games";
 import {
-  CANONICAL_BBE_INPUT,
   useAllParksPrediction,
   type AllParksRequest,
   type AllParksResponse,
@@ -113,7 +112,6 @@ function tickerItems(pitches: LivePitchRow[]): string[] {
 // hrParkCount uses the same HR_THRESHOLD so the headline and chips agree. err is a
 // fixed placeholder band because AllParksResponse carries no per-park uncertainty.
 const HR_THRESHOLD = 0.5;
-const CARRY_ERR_FT = 9;
 
 function titleCaseFromSnake(value: string): string {
   return value
@@ -168,7 +166,7 @@ function buildLiveBattedBall(
       outcome,
       tone,
       dist: parkCarry != null ? Math.round(parkCarry) : distanceFt,
-      err: CARRY_ERR_FT,
+      err: null, // the model reports no per-park uncertainty; do not invent one
       here: id === homeTeam,
     };
   });
@@ -189,6 +187,10 @@ function buildLiveBattedBall(
     if (!defaultShown.includes(name)) defaultShown.push(name);
   }
 
+  // ONE band, used by both the sub-line and the distance metric. Previously the sub-line used
+  // this value while the metric re-derived its own from the ROUNDED angle - so a raw 9.6 degrees
+  // read "Ground ball" in one place and "Line drive" in the other, and a present bbType made the
+  // two disagree by source as well as by input.
   const descriptor = inPlay.bbType
     ? titleCaseFromSnake(inPlay.bbType)
     : bandFromLaunchAngle(launchAngleDeg);
@@ -200,6 +202,7 @@ function buildLiveBattedBall(
     exitVeloMph,
     launchDeg: Math.round(launchAngleDeg),
     distanceFt,
+    band: descriptor,
     xba: "—", // AllParksResponse carries no xBA; do not fabricate one.
     hrParkCount,
     parkCount,
@@ -278,7 +281,7 @@ export function GamePage() {
   // pregame / between-BIP mount would pollute the drift baselines the Phase-6
   // postmortem reads. When there is no BIP the req is a stable placeholder that is
   // NEVER fetched (the gate is off); it only keeps the hook's arg typed.
-  const allParksReq = useMemo<AllParksRequest>(() => {
+  const allParksReq = useMemo<AllParksRequest | null>(() => {
     if (
       inPlay == null ||
       // Spray is REQUIRED and cannot be invented. The server declines it where the geometry
@@ -289,7 +292,7 @@ export function GamePage() {
       inPlay.sprayAngleDeg == null ||
       inPlay.baseState == null
     ) {
-      return CANONICAL_BBE_INPUT;
+      return null;
     }
     // Batter side from the ROW, resolved for switch hitters exactly as nextPitchRequest resolves
     // it. Previously hardcoded "R": harmless only while the card almost never rendered live, and a
@@ -298,7 +301,7 @@ export function GamePage() {
     // Switch hitters are already resolved server-side, at the source, so the page does not
     // re-derive a side the model input might disagree with.
     const stand = inPlay.stand;
-    if (stand !== "R" && stand !== "L") return CANONICAL_BBE_INPUT;
+    if (stand !== "R" && stand !== "L") return null;
     return {
       launchSpeedMph: inPlay.launchSpeedMph,
       launchAngleDeg: inPlay.launchAngleDeg,
@@ -309,13 +312,11 @@ export function GamePage() {
       outs: inPlay.outs,
     };
   }, [inPlay]);
-  // Gated on a COMPLETE request, not merely on a batted ball existing: an incomplete one falls
-  // back to CANONICAL_BBE_INPUT, and firing on that would log a canonical-fixture prediction to
-  // prediction_log under this game's traffic - polluting the drift baseline with a request the
-  // page never displays.
-  const allParksComplete = allParksReq !== CANONICAL_BBE_INPUT;
+  // A null request means the query has no key at all, so it neither fires nor reads a cache entry
+  // some other page populated. Withholding is the whole point: an incomplete request must not
+  // become a prediction, and must not silently borrow one.
   const allParks = useAllParksPrediction(allParksReq, {
-    enabled: inPlay != null && allParksComplete,
+    enabled: allParksReq != null,
   });
 
   // The live BattedBall, or null until BOTH the BIP and its prediction exist (->
@@ -526,6 +527,22 @@ export function GamePage() {
               per-park batted-ball champion: the same contact at all 30 parks,
               carry and outcome shifting with each park.
             </>
+          ) : inPlay != null ? (
+            // A ball WAS put in play - the page has been told so. Saying "no ball has been put in
+            // play yet" here is the same defect as saying it on an error: asserting a fact the page
+            // knows to be false. Three sub-states, all reachable, one of them the HAPPY PATH: every
+            // new ball re-keys the all-parks query, so `data` is undefined while it fetches.
+            allParksReq == null ? (
+              <>
+                A ball was put in play, but its landing coordinates were not
+                tracked cleanly enough to score it across parks - so the
+                comparison is withheld rather than estimated.
+              </>
+            ) : allParks.isError ? (
+              <>Could not score this batted ball across parks.</>
+            ) : (
+              <>Scoring this batted ball across all 30 parks&hellip;</>
+            )
           ) : game.isError ? (
             // NOT "no ball in play yet": that asserts a fact about the game when we simply failed
             // to load it. An error state must say what it knows, which is nothing.

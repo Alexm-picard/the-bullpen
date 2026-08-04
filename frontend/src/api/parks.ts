@@ -74,17 +74,28 @@ export const CANONICAL_BBE_INPUT: AllParksRequest = {
 };
 
 export function useAllParksPrediction(
-  req: AllParksRequest,
+  req: AllParksRequest | null,
   opts: { enabled?: boolean } = {},
 ) {
   return useQuery<AllParksResponse, ParksApiError>({
+    // NULL-KEYED when the caller has no request, mirroring usePitchPrediction. `enabled: false`
+    // suppresses FETCHING, not cache reads, and this key hashes STRUCTURALLY - so a gated caller
+    // passing a placeholder request still subscribes to that placeholder's cache entry and will
+    // render whatever another page put there. /parks fires exactly CANONICAL_BBE_INPUT on mount
+    // (110/28/0, estimateLandingDistanceFt(110,28) = 400, R, 0, 0), so a game page gated off with
+    // that placeholder would read /parks' prediction out of cache and render a REAL batted ball
+    // scored as a 110 mph 28-degree straightaway one, under a LIVE chip. Passing null removes the
+    // key, so there is nothing to collide with.
     queryKey: ["parks", "all-parks", req],
-    queryFn: () => predictAllParks(req),
+    queryFn: () => {
+      if (req == null) throw new Error("request required");
+      return predictAllParks(req);
+    },
     staleTime: 30_000,
     // POST /v1/predict/batted-ball/all-parks logs EVERY request to prediction_log (the drift
     // baseline source). /parks shows the prediction, so it always fetches; callers that would
     // otherwise fire a throwaway prediction (e.g. the game page with no live BIP) must pass
     // enabled:false so they don't pollute the drift baselines with never-shown predictions.
-    enabled: opts.enabled ?? true,
+    enabled: (opts.enabled ?? true) && req != null,
   });
 }
