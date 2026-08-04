@@ -57,6 +57,7 @@ const PITCH: LivePitchRow = {
   hitDistanceFt: null,
   bbType: null,
   event: null,
+  sprayAngleDeg: null,
 };
 
 describe("statusPollIntervalMs", () => {

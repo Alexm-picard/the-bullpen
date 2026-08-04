@@ -96,6 +96,7 @@ function makePitch(overrides: Partial<LivePitchRow> = {}): LivePitchRow {
     hitDistanceFt: null,
     bbType: null,
     event: null,
+    sprayAngleDeg: null,
     ...overrides,
   };
 }
@@ -154,6 +155,7 @@ describe("GamePage (broadcast identity)", () => {
       pitcherId: 200,
       outs: 2,
       launchSpeedMph: 104.3,
+      sprayAngleDeg: 18.4,
       launchAngleDeg: 27,
       hitDistanceFt: 389,
       bbType: "line_drive",
@@ -177,12 +179,16 @@ describe("GamePage (broadcast identity)", () => {
     // The exact all-parks request the page derives for this BIP (hitDistanceFt is
     // the row's own value, stand defaults to R, outs flow through). React Query
     // hashes keys deterministically, so structural equality is what matters.
+    // This literal is the seeded QUERY KEY, so it must equal what the page now builds. Spray and
+    // baseState come from the row instead of being hardcoded, and stand is the row's batterStand
+    // resolved for switch hitters - so a fabricated 0/"R" here would no longer match and the seed
+    // would silently miss.
     const req: AllParksRequest = {
       launchSpeedMph: 104.3,
       launchAngleDeg: 27,
-      sprayAngleDeg: 0,
+      sprayAngleDeg: 18.4,
       hitDistanceFt: 389,
-      stand: "R",
+      stand: "L",
       baseState: 0,
       outs: 2,
     };
@@ -226,7 +232,11 @@ describe("GamePage (broadcast identity)", () => {
 
     const html = render(<GamePage />, `/games/${GAME_ID}`, client);
     expect(html).toContain("Giancarlo Stanton");
-    expect(html).toContain("A static example of the per-park HR model");
+    // Copy corrected on this branch: the old caption blamed the live feed for carrying no
+    // batted-ball physics, which stopped being true when MLB's feed changed under it.
+    expect(html).toContain("No ball has been put in play in this game yet");
+    expect(html).toContain("static example of the per-park HR model");
+    expect(html).not.toContain("doesn't carry");
     expect(html).toContain("MODEL EXAMPLE");
     expect(html).not.toContain("LIVE BIP");
   });

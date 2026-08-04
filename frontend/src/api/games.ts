@@ -95,6 +95,14 @@ export type LivePitchRow = {
   bbType: string | null;
   /** Realized outcome / events for the in-play ball (e.g. "home_run", "field_out"). */
   event: string | null;
+  /**
+   * Spray angle in degrees, derived SERVER-SIDE from the landing coordinates, or null when it
+   * cannot be honestly derived (ball tracked at or behind the plate, or an angle outside the foul
+   * lines). Never fabricate a value when this is null - the per-park model treats spray as an
+   * observation, so a 0 would score a ball pulled down the line as hit to dead centre. Derived on
+   * the server so the formula and its degeneracy gates exist once.
+   */
+  sprayAngleDeg: number | null;
 };
 
 export class GameApiError extends ApiError {}

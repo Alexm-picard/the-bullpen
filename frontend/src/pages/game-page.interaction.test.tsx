@@ -73,6 +73,7 @@ function pitch(over: Partial<LivePitchRow> = {}): LivePitchRow {
     hitDistanceFt: null,
     bbType: null,
     event: null,
+    sprayAngleDeg: null,
     ...over,
   };
 }

@@ -284,23 +284,46 @@ export function GamePage() {
   // postmortem reads. When there is no BIP the req is a stable placeholder that is
   // NEVER fetched (the gate is off); it only keeps the hook's arg typed.
   const allParksReq = useMemo<AllParksRequest>(() => {
-    if (inPlay?.launchSpeedMph == null || inPlay.launchAngleDeg == null) {
+    if (
+      inPlay?.launchSpeedMph == null ||
+      inPlay.launchAngleDeg == null ||
+      // Spray is REQUIRED and cannot be invented. The server declines it where the geometry
+      // degenerates (a ball tracked at or behind the plate, or an angle outside the foul lines),
+      // and the honest response to a declined value is to not ask the model - not to send 0.
+      // Measured cost: ~2% of balls at 150+ ft, so this almost never fires on a ball anyone would
+      // want compared across parks.
+      inPlay.sprayAngleDeg == null ||
+      inPlay.baseState == null
+    ) {
       return CANONICAL_BBE_INPUT;
     }
+    // Batter side from the ROW, resolved for switch hitters exactly as nextPitchRequest resolves
+    // it. Previously hardcoded "R": harmless only while the card almost never rendered live, and a
+    // live-scored left-hander would otherwise be modelled as a right-hander on the page whose
+    // entire purpose is showing the real batted ball.
+    const throws = inPlay.pitcherThrows;
+    let stand = inPlay.batterStand;
+    if (stand === "S") stand = throws === "R" ? "L" : "R";
+    if (stand !== "R" && stand !== "L") return CANONICAL_BBE_INPUT;
     return {
       launchSpeedMph: inPlay.launchSpeedMph,
       launchAngleDeg: inPlay.launchAngleDeg,
-      sprayAngleDeg: 0,
+      sprayAngleDeg: inPlay.sprayAngleDeg,
       hitDistanceFt:
         inPlay.hitDistanceFt ??
         estimateLandingDistanceFt(inPlay.launchSpeedMph, inPlay.launchAngleDeg),
-      stand: "R",
-      baseState: 0,
+      stand,
+      baseState: inPlay.baseState,
       outs: inPlay.outs,
     };
   }, [inPlay]);
+  // Gated on a COMPLETE request, not merely on a batted ball existing: an incomplete one falls
+  // back to CANONICAL_BBE_INPUT, and firing on that would log a canonical-fixture prediction to
+  // prediction_log under this game's traffic - polluting the drift baseline with a request the
+  // page never displays.
+  const allParksComplete = allParksReq !== CANONICAL_BBE_INPUT;
   const allParks = useAllParksPrediction(allParksReq, {
-    enabled: inPlay != null,
+    enabled: inPlay != null && allParksComplete,
   });
 
   // The live BattedBall, or null until BOTH the BIP and its prediction exist (->
