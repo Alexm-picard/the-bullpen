@@ -53,7 +53,8 @@ class GameControllerTest {
                     7,
                     "IN_PROGRESS",
                     "In Progress",
-                    null)));
+                    null, // currentMatchup
+                    null))); // mostRecentBattedBall
 
     mvc.perform(get("/v1/games/today"))
         .andExpect(status().isOk())
@@ -85,7 +86,8 @@ class GameControllerTest {
                     7,
                     "IN_PROGRESS",
                     "In Progress",
-                    null)));
+                    null, // currentMatchup
+                    null))); // mostRecentBattedBall
 
     mvc.perform(get("/v1/games/777001"))
         .andExpect(status().isOk())

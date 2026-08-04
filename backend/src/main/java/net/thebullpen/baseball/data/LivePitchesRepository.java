@@ -28,6 +28,7 @@ import net.thebullpen.baseball.domain.LivePitch;
 import net.thebullpen.baseball.domain.LivePitchRow;
 import net.thebullpen.baseball.domain.PagedRows;
 import net.thebullpen.baseball.domain.PostPredictionRow;
+import net.thebullpen.baseball.domain.RecentBattedBall;
 import net.thebullpen.baseball.domain.ScheduledGame;
 import net.thebullpen.baseball.ingest.LiveGameFeed;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -552,7 +553,11 @@ public class LivePitchesRepository {
     // no pitches yet, so fall back to the schedule (FIND_SCHEDULED_GAME) - both game_id binds.
     List<GameSummary> hits = jdbc.query(FIND_GAME, GAME_SUMMARY_MAPPER, gameId);
     if (!hits.isEmpty()) {
-      return java.util.Optional.of(hits.get(0));
+      // Second query rather than a join: the summary query is keyed on the status row and joining a
+      // pitch-level lookup into it would make every slate read pay for a per-game scan. A scheduled
+      // game skips this entirely - it has no pitches, so there is nothing to find.
+      return java.util.Optional.of(
+          hits.get(0).withMostRecentBattedBall(findMostRecentBattedBall(gameId)));
     }
     List<GameSummary> scheduled = jdbc.query(FIND_SCHEDULED_GAME, GAME_SUMMARY_MAPPER, gameId);
     return scheduled.isEmpty()
@@ -602,6 +607,63 @@ public class LivePitchesRepository {
     }
   }
 
+  /**
+   * SQL for the most recent COMPLETED ball in play of a game.
+   *
+   * <p>Gated on V032's GROUP-level presence predicate, so a pitch whose physics is absent (the
+   * sentinels) is not mistaken for a batted ball measured at 0 mph. Ordered by the natural pitch
+   * key rather than by ingestion time, because a re-written row (the BIP backfill supersedes a
+   * pitch once its play completes) has a LATER ingested_at than pitches thrown after it - ordering
+   * by time would surface a stale ball whenever a backfill landed out of order.
+   */
+  private static final String FIND_RECENT_BATTED_BALL =
+      "SELECT batter_id, at_bat_index, pitch_number, ingested_at, events, bb_type,"
+          + " launch_speed_mph, launch_angle_deg, hit_distance_ft, hc_x, hc_y,"
+          + " bat_side, pitch_hand, base_state, home_team AS park_id, outs"
+          + " FROM pitches_live FINAL"
+          + " WHERE game_id = ? AND launch_speed_mph > 0 AND events != ''"
+          + " ORDER BY at_bat_index DESC, pitch_number DESC"
+          + " LIMIT 1";
+
+  /** The most recent completed ball in play, or null when the game has had none yet. */
+  public RecentBattedBall findMostRecentBattedBall(long gameId) {
+    List<RecentBattedBall> hits =
+        jdbc.query(
+            FIND_RECENT_BATTED_BALL,
+            (ResultSet rs, int n) -> {
+              // Switch hitters resolve against the pitcher HERE, so the served model input and the
+              // page agree on which side a batter hit from - the same resolution nextPitchRequest
+              // performs, done once at the source rather than twice downstream.
+              String stand = rs.getString("bat_side");
+              String throws_ = rs.getString("pitch_hand");
+              if ("S".equals(stand)) {
+                stand = "R".equals(throws_) ? "L" : "L".equals(throws_) ? "R" : "";
+              }
+              // nullableInt, not a cast: clickhouse-jdbc returns Nullable(UInt8) as an
+              // UnsignedByte, so (Integer) throws ClassCastException. The existing row mapper
+              // already had this helper - reusing it rather than re-solving it.
+              Integer baseState = nullableInt(rs, "base_state");
+              return new RecentBattedBall(
+                  rs.getLong("batter_id"),
+                  rs.getInt("at_bat_index"),
+                  rs.getInt("pitch_number"),
+                  rs.getObject("ingested_at", java.time.LocalDateTime.class)
+                      .toInstant(java.time.ZoneOffset.UTC),
+                  rs.getString("events"),
+                  rs.getString("bb_type"),
+                  rs.getDouble("launch_speed_mph"),
+                  rs.getDouble("launch_angle_deg"),
+                  rs.getDouble("hit_distance_ft"),
+                  sprayAngleOrNull(rs),
+                  stand,
+                  baseState,
+                  rs.getString("park_id"),
+                  rs.getInt("outs"));
+            },
+            gameId);
+    return hits.isEmpty() ? null : hits.get(0);
+  }
+
   private static final RowMapper<GameSummary> GAME_SUMMARY_MAPPER =
       (ResultSet rs, int n) -> {
         String status = rs.getString("status");
@@ -615,7 +677,10 @@ public class LivePitchesRepository {
             rs.getInt("inning"),
             status,
             humanizeStatus(status),
-            readMatchup(rs));
+            readMatchup(rs),
+            // Composed by findGame from a second query - the summary query is keyed on the status
+            // row and has no pitch join.
+            null);
       };
 
   /**

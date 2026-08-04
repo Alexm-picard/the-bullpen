@@ -25,4 +25,24 @@ public record GameSummary(
     int inning,
     String status,
     String detailedState,
-    CurrentMatchup currentMatchup) {}
+    CurrentMatchup currentMatchup,
+    RecentBattedBall mostRecentBattedBall) {
+
+  /**
+   * Same summary with the batted ball attached - the repository composes it from a second query.
+   */
+  public GameSummary withMostRecentBattedBall(RecentBattedBall bb) {
+    return new GameSummary(
+        gameId,
+        gameDate,
+        homeTeam,
+        awayTeam,
+        homeScore,
+        awayScore,
+        inning,
+        status,
+        detailedState,
+        currentMatchup,
+        bb);
+  }
+}

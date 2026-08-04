@@ -23,6 +23,7 @@ import net.thebullpen.baseball.domain.LivePitch;
 import net.thebullpen.baseball.domain.LivePitchRow;
 import net.thebullpen.baseball.domain.PagedRows;
 import net.thebullpen.baseball.domain.PostPredictionRow;
+import net.thebullpen.baseball.domain.RecentBattedBall;
 import net.thebullpen.baseball.domain.ScheduledGame;
 import net.thebullpen.baseball.ingest.LiveGameFeed;
 import net.thebullpen.baseball.ingest.MlbFeedParser;
@@ -912,6 +913,93 @@ class LivePitchesRepositoryIT {
         row.launchSpeedMph(),
         "physics without a completed result is not a batted ball - the read must not trust it");
     assertNull(row.event());
+  }
+
+  @Test
+  void findsTheMostRecentCompletedBallInPlay() throws Exception {
+    LocalDate date = LocalDate.of(2026, 8, 4);
+    BattedBall first = new BattedBall(88.1, 12.0, 210.0, 150.0, 120.0, "line_drive", "Single");
+    BattedBall later = new BattedBall(102.4, 24.0, 403.0, 196.18, 65.51, "fly_ball", "Home Run");
+    repo.insertPitches(
+        new LiveGameFeed(
+            730L,
+            GameStatus.IN_PROGRESS,
+            date,
+            1,
+            1,
+            "BOS",
+            "NYY",
+            List.of(
+                livePitchWithBattedBall(730L, 1, 1, first),
+                livePitchWithBattedBall(730L, 4, 3, later)),
+            null));
+
+    RecentBattedBall found = repo.findMostRecentBattedBall(730L);
+    assertEquals("Home Run", found.event(), "the LATER at-bat is the most recent ball");
+    assertEquals(102.4, found.launchSpeedMph(), 1e-4);
+    assertEquals(4, found.atBatIndex());
+    assertEquals(3, found.pitchNumber());
+    assertNotNull(found.sprayAngleDeg(), "these coordinates derive an honest spray");
+  }
+
+  @Test
+  void ordersByPitchKeyNotIngestionTimeSoABackfillCannotSurfaceAStaleBall() throws Exception {
+    // The hazard the BIP backfill introduces. A ball in play seen mid-flight is RE-WRITTEN once its
+    // play completes, so its ingested_at is LATER than that of pitches thrown after it. Ordering
+    // by time would then surface an earlier at-bat as "most recent" whenever a backfill landed out
+    // of order - and it would do so only in live games, which is where it would be believed.
+    LocalDate date = LocalDate.of(2026, 8, 4);
+    BattedBall early = new BattedBall(88.1, 12.0, 210.0, 150.0, 120.0, "line_drive", "Single");
+    BattedBall late = new BattedBall(102.4, 24.0, 403.0, 196.18, 65.51, "fly_ball", "Home Run");
+    repo.insertPitches(
+        new LiveGameFeed(
+            731L,
+            GameStatus.IN_PROGRESS,
+            date,
+            1,
+            1,
+            "BOS",
+            "NYY",
+            List.of(livePitchWithBattedBall(731L, 6, 2, late)),
+            null));
+    Thread.sleep(1100); // ingested_at is DateTime (second resolution); force a strictly later stamp
+    repo.insertPitches(
+        new LiveGameFeed(
+            731L,
+            GameStatus.IN_PROGRESS,
+            date,
+            1,
+            1,
+            "BOS",
+            "NYY",
+            List.of(livePitchWithBattedBall(731L, 2, 1, early)),
+            null)); // EARLIER at-bat, later write
+
+    RecentBattedBall found = repo.findMostRecentBattedBall(731L);
+    assertEquals(
+        "Home Run",
+        found.event(),
+        "at-bat 6 is the most recent ball even though at-bat 2 was written afterwards");
+  }
+
+  @Test
+  void reportsNoBattedBallForAGameThatHasHadNone() throws Exception {
+    LocalDate date = LocalDate.of(2026, 8, 4);
+    repo.insertPitches(
+        new LiveGameFeed(
+            732L,
+            GameStatus.IN_PROGRESS,
+            date,
+            1,
+            1,
+            "BOS",
+            "NYY",
+            List.of(livePitch(732L, 1, 1, "R", "R", false, false, false)),
+            null));
+
+    assertNull(
+        repo.findMostRecentBattedBall(732L),
+        "a game with no completed ball in play has none - a normal early-innings state");
   }
 
   @Test
