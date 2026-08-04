@@ -496,8 +496,14 @@ export async function predictPitchType(
   if (!res.ok) {
     let reason: string;
     try {
-      const body = (await res.json()) as { message?: string };
-      reason = typeof body.message === "string" ? body.message : "";
+      // NESTED: the backend envelope is `record ApiError(Body error)`, so the reason lives at
+      // $.error.message - the path ApiErrorAdviceTest pins and admin.ts already reads. Reading
+      // body.message silently yielded "" for EVERY refusal, which rendered as "the server gave no
+      // reason" and discarded all four designed explanations. Nothing caught it because the panel
+      // tests build GameApiError directly and never exercise this parse.
+      const body = (await res.json()) as { error?: { message?: string } };
+      const nested = body?.error?.message;
+      reason = typeof nested === "string" ? nested : "";
     } catch {
       // A non-JSON body (proxy error page, empty 503) leaves the reason blank; the panel then
       // says the server gave none rather than inventing one.
@@ -524,13 +530,17 @@ export async function predictPitchType(
  */
 export function usePitchTypePrediction(
   req: PitchTypePredictionRequest | null,
-  opts: { enabled?: boolean } = {},
+  // REQUIRED, not optional-with-a-permissive-default. The sibling hook's `{ enabled?: boolean }`
+  // means a caller who omits it gets an ungated query that writes to prediction_log on every poll.
+  // The comment above says the gate is mandatory; making the option required is what makes that a
+  // compile error instead of a convention.
+  opts: { enabled: boolean },
 ) {
   return useQuery<PitchTypePriorResponse, GameApiError>({
     queryKey: ["games", "pitch-type", req],
     staleTime: 30_000,
     retry: false,
-    enabled: (opts.enabled ?? true) && req != null,
+    enabled: opts.enabled && req != null,
     queryFn: () => {
       if (req == null) throw new Error("request required");
       return predictPitchType(req);
@@ -555,8 +565,15 @@ export function usePitchTypePrediction(
  * The three nullable context fields are sent as null rather than guessed. `timesThroughOrder` and
  * `atBatNumberInGame` are genuinely not derivable from a single pitch row, and the server's own
  * schema calls them "null at cold start" / "null when unknown" - so null is the honest wire value,
- * not a gap. Inventing a plausible integer here would be the same defect as a fabricated spray
- * angle: a number the model would treat as observed.
+ * not a gap.
+ *
+ * `timesFacedToday` deserves its own line because it is the one a reader will question: the live
+ * pitch store DOES carry every batterId in the game, so a count is derivable in principle. It is
+ * still sent as null, because the page holds only the newest 50 pitches - a window, not the game -
+ * so any count computed here would silently under-report for a batter whose earlier plate
+ * appearances have scrolled out. A number that is right early in a game and quietly wrong later is
+ * worse than an honest null. Inventing any of the three would be the fabricated-spray-angle defect:
+ * a value the model would treat as observed.
  */
 export function pitchTypeRequest(
   row: LivePitchRow,

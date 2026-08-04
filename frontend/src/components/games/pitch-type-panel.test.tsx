@@ -47,7 +47,14 @@ function render(
   );
 }
 
-/** Visible text only - Mantine injects a stylesheet whose tokens would otherwise match probes. */
+/**
+ * Visible text only - Mantine injects a stylesheet whose tokens would otherwise match probes.
+ *
+ * Duplicated from game-page.test.tsx. Extraction into a shared util is tracked in issue 400; it is
+ * deliberately NOT done here, because this helper exists to dodge a CodeQL sanitizer finding and
+ * moving it would change the file CodeQL analyses - re-siting a security alert inside a PR about
+ * something else.
+ */
 function visibleText(html: string): string {
   const out: string[] = [];
   let i = 0;
@@ -122,14 +129,37 @@ describe("PitchTypePanel", () => {
     // answer. Asserted on the MARKUP, because the defect is visual: the fix someone would
     // plausibly make is a style change, not a text change, so a text-only pin would not catch it.
     const html = render();
-    const rows = html.split("<li").slice(1);
+    // Scan only the post-stylesheet slice: Mantine injects ~10KB of CSS whose contents are outside
+    // this panel's control, so scanning the whole document makes these pins a latent false-red.
+    const body = html.slice(html.lastIndexOf("</style>") + 1);
+    const rows = body.split("<li").slice(1);
     expect(rows).toHaveLength(7);
-    expect(html).not.toMatch(/font-weight:\s*(700|bold)/);
-    // Every bar fill uses one colour - no highlighted row.
-    const fills = [...html.matchAll(/background:\s*([^;"]+)/g)].map((m) =>
-      m[1]!.trim(),
+
+    // STRUCTURAL INVARIANT, not an enumeration of the emphasis mechanisms I happened to think of.
+    // The first version listed font-weight and background-count, and a review found SIX ways past
+    // it: weight 600, a className, a gold TEXT colour, a larger font-size, a border, a marker
+    // glyph, a taller bar. Normalising away only the bar WIDTH - the one thing that legitimately
+    // differs per row - and demanding the rows be otherwise byte-identical closes all of them at
+    // once, including the ones nobody has invented yet.
+    //
+    // The gold-text case is the one that would really have happened: NextPitchPanel emphasises its
+    // argmax with THREE mechanisms (weight, bar colour, and text colour), so an editor copying it
+    // and stripping "the bold parts" lands exactly there.
+    // Normalise away the two things that legitimately differ per row - the bar width and the text
+    // content (class name, percentage) - leaving pure markup + styling. Anything still differing
+    // between rows IS emphasis.
+    const normalised = rows.map((r) =>
+      // Truncate at </li>: splitting on "<li" leaves the LAST chunk carrying everything after the
+      // list (the closing tag and the caption), which would differ for a reason unrelated to
+      // emphasis and make this pin red for the wrong cause.
+      r
+        .slice(0, r.indexOf("</li>"))
+        .replace(/width:\s*[\d.]+%/g, "width:X")
+        .replace(/>[^<]*</g, "><"),
     );
-    expect(new Set(fills).size).toBeLessThanOrEqual(2); // track + fill, nothing special-cased
+    for (const row of normalised) {
+      expect(row).toBe(normalised[0]);
+    }
   });
 
   it("renders the server's own reason on a 503 rather than classifying it", () => {

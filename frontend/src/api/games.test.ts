@@ -11,6 +11,8 @@ import {
   type GameSummary,
   type CurrentMatchup,
   type LivePitchRow,
+  pitchTypeRequest,
+  predictPitchType,
 } from "./games";
 
 const SUMMARY: GameSummary = {
@@ -374,5 +376,141 @@ describe("nextPitchRequest (A6 settled-at-bat gate)", () => {
     expect(nextPitchRequest(row({ pitcherThrows: "" }), GAME_DATE)).toBeNull();
     expect(nextPitchRequest(row({ batterStand: "" }), GAME_DATE)).toBeNull();
     expect(nextPitchRequest(row({ baseState: null }), GAME_DATE)).toBeNull();
+  });
+});
+
+describe("predictPitchType error envelope", () => {
+  // B1 REGRESSION. The backend envelope is `record ApiError(Body error)`, so the reason lives at
+  // $.error.message. Reading body.message yielded "" for EVERY refusal - the panel rendered "the
+  // server gave no reason" and all four designed explanations were discarded in production. The
+  // panel tests could not catch it: they construct GameApiError directly and never run this parse.
+  const REQ = {
+    pitcherId: 1,
+    gameId: 2,
+    gameDate: "2026-07-20",
+    atBatIndex: 3,
+    pitchNumber: 2,
+    balls: 1,
+    strikes: 1,
+    outs: 0,
+    inning: 1,
+    baseState: 0,
+    stand: "R",
+    pThrows: "R",
+    parkId: "BOS",
+    timesThroughOrder: null,
+    atBatNumberInGame: null,
+    timesFacedToday: null,
+  };
+
+  function respond(body: unknown, ok = false) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok,
+        status: ok ? 200 : 503,
+        json: async () => {
+          if (body === "NOT_JSON") throw new SyntaxError("not json");
+          return body;
+        },
+      }),
+    );
+  }
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("extracts the reason from the REAL nested envelope", async () => {
+    respond({
+      error: {
+        code: "service_unavailable",
+        message: "pitcher 476454 has no career-prior snapshot row",
+        correlationId: "cid",
+        details: [],
+      },
+    });
+    await expect(predictPitchType(REQ)).rejects.toMatchObject({
+      status: 503,
+      message: "pitcher 476454 has no career-prior snapshot row",
+    });
+  });
+
+  it("yields an empty reason for a flat body rather than inventing one", async () => {
+    // Pins the shape: were the parse ever "fixed" back to body.message, the nested test above
+    // would red AND this would start returning a reason - so the pair brackets the contract.
+    respond({ message: "flat" });
+    await expect(predictPitchType(REQ)).rejects.toMatchObject({ message: "" });
+  });
+
+  it("degrades to an empty reason on a null body and on non-JSON", async () => {
+    respond(null);
+    await expect(predictPitchType(REQ)).rejects.toMatchObject({ message: "" });
+    respond("NOT_JSON");
+    await expect(predictPitchType(REQ)).rejects.toMatchObject({ message: "" });
+  });
+});
+
+describe("pitchTypeRequest", () => {
+  const GAME_DATE = "2026-07-20";
+  const GAME_ID = 777;
+
+  function row(over: Partial<LivePitchRow> = {}): LivePitchRow {
+    return {
+      ...PITCH,
+      description: "ball",
+      balls: 1,
+      strikes: 1,
+      pitcherThrows: "R",
+      batterStand: "L",
+      baseState: 5,
+      parkId: "BOS",
+      scoreDiff: 0,
+      ...over,
+    };
+  }
+
+  it("asks about the NEXT pitch, advancing pitchNumber by one", () => {
+    // The server's cutoff is strictly-less-than on (at_bat_index, pitch_number), so passing
+    // row.pitchNumber + 1 means "every pitch up to and including the one just thrown" - exactly
+    // the history preceding the pitch being asked about. at_bat_index does NOT advance with it.
+    const req = pitchTypeRequest(row({ pitchNumber: 4 }), GAME_DATE, GAME_ID)!;
+    expect(req.pitchNumber).toBe(5);
+    expect(req.atBatIndex).toBe(row().atBatIndex);
+    expect(req.gameId).toBe(GAME_ID);
+    expect(req.balls).toBe(2); // 1-1 + ball
+    expect(req.strikes).toBe(1);
+  });
+
+  it("sends the three unknowable context fields as null, never a guess", () => {
+    const req = pitchTypeRequest(row(), GAME_DATE, GAME_ID)!;
+    expect(req.timesThroughOrder).toBeNull();
+    expect(req.atBatNumberInGame).toBeNull();
+    expect(req.timesFacedToday).toBeNull();
+  });
+
+  it("is null EXACTLY when nextPitchRequest is null, across every gate", () => {
+    // The property the shared derivation exists to guarantee: two panels describing the same
+    // upcoming pitch must never disagree about whether it exists. Asserted as an equivalence over
+    // the real gates rather than spot-checked, so a future edit to either builder that breaks the
+    // pairing reds here.
+    const cases: LivePitchRow[] = [
+      row(),
+      row({ description: "ball", balls: 3 }), // walk
+      row({ description: "called_strike", strikes: 2 }), // strikeout
+      row({ description: "in_play" }), // at-bat over
+      row({ description: "hit_by_pitch" }),
+      row({ description: "foul", strikes: 2 }),
+      row({ baseState: null }), // pre-V028 row
+      row({ parkId: "" }),
+      row({ pitcherThrows: "" }),
+      row({ batterStand: "" }),
+    ];
+    for (const r of cases) {
+      const a = nextPitchRequest(r, GAME_DATE) == null;
+      const b = pitchTypeRequest(r, GAME_DATE, GAME_ID) == null;
+      expect(
+        b,
+        `disagreement on ${r.description}/${r.balls}-${r.strikes}`,
+      ).toBe(a);
+    }
   });
 });

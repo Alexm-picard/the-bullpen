@@ -2,9 +2,13 @@
  * PitchTypePanel - the calibrated pitch-type PRIOR (decision [183], champion since 2026-08-02).
  *
  * Sibling to {@link NextPitchPanel} in shape, and deliberately UNLIKE it in one respect: that panel
- * emphasises the argmax (bold label, gold bar, bold percentage) because its head is promoted on a
- * calibrated outcome distribution where the most probable class is a meaningful read. This one
- * emphasises NOTHING. Top-1 here is ~0.45 because pitch selection is high-entropy, so a highlighted
+ * emphasises the argmax (bold label, gold bar, bold percentage, AND a distinct text colour - three
+ * mechanisms, not two) because its head is promoted on a calibrated outcome distribution where the
+ * most probable class is a meaningful read. This one adds NO STYLING EMPHASIS on top of rank order.
+ * Not "no emphasis at all": ranking is itself the weakest available emphasis, positional rather
+ * than stylistic, and the caption then explicitly disowns the reading. The precise claim matters,
+ * because the overclaim is what a future editor would trust when judging whether adding one small
+ * thing breaks the contract. Top-1 here is ~0.45 because pitch selection is high-entropy, so a highlighted
  * row would be wrong more often than right while carrying all the visual authority of an answer.
  *
  * [183] is enforced in three independent places, which is deliberate - any one of them alone would
