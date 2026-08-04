@@ -168,6 +168,8 @@ test("live game page renders the pitch log when the feed has pitches", async ({
   );
   // A6: the newest fixture pitch is strike three (at-bat over) -> the next-pitch query is GATED
   // off. This route is a safety net so a future fixture change can never leak a real request.
+  // NOTE the glob also covers /v1/predict/pitch-type, which is intended: both queries gate on the
+  // same condition, so if either ever leaks a request it must hit a stub rather than the network.
   await page.route(`**/v1/predict/pitch*`, (route) =>
     route.fulfill({
       status: 503,
@@ -209,7 +211,21 @@ test("live game page renders the pitch log when the feed has pitches", async ({
     page.locator('[aria-labelledby="game-pitch-log-label"]'),
   ).toBeVisible();
   // A6: the Next-Pitch Model section renders its GATED state (strike three ended the at-bat).
-  await expect(page.getByText(/Awaiting a settled at-bat/i)).toBeVisible();
+  // SCOPED to the section, because the Pitch-Type Model panel gates on the SAME condition and says
+  // so in the same words - deliberately, since both describe the one upcoming pitch that does not
+  // exist. An unscoped locator matched both and failed strict mode; asserting per section is what
+  // the test meant all along.
+  await expect(
+    page
+      .locator('[aria-labelledby="next-pitch-label"]')
+      .getByText(/Awaiting a settled at-bat/i),
+  ).toBeVisible();
+  // The pitch-type prior ([183]) gates identically, and must show no distribution while gated.
+  const pitchTypeSection = page.locator('[aria-labelledby="pitch-type-label"]');
+  await expect(
+    pitchTypeSection.getByText(/Awaiting a settled at-bat/i),
+  ).toBeVisible();
+  await expect(pitchTypeSection).not.toContainText("%");
   await expect(
     page.getByText("Pitches", { exact: false }).first(),
   ).toBeVisible();

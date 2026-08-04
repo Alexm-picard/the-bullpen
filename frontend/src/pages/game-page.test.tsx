@@ -131,7 +131,9 @@ describe("GamePage (broadcast identity)", () => {
     // honest champion-less/context-less surface, and no request ever fires from a static render.
     const html = render(<GamePage />, "/games/12345");
     expect(html).toContain("Next-Pitch Model");
-    expect(html).toContain("Awaiting a settled at-bat");
+    expect(html).toContain("Pitch-Type Model");
+    // BOTH gated panels must show it - one occurrence would mean one of them stopped gating.
+    expect(countOccurrences(html, "Awaiting a settled at-bat")).toBe(2);
     expect(html).not.toContain("pitch model pending");
   });
 
@@ -458,6 +460,19 @@ function visibleText(html: string): string {
   return out.join("");
 }
 
+/**
+ * Count occurrences of a string, so a pin on shared copy cannot be satisfied by the wrong panel.
+ *
+ * Both the Next-Pitch and Pitch-Type panels gate on the same condition and say so in the same
+ * words - deliberately, since both describe the one upcoming pitch that does not exist. A bare
+ * toContain therefore stopped pinning the next-pitch gate the moment the second panel shipped:
+ * mutating next-pitch's copy alone left this file GREEN. Playwright's strict mode caught the twin
+ * of this in e2e; vitest has no strict mode, so it went quiet instead of red.
+ */
+function countOccurrences(haystack: string, needle: string): number {
+  return haystack.split(needle).length - 1;
+}
+
 describe("GamePage current batter (V031 live matchup)", () => {
   function seed(game: GameSummary, pitchOver: Partial<LivePitchRow> = {}) {
     const client = new QueryClient({
@@ -517,7 +532,7 @@ describe("GamePage current batter (V031 live matchup)", () => {
     // The fixture row is at-bat 1 while the matchup is at-bat 2 - the PAST-TENSE case. The
     // prediction panel must be gated (never predicting for a finished at-bat) and the row-derived
     // Count/Outs must read as unknown rather than pairing the live batter with a dead count.
-    expect(html).toContain("Awaiting a settled at-bat");
+    expect(countOccurrences(html, "Awaiting a settled at-bat")).toBe(2);
     // Anchored to the STAT LABEL, so the pitch board's own count column cannot satisfy it.
     expect(visibleText(html)).toMatch(/Count\s+—/);
     expect(visibleText(html)).toMatch(/Outs\s+—/);
