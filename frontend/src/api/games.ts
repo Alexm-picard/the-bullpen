@@ -494,7 +494,7 @@ export async function predictPitchType(
     body: JSON.stringify(req),
   });
   if (!res.ok) {
-    let reason = "";
+    let reason: string;
     try {
       const body = (await res.json()) as { message?: string };
       reason = typeof body.message === "string" ? body.message : "";
