@@ -792,6 +792,43 @@ class LivePollingServiceTest {
   }
 
   @Test
+  void aBallWhosePhysicsArriveOutOfOrderIsStillBackfilled() throws Exception {
+    // The defect two reviewers found independently. The first version tracked a single high-water
+    // mark, so once a LATER ball in play was written with physics, an EARLIER one that had not yet
+    // received its hitData could never be backfilled - empty physics forever. Reachable on a failed
+    // feed fetch, an insert throw, a Statcast late correction, and above all a worker restart.
+    //
+    // Sequence: at-bat 2 completes with no hitData yet, at-bat 4 completes WITH it, then at-bat 2's
+    // hitData finally arrives.
+    MlbStatsApiClient client = mock(MlbStatsApiClient.class);
+    LivePitchesRepository repo = mock(LivePitchesRepository.class);
+    LivePitchPredictor predictor = mock(LivePitchPredictor.class);
+    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    LivePitch early = pitch(2, 1); // in play, physics not yet attached
+    LivePitch earlyWithPhysics = bipPitch(2, 1, HOMER);
+    LivePitch laterWithPhysics = bipPitch(4, 1, HOMER);
+    when(client.fetchLiveFeed(822810L))
+        .thenReturn(feed(List.of(early), nextPitch(3, 1)))
+        .thenReturn(feed(List.of(early, laterWithPhysics), nextPitch(5, 1)))
+        .thenReturn(feed(List.of(earlyWithPhysics, laterWithPhysics), nextPitch(5, 1)));
+
+    LivePollingService svc = service(client, repo, predictor);
+    svc.pollGame(822810L);
+    svc.pollGame(822810L);
+    svc.pollGame(822810L);
+
+    ArgumentCaptor<LiveGameFeed> captor = ArgumentCaptor.forClass(LiveGameFeed.class);
+    verify(repo, atLeastOnce()).insertPitches(captor.capture());
+    assertThat(
+            captor.getAllValues().stream()
+                .flatMap(f -> f.pitches().stream())
+                .filter(pp -> pp.battedBall() != null)
+                .anyMatch(pp -> pp.atBatIndex() == 2))
+        .as("at-bat 2's late physics must still reach storage after at-bat 4 was written")
+        .isTrue();
+  }
+
+  @Test
   void aStableBattedBallIsNotRewrittenOnEveryPoll() throws Exception {
     // Named for what it actually pins. It was called ...DoesNotWalkTheWatermarkBackwards, which
     // was false advertising: it passes with the max replaced by a plain put, because no reachable

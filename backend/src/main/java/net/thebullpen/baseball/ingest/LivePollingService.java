@@ -97,7 +97,7 @@ public class LivePollingService {
    * equivalent to "not yet written" without unbounded growth per game. (Per-game map growth across
    * a season is tracked in issue 399, which covers all of this class's per-game maps.)
    */
-  private final Map<Long, Long> lastBattedBallKey = new ConcurrentHashMap<>();
+  private final Map<Long, java.util.Set<Long>> battedBallWritten = new ConcurrentHashMap<>();
 
   private final Map<Long, Instant> lastPollAt = new ConcurrentHashMap<>();
   private final Map<Long, Long> lastCursorByGame = new ConcurrentHashMap<>();
@@ -251,33 +251,41 @@ public class LivePollingService {
    * duplicating it - the capability V015's header always claimed and nothing exercised.
    */
   private void backfillCompletedBattedBalls(long gamePk, LiveGameFeed feed) {
-    long lastKey = lastBattedBallKey.getOrDefault(gamePk, 0L);
+    java.util.Set<Long> written = writtenSet(gamePk);
     List<LivePitch> completed =
-        feed.pitches().stream().filter(p -> p.battedBall() != null && cursor(p) > lastKey).toList();
+        feed.pitches().stream()
+            .filter(p -> p.battedBall() != null && !written.contains(cursor(p)))
+            .toList();
     if (completed.isEmpty()) {
       return;
     }
     repo.insertPitches(withPitches(feed, completed));
-    metrics.incrementPitchesIngested(completed.size());
-    completed.stream()
-        .mapToLong(LivePollingService::cursor)
-        .max()
-        .ifPresent(key -> bumpBattedBallKey(gamePk, key));
+    metrics.incrementBipBackfills(completed.size());
+    completed.forEach(p -> written.add(cursor(p)));
   }
 
   /**
-   * Raise the watermark.
+   * The set of BIP cursors already written WITH physics, for this game.
    *
-   * <p>Uses max rather than a plain put, but HONESTLY: with today's callers a lower key cannot
-   * arrive. Cursors are monotonic within a game, and both call sites bump with the max of a set
-   * already filtered to values above the watermark, so no mutation of this line changes any
-   * observable behaviour - I checked, and replacing it with put() reds nothing. It is kept because
-   * it states the invariant the field depends on at the point that depends on it, not because it is
-   * guarding a case anyone has found. Do not add a test asserting it fires; there is no input that
-   * makes it fire.
+   * <p>A SET, not a high-water mark. The first version tracked a single max and its javadoc claimed
+   * "at-bats are monotonic, so above-the-highest means not-yet-written" - which is true of the
+   * order PLAYS occur and false of the order PHYSICS ARRIVES. If at-bat 4's hitData landed before
+   * at-bat 3's, the mark jumped past 3 and that ball kept empty physics forever. Reachable on a
+   * failed feed fetch, an insert throw, a Statcast late correction, and above all a WORKER RESTART,
+   * where the first poll processes the whole game at once. The equivalence needed an unstated
+   * second assumption - that hitData arrives in cursor order - which is a claim about a third
+   * party's behaviour, exactly the kind V032's own header warns has a shelf life.
+   *
+   * <p>Bounded by balls in play per game (order 80), which is the thing that actually needs
+   * tracking. Per-game map growth across a season is issue 399, covering all of this class's maps.
+   *
+   * <p>ConcurrentHashMap.newKeySet + computeIfAbsent is the atomic idiom for the declared
+   * concurrent type: single-writer today under @Scheduled, correct if the poll loop is ever
+   * parallelized. A single-threaded test cannot exercise that, so a mutation to a plain HashSet
+   * reddening nothing is expected rather than evidence the choice is idle.
    */
-  private void bumpBattedBallKey(long gamePk, long key) {
-    lastBattedBallKey.merge(gamePk, key, Math::max);
+  private java.util.Set<Long> writtenSet(long gamePk) {
+    return battedBallWritten.computeIfAbsent(gamePk, k -> ConcurrentHashMap.newKeySet());
   }
 
   private void writeNewPitches(long gamePk, LiveGameFeed feed) {
@@ -296,11 +304,8 @@ public class LivePollingService {
     lastCursorByGame.put(
         gamePk, fresh.stream().mapToLong(LivePollingService::cursor).max().orElse(since));
     // A pitch that ALREADY carried physics on its first sighting needs no backfill later.
-    fresh.stream()
-        .filter(p -> p.battedBall() != null)
-        .mapToLong(LivePollingService::cursor)
-        .max()
-        .ifPresent(key -> bumpBattedBallKey(gamePk, key));
+    java.util.Set<Long> written = writtenSet(gamePk);
+    fresh.stream().filter(p -> p.battedBall() != null).forEach(p -> written.add(cursor(p)));
     refreshIntraDayForm(gamePk, fresh);
     predictPostForCompletedPitches(gamePk, feed, fresh);
   }

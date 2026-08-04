@@ -13,6 +13,7 @@ import net.thebullpen.baseball.registry.RegistryService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 /**
@@ -42,6 +43,7 @@ import org.springframework.stereotype.Component;
  * quantity, which is what an aggregate should be.
  */
 @Component
+@Profile("api")
 // Same ClickHouse gate as GameController and LivePitchesRepository, which this depends on. Without
 // it the bean is unsatisfiable in every ClickHouse-free profile (registry-it and friends) and the
 // whole application context fails to load - which is exactly what happened on the first attempt.
@@ -89,16 +91,27 @@ public class TeamContactAggregator {
    * as "this team never homers" on a card whose entire job is being truthful about what it knows.
    */
   public TeamHrProfile profile(String team, String parkId, LocalDate from, int limit) {
-    var champion = registry.findChampion(MODEL_NAME);
-    if (champion.isEmpty()) {
-      return null;
-    }
-    List<TeamContactBall> balls = repo.findTeamContact(team, from, limit);
-    if (balls.isEmpty()) {
-      return null;
-    }
-    Timer.Sample sample = Timer.start();
+    // The timer STARTS here and the repository call is INSIDE the try, both deliberately. The
+    // javadoc on recordAggregateLatency says this measures "N inferences plus a ClickHouse scan",
+    // and the scan - a season-wide pitches read joined to players - is by far the likeliest thing
+    // to be slow or to fail. Starting the timer after it measured the wrong thing; leaving it
+    // outside the try meant the documented "degrades to no profile" containment did not cover the
+    // most probable failure, and a timeout would have 500'd the page while counting nothing.
+    Timer.Sample sample = metrics.startTimer();
     try {
+      var champion = registry.findChampion(MODEL_NAME);
+      if (champion.isEmpty()) {
+        return null;
+      }
+      List<TeamContactBall> balls = repo.findTeamContact(team, from, limit);
+      if (balls.isEmpty()) {
+        // Zero rows is indistinguishable on the wire from "team unknown", and the team vocabulary
+        // here (feed abbreviations) is maintained separately from players.team. Log it so a silent
+        // mismatch is visible before the card renders nothing forever.
+        log.warn(
+            "no profileable contact for team={} since={} - check the team vocabulary", team, from);
+        return null;
+      }
       LoadedAllParksModel model = loader.loadAllParks(champion.get().id());
       // Resolve the HR slot by NAME from the serving model's own outcome order, exactly as
       // PredictAllParksController does - a positional index would silently read a different

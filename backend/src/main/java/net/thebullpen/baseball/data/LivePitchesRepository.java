@@ -870,8 +870,13 @@ public class LivePitchesRepository {
    * per-park model treats a spray angle as observed, so a fabricated 0 would score a ball pulled
    * down the line as though it were hit to dead centre.
    *
-   * <p>Null also when the row carries no live coordinates at all - a historical-only row reaches
-   * the model through its own path and has no coordinates here to derive from.
+   * <p>The {@code (0,0)} check is the STORAGE-SENTINEL case, and it is a DIFFERENT degeneracy from
+   * the plate-origin one {@link BattedBall#sprayAngleDeg} documents - do not read them as
+   * duplicates and delete one. At the plate origin atan2(0,0) is 0, a false dead-centre. At the
+   * storage sentinel (0,0) the derivation is atan2(-125.42, 199.53) = -32.15 degrees, which is
+   * comfortably INSIDE the foul lines and so passes the invariant gate: without this check every
+   * non-batted-ball row would carry a confident fabricated spray. Null also when the row carries no
+   * live coordinates at all - a historical-only row reaches the model through its own path.
    */
   private static Double sprayAngleOrNull(ResultSet rs) throws SQLException {
     double hcX = rs.getDouble("hc_x");

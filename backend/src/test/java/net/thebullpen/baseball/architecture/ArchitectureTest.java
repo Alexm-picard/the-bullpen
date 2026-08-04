@@ -44,10 +44,15 @@ class ArchitectureTest {
    * promotion-evidence and truth-join consumers all measure.
    *
    * <p>A behavioural test ("assert no rows were written") is the obvious pin and the weaker one: it
-   * passes only for the inputs it exercises. This asserts the aggregator cannot REACH the logging
-   * path at all, so no input can make it log. It also reds the moment someone wires the
-   * orchestrator in "just to reuse the routing", which is the plausible regression - the two paths
-   * are the same model and differ only in obligation.
+   * passes only for the inputs it exercises. This asserts the aggregator does not DIRECTLY DEPEND
+   * on the logging path - deliberately the precise claim, because {@code dependOnClassesThat} is
+   * direct-only: an Aggregator -&gt; Helper -&gt; AsyncPredictionLogger chain would pass. The
+   * transitive closure was verified by hand at review time (RegistryService, ModelLoader,
+   * LoadedAllParksModel and LivePitchesRepository reach no logging path), and re-checking it is
+   * part of adding a dependency here.
+   *
+   * <p>It reds the moment someone wires the orchestrator in "just to reuse the routing", which is
+   * the plausible regression - the two paths are the same model and differ only in obligation.
    */
   @ArchTest
   static final ArchRule aggregatesMustNotReachThePredictionLog =

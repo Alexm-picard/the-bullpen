@@ -63,6 +63,19 @@ public class IngestMetrics {
     lastPollEpochSeconds.set(at.getEpochSecond());
   }
 
+  /**
+   * Balls in play RE-WRITTEN by the backfill once their play completed.
+   *
+   * <p>Its own counter, not folded into {@link #incrementPitchesIngested}: that one is documented
+   * as "pitches written to pitches_live by the live poller", and counting a re-write there turns it
+   * into "row writes" - inflating it by roughly one per ball in play and quietly breaking the one
+   * counter you would reach for to ask whether ingest had stalled. It is also the only way to see
+   * the backfill fire in production at all.
+   */
+  public void incrementBipBackfills(long count) {
+    registry.counter("bullpen_ingest_bip_backfills_total").increment(count);
+  }
+
   public void incrementPitchesIngested(int count) {
     if (count > 0) {
       pitchesIngested.increment(count);
