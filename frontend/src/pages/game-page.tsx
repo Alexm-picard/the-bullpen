@@ -22,9 +22,11 @@ import { useParams } from "react-router";
 import {
   matchupIsAheadOf,
   nextPitchRequest,
+  pitchTypeRequest,
   useGame,
   useLivePitches,
   usePitchPrediction,
+  usePitchTypePrediction,
   usePostPredictions,
   type GameSummary,
   type LivePitchRow,
@@ -44,6 +46,7 @@ import { TickerStrip } from "../components/broadcast/ticker-strip";
 import { BattedBallExplorer } from "../components/games/batted-ball-explorer";
 import { LivePitchBoard } from "../components/games/live-pitch-board";
 import { NextPitchPanel } from "../components/games/next-pitch-panel";
+import { PitchTypePanel } from "../components/games/pitch-type-panel";
 import { PostPredictionPanel } from "../components/games/post-prediction-panel";
 import { estimateLandingDistanceFt } from "../components/parks/estimate-landing";
 import {
@@ -265,6 +268,24 @@ export function GamePage() {
   const nextPitchEnabled = isLive(game.data) && nextReq != null;
   const nextPitch = usePitchPrediction(nextReq, { enabled: nextPitchEnabled });
 
+  // The pitch-type PRIOR ([183], champion since 2026-08-02). Built on the SAME derivation as the
+  // next-pitch request, so the two panels cannot disagree about whether an upcoming pitch exists:
+  // both describe one specific pitch in one specific count, so both gate identically. The enabled
+  // gate is equally mandatory here - this endpoint also logs every call to prediction_log.
+  const pitchTypeReq =
+    mostRecent && game.data
+      ? pitchTypeRequest(
+          mostRecent,
+          game.data.gameDate,
+          game.data.gameId,
+          liveMatchup,
+        )
+      : null;
+  const pitchTypeEnabled = isLive(game.data) && pitchTypeReq != null;
+  const pitchType = usePitchTypePrediction(pitchTypeReq, {
+    enabled: pitchTypeEnabled,
+  });
+
   // Phase 1.2: the most recent in-play batted ball carrying launch physics. The
   // pitch store is newest-first, so .find() yields the LATEST qualifying BIP.
   const inPlay = pitches.pitches.find(
@@ -480,6 +501,23 @@ export function GamePage() {
           isLoading={nextPitch.isLoading}
           error={nextPitch.error}
           enabled={nextPitchEnabled}
+        />
+      </section>
+
+      <section aria-labelledby="pitch-type-label">
+        <div style={{ marginBottom: 12 }}>
+          <LowerThird
+            id="pitch-type-label"
+            meta={pitchTypeEnabled ? "LIVE PRIOR" : "GATED"}
+          >
+            Pitch-Type Model
+          </LowerThird>
+        </div>
+        <PitchTypePanel
+          prior={pitchType.data}
+          isLoading={pitchType.isLoading}
+          error={pitchType.error}
+          enabled={pitchTypeEnabled}
         />
       </section>
 

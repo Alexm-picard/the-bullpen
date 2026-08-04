@@ -481,7 +481,7 @@ export type PitchTypePriorResponse = {
  * message. The endpoint 503s for two distinct conditions - no promoted champion (permanent until a
  * human promotes) and PriorUnavailable (transient: the career-prior snapshot is missing or stale) -
  * and they currently share both the status and the `service_unavailable` code, differing only in
- * prose (tracked as issue #401). The frontend therefore does NOT classify them: it carries the
+ * prose (tracked as issue 401). The frontend therefore does NOT classify them: it carries the
  * reason through and lets the panel render it verbatim. Refusing to serve a prior computed over
  * the wrong history is a designed honesty feature, so the explanation is the payload.
  */
