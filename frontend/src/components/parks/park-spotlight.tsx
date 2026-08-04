@@ -51,7 +51,10 @@ export function ParkSpotlight({ spotlight }: ParkSpotlightProps) {
         }}
       >
         <ParkFactorStrip factors={spotlight.factors} />
-        <KeyNotes notes={spotlight.keyReads} palette={broadcastKeyNotesPalette} />
+        <KeyNotes
+          notes={spotlight.keyReads}
+          palette={broadcastKeyNotesPalette}
+        />
       </div>
     </div>
   );

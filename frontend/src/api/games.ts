@@ -423,6 +423,189 @@ export function nextPitchRequest(
   };
 }
 
+// ── pitch_type_pre: the calibrated PRIOR (decision [183]) ────────────────────────────────────────
+
+/**
+ * Request for the pitch-type prior. Mirrors the backend `PitchTypeRequest` record field-for-field.
+ *
+ * The identity fields are NOT features - the server derives the arsenal (ARS) and sequence (SEQ)
+ * features from the pitcher's career history strictly before this pitch, using these to locate it.
+ * That is why a caller cannot supply them and why they are mandatory.
+ */
+export type PitchTypePredictionRequest = {
+  pitcherId: number;
+  gameId: number;
+  gameDate: string;
+  atBatIndex: number;
+  pitchNumber: number;
+  balls: number;
+  strikes: number;
+  outs: number;
+  inning: number;
+  baseState: number;
+  stand: string;
+  pThrows: string;
+  parkId: string;
+  timesThroughOrder: number | null;
+  atBatNumberInGame: number | null;
+  timesFacedToday: number | null;
+};
+
+/**
+ * The prior response. Note what is ABSENT: there is no `winner` / `predictedType`, unlike
+ * {@link PitchPredictionResponse}.
+ *
+ * That omission is the [183] constraint expressed in the type system rather than in a comment.
+ * Top-1 accuracy is ~0.45 because pitch selection is high-entropy, so an argmax would be wrong
+ * more often than right while looking authoritative. The backend deliberately does not send one;
+ * this type deliberately does not model one, so a UI cannot render "most likely: FF" as a headline
+ * without first adding a field here - which is a reviewable act rather than an accident.
+ */
+export type PitchTypePriorResponse = {
+  probabilities: Record<string, number>;
+  modelName: string;
+  servingVersion: string;
+  /**
+   * Career pitches the prior was computed over. Surfaced because a prior over 12 pitches and one
+   * over 14,000 are not comparable, and a caller cannot otherwise tell them apart.
+   */
+  priorPitches: number;
+  elapsedMicros: number;
+  correlationId: string;
+};
+
+/**
+ * POST the prior, preserving the SERVER'S REASON on a refusal.
+ *
+ * Unlike {@link predictPitch}, which discards the body, this reads the `ApiError` envelope's
+ * message. The endpoint 503s for two distinct conditions - no promoted champion (permanent until a
+ * human promotes) and PriorUnavailable (transient: the career-prior snapshot is missing or stale) -
+ * and they currently share both the status and the `service_unavailable` code, differing only in
+ * prose (tracked as issue 401). The frontend therefore does NOT classify them: it carries the
+ * reason through and lets the panel render it verbatim. Refusing to serve a prior computed over
+ * the wrong history is a designed honesty feature, so the explanation is the payload.
+ */
+export async function predictPitchType(
+  req: PitchTypePredictionRequest,
+): Promise<PitchTypePriorResponse> {
+  const res = await fetch(`${API_BASE}/v1/predict/pitch-type`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    let reason: string;
+    try {
+      // NESTED: the backend envelope is `record ApiError(Body error)`, so the reason lives at
+      // $.error.message - the path ApiErrorAdviceTest pins and admin.ts already reads. Reading
+      // body.message silently yielded "" for EVERY refusal, which rendered as "the server gave no
+      // reason" and discarded all four designed explanations. Nothing caught it because the panel
+      // tests build GameApiError directly and never exercise this parse.
+      const body = (await res.json()) as { error?: { message?: string } };
+      const nested = body?.error?.message;
+      reason = typeof nested === "string" ? nested : "";
+    } catch {
+      // A non-JSON body (proxy error page, empty 503) leaves the reason blank; the panel then
+      // says the server gave none rather than inventing one.
+      reason = "";
+    }
+    throw new GameApiError(res.status, reason);
+  }
+  return (await res.json()) as PitchTypePriorResponse;
+}
+
+/**
+ * Gated pitch-type prior, mirroring {@link usePitchPrediction} exactly.
+ *
+ * The `enabled` gate is REQUIRED, not a convenience: every call writes a row to `prediction_log`,
+ * which is the drift-baseline source the Phase-6 postmortem reads, so ungated polling would
+ * pollute it. `retry: false` for the same reason as the sibling hook - a 503 here is a designed
+ * refusal, and hammering it logs noise.
+ *
+ * INVALIDATION is structural, not hand-managed: the request object IS the query key, and TanStack
+ * hashes it deeply. Every field that changes the prior - atBatIndex, pitchNumber, balls, strikes,
+ * baseState, stand - therefore re-keys the query on its own. A pinch hitter changes `stand` and
+ * `atBatIndex`; a pitching change changes `pitcherId` and `pThrows`. This is pinned by test rather
+ * than trusted.
+ */
+export function usePitchTypePrediction(
+  req: PitchTypePredictionRequest | null,
+  // REQUIRED, not optional-with-a-permissive-default. The sibling hook's `{ enabled?: boolean }`
+  // means a caller who omits it gets an ungated query that writes to prediction_log on every poll.
+  // The comment above says the gate is mandatory; making the option required is what makes that a
+  // compile error instead of a convention.
+  opts: { enabled: boolean },
+) {
+  return useQuery<PitchTypePriorResponse, GameApiError>({
+    queryKey: ["games", "pitch-type", req],
+    staleTime: 30_000,
+    retry: false,
+    enabled: opts.enabled && req != null,
+    queryFn: () => {
+      if (req == null) throw new Error("request required");
+      return predictPitchType(req);
+    },
+  });
+}
+
+/**
+ * Assemble the pitch-type prior request for the NEXT pitch, or null when there isn't one.
+ *
+ * DELIBERATELY built on {@link nextPitchRequest} rather than beside it. The two panels describe
+ * the same upcoming pitch, so every rule about when that pitch exists - the asymmetric live-matchup
+ * guard, the switch-hitter resolution, the count advance, the walk / strikeout / in-play
+ * terminations - must be identical. Duplicating that logic would let the panels drift into
+ * disagreeing on screen, one predicting while the other says the at-bat is unsettled, and the
+ * duplicate would be the harder bug to see because both halves would look correct in isolation.
+ *
+ * This also corrects an assumption worth recording: pitch-type does NOT render more often than
+ * next-pitch. Its request carries balls, strikes and pitchNumber, so it describes one specific
+ * pitch in one specific count - the same requirement, not a looser one.
+ *
+ * The three nullable context fields are sent as null rather than guessed. `timesThroughOrder` and
+ * `atBatNumberInGame` are genuinely not derivable from a single pitch row, and the server's own
+ * schema calls them "null at cold start" / "null when unknown" - so null is the honest wire value,
+ * not a gap.
+ *
+ * `timesFacedToday` deserves its own line because it is the one a reader will question: the live
+ * pitch store DOES carry every batterId in the game, so a count is derivable in principle. It is
+ * still sent as null, because the page holds only the newest 50 pitches - a window, not the game -
+ * so any count computed here would silently under-report for a batter whose earlier plate
+ * appearances have scrolled out. A number that is right early in a game and quietly wrong later is
+ * worse than an honest null. Inventing any of the three would be the fabricated-spray-angle defect:
+ * a value the model would treat as observed.
+ */
+export function pitchTypeRequest(
+  row: LivePitchRow,
+  gameDate: string,
+  gameId: number,
+  matchup?: CurrentMatchup | null,
+): PitchTypePredictionRequest | null {
+  const base = nextPitchRequest(row, gameDate, matchup);
+  if (base == null) return null;
+  return {
+    pitcherId: base.pitcherId,
+    gameId,
+    gameDate,
+    atBatIndex: row.atBatIndex,
+    // The prior is for the pitch ABOUT to be thrown; the row is the one just thrown. A pinch
+    // hitter inherits the count and the pitch number continues, matching nextPitchRequest's
+    // treatment of the same sequence.
+    pitchNumber: row.pitchNumber + 1,
+    balls: base.countBalls,
+    strikes: base.countStrikes,
+    outs: base.outs,
+    inning: base.inning,
+    baseState: base.baseState,
+    stand: base.batterStand,
+    pThrows: base.pitcherThrows,
+    parkId: base.parkId,
+    timesThroughOrder: null,
+    atBatNumberInGame: null,
+    timesFacedToday: null,
+  };
+}
+
 export async function predictPitch(
   req: PitchPredictionRequest,
   head: "pre" = "pre",
