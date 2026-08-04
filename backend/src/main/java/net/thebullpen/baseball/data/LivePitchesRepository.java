@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.OptionalDouble;
 import javax.sql.DataSource;
 import net.thebullpen.baseball.domain.BattedBall;
 import net.thebullpen.baseball.domain.CurrentMatchup;
@@ -93,6 +94,12 @@ public class LivePitchesRepository {
           + "    ph.hit_distance_ft) AS hit_distance_ft,"
           + " if(pl.launch_speed_mph > 0 AND pl.events != '', pl.bb_type, ph.bb_type) AS bb_type,"
           + " if(pl.launch_speed_mph > 0 AND pl.events != '', pl.events, ph.events) AS events,"
+          // Coordinates are selected but NOT surfaced raw: the mapper turns them into a spray
+          // angle via BattedBall, so the derivation (and its two degeneracy gates) lives in ONE
+          // place rather than being reimplemented in TypeScript. `pitches` has hc_x/hc_y too, but
+          // only the live side is coalesced here - a backfilled game already reaches the model
+          // through the historical path and gains nothing from a second spray source.
+          + " pl.hc_x AS hc_x, pl.hc_y AS hc_y,"
           + " pred.prediction AS prediction_json"
           + " FROM pitches_live AS pl FINAL"
           // One champion prediction per pitch: predict-next re-logs the same upcoming pitch on
@@ -686,6 +693,7 @@ public class LivePitchesRepository {
             nullable(rs, "hit_distance_ft"),
             emptyToNull(rs.getString("bb_type")),
             emptyToNull(rs.getString("events")),
+            sprayAngleOrNull(rs),
             // A5 pre-pitch context (V028). pitch_hand/bat_side are LowCardinality(String) DEFAULT
             // '' -> '' (NOT null) on a pre-V028 row; the frontend forwards them verbatim ('S'
             // resolves L|R downstream). base_state is Nullable(UInt8) -> null on a pre-V028 row
@@ -720,6 +728,29 @@ public class LivePitchesRepository {
             pred.winner(),
             rs.getString("model_version"));
       };
+
+  /**
+   * Spray angle for a live batted ball, or null when it cannot honestly be derived.
+   *
+   * <p>Derived HERE rather than on the client so the formula and its two degeneracy gates exist
+   * once. {@link BattedBall#sprayAngleDeg()} declines a ball tracked at or behind the plate (where
+   * atan2 flips quadrant, and where the ORIGIN would otherwise yield a confident 0 degrees) and any
+   * result outside the foul lines. A declined spray must reach the caller as null, never as 0: the
+   * per-park model treats a spray angle as observed, so a fabricated 0 would score a ball pulled
+   * down the line as though it were hit to dead centre.
+   *
+   * <p>Null also when the row carries no live coordinates at all - a historical-only row reaches
+   * the model through its own path and has no coordinates here to derive from.
+   */
+  private static Double sprayAngleOrNull(ResultSet rs) throws SQLException {
+    double hcX = rs.getDouble("hc_x");
+    double hcY = rs.getDouble("hc_y");
+    if (hcX == 0 && hcY == 0) {
+      return null;
+    }
+    OptionalDouble spray = BattedBall.sprayAngleDeg(hcX, hcY);
+    return spray.isPresent() ? spray.getAsDouble() : null;
+  }
 
   private static Double nullable(ResultSet rs, String col) throws java.sql.SQLException {
     double v = rs.getDouble(col);

@@ -105,6 +105,20 @@ public record BattedBall(
    * field, so a consumer that cares must fold in {@code stand} rather than assume.
    */
   public OptionalDouble sprayAngleDeg() {
+    return sprayAngleDeg(hcX, hcY);
+  }
+
+  /**
+   * The same derivation from bare coordinates, for callers that have hc_x / hc_y but no record -
+   * the repository mapper, which reads columns.
+   *
+   * <p>Static rather than "construct a BattedBall with placeholder physics and call the instance
+   * method": this record's contract is that one which exists is ENTIRELY REAL, and manufacturing a
+   * fake to borrow a method would be the first violation of it, in the class that documents it. One
+   * implementation either way - which is the point, since a second copy in TypeScript or SQL would
+   * be a second set of degeneracy gates to keep in step.
+   */
+  public static OptionalDouble sprayAngleDeg(double hcX, double hcY) {
     double towardOutfield = PLATE_Y - hcY;
     if (towardOutfield <= 0) {
       return OptionalDouble.empty();

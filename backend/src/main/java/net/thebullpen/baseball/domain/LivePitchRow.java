@@ -85,6 +85,7 @@ public record LivePitchRow(
     Double hitDistanceFt,
     String bbType,
     String event,
+    Double sprayAngleDeg,
     String pitcherThrows,
     String batterStand,
     Integer baseState,
