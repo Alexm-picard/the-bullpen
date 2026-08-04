@@ -135,30 +135,43 @@ describe("PitchTypePanel", () => {
     const rows = body.split("<li").slice(1);
     expect(rows).toHaveLength(7);
 
-    // STRUCTURAL INVARIANT, not an enumeration of the emphasis mechanisms I happened to think of.
-    // The first version listed font-weight and background-count, and a review found SIX ways past
-    // it: weight 600, a className, a gold TEXT colour, a larger font-size, a border, a marker
-    // glyph, a taller bar. Normalising away only the bar WIDTH - the one thing that legitimately
-    // differs per row - and demanding the rows be otherwise byte-identical closes all of them at
-    // once, including the ones nobody has invented yet.
+    // STRUCTURAL INVARIANT over MARKUP AND STYLING, plus a companion pin over TEXT. The first
+    // version enumerated the mechanisms I happened to think of and review found seven ways past
+    // it: weight 600, a className, gold TEXT colour, a larger font-size, a border, a taller bar,
+    // and a marker glyph. Normalising away the bar width and the text content, then demanding the
+    // seven rows be byte-identical, closes every markup and styling mechanism - including the
+    // gold-text case, which is the one that would really have happened, since NextPitchPanel
+    // emphasises with THREE mechanisms including text colour.
     //
-    // The gold-text case is the one that would really have happened: NextPitchPanel emphasises its
-    // argmax with THREE mechanisms (weight, bar colour, and text colour), so an editor copying it
-    // and stripping "the bold parts" lands exactly there.
-    // Normalise away the two things that legitimately differ per row - the bar width and the text
-    // content (class name, percentage) - leaving pure markup + styling. Anything still differing
-    // between rows IS emphasis.
+    // It does NOT close text-content emphasis, and saying otherwise would be the same defect as a
+    // comment claiming a pin that does not exist: stripping text is exactly how this tolerates the
+    // differing labels and percentages, so a "> " glyph prepended to the top label rides straight
+    // through. The second assertion below is that missing side - each row's visible text must be
+    // exactly its label and its percentage, nothing else.
     const normalised = rows.map((r) =>
-      // Truncate at </li>: splitting on "<li" leaves the LAST chunk carrying everything after the
-      // list (the closing tag and the caption), which would differ for a reason unrelated to
-      // emphasis and make this pin red for the wrong cause.
       r
         .slice(0, r.indexOf("</li>"))
-        .replace(/width:\s*[\d.]+%/g, "width:X")
+        // Anchored to the BAR by its neighbouring declaration: an unanchored width would also
+        // normalise a percentage width applied to the label column, letting that through.
+        .replace(/width:[\d.]+%;background:/g, "width:X;background:")
         .replace(/>[^<]*</g, "><"),
     );
     for (const row of normalised) {
       expect(row).toBe(normalised[0]);
+    }
+
+    // The text side: label + percentage and nothing else. Closes the marker-glyph mechanism the
+    // markup invariant structurally cannot see.
+    for (const raw of rows) {
+      const cell = raw.slice(0, raw.indexOf("</li>"));
+      const texts = [...cell.matchAll(/>([^<]+)</g)].map((m) => m[1]!.trim());
+      expect(texts).toHaveLength(2);
+      // Shape, not the label list: a plain word, so a prepended marker glyph or a "(most likely)"
+      // suffix fails. Asserting shape rather than importing CLASS_LABELS also keeps the panel file
+      // exporting only its component (react-refresh) and avoids a test that would pass merely
+      // because it and the component read the same constant.
+      expect(texts[0]).toMatch(/^[A-Z][a-z]+(-[a-z]+)?$/);
+      expect(texts[1]).toMatch(/^\d+\.\d%$/);
     }
   });
 
