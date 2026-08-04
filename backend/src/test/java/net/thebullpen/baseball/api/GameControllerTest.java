@@ -53,7 +53,8 @@ class GameControllerTest {
                     7,
                     "IN_PROGRESS",
                     "In Progress",
-                    null)));
+                    null, // currentMatchup
+                    null))); // mostRecentBattedBall
 
     mvc.perform(get("/v1/games/today"))
         .andExpect(status().isOk())
@@ -85,7 +86,8 @@ class GameControllerTest {
                     7,
                     "IN_PROGRESS",
                     "In Progress",
-                    null)));
+                    null, // currentMatchup
+                    null))); // mostRecentBattedBall
 
     mvc.perform(get("/v1/games/777001"))
         .andExpect(status().isOk())
@@ -131,6 +133,9 @@ class GameControllerTest {
                     412.0,
                     "fly_ball",
                     "home_run",
+                    // V032: spray derived server-side from hc_x/hc_y, null when the coordinates
+                    // cannot yield an honest angle.
+                    18.4,
                     // A5 pre-pitch context (V028): serialized through the games DTO so the frontend
                     // can build the A6 next-pitch request. scoreDiff is the serving-path constant
                     // 0.

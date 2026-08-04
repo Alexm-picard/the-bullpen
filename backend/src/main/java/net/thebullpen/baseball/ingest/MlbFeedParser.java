@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import net.thebullpen.baseball.domain.BattedBall;
 import net.thebullpen.baseball.domain.GameStatus;
 import net.thebullpen.baseball.domain.LivePitch;
 import net.thebullpen.baseball.domain.ScheduledGame;
@@ -301,7 +302,8 @@ public class MlbFeedParser {
                 asDouble(breaks.path("spinDirection")),
                 tier4 == null ? null : tier4.releasePosXFt(),
                 tier4 == null ? null : tier4.releasePosZFt(),
-                i == pitchEvents.size() - 1));
+                i == pitchEvents.size() - 1,
+                parseBattedBall(play, e)));
         // The next pitch's pre-count is this pitch's post-count (read from the feed, not computed).
         JsonNode c = e.path("count");
         preBalls = c.path("balls").asInt(preBalls);
@@ -448,6 +450,50 @@ public class MlbFeedParser {
         isOccupied(matchup.path("postOnThird")),
         parkId,
         gameDate);
+  }
+
+  /**
+   * The measured physics of a ball in play, or null - which is the common case, since most pitches
+   * are not put in play and a play that is still in flight has not finished being measured.
+   *
+   * <p>ALL-OR-NOTHING by construction, because {@link BattedBall} promises its consumers that a
+   * record which exists is entirely real. Any missing piece yields null rather than a record with a
+   * hole in it.
+   *
+   * <p>The {@code event} check is doing more work than it looks: it is the COMPLETENESS marker.
+   * hitData populates transiently while a play is still in flight, and the observed partial
+   * (physics present, coordinates and result absent) was exactly that window. Declining until the
+   * play resolves means the transient never reaches storage, so no downstream consumer has to
+   * defend against a half-measured batted ball. The poller re-writes the pitch once the play
+   * completes (see LivePollingService's BIP backfill), so declining here costs the row nothing.
+   *
+   * <p>{@code launchSpeed <= 0} is rejected as well as null: 0 mph is not a batted ball, and it is
+   * the sentinel the storage layer uses for absence (V032). Letting one through would make a row
+   * that reads back as absent, which is a silent hole rather than a loud one. {@code trajectory} is
+   * allowed to be blank - the display falls back to a launch-angle band - but nothing else is.
+   */
+  private static BattedBall parseBattedBall(JsonNode play, JsonNode pitchEvent) {
+    String event = play.path("result").path("event").asText("");
+    if (event.isBlank() || !pitchEvent.path("details").path("isInPlay").asBoolean()) {
+      return null;
+    }
+    JsonNode hit = pitchEvent.path("hitData");
+    JsonNode coords = hit.path("coordinates");
+    Double launchSpeed = asDouble(hit.path("launchSpeed"));
+    Double launchAngle = asDouble(hit.path("launchAngle"));
+    Double distance = asDouble(hit.path("totalDistance"));
+    Double hcX = asDouble(coords.path("coordX"));
+    Double hcY = asDouble(coords.path("coordY"));
+    if (launchSpeed == null
+        || launchSpeed <= 0
+        || launchAngle == null
+        || distance == null
+        || hcX == null
+        || hcY == null) {
+      return null;
+    }
+    return new BattedBall(
+        launchSpeed, launchAngle, distance, hcX, hcY, hit.path("trajectory").asText(""), event);
   }
 
   private static LocalDate parseGameDate(JsonNode gameData) {

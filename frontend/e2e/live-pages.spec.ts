@@ -109,7 +109,8 @@ const GAME: Record<string, unknown> = {
     batSide: "R",
     pitchHand: "R",
     atBatIndex: 1,
-  },
+  }, // Untyped route mock - tsc cannot force this field; hand-maintained by necessity.
+  mostRecentBattedBall: null,
 };
 
 function pitch(atBat: number, n: number, desc: string, type: string) {
@@ -132,6 +133,11 @@ function pitch(atBat: number, n: number, desc: string, type: string) {
     inning: 6,
     homeScore: 2,
     awayScore: 1,
+    // V032: spray is derived server-side and may be null; null here keeps this fixture on the
+    // page's DECLINE path, which is the honest default for a mock that carries no coordinates.
+    // These e2e fixtures are UNTYPED (Record<string, unknown>), so tsc cannot force this field the
+    // way it just forced the four vitest fixtures - this line is hand-maintained by necessity.
+    sprayAngleDeg: null,
     // A5 pre-pitch context (V028): mirrors the LivePitchRow DTO shape.
     pitcherThrows: "R",
     batterStand: "L",

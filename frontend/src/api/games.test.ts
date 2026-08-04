@@ -26,6 +26,7 @@ const SUMMARY: GameSummary = {
   status: "IN_PROGRESS",
   detailedState: "In Progress",
   currentMatchup: null,
+  mostRecentBattedBall: null,
 };
 
 const PITCH: LivePitchRow = {
@@ -59,6 +60,7 @@ const PITCH: LivePitchRow = {
   hitDistanceFt: null,
   bbType: null,
   event: null,
+  sprayAngleDeg: null,
 };
 
 describe("statusPollIntervalMs", () => {

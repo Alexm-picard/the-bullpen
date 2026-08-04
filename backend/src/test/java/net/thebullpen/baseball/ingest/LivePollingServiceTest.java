@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -14,6 +15,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.LocalDate;
 import java.util.List;
@@ -22,6 +24,7 @@ import java.util.Optional;
 import net.thebullpen.baseball.config.IngestProperties;
 import net.thebullpen.baseball.data.JobLeaseRepository;
 import net.thebullpen.baseball.data.LivePitchesRepository;
+import net.thebullpen.baseball.domain.BattedBall;
 import net.thebullpen.baseball.domain.CurrentMatchup;
 import net.thebullpen.baseball.domain.GameStatus;
 import net.thebullpen.baseball.domain.LivePitch;
@@ -68,7 +71,8 @@ class LivePollingServiceTest {
         200.0,
         -1.6,
         5.9,
-        false);
+        false,
+        null); // battedBall: these fixtures are not balls in play
   }
 
   // --- V031: the live current matchup rides the status row -------------------------------
@@ -231,12 +235,21 @@ class LivePollingServiceTest {
 
   private static LivePollingService service(
       MlbStatsApiClient client, LivePitchesRepository repo, LivePitchPredictor predictor) {
+    return service(client, repo, predictor, new SimpleMeterRegistry());
+  }
+
+  /** Overload exposing the registry, so a test can assert on the counters the poller writes. */
+  private static LivePollingService service(
+      MlbStatsApiClient client,
+      LivePitchesRepository repo,
+      LivePitchPredictor predictor,
+      MeterRegistry registry) {
     return new LivePollingService(
         client,
         repo,
         Optional.of(predictor),
         Optional.empty(),
-        new IngestMetrics(new SimpleMeterRegistry()),
+        new IngestMetrics(registry),
         heldLease(),
         pollerProps());
   }
@@ -583,7 +596,8 @@ class LivePollingServiceTest {
         200.0,
         -1.6,
         5.9,
-        false);
+        false,
+        null); // battedBall: these fixtures are not balls in play
   }
 
   private static LiveNextPitch nextPitchFor(long gameId, int atBat, int pitchNumber) {
@@ -697,6 +711,167 @@ class LivePollingServiceTest {
     // Three attempts. With the put hoisted above the upsert this is 2: tick 3 sees a key that
     // matches a matchup that was never actually stored, and the batter freezes for the game.
     verify(repo, times(3)).upsertGameStatus(eq(822810L), any(), any(), any());
+  }
+
+  /**
+   * A pitch fixture that IS a completed ball in play - mirroring {@link #pitch} field-for-field
+   * rather than copying accessors off it, so this cannot silently diverge from the shape that
+   * helper defines.
+   */
+  private static LivePitch bipPitch(int atBat, int pitchNumber, BattedBall bb) {
+    return new LivePitch(
+        822810L,
+        atBat,
+        pitchNumber,
+        9,
+        false,
+        689296L,
+        676391L,
+        "R",
+        "R",
+        0,
+        0,
+        0,
+        false,
+        false,
+        false,
+        0,
+        0,
+        "in_play",
+        "SI",
+        95.0,
+        0.0,
+        0.0,
+        -0.5,
+        1.2,
+        2200.0,
+        200.0,
+        -1.6,
+        5.9,
+        true,
+        bb);
+  }
+
+  private static final BattedBall HOMER =
+      new BattedBall(102.4, 24.0, 403.0, 196.18, 65.51, "fly_ball", "Home Run");
+
+  @Test
+  void aBallInPlaySeenBeforeItsPlayCompletedIsBackfilledOnceItDoes() throws Exception {
+    // THE case the cursor gate cannot serve, and the one that decides whether any of this reaches
+    // a live game. writeNewPitches filters cursor(p) > since, so a pitch is written EXACTLY ONCE.
+    // A ball in play first seen while its play was in flight carries no physics; without the
+    // backfill it keeps none for the rest of the game, and the card stays empty for exactly the
+    // games it exists to serve. Note the failure mode: fewer rows, which reads as a quiet slate.
+    MlbStatsApiClient client = mock(MlbStatsApiClient.class);
+    LivePitchesRepository repo = mock(LivePitchesRepository.class);
+    LivePitchPredictor predictor = mock(LivePitchPredictor.class);
+    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(client.fetchLiveFeed(822810L))
+        .thenReturn(feed(List.of(pitch(1, 1)), nextPitch(1, 2))) // in flight: no physics yet
+        .thenReturn(feed(List.of(bipPitch(1, 1, HOMER)), nextPitch(2, 1))); // play completed
+
+    SimpleMeterRegistry registry = new SimpleMeterRegistry();
+    LivePollingService svc = service(client, repo, predictor, registry);
+    svc.pollGame(822810L);
+    svc.pollGame(822810L);
+
+    ArgumentCaptor<LiveGameFeed> captor = ArgumentCaptor.forClass(LiveGameFeed.class);
+    verify(repo, atLeastOnce()).insertPitches(captor.capture());
+    assertThat(captor.getAllValues().stream().flatMap(f -> f.pitches().stream()))
+        .as("the completed batted ball must reach storage on the later poll")
+        .anyMatch(pp -> pp.battedBall() != null && "Home Run".equals(pp.battedBall().event()));
+
+    // The backfill must NOT increment the pitches counter: that one is documented as "pitches
+    // written to pitches_live", and re-counting a re-write turns it into "row writes" - breaking
+    // the counter you would reach for to ask whether ingest had stalled. Without this assertion,
+    // putting incrementPitchesIngested back reds nothing.
+    assertThat(registry.counter(IngestMetrics.PITCHES_METRIC).count())
+        .as("one pitch was ingested, and the backfill re-write is not a second one")
+        .isEqualTo(1.0);
+    assertThat(registry.counter(IngestMetrics.BIP_BACKFILLS_METRIC).count())
+        .as("the backfill fired exactly once")
+        .isEqualTo(1.0);
+  }
+
+  @Test
+  void aBattedBallCompleteOnFirstSightingIsNotWrittenTwice() throws Exception {
+    // The backfill must not re-write what writeNewPitches already stored complete. One extra
+    // insert per ball in play is the budget; a rolling re-write window would be ~80x amplification
+    // into a 14-day TTL table.
+    MlbStatsApiClient client = mock(MlbStatsApiClient.class);
+    LivePitchesRepository repo = mock(LivePitchesRepository.class);
+    LivePitchPredictor predictor = mock(LivePitchPredictor.class);
+    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(client.fetchLiveFeed(822810L))
+        .thenReturn(feed(List.of(bipPitch(1, 1, HOMER)), nextPitch(2, 1)))
+        .thenReturn(feed(List.of(bipPitch(1, 1, HOMER)), nextPitch(2, 1)));
+
+    LivePollingService svc = service(client, repo, predictor);
+    svc.pollGame(822810L);
+    svc.pollGame(822810L);
+
+    verify(repo, times(1)).insertPitches(any());
+  }
+
+  @Test
+  void aBallWhosePhysicsArriveOutOfOrderIsStillBackfilled() throws Exception {
+    // The defect two reviewers found independently. The first version tracked a single high-water
+    // mark, so once a LATER ball in play was written with physics, an EARLIER one that had not yet
+    // received its hitData could never be backfilled - empty physics forever. Reachable on a failed
+    // feed fetch, an insert throw, a Statcast late correction, and above all a worker restart.
+    //
+    // Sequence: at-bat 2 completes with no hitData yet, at-bat 4 completes WITH it, then at-bat 2's
+    // hitData finally arrives.
+    MlbStatsApiClient client = mock(MlbStatsApiClient.class);
+    LivePitchesRepository repo = mock(LivePitchesRepository.class);
+    LivePitchPredictor predictor = mock(LivePitchPredictor.class);
+    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    LivePitch early = pitch(2, 1); // in play, physics not yet attached
+    LivePitch earlyWithPhysics = bipPitch(2, 1, HOMER);
+    LivePitch laterWithPhysics = bipPitch(4, 1, HOMER);
+    when(client.fetchLiveFeed(822810L))
+        .thenReturn(feed(List.of(early), nextPitch(3, 1)))
+        .thenReturn(feed(List.of(early, laterWithPhysics), nextPitch(5, 1)))
+        .thenReturn(feed(List.of(earlyWithPhysics, laterWithPhysics), nextPitch(5, 1)));
+
+    LivePollingService svc = service(client, repo, predictor);
+    svc.pollGame(822810L);
+    svc.pollGame(822810L);
+    svc.pollGame(822810L);
+
+    ArgumentCaptor<LiveGameFeed> captor = ArgumentCaptor.forClass(LiveGameFeed.class);
+    verify(repo, atLeastOnce()).insertPitches(captor.capture());
+    assertThat(
+            captor.getAllValues().stream()
+                .flatMap(f -> f.pitches().stream())
+                .filter(pp -> pp.battedBall() != null)
+                .anyMatch(pp -> pp.atBatIndex() == 2))
+        .as("at-bat 2's late physics must still reach storage after at-bat 4 was written")
+        .isTrue();
+  }
+
+  @Test
+  void aStableBattedBallIsNotRewrittenOnEveryPoll() throws Exception {
+    // Named for what it actually pins. It was called ...DoesNotWalkTheWatermarkBackwards, which
+    // was false advertising: it passes with the max replaced by a plain put, because no reachable
+    // input walks the watermark backwards. What it DOES pin is the write budget - the feed carries
+    // every completed play on every poll, so without the watermark this BIP would be re-inserted
+    // once per 5s tick for the rest of the game.
+    MlbStatsApiClient client = mock(MlbStatsApiClient.class);
+    LivePitchesRepository repo = mock(LivePitchesRepository.class);
+    LivePitchPredictor predictor = mock(LivePitchPredictor.class);
+    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(client.fetchLiveFeed(822810L))
+        .thenReturn(feed(List.of(bipPitch(3, 1, HOMER)), nextPitch(4, 1)))
+        .thenReturn(feed(List.of(bipPitch(3, 1, HOMER)), nextPitch(4, 1)))
+        .thenReturn(feed(List.of(bipPitch(3, 1, HOMER)), nextPitch(4, 1)));
+
+    LivePollingService svc = service(client, repo, predictor);
+    svc.pollGame(822810L);
+    svc.pollGame(822810L);
+    svc.pollGame(822810L);
+
+    verify(repo, times(1)).insertPitches(any());
   }
 
   @Test

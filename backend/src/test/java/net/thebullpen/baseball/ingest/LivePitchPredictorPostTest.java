@@ -156,6 +156,7 @@ class LivePitchPredictorPostTest {
         200.0, // spinAxisDeg
         -1.6, // releasePosXIn
         5.9, // releasePosZIn
-        true); // terminal
+        true, // terminal
+        null); // battedBall
   }
 }

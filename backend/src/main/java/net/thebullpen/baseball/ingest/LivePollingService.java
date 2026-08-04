@@ -81,6 +81,20 @@ public class LivePollingService {
   // string encodes "no current play", so the null transition is written too and the row stops
   // naming a batter who has finished hitting.
   private final Map<Long, String> lastMatchupKey = new ConcurrentHashMap<>();
+
+  /**
+   * BIP cursors already written WITH batted-ball physics, per game.
+   *
+   * <p>This exists because {@link #writeNewPitches} writes each pitch EXACTLY ONCE - it filters on
+   * {@code cursor(p) > since}, so a pitch never gets a second look. That is fine for pitch data,
+   * which is complete when the pitch lands, but batted-ball physics is not: hitData populates while
+   * the play is still in flight and the parser declines it until the play completes.
+   *
+   * <p>See {@link #writtenSet} for why this is a SET rather than a high-water mark - the earlier
+   * version was a max, and the reasoning that justified it was wrong.
+   */
+  private final Map<Long, java.util.Set<Long>> battedBallWritten = new ConcurrentHashMap<>();
+
   private final Map<Long, Instant> lastPollAt = new ConcurrentHashMap<>();
   private final Map<Long, Long> lastCursorByGame = new ConcurrentHashMap<>();
   private final Map<Long, Long> lastPredictedKeyByGame = new ConcurrentHashMap<>();
@@ -214,7 +228,67 @@ public class LivePollingService {
       }
     }
     writeNewPitches(gamePk, feed);
+    backfillCompletedBattedBalls(gamePk, feed);
     predictNextPitch(gamePk, feed);
+  }
+
+  /**
+   * Re-write balls in play that have GAINED physics since their pitch was first stored.
+   *
+   * <p>Ordered AFTER {@link #writeNewPitches} on purpose: that call may have just written this BIP
+   * complete on its first sighting, in which case it has already bumped the key and there is
+   * nothing here to do. What remains is the case the cursor gate cannot serve - a pitch stored
+   * while its play was in flight, whose hitData only became complete on a later poll.
+   *
+   * <p>Targeted rather than a rolling re-write window: roughly ONE extra insert per ball in play
+   * (~50 per game) instead of re-writing the last N pitches every 5s tick, which would be ~80x
+   * write amplification into a 14-day TTL table. The ReplacingMergeTree supersedes on (game_id,
+   * at_bat_index, pitch_number), so the re-insert replaces the physics-less row rather than
+   * duplicating it - the capability V015's header always claimed and nothing exercised.
+   */
+  private void backfillCompletedBattedBalls(long gamePk, LiveGameFeed feed) {
+    java.util.Set<Long> written = writtenSet(gamePk);
+    List<LivePitch> completed =
+        feed.pitches().stream()
+            .filter(p -> p.battedBall() != null && !written.contains(cursor(p)))
+            .toList();
+    if (completed.isEmpty()) {
+      return;
+    }
+    repo.insertPitches(withPitches(feed, completed));
+    metrics.incrementBipBackfills(completed.size());
+    completed.forEach(p -> written.add(cursor(p)));
+  }
+
+  /**
+   * The set of BIP cursors already written WITH physics, for this game.
+   *
+   * <p>A SET, not a high-water mark. The first version tracked a single max and its javadoc claimed
+   * "at-bats are monotonic, so above-the-highest means not-yet-written" - which is true of the
+   * order PLAYS occur and false of the order PHYSICS ARRIVES. If at-bat 4's hitData landed before
+   * at-bat 3's, the mark jumped past 3 and that ball kept empty physics forever. Reachable on a
+   * failed feed fetch, an insert throw, a Statcast late correction, and above all a WORKER RESTART,
+   * where the first poll processes the whole game at once. The equivalence needed an unstated
+   * second assumption - that hitData arrives in cursor order - which is a claim about a third
+   * party's behaviour, exactly the kind V032's own header warns has a shelf life.
+   *
+   * <p>Bounded by balls in play per game (order 80), which is the thing that actually needs
+   * tracking. Per-game map growth across a season is issue 399, covering all of this class's maps.
+   *
+   * <p>ConcurrentHashMap.newKeySet + computeIfAbsent is the atomic idiom for the declared
+   * concurrent type: single-writer today under @Scheduled. Precisely: it makes the CONTAINER safe,
+   * not the SEQUENCE - filter, insert, add is a check-then-act, so two threads on the same game
+   * could both insert (benign under the ReplacingMergeTree) and double-count the backfill counter.
+   * A single-threaded test cannot exercise any of that, so a mutation to a plain HashSet reddening
+   * nothing is expected rather than evidence the choice is idle.
+   *
+   * <p>SCOPE: this fixes "physics for ball X arrives after ball Y was already written". It does NOT
+   * re-apply a REVISED measurement for a ball already in the set - first physics wins, because
+   * membership is the whole test. A Statcast late correction to an already-stored ball is therefore
+   * out of scope here and lands via the overnight handoff into `pitches`.
+   */
+  private java.util.Set<Long> writtenSet(long gamePk) {
+    return battedBallWritten.computeIfAbsent(gamePk, k -> ConcurrentHashMap.newKeySet());
   }
 
   private void writeNewPitches(long gamePk, LiveGameFeed feed) {
@@ -232,6 +306,9 @@ public class LivePollingService {
         fresh.stream().filter(p -> "unknown".equals(p.description())).count());
     lastCursorByGame.put(
         gamePk, fresh.stream().mapToLong(LivePollingService::cursor).max().orElse(since));
+    // A pitch that ALREADY carried physics on its first sighting needs no backfill later.
+    java.util.Set<Long> written = writtenSet(gamePk);
+    fresh.stream().filter(p -> p.battedBall() != null).forEach(p -> written.add(cursor(p)));
     refreshIntraDayForm(gamePk, fresh);
     predictPostForCompletedPitches(gamePk, feed, fresh);
   }

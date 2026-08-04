@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.TimeZone;
 import java.util.UUID;
+import net.thebullpen.baseball.domain.BattedBall;
 import net.thebullpen.baseball.domain.CurrentMatchup;
 import net.thebullpen.baseball.domain.GameStatus;
 import net.thebullpen.baseball.domain.GameSummary;
@@ -22,7 +23,9 @@ import net.thebullpen.baseball.domain.LivePitch;
 import net.thebullpen.baseball.domain.LivePitchRow;
 import net.thebullpen.baseball.domain.PagedRows;
 import net.thebullpen.baseball.domain.PostPredictionRow;
+import net.thebullpen.baseball.domain.RecentBattedBall;
 import net.thebullpen.baseball.domain.ScheduledGame;
+import net.thebullpen.baseball.domain.TeamContactBall;
 import net.thebullpen.baseball.ingest.LiveGameFeed;
 import net.thebullpen.baseball.ingest.MlbFeedParser;
 import org.junit.jupiter.api.BeforeEach;
@@ -170,7 +173,45 @@ class LivePitchesRepositoryIT {
         /* spinAxisDeg= */ null,
         /* releasePosXIn= */ null,
         /* releasePosZIn= */ null,
-        /* terminal= */ false);
+        /* terminal= */ false,
+        /* battedBall= */ null);
+  }
+
+  /** The same fixture, but carrying V032 physics - a completed ball in play. */
+  private static LivePitch livePitchWithBattedBall(
+      long gameId, int atBatIndex, int pitchNumber, BattedBall bb) {
+    LivePitch base = livePitch(gameId, atBatIndex, pitchNumber, "R", "R", false, false, false);
+    return new LivePitch(
+        base.gameId(),
+        base.atBatIndex(),
+        base.pitchNumber(),
+        base.inning(),
+        base.topInning(),
+        base.pitcherId(),
+        base.batterId(),
+        base.pitchHand(),
+        base.batSide(),
+        base.preBalls(),
+        base.preStrikes(),
+        base.outs(),
+        base.onFirst(),
+        base.onSecond(),
+        base.onThird(),
+        base.homeScore(),
+        base.awayScore(),
+        "in_play",
+        base.pitchType(),
+        base.releaseSpeedMph(),
+        base.plateXIn(),
+        base.plateZIn(),
+        base.pfxXIn(),
+        base.pfxZIn(),
+        base.spinRateRpm(),
+        base.spinAxisDeg(),
+        base.releasePosXIn(),
+        base.releasePosZIn(),
+        true,
+        bb);
   }
 
   private static LivePitchRow pitch(List<LivePitchRow> rows, int atBat, int pitchNumber) {
@@ -763,6 +804,272 @@ class LivePitchesRepositoryIT {
     assertNull(
         repo.findGame(715L).orElseThrow().currentMatchup(),
         "a matchup whose at-bat is unknown is not a usable matchup");
+  }
+
+  @Test
+  void aLiveBattedBallRoundTripsWithoutWaitingForTheOvernightHandoff() throws Exception {
+    // THE point of V032. Before it, launch physics existed only in the canonical `pitches` table,
+    // which the overnight handoff fills - so a game in progress had none, which is exactly the
+    // game the card exists to serve.
+    LocalDate date = LocalDate.of(2026, 8, 3);
+    BattedBall homer = new BattedBall(102.4, 24.0, 403.0, 196.18, 65.51, "fly_ball", "Home Run");
+    repo.insertPitches(
+        new LiveGameFeed(
+            720L,
+            GameStatus.IN_PROGRESS,
+            date,
+            1,
+            1,
+            "BOS",
+            "NYY",
+            List.of(livePitchWithBattedBall(720L, 1, 1, homer)),
+            null));
+
+    LivePitchRow row = pitch(repo.findPitchesSince(720L, 0L), 1, 1);
+    assertEquals(102.4, row.launchSpeedMph(), 1e-4);
+    assertEquals(24.0, row.launchAngleDeg(), 1e-4);
+    assertEquals(403.0, row.hitDistanceFt(), 1e-4);
+    assertEquals("fly_ball", row.bbType());
+    assertEquals("Home Run", row.event());
+  }
+
+  @Test
+  void aPitchWithNoBattedBallReadsBackAsAbsentRatherThanAsZeroPhysics() throws Exception {
+    // The sentinels must never surface as a batted ball measured at 0 mph and 0 degrees. Absence is
+    // decided at the GROUP level, so a row whose launch_speed_mph is the 0 sentinel reads as no
+    // batted ball at all - not as a line drive that went nowhere.
+    LocalDate date = LocalDate.of(2026, 8, 3);
+    repo.insertPitches(
+        new LiveGameFeed(
+            721L,
+            GameStatus.IN_PROGRESS,
+            date,
+            1,
+            1,
+            "BOS",
+            "NYY",
+            List.of(livePitch(721L, 1, 1, "R", "R", false, false, false)),
+            null));
+
+    LivePitchRow row = pitch(repo.findPitchesSince(721L, 0L), 1, 1);
+    assertNull(row.launchSpeedMph(), "0 mph is the absence sentinel, not a measurement");
+    assertNull(row.launchAngleDeg(), "0 degrees is a REAL angle - it must not leak as one here");
+    assertNull(row.hitDistanceFt());
+    assertNull(row.event());
+  }
+
+  @Test
+  void aLineDriveAtZeroDegreesSurvivesTheGroupLevelPresenceCheck() throws Exception {
+    // The case the per-column sentinel design would have broken: launch angle 0 and a 1 ft
+    // distance are BOTH real values. They read back intact because presence is decided by
+    // launch_speed_mph and events, never by the ambiguous columns themselves.
+    LocalDate date = LocalDate.of(2026, 8, 3);
+    BattedBall flat = new BattedBall(71.7, 0.0, 1.0, 150.0, 150.0, "ground_ball", "Groundout");
+    repo.insertPitches(
+        new LiveGameFeed(
+            722L,
+            GameStatus.IN_PROGRESS,
+            date,
+            1,
+            1,
+            "BOS",
+            "NYY",
+            List.of(livePitchWithBattedBall(722L, 1, 1, flat)),
+            null));
+
+    LivePitchRow row = pitch(repo.findPitchesSince(722L, 0L), 1, 1);
+    assertEquals(0.0, row.launchAngleDeg(), 1e-4, "a 0-degree line drive is real data");
+    assertEquals(1.0, row.hitDistanceFt(), 1e-4, "a 1 ft projected distance is real data");
+    assertEquals("Groundout", row.event());
+  }
+
+  @Test
+  void aHalfPopulatedRowIsReadAsAbsentEvenThoughOurWriterCannotProduceOne() throws Exception {
+    // The `events != ''` half of the presence predicate, pinned against a row inserted by RAW SQL
+    // rather than through insertPitches.
+    //
+    // Worth explaining, because mutating that clause away reds nothing otherwise. Our own writer
+    // binds the physics and the result from ONE BattedBall, which the parser refuses to build
+    // without a completed play - so through the normal path the two are always both present or
+    // both absent, and the clause is unreachable. But the READ is a contract boundary, and it
+    // should not assume its writer: a manual backfill, a future ingest path, or a partially
+    // applied migration can all produce speed-without-result. Left ungated, such a row would
+    // surface as a batted ball with a blank result on a live page.
+    //
+    // So this is the "build the case" outcome rather than the "document it as unreachable" one -
+    // the input is reachable, just not from here.
+    LocalDate date = LocalDate.of(2026, 8, 3);
+    try (var conn = clickhouseDs.getConnection();
+        var st = conn.createStatement()) {
+      st.execute(
+          "INSERT INTO pitches_live (game_id, at_bat_index, pitch_number, game_date, pitcher_id,"
+              + " batter_id, description, launch_speed_mph, launch_angle_deg, hit_distance_ft,"
+              + " events) VALUES (723, 1, 1, '"
+              + date
+              + "', 1, 2, 'in_play', 102.4, 24.0, 403.0, '')");
+    }
+
+    LivePitchRow row = pitch(repo.findPitchesSince(723L, 0L), 1, 1);
+    assertNull(
+        row.launchSpeedMph(),
+        "physics without a completed result is not a batted ball - the read must not trust it");
+    assertNull(row.event());
+  }
+
+  @Test
+  void findsTheMostRecentCompletedBallInPlay() throws Exception {
+    LocalDate date = LocalDate.of(2026, 8, 4);
+    BattedBall first = new BattedBall(88.1, 12.0, 210.0, 150.0, 120.0, "line_drive", "Single");
+    BattedBall later = new BattedBall(102.4, 24.0, 403.0, 196.18, 65.51, "fly_ball", "Home Run");
+    repo.insertPitches(
+        new LiveGameFeed(
+            730L,
+            GameStatus.IN_PROGRESS,
+            date,
+            1,
+            1,
+            "BOS",
+            "NYY",
+            List.of(
+                livePitchWithBattedBall(730L, 1, 1, first),
+                livePitchWithBattedBall(730L, 4, 3, later)),
+            null));
+
+    RecentBattedBall found = repo.findMostRecentBattedBall(730L);
+    assertEquals("Home Run", found.event(), "the LATER at-bat is the most recent ball");
+    assertEquals(102.4, found.launchSpeedMph(), 1e-4);
+    assertEquals(4, found.atBatIndex());
+    assertEquals(3, found.pitchNumber());
+    assertNotNull(found.sprayAngleDeg(), "these coordinates derive an honest spray");
+  }
+
+  @Test
+  void ordersByPitchKeyNotIngestionTimeSoABackfillCannotSurfaceAStaleBall() throws Exception {
+    // The hazard the BIP backfill introduces. A ball in play seen mid-flight is RE-WRITTEN once its
+    // play completes, so its ingested_at is LATER than that of pitches thrown after it. Ordering
+    // by time would then surface an earlier at-bat as "most recent" whenever a backfill landed out
+    // of order - and it would do so only in live games, which is where it would be believed.
+    LocalDate date = LocalDate.of(2026, 8, 4);
+    BattedBall early = new BattedBall(88.1, 12.0, 210.0, 150.0, 120.0, "line_drive", "Single");
+    BattedBall late = new BattedBall(102.4, 24.0, 403.0, 196.18, 65.51, "fly_ball", "Home Run");
+    repo.insertPitches(
+        new LiveGameFeed(
+            731L,
+            GameStatus.IN_PROGRESS,
+            date,
+            1,
+            1,
+            "BOS",
+            "NYY",
+            List.of(livePitchWithBattedBall(731L, 6, 2, late)),
+            null));
+    Thread.sleep(1100); // ingested_at is DateTime (second resolution); force a strictly later stamp
+    repo.insertPitches(
+        new LiveGameFeed(
+            731L,
+            GameStatus.IN_PROGRESS,
+            date,
+            1,
+            1,
+            "BOS",
+            "NYY",
+            List.of(livePitchWithBattedBall(731L, 2, 1, early)),
+            null)); // EARLIER at-bat, later write
+
+    RecentBattedBall found = repo.findMostRecentBattedBall(731L);
+    assertEquals(
+        "Home Run",
+        found.event(),
+        "at-bat 6 is the most recent ball even though at-bat 2 was written afterwards");
+  }
+
+  @Test
+  void reportsNoBattedBallForAGameThatHasHadNone() throws Exception {
+    LocalDate date = LocalDate.of(2026, 8, 4);
+    repo.insertPitches(
+        new LiveGameFeed(
+            732L,
+            GameStatus.IN_PROGRESS,
+            date,
+            1,
+            1,
+            "BOS",
+            "NYY",
+            List.of(livePitch(732L, 1, 1, "R", "R", false, false, false)),
+            null));
+
+    assertNull(
+        repo.findMostRecentBattedBall(732L),
+        "a game with no completed ball in play has none - a normal early-innings state");
+  }
+
+  private void insertContactBall(
+      long gameId, LocalDate date, int atBat, long batterId, double hcX, double hcY, String stand)
+      throws Exception {
+    try (var conn = clickhouseDs.getConnection();
+        var stmt = conn.createStatement()) {
+      stmt.execute(
+          String.format(
+              Locale.ROOT,
+              "INSERT INTO pitches (game_id, game_date, at_bat_index, pitch_number, description,"
+                  + " batter_id, events, launch_speed_mph, launch_angle_deg, hit_distance_ft,"
+                  + " hc_x, hc_y, stand, p_throws)"
+                  + " VALUES (%d, '%s', %d, 1, 'in_play', %d, 'Single', 99.5, 20.0, 300.0,"
+                  + " %f, %f, '%s', 'R')",
+              gameId,
+              date,
+              atBat,
+              batterId,
+              hcX,
+              hcY,
+              stand));
+    }
+  }
+
+  private void insertPlayerOnTeam(long playerId, String team) throws Exception {
+    try (var conn = clickhouseDs.getConnection();
+        var stmt = conn.createStatement()) {
+      stmt.execute(
+          String.format(
+              Locale.ROOT,
+              "INSERT INTO players (id, name, bats, throws, active, team)"
+                  + " VALUES (%d, 'T', 'R', 'R', 1, '%s')",
+              playerId,
+              team));
+    }
+  }
+
+  @Test
+  void teamContactReturnsOnlyRealBallsWithDerivableSpray() throws Exception {
+    LocalDate date = LocalDate.of(2026, 7, 1);
+    insertPlayerOnTeam(910001L, "ZZT");
+    // Two honest balls hit into the field, and one tracked BEHIND the plate whose spray is
+    // degenerate. The degenerate one must be DROPPED, not fabricated to 0 - the profile is built
+    // only from balls where every model input is a real observation.
+    insertContactBall(940L, date, 1, 910001L, 196.18, 65.51, "R");
+    insertContactBall(940L, date, 2, 910001L, 150.15, 153.92, "L");
+    insertContactBall(940L, date, 3, 910001L, 111.4, 200.1, "R"); // behind the plate
+
+    List<TeamContactBall> balls = repo.findTeamContact("ZZT", LocalDate.of(2026, 1, 1), 50);
+
+    assertEquals(2, balls.size(), "the degenerate-spray ball is dropped, never defaulted");
+    for (TeamContactBall b : balls) {
+      assertTrue(Math.abs(b.sprayAngleDeg()) <= 45.0, "every spray sits inside the foul lines");
+      assertTrue("L".equals(b.stand()) || "R".equals(b.stand()));
+      assertTrue(b.launchSpeedMph() > 0);
+    }
+  }
+
+  @Test
+  void teamContactAttributesByTeamAndReportsNothingForAnUnknownOne() throws Exception {
+    LocalDate date = LocalDate.of(2026, 7, 2);
+    insertPlayerOnTeam(910002L, "ZZA");
+    insertContactBall(941L, date, 1, 910002L, 196.18, 65.51, "R");
+
+    assertEquals(1, repo.findTeamContact("ZZA", LocalDate.of(2026, 1, 1), 50).size());
+    assertTrue(
+        repo.findTeamContact("ZZB", LocalDate.of(2026, 1, 1), 50).isEmpty(),
+        "a team with no batters in the corpus profiles from nothing rather than from everything");
   }
 
   @Test
