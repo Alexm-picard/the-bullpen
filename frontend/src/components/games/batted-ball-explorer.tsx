@@ -2,15 +2,17 @@
  * <BattedBallExplorer> - the live game's batted-ball card + cross-park compare.
  * Shows a struck ball's Statcast line, then expands the LIVE batted-ball
  * champion's per-park heads: the same ball scored at every park, with the
- * estimated carry +/- error per park and the realized outcome.
+ * estimated carry per park and the realized outcome. The +/- band renders only when the DATA
+ * carries one - null on the live path, since the model reports no per-park uncertainty.
  *
  * The user curates which parks show (+ adds from a dropdown of the remaining
  * parks - the dropdown lists the team abbrev, NOT the result, so adding a park
  * is a reveal; x removes; the current park is pinned). The "N of 30" headline
  * stays full-model - it is NEVER recomputed from the displayed subset.
  *
- * Showcase data (batted-ball-fixtures) until a "score this BIP at N parks"
- * endpoint exists; the LIVE chip marks it as the promoted champion (vs the held
+ * Showcase data (batted-ball-fixtures) is the ILLUSTRATION path only: the game page now feeds this
+ * component a REAL batted ball scored across parks, so the fixture no longer appears there.
+ * The LIVE chip marks the promoted champion (vs the held
  * pitch heads - decision [154]/ADR-0011). Team color is not used here (park
  * rows are neutral); cond-format tones carry the outcome.
  */

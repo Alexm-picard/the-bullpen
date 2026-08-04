@@ -109,8 +109,9 @@ function tickerItems(pitches: LivePitchRow[]): string[] {
 // 1B/2B/3B/OUT: a park reads HR at/above HR_THRESHOLD, else "In play" (the ball
 // stays in the yard; the model makes no claim whether it's a hit or an out). The
 // actual realized result is the card's top-line `result` (from the live event).
-// hrParkCount uses the same HR_THRESHOLD so the headline and chips agree. err is a
-// fixed placeholder band because AllParksResponse carries no per-park uncertainty.
+// hrParkCount uses the same HR_THRESHOLD so the headline and chips agree. err is NULL on the live
+// path: AllParksResponse carries no per-park uncertainty, and printing a fixed band beside a real
+// carry would be an invented confidence interval read as the model's own precision.
 const HR_THRESHOLD = 0.5;
 
 function titleCaseFromSnake(value: string): string {
@@ -279,8 +280,8 @@ export function GamePage() {
   // (enabled below): POST /v1/predict/batted-ball/all-parks logs every request to
   // prediction_log (the drift-baseline source), so a throwaway prediction on a
   // pregame / between-BIP mount would pollute the drift baselines the Phase-6
-  // postmortem reads. When there is no BIP the req is a stable placeholder that is
-  // NEVER fetched (the gate is off); it only keeps the hook's arg typed.
+  // postmortem reads. When any required field is missing the request is NULL, so the query has no
+  // key at all - it neither fires nor reads a cache entry another page populated.
   const allParksReq = useMemo<AllParksRequest | null>(() => {
     if (
       inPlay == null ||
@@ -508,7 +509,17 @@ export function GamePage() {
             id="batted-ball-label"
             // Not "MODEL EXAMPLE" any more - there is no example. The fixture is retired, so
             // the un-live state is an absence of data, not a substitute for it.
-            meta={battedBallLive ? "LIVE BIP" : "AWAITING BIP"}
+            // Three-way, not two. "AWAITING BIP" above a caption that says "Scoring this batted
+            // ball..." asserts a known falsehood in the highest-contrast element of the section -
+            // the same defect the caption was just fixed for, one line up, and now contradicting
+            // the fix rather than merely agreeing with the old bug.
+            meta={
+              battedBallLive
+                ? "LIVE BIP"
+                : inPlay != null
+                  ? "SCORING"
+                  : "AWAITING BIP"
+            }
           >
             Batted-Ball Model
           </LowerThird>

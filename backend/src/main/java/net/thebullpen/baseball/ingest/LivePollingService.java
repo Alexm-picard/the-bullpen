@@ -83,19 +83,15 @@ public class LivePollingService {
   private final Map<Long, String> lastMatchupKey = new ConcurrentHashMap<>();
 
   /**
-   * Highest pitch cursor already written WITH batted-ball physics, per game.
+   * BIP cursors already written WITH batted-ball physics, per game.
    *
    * <p>This exists because {@link #writeNewPitches} writes each pitch EXACTLY ONCE - it filters on
    * {@code cursor(p) > since}, so a pitch never gets a second look. That is fine for pitch data,
    * which is complete when the pitch lands, but batted-ball physics is not: hitData populates while
-   * the play is still in flight and the parser declines it until the play completes. A ball in play
-   * first seen mid-flight would therefore keep empty physics for the rest of the game, and the live
-   * batted-ball card would stay empty for exactly the games it exists to serve.
+   * the play is still in flight and the parser declines it until the play completes.
    *
-   * <p>Tracking the MAX key rather than a set of keys is sound because at-bats are monotonic: a
-   * later BIP always has a higher cursor, so "greater than the highest already written" is
-   * equivalent to "not yet written" without unbounded growth per game. (Per-game map growth across
-   * a season is tracked in issue 399, which covers all of this class's per-game maps.)
+   * <p>See {@link #writtenSet} for why this is a SET rather than a high-water mark - the earlier
+   * version was a max, and the reasoning that justified it was wrong.
    */
   private final Map<Long, java.util.Set<Long>> battedBallWritten = new ConcurrentHashMap<>();
 
@@ -280,9 +276,16 @@ public class LivePollingService {
    * tracking. Per-game map growth across a season is issue 399, covering all of this class's maps.
    *
    * <p>ConcurrentHashMap.newKeySet + computeIfAbsent is the atomic idiom for the declared
-   * concurrent type: single-writer today under @Scheduled, correct if the poll loop is ever
-   * parallelized. A single-threaded test cannot exercise that, so a mutation to a plain HashSet
-   * reddening nothing is expected rather than evidence the choice is idle.
+   * concurrent type: single-writer today under @Scheduled. Precisely: it makes the CONTAINER safe,
+   * not the SEQUENCE - filter, insert, add is a check-then-act, so two threads on the same game
+   * could both insert (benign under the ReplacingMergeTree) and double-count the backfill counter.
+   * A single-threaded test cannot exercise any of that, so a mutation to a plain HashSet reddening
+   * nothing is expected rather than evidence the choice is idle.
+   *
+   * <p>SCOPE: this fixes "physics for ball X arrives after ball Y was already written". It does NOT
+   * re-apply a REVISED measurement for a ball already in the set - first physics wins, because
+   * membership is the whole test. A Statcast late correction to an already-stored ball is therefore
+   * out of scope here and lands via the overnight handoff into `pitches`.
    */
   private java.util.Set<Long> writtenSet(long gamePk) {
     return battedBallWritten.computeIfAbsent(gamePk, k -> ConcurrentHashMap.newKeySet());

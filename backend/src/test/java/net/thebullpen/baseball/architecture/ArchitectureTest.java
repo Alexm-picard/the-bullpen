@@ -29,13 +29,6 @@ import com.tngtech.archunit.library.freeze.FreezingArchRule;
 class ArchitectureTest {
 
   /**
-   * The persistence boundary, STRICT since C2. Repositories under {@code data/} must not depend on
-   * {@code api/dto} types. This started as a FROZEN rule with 41 baselined violations across 8
-   * repositories; C2 moved the 17 row/value records those repositories actually return into {@code
-   * domain/}, which drained the baseline to zero, so the rule is now enforced outright and carries
-   * no store entry. A new web-DTO reach-in from {@code data/} fails immediately.
-   */
-  /**
    * Decision [188] / ADR-0016, enforced STRUCTURALLY rather than by convention.
    *
    * <p>An internal aggregate evaluates the champion many times to produce ONE displayed number, so
@@ -70,6 +63,13 @@ class ArchitectureTest {
                   + " predictions - logging them redefines the population drift and promotion"
                   + " evidence measure");
 
+  /**
+   * The persistence boundary, STRICT since C2. Repositories under {@code data/} must not depend on
+   * {@code api/dto} types. This started as a FROZEN rule with 41 baselined violations across 8
+   * repositories; C2 moved the 17 row/value records those repositories actually return into {@code
+   * domain/}, which drained the baseline to zero, so the rule is now enforced outright and carries
+   * no store entry. A new web-DTO reach-in from {@code data/} fails immediately.
+   */
   @ArchTest
   static final ArchRule dataMustNotDependOnApiDtos =
       ArchRuleDefinition.noClasses()

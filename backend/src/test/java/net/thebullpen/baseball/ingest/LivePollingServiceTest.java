@@ -15,6 +15,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.LocalDate;
 import java.util.List;
@@ -234,12 +235,21 @@ class LivePollingServiceTest {
 
   private static LivePollingService service(
       MlbStatsApiClient client, LivePitchesRepository repo, LivePitchPredictor predictor) {
+    return service(client, repo, predictor, new SimpleMeterRegistry());
+  }
+
+  /** Overload exposing the registry, so a test can assert on the counters the poller writes. */
+  private static LivePollingService service(
+      MlbStatsApiClient client,
+      LivePitchesRepository repo,
+      LivePitchPredictor predictor,
+      MeterRegistry registry) {
     return new LivePollingService(
         client,
         repo,
         Optional.of(predictor),
         Optional.empty(),
-        new IngestMetrics(new SimpleMeterRegistry()),
+        new IngestMetrics(registry),
         heldLease(),
         pollerProps());
   }
@@ -760,7 +770,8 @@ class LivePollingServiceTest {
         .thenReturn(feed(List.of(pitch(1, 1)), nextPitch(1, 2))) // in flight: no physics yet
         .thenReturn(feed(List.of(bipPitch(1, 1, HOMER)), nextPitch(2, 1))); // play completed
 
-    LivePollingService svc = service(client, repo, predictor);
+    SimpleMeterRegistry registry = new SimpleMeterRegistry();
+    LivePollingService svc = service(client, repo, predictor, registry);
     svc.pollGame(822810L);
     svc.pollGame(822810L);
 
@@ -769,6 +780,17 @@ class LivePollingServiceTest {
     assertThat(captor.getAllValues().stream().flatMap(f -> f.pitches().stream()))
         .as("the completed batted ball must reach storage on the later poll")
         .anyMatch(pp -> pp.battedBall() != null && "Home Run".equals(pp.battedBall().event()));
+
+    // The backfill must NOT increment the pitches counter: that one is documented as "pitches
+    // written to pitches_live", and re-counting a re-write turns it into "row writes" - breaking
+    // the counter you would reach for to ask whether ingest had stalled. Without this assertion,
+    // putting incrementPitchesIngested back reds nothing.
+    assertThat(registry.counter(IngestMetrics.PITCHES_METRIC).count())
+        .as("one pitch was ingested, and the backfill re-write is not a second one")
+        .isEqualTo(1.0);
+    assertThat(registry.counter(IngestMetrics.BIP_BACKFILLS_METRIC).count())
+        .as("the backfill fired exactly once")
+        .isEqualTo(1.0);
   }
 
   @Test

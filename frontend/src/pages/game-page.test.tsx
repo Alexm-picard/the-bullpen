@@ -241,9 +241,11 @@ describe("GamePage (broadcast identity)", () => {
     client.setQueryData(["games", "pitches", GAME_ID], []);
 
     const html = render(<GamePage />, `/games/${GAME_ID}`, client);
+    // Assert on the ALWAYS-RENDERED header, not the park rows: those live behind "Compare across
+    // parks", so `not.toContain("460")` would have passed whatever the code did - the same collapse
+    // trap that made the first B3 pin vacuous, recurring in the test written to fix B1.
     expect(html).not.toContain("LIVE BIP");
-    expect(html).not.toContain("460"); // the other page's carry must not surface
-    expect(html).not.toMatch(/home run in \d+ of 30/i);
+    expect(visibleText(html)).toContain("withheld rather than estimated");
   });
 
   it("derives ONE band, so the sub-line and the distance metric cannot disagree", () => {
@@ -310,6 +312,50 @@ describe("GamePage (broadcast identity)", () => {
     // "Line drive" from two sources that can drift apart. Counting both is what pins the SHARING.
     expect(text.split("Line Drive").length - 1).toBe(2);
     expect(text).not.toMatch(/ground ball/i);
+  });
+
+  it("captions each unearned state as what it is, not as an absence of baseball", () => {
+    // The caption chain gained three states, none of them previously pinned - in a file whose own
+    // comment is titled "THE REGRESSION THIS FILE MISSED" about a caption that outlived its data.
+    const bb = {
+      batterId: 111,
+      atBatIndex: 4,
+      pitchNumber: 3,
+      ts: "2026-08-04T23:10:00Z",
+      event: "Single",
+      bbType: "line_drive",
+      launchSpeedMph: 96.2,
+      launchAngleDeg: 12,
+      hitDistanceFt: 212,
+      sprayAngleDeg: 12.1,
+      stand: "R",
+      baseState: 0,
+      parkId: "TOR",
+      outs: 1,
+    };
+    // In flight: the happy path. Every new ball re-keys the query, so this is what a viewer sees
+    // for the moment after contact - it must not say no ball has been put in play.
+    const c1 = seededClient();
+    c1.setQueryData(
+      ["games", "byId", GAME_ID],
+      makeGame({ mostRecentBattedBall: bb }),
+    );
+    c1.setQueryData(["games", "pitches", GAME_ID], []);
+    const inFlight = visibleText(render(<GamePage />, `/games/${GAME_ID}`, c1));
+    expect(inFlight).toContain("Scoring this batted ball");
+    expect(inFlight).not.toContain("No ball has been put in play");
+    expect(inFlight).toContain("SCORING"); // the chip must not say AWAITING either
+
+    // Withheld: spray declined, so the comparison is refused rather than estimated.
+    const c2 = seededClient();
+    c2.setQueryData(
+      ["games", "byId", GAME_ID],
+      makeGame({ mostRecentBattedBall: { ...bb, sprayAngleDeg: null } }),
+    );
+    c2.setQueryData(["games", "pitches", GAME_ID], []);
+    const withheld = visibleText(render(<GamePage />, `/games/${GAME_ID}`, c2));
+    expect(withheld).toContain("withheld rather than estimated");
+    expect(withheld).not.toContain("No ball has been put in play");
   });
 
   it("never promises a static example it no longer renders", () => {

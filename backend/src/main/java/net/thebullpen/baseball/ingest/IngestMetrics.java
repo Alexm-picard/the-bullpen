@@ -35,9 +35,12 @@ public class IngestMetrics {
   static final String ANOMALY_METRIC = "bullpen_ingest_parse_anomalies_total";
   static final String POST_TIER4_INCOMPLETE_METRIC = "bullpen_ingest_post_tier4_incomplete_total";
 
+  static final String BIP_BACKFILLS_METRIC = "bullpen_ingest_bip_backfills_total";
+
   private final MeterRegistry registry;
   private final AtomicLong lastPollEpochSeconds = new AtomicLong(0);
   private final Counter pitchesIngested;
+  private final Counter bipBackfills;
   private final Counter postTier4Incomplete;
   private final ConcurrentHashMap<String, Counter> anomalies = new ConcurrentHashMap<>();
 
@@ -49,6 +52,14 @@ public class IngestMetrics {
     this.pitchesIngested =
         Counter.builder(PITCHES_METRIC)
             .description("Pitches written to pitches_live by the live poller")
+            .register(registry);
+    // Registered EAGERLY, like every other meter here. A lazily-created counter does not exist
+    // until it first increments, so it scrapes as ABSENT rather than 0 - and a counter whose whole
+    // purpose is "the only way to see the backfill fire in prod" is exactly the one you need to
+    // read as a hard zero before the first ball in play.
+    this.bipBackfills =
+        Counter.builder(BIP_BACKFILLS_METRIC)
+            .description("Balls in play re-written by the backfill once their play completed")
             .register(registry);
     this.postTier4Incomplete =
         Counter.builder(POST_TIER4_INCOMPLETE_METRIC)
@@ -73,7 +84,7 @@ public class IngestMetrics {
    * the backfill fire in production at all.
    */
   public void incrementBipBackfills(long count) {
-    registry.counter("bullpen_ingest_bip_backfills_total").increment(count);
+    bipBackfills.increment(count);
   }
 
   public void incrementPitchesIngested(int count) {
