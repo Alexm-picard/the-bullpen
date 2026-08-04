@@ -19,6 +19,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import javax.sql.DataSource;
+import net.thebullpen.baseball.domain.BattedBall;
 import net.thebullpen.baseball.domain.CurrentMatchup;
 import net.thebullpen.baseball.domain.GameStatus;
 import net.thebullpen.baseball.domain.GameSummary;
@@ -71,13 +72,27 @@ public class LivePitchesRepository {
           // pre-V028 row - unknown occupancy, never a false bases-empty 0).
           + " pl.pitch_hand AS pitch_hand, pl.bat_side AS bat_side, pl.base_state AS base_state,"
           + " pl.home_team AS park_id,"
-          // Realized batted-ball outcome (Phase 1.2). pitches_live carries no such columns (the
-          // live feed is pre-Statcast), so LEFT JOIN the canonical pitches table (V003) on the
-          // natural pitch key. Null on non-in-play pitches and on any pitch the overnight handoff
-          // job has not yet moved into pitches (the LEFT JOIN miss); the mapper maps '' -> null for
-          // the LowCardinality(String) columns.
-          + " ph.launch_speed_mph AS launch_speed_mph, ph.launch_angle_deg AS launch_angle_deg,"
-          + " ph.hit_distance_ft AS hit_distance_ft, ph.bb_type AS bb_type, ph.events AS events,"
+          // Realized batted-ball outcome. TWO sources, live preferred:
+          //
+          //   pitches_live (V032) - populated during the game, the moment a play completes. This
+          //     is what makes the card work for a game in progress, which is the whole point.
+          //   pitches (V003)      - the canonical table, populated by the overnight handoff. Still
+          //     needed: it is the ONLY source for a game whose live rows have aged past the
+          //     14-day TTL, and for anything ingested before V032 shipped.
+          //
+          // The live side is gated on its GROUP-level presence predicate, not on any single
+          // column, because 0 is a real launch angle and 1 ft a real distance - only
+          // launch_speed_mph and events can carry absence (see V032's header). A live row that
+          // fails the predicate falls through to the historical value rather than masking it with
+          // a sentinel, so an old backfilled game reads exactly as it did before this change.
+          + " if(pl.launch_speed_mph > 0 AND pl.events != '', pl.launch_speed_mph,"
+          + "    ph.launch_speed_mph) AS launch_speed_mph,"
+          + " if(pl.launch_speed_mph > 0 AND pl.events != '', pl.launch_angle_deg,"
+          + "    ph.launch_angle_deg) AS launch_angle_deg,"
+          + " if(pl.launch_speed_mph > 0 AND pl.events != '', pl.hit_distance_ft,"
+          + "    ph.hit_distance_ft) AS hit_distance_ft,"
+          + " if(pl.launch_speed_mph > 0 AND pl.events != '', pl.bb_type, ph.bb_type) AS bb_type,"
+          + " if(pl.launch_speed_mph > 0 AND pl.events != '', pl.events, ph.events) AS events,"
           + " pred.prediction AS prediction_json"
           + " FROM pitches_live AS pl FINAL"
           // One champion prediction per pitch: predict-next re-logs the same upcoming pitch on
@@ -305,8 +320,13 @@ public class LivePitchesRepository {
           + " balls, strikes, outs, inning, home_score, away_score, home_team, away_team,"
           + " pfx_x_in, pfx_z_in, spin_rate_rpm, spin_axis_deg, release_pos_x_in, release_pos_z_in,"
           // A5 (V028): the pre-pitch context the frontend forwards into the A6 next-pitch request.
-          + " pitch_hand, bat_side, base_state)"
-          + " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+          + " pitch_hand, bat_side, base_state,"
+          // V032: the measured physics of a COMPLETED ball in play. Non-Nullable with sentinels,
+          // and absence is decided at the GROUP level (launch_speed_mph > 0 AND events != '')
+          // rather than per column - 0 is a real launch angle, 1 ft a real distance, and 0,0 a
+          // coordinate origin, so none of those three can carry absence on its own.
+          + " launch_speed_mph, launch_angle_deg, hit_distance_ft, hc_x, hc_y, bb_type, events)"
+          + " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
 
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -375,6 +395,17 @@ public class LivePitchesRepository {
             ps.setString(26, p.pitchHand() == null ? "" : p.pitchHand());
             ps.setString(27, p.batSide() == null ? "" : p.batSide());
             ps.setInt(28, p.baseState());
+            // A null BattedBall writes the sentinels across the whole group, never a partial row:
+            // the record's own contract is that it is entirely real or entirely absent, and the
+            // storage shape has to preserve that or a read could see physics without a result.
+            BattedBall bb = p.battedBall();
+            ps.setDouble(29, bb == null ? 0d : bb.launchSpeedMph());
+            ps.setDouble(30, bb == null ? 0d : bb.launchAngleDeg());
+            ps.setDouble(31, bb == null ? 0d : bb.hitDistanceFt());
+            ps.setDouble(32, bb == null ? 0d : bb.hcX());
+            ps.setDouble(33, bb == null ? 0d : bb.hcY());
+            ps.setString(34, bb == null ? "" : bb.bbType());
+            ps.setString(35, bb == null ? "" : bb.event());
           }
 
           @Override
