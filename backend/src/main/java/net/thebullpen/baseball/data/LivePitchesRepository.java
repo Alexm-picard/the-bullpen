@@ -30,6 +30,7 @@ import net.thebullpen.baseball.domain.PagedRows;
 import net.thebullpen.baseball.domain.PostPredictionRow;
 import net.thebullpen.baseball.domain.RecentBattedBall;
 import net.thebullpen.baseball.domain.ScheduledGame;
+import net.thebullpen.baseball.domain.TeamContactBall;
 import net.thebullpen.baseball.ingest.LiveGameFeed;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -662,6 +663,71 @@ public class LivePitchesRepository {
             },
             gameId);
     return hits.isEmpty() ? null : hits.get(0);
+  }
+
+  /**
+   * A team's most recent REAL balls in play, season-to-date.
+   *
+   * <p>Team attribution is via {@code players.team}, which is CURRENT team rather than
+   * team-at-time-of-contact, so a mid-season trade misattributes that batter's earlier balls.
+   * Acceptable for a season profile and stated in the card's copy; it would not be acceptable for
+   * anything the model is promoted on.
+   *
+   * <p>Ordered newest-first and capped, so this is "recent contact" rather than a full-season scan.
+   * Rows lacking any measurement are excluded here rather than defaulted, and rows whose spray
+   * cannot be honestly derived are dropped in the mapper - the profile is built only from balls
+   * where every model input is a real observation.
+   */
+  private static final String FIND_TEAM_CONTACT =
+      "SELECT p.launch_speed_mph AS launch_speed_mph, p.launch_angle_deg AS launch_angle_deg,"
+          + " p.hit_distance_ft AS hit_distance_ft, p.hc_x AS hc_x, p.hc_y AS hc_y,"
+          + " p.stand AS stand, p.p_throws AS p_throws"
+          + " FROM pitches AS p"
+          + " INNER JOIN ("
+          + "   SELECT id AS player_id, argMax(team, updated_at) AS team"
+          + "   FROM players GROUP BY id"
+          + " ) AS pl ON pl.player_id = p.batter_id"
+          + " WHERE pl.team = ? AND p.game_date >= ?"
+          + "   AND p.launch_speed_mph > 0 AND p.launch_angle_deg IS NOT NULL"
+          + "   AND p.hit_distance_ft IS NOT NULL AND p.hc_x IS NOT NULL AND p.hc_y IS NOT NULL"
+          + " ORDER BY p.game_date DESC, p.game_id DESC, p.at_bat_index DESC"
+          + " LIMIT ?";
+
+  /**
+   * Recent real batted balls for a team, for the pre-first-pitch comparison.
+   *
+   * <p>Returns fewer than {@code limit} when spray declines on some rows; that is intended, and the
+   * caller reports the surviving n rather than padding.
+   */
+  public List<TeamContactBall> findTeamContact(String team, LocalDate from, int limit) {
+    List<TeamContactBall> rows =
+        jdbc.query(
+            FIND_TEAM_CONTACT,
+            (ResultSet rs, int n) -> {
+              OptionalDouble spray =
+                  BattedBall.sprayAngleDeg(rs.getDouble("hc_x"), rs.getDouble("hc_y"));
+              if (spray.isEmpty()) {
+                return null; // degenerate geometry - dropped below rather than fabricated
+              }
+              String stand = rs.getString("stand").trim();
+              String throws_ = rs.getString("p_throws").trim();
+              if ("S".equals(stand)) {
+                stand = "R".equals(throws_) ? "L" : "L".equals(throws_) ? "R" : "";
+              }
+              if (!"L".equals(stand) && !"R".equals(stand)) {
+                return null; // the model requires L|R; an unresolvable side is not guessed
+              }
+              return new TeamContactBall(
+                  rs.getDouble("launch_speed_mph"),
+                  rs.getDouble("launch_angle_deg"),
+                  rs.getDouble("hit_distance_ft"),
+                  spray.getAsDouble(),
+                  stand);
+            },
+            team,
+            from.toString(),
+            limit);
+    return rows.stream().filter(java.util.Objects::nonNull).toList();
   }
 
   private static final RowMapper<GameSummary> GAME_SUMMARY_MAPPER =

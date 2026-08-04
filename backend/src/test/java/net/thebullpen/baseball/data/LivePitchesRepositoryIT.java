@@ -25,6 +25,7 @@ import net.thebullpen.baseball.domain.PagedRows;
 import net.thebullpen.baseball.domain.PostPredictionRow;
 import net.thebullpen.baseball.domain.RecentBattedBall;
 import net.thebullpen.baseball.domain.ScheduledGame;
+import net.thebullpen.baseball.domain.TeamContactBall;
 import net.thebullpen.baseball.ingest.LiveGameFeed;
 import net.thebullpen.baseball.ingest.MlbFeedParser;
 import org.junit.jupiter.api.BeforeEach;
@@ -1000,6 +1001,75 @@ class LivePitchesRepositoryIT {
     assertNull(
         repo.findMostRecentBattedBall(732L),
         "a game with no completed ball in play has none - a normal early-innings state");
+  }
+
+  private void insertContactBall(
+      long gameId, LocalDate date, int atBat, long batterId, double hcX, double hcY, String stand)
+      throws Exception {
+    try (var conn = clickhouseDs.getConnection();
+        var stmt = conn.createStatement()) {
+      stmt.execute(
+          String.format(
+              Locale.ROOT,
+              "INSERT INTO pitches (game_id, game_date, at_bat_index, pitch_number, description,"
+                  + " batter_id, events, launch_speed_mph, launch_angle_deg, hit_distance_ft,"
+                  + " hc_x, hc_y, stand, p_throws)"
+                  + " VALUES (%d, '%s', %d, 1, 'in_play', %d, 'Single', 99.5, 20.0, 300.0,"
+                  + " %f, %f, '%s', 'R')",
+              gameId,
+              date,
+              atBat,
+              batterId,
+              hcX,
+              hcY,
+              stand));
+    }
+  }
+
+  private void insertPlayerOnTeam(long playerId, String team) throws Exception {
+    try (var conn = clickhouseDs.getConnection();
+        var stmt = conn.createStatement()) {
+      stmt.execute(
+          String.format(
+              Locale.ROOT,
+              "INSERT INTO players (id, name, bats, throws, active, team)"
+                  + " VALUES (%d, 'T', 'R', 'R', 1, '%s')",
+              playerId,
+              team));
+    }
+  }
+
+  @Test
+  void teamContactReturnsOnlyRealBallsWithDerivableSpray() throws Exception {
+    LocalDate date = LocalDate.of(2026, 7, 1);
+    insertPlayerOnTeam(910001L, "ZZT");
+    // Two honest balls hit into the field, and one tracked BEHIND the plate whose spray is
+    // degenerate. The degenerate one must be DROPPED, not fabricated to 0 - the profile is built
+    // only from balls where every model input is a real observation.
+    insertContactBall(940L, date, 1, 910001L, 196.18, 65.51, "R");
+    insertContactBall(940L, date, 2, 910001L, 150.15, 153.92, "L");
+    insertContactBall(940L, date, 3, 910001L, 111.4, 200.1, "R"); // behind the plate
+
+    List<TeamContactBall> balls = repo.findTeamContact("ZZT", LocalDate.of(2026, 1, 1), 50);
+
+    assertEquals(2, balls.size(), "the degenerate-spray ball is dropped, never defaulted");
+    for (TeamContactBall b : balls) {
+      assertTrue(Math.abs(b.sprayAngleDeg()) <= 45.0, "every spray sits inside the foul lines");
+      assertTrue("L".equals(b.stand()) || "R".equals(b.stand()));
+      assertTrue(b.launchSpeedMph() > 0);
+    }
+  }
+
+  @Test
+  void teamContactAttributesByTeamAndReportsNothingForAnUnknownOne() throws Exception {
+    LocalDate date = LocalDate.of(2026, 7, 2);
+    insertPlayerOnTeam(910002L, "ZZA");
+    insertContactBall(941L, date, 1, 910002L, 196.18, 65.51, "R");
+
+    assertEquals(1, repo.findTeamContact("ZZA", LocalDate.of(2026, 1, 1), 50).size());
+    assertTrue(
+        repo.findTeamContact("ZZB", LocalDate.of(2026, 1, 1), 50).isEmpty(),
+        "a team with no batters in the corpus profiles from nothing rather than from everything");
   }
 
   @Test
