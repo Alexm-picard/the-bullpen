@@ -66,4 +66,17 @@ describe("ParksPage", () => {
     const html = render(<ParksPage />);
     expect(html).toContain(BUILD_SHA);
   });
+
+  it("labels spray direction ABSOLUTELY, since pull and oppo swap with handedness", () => {
+    // The label read "- pull / + oppo", which is batter-relative and therefore only correct for a
+    // LEFT-handed batter - while this page defaults stand to "R", so the default view was exactly
+    // backwards. Training's convention is absolute (+ toward 3B/LF) and the feature pipeline passes
+    // spray through unmodified, so the axis has one true description and it is not handedness
+    // dependent. Nothing pinned this copy before, which is how it stayed wrong.
+    const html = render(<ParksPage />);
+    expect(html).toContain("toward LF");
+    expect(html).toContain("toward RF");
+    expect(html).not.toMatch(/pull/i);
+    expect(html).not.toMatch(/oppo/i);
+  });
 });
