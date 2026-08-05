@@ -21,6 +21,14 @@ import java.util.OptionalDouble;
  * normal in-flight state that never reaches storage, instead of a shape every downstream consumer
  * has to defend against.
  *
+ * <p>CROSS-LANGUAGE CONTRACT: {@link #sprayAngleDeg(double, double)} must agree with training's
+ * {@code battedball/features_shared.py:hc_to_spray_deg} in BOTH constants and SIGN. The served
+ * model was trained on that function's output and the Java feature pipeline passes the value
+ * through unmodified, so a divergence here is not a rounding difference - it is a different
+ * feature. Nothing in Java can detect it: javac, ArchUnit and every backend test see a
+ * self-consistent record, because the contradiction only exists across the language boundary.
+ * {@code BattedBallSprayParityTest} is what closes that, pinned to values computed BY the Python.
+ *
  * <p>Pure record ({@code domain/} purity, ArchUnit-enforced): no Jackson, no Swagger annotations.
  *
  * @param launchSpeedMph exit velocity off the bat, mph. Always &gt; 0 - a batted ball is never 0
@@ -54,10 +62,17 @@ public record BattedBall(
     String bbType,
     String event) {
 
-  /** Home plate in feed coordinate space; y increases TOWARD the plate. */
+  /**
+   * Home plate in Statcast's scaled hc_x/hc_y space, y increasing TOWARD the plate.
+   *
+   * <p>These are the PUBLISHED Statcast coordinates, and they are the same two numbers training
+   * uses in {@code battedball/features_shared.py:hc_to_spray_deg} - which is the only reason they
+   * are correct. An earlier version of this class used 199.53 for the y constant, a number that
+   * appears nowhere in training, in {@code contracts/}, or anywhere else in this repository.
+   */
   private static final double PLATE_X = 125.42;
 
-  private static final double PLATE_Y = 199.53;
+  private static final double PLATE_Y = 198.27;
 
   /** Fair territory: the foul lines sit at 45 degrees either side of dead centre. */
   private static final double FOUL_LINE_DEG = 45.0;
@@ -123,7 +138,13 @@ public record BattedBall(
     if (towardOutfield <= 0) {
       return OptionalDouble.empty();
     }
-    double deg = Math.toDegrees(Math.atan2(hcX - PLATE_X, towardOutfield));
+    // SIGN AND CONSTANTS MUST MATCH TRAINING EXACTLY (features_shared.hc_to_spray_deg): positive
+    // is toward 3B / LEFT FIELD, so it is PLATE_X - hcX, not hcX - PLATE_X. The inverted form
+    // shipped briefly and fed the served model the opposite field on every live batted ball -
+    // which corrupts precisely what a PER-PARK comparison is for, since park asymmetry is the
+    // whole signal. FeaturePipelineBattedBall passes spray_angle_deg straight through, so
+    // whatever is produced here reaches the model unmodified.
+    double deg = Math.toDegrees(Math.atan2(PLATE_X - hcX, towardOutfield));
     return Math.abs(deg) > FOUL_LINE_DEG ? OptionalDouble.empty() : OptionalDouble.of(deg);
   }
 }

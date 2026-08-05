@@ -25,7 +25,10 @@ class BattedBallTest {
   @Test
   void derivesSprayForBallsHitIntoTheField() {
     // Observed home runs. Signs matter: negative is toward the left-field line.
-    assertThat(at(196.18, 65.51).sprayAngleDeg().orElseThrow()).isCloseTo(27.8, within(0.2));
+    // NEGATIVE: training's convention is positive toward 3B/left field, so a ball to right field
+    // is negative. The shipped version had this at +27.8 - the sign inversion, pinned by a test
+    // that agreed with the implementation instead of with training.
+    assertThat(at(196.18, 65.51).sprayAngleDeg().orElseThrow()).isCloseTo(-28.057, within(0.01));
     // Every derived angle must sit inside fair territory - the invariant the sample was checked
     // against.
     for (double[] xy :
@@ -37,12 +40,12 @@ class BattedBallTest {
   @Test
   void declinesWhenTheBallWasTrackedAtOrBehindThePlate() {
     // GATE 1 (cause). Real rows: a bunt pop out and a pop out, both tracked past the plate's y of
-    // 199.53, where the denominator crosses zero and atan2 flips quadrant. Unguarded these produce
+    // 198.27, where the denominator crosses zero and atan2 flips quadrant. Unguarded these produce
     // -92.4 and +102.1 - numbers that would render on the card as though measured.
     assertThat(at(111.4, 200.1).sprayAngleDeg()).isEmpty();
     assertThat(at(139.2, 202.5).sprayAngleDeg()).isEmpty();
     // Exactly at the plate depth is degenerate too, not a 90-degree spray.
-    assertThat(at(150.0, 199.53).sprayAngleDeg()).isEmpty();
+    assertThat(at(150.0, 198.27).sprayAngleDeg()).isEmpty();
   }
 
   @Test
@@ -55,7 +58,11 @@ class BattedBallTest {
     // dead centre and INSIDE fair territory. Without the cause-gate a total tracking failure whose
     // coordinates defaulted to the plate would emerge as a confident 0-degree spray: a fabricated
     // measurement nothing downstream could distinguish from a real one.
-    assertThat(at(125.42, 199.53).sprayAngleDeg()).isEmpty();
+    // The plate is (125.42, 198.27) - the PUBLISHED Statcast constants, the ones training uses.
+    // This assertion previously used 199.53 and kept passing after the constant was corrected,
+    // because that point is now BEHIND the plate and the invariant gate rejects it - so it would
+    // have gone on testing the wrong gate under the name of the right one.
+    assertThat(at(125.42, 198.27).sprayAngleDeg()).isEmpty();
   }
 
   @Test
