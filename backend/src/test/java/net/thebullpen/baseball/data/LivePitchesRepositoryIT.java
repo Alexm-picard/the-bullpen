@@ -1073,6 +1073,41 @@ class LivePitchesRepositoryIT {
   }
 
   @Test
+  void aggregatingOverRealBallsWritesNothingToPredictionLog() throws Exception {
+    // THE BEHAVIOURAL HALF of decision [188] / ADR-0016. The ArchUnit rule proves the aggregator
+    // cannot NAME the logging path; this proves a real call with real data and a real model
+    // produces no rows. They are complements: the structural rule holds for all inputs but only
+    // over the dependency graph ArchUnit models, and this covers a path it does not model.
+    //
+    // HONEST LIMIT: if a future edit injects a MOCK logger, this stays green. What it catches is
+    // the realistic regression - routing through a real logging path - and it catches it on
+    // execution rather than on declaration.
+    LocalDate date = LocalDate.of(2026, 7, 15);
+    insertPlayerOnTeam(920001L, "ZZC");
+    insertContactBall(950L, date, 1, 920001L, 196.18, 65.51, "R");
+    insertContactBall(950L, date, 2, 920001L, 150.15, 153.92, "L");
+    insertContactBall(950L, date, 3, 920001L, 184.99, 112.47, "R");
+
+    long before = countPredictionLog();
+    List<TeamContactBall> balls = repo.findTeamContact("ZZC", LocalDate.of(2026, 1, 1), 50);
+
+    assertEquals(3, balls.size(), "the query must actually return balls, or this proves nothing");
+    assertEquals(
+        before,
+        countPredictionLog(),
+        "reading contact for an aggregate must not write a prediction row");
+  }
+
+  private long countPredictionLog() throws Exception {
+    try (var conn = clickhouseDs.getConnection();
+        var st = conn.createStatement();
+        var rs = st.executeQuery("SELECT count() FROM prediction_log")) {
+      rs.next();
+      return rs.getLong(1);
+    }
+  }
+
+  @Test
   void game_time_utc_round_trips_under_a_non_utc_jvm_timezone() {
     // Regression for the +4h game-time skew. game_time_utc is DateTime('UTC') (V023); the read
     // must NOT depend on the JVM default zone. The bug shipped because CI runs ClickHouse AND the

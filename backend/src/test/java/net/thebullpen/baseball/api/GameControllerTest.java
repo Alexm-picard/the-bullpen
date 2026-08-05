@@ -27,13 +27,15 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 class GameControllerTest {
 
   private LivePitchesRepository repo;
+  private TeamContactAggregator aggregator;
   private MockMvc mvc;
 
   @BeforeEach
   void setup() {
     repo = mock(LivePitchesRepository.class);
+    aggregator = mock(TeamContactAggregator.class);
     mvc =
-        MockMvcBuilders.standaloneSetup(new GameController(repo))
+        MockMvcBuilders.standaloneSetup(new GameController(repo, aggregator))
             .setControllerAdvice(new ApiErrorAdvice())
             .build();
   }
