@@ -113,6 +113,19 @@ test("games slate renders a row and its numeric link opens the live game page", 
       body: JSON.stringify(SLATE_GAME),
     }),
   );
+  await page.route("**/v1/games/745804/team-contact", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        homeTeam: "TOR",
+        home: null,
+        awayTeam: "BOS",
+        away: null,
+        since: "2026-01-01",
+      }),
+    }),
+  );
   await page.route("**/v1/games/745804/pitches*", (route) =>
     route.fulfill({
       status: 200,

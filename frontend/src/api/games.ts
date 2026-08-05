@@ -647,6 +647,58 @@ export function pitchTypeRequest(
   };
 }
 
+// ── the pre-first-pitch team comparison (decision [188]: aggregated, never logged) ───────────────
+
+/** One team's season-to-date contact, scored at this game's park. Null when unprofileable. */
+export type TeamHrProfile = {
+  team: string;
+  parkId: string;
+  meanHrProbability: number;
+  /** Balls behind the mean. A mean over 8 and a mean over 800 are not comparable. */
+  n: number;
+  modelVersion: string;
+};
+
+export type TeamContactResponse = {
+  homeTeam: string;
+  home: TeamHrProfile | null;
+  awayTeam: string;
+  away: TeamHrProfile | null;
+  /** Start of the window the profiles cover - the card says so rather than implying "this game". */
+  since: string;
+};
+
+/**
+ * Season-to-date contact comparison, for the state where no ball has been put in play yet.
+ *
+ * <p>GATED like every other prediction-adjacent call, but for a different reason: this one writes
+ * NOTHING to prediction_log by design (decision [188] - hundreds of evaluations collapse into two
+ * displayed numbers, so the individuals are intermediates). The gate here is about COST, not
+ * pollution: it is a season-wide scan plus N inferences per team, so it fires only when the card
+ * has no batted ball to show.
+ */
+export function useTeamContact(
+  gameId: number | null,
+  opts: { enabled: boolean },
+) {
+  return useQuery<TeamContactResponse, GameApiError>({
+    queryKey: ["games", "team-contact", gameId],
+    staleTime: 10 * 60_000, // the window is season-to-date; it does not move during a game
+    retry: false,
+    enabled: opts.enabled && gameId != null,
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/v1/games/${gameId}/team-contact`);
+      if (!res.ok) {
+        throw new GameApiError(
+          res.status,
+          `team contact failed: HTTP ${res.status}`,
+        );
+      }
+      return (await res.json()) as TeamContactResponse;
+    },
+  });
+}
+
 export async function predictPitch(
   req: PitchPredictionRequest,
   head: "pre" = "pre",
