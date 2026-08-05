@@ -12,6 +12,7 @@ import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 
 import { BUILD_SHA } from "../build-info";
+import { OBSERVED_HOME_RUN_SPRAY_MAX_DEG, SPRAY_LIMIT_DEG } from "../api/parks";
 import { PARK_ROWS } from "../data/parks-fixtures";
 import { theme } from "../design/theme";
 
@@ -78,5 +79,15 @@ describe("ParksPage", () => {
     expect(html).toContain("toward RF");
     expect(html).not.toMatch(/pull/i);
     expect(html).not.toMatch(/oppo/i);
+  });
+
+  it("lets the user reach the sprays the model was trained on", () => {
+    // The input was clamped to plus/minus 45, which excluded ~9.8% of the training corpus and 195
+    // home runs (max 52.7 degrees). A control for exploring spray that cannot reach the model's
+    // domain is a worse defect than the label that described it wrongly.
+    // Pinned to the EMPIRICAL bound, not to itself: the limit must admit the widest spray ever
+    // observed on a home run. Asserting SPRAY_LIMIT_DEG === 90 would only prove the constant equals
+    // the constant.
+    expect(SPRAY_LIMIT_DEG).toBeGreaterThan(OBSERVED_HOME_RUN_SPRAY_MAX_DEG);
   });
 });

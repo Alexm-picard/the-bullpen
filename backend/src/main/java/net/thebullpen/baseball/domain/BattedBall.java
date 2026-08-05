@@ -74,9 +74,6 @@ public record BattedBall(
 
   private static final double PLATE_Y = 198.27;
 
-  /** Fair territory: the foul lines sit at 45 degrees either side of dead centre. */
-  private static final double FOUL_LINE_DEG = 45.0;
-
   /**
    * Spray angle in degrees - negative toward the left-field line, positive toward right - or EMPTY
    * when the landing coordinates cannot yield an honest one.
@@ -89,35 +86,33 @@ public record BattedBall(
    * the foul line would be worse still - it renders as a real measurement that nothing downstream
    * can distinguish from one.
    *
-   * <p>TWO INDEPENDENT GATES, deliberately not redundant:
+   * <p>ONE GATE, and it is about GEOMETRY rather than about where the field ends.
    *
-   * <ol>
-   *   <li>CAUSE - {@code PLATE_Y - hcY <= 0} means the ball was tracked at or BEHIND the plate, so
-   *       the denominator has crossed zero. Bunts, choppers and pop-ups fielded near the plate land
-   *       here. For almost all of them this gate is SUBSUMED by the invariant below, because a
-   *       non-positive denominator drives {@code atan2} to {@code |angle| >= 90}. Its one
-   *       load-bearing input is the ORIGIN: at {@code dx == 0 && dy == 0} Java defines {@code
-   *       atan2(0, 0) == 0.0}, which is dead centre and INSIDE fair territory - so a total tracking
-   *       failure whose coordinates defaulted to the plate would otherwise emerge as a confident
-   *       0-degree spray. That single case is why this is a gate and not a comment.
-   *   <li>INVARIANT - a fair ball must lie inside the foul lines. This is a PHYSICAL constraint the
-   *       formula must satisfy, not a restatement of the math, so it catches degeneracies that have
-   *       not been characterised yet. It already earns its place: a line drive tracked at (37.5,
-   *       113.8) - far from the plate, so the cause-gate passes it - comes out at -45.7 degrees,
-   *       just outside the line through coordinate rounding near the corner.
-   * </ol>
+   * <p>{@code PLATE_Y - hcY <= 0} means the ball was tracked at or BEHIND the plate, so the
+   * denominator has crossed zero. That is the only place the derivation stops meaning anything:
+   * atan2 flips quadrant, and at the ORIGIN exactly, Java defines {@code atan2(0, 0) == 0.0} - a
+   * confident dead-centre reading for what is actually a total tracking failure. Bunts, choppers
+   * and pop-ups fielded at the plate land here.
    *
-   * <p>Each gate is pinned by a test that reds when only that gate is removed; the pairing was
-   * VERIFIED rather than asserted, which is how the origin case was found at all.
+   * <p>A SECOND GATE WAS REMOVED, and the reason matters more than the gate did. It rejected any
+   * result outside plus/minus 45 degrees, justified as "a fair ball must lie inside the foul
+   * lines". That is false in this coordinate system: hc_x/hc_y is a scorecard PROJECTION whose
+   * 45-degree box does not coincide with the physical foul lines. MLB's own data settles it -
+   * across 3,823 home runs in 2026, which are fair BY DEFINITION and so bound fair territory from
+   * below, p99 is 47.3 degrees, p99.9 is 49.8, the max is 52.7, and 195 of them (5.1%) sit outside
+   * the box. The gate was declining one home run in twenty on a card built to compare home-run
+   * probability across parks.
    *
-   * <p>Measured cost of declining, over 187 balls in play: 7.5% overall, but only 2.2% at 150+ ft
-   * and the single meaningful case a 121 ft pop-up. On every ball that could plausibly be compared
-   * across parks for home-run outcome, spray is reliable - so graceful degradation costs almost
-   * nothing on the cases this feature exists to serve.
+   * <p>It was not replaced with a wider angle. 53 degrees would be a less-wrong invented number
+   * with no source, still clipping the tail. And the model has SEEN the full range: about 9.8% of
+   * the training corpus falls outside plus/minus 45, so a steep foul pop-up is in-domain rather
+   * than extrapolation. Where a value is real but unusual, calibration is the model's job, not ours
+   * to pre-empt by refusing to ask.
    *
-   * <p>This is the raw geometric angle. Pull-versus-opposite-field is the CALLER's concern: a
-   * left-handed batter's pull side is the same physical direction as a right-hander's opposite
-   * field, so a consumer that cares must fold in {@code stand} rather than assume.
+   * <p>The storage-sentinel case that the removed gate never caught anyway - {@code (0,0)}, which
+   * derives to +32.32 degrees, comfortably inside any such box - is handled where it belongs, at
+   * the repository read (see {@code LivePitchesRepository.sprayAngleOrNull}). Removing the angle
+   * gate makes that check strictly MORE load-bearing, not less.
    */
   public OptionalDouble sprayAngleDeg() {
     return sprayAngleDeg(hcX, hcY);
@@ -144,7 +139,6 @@ public record BattedBall(
     // which corrupts precisely what a PER-PARK comparison is for, since park asymmetry is the
     // whole signal. FeaturePipelineBattedBall passes spray_angle_deg straight through, so
     // whatever is produced here reaches the model unmodified.
-    double deg = Math.toDegrees(Math.atan2(PLATE_X - hcX, towardOutfield));
-    return Math.abs(deg) > FOUL_LINE_DEG ? OptionalDouble.empty() : OptionalDouble.of(deg);
+    return OptionalDouble.of(Math.toDegrees(Math.atan2(PLATE_X - hcX, towardOutfield)));
   }
 }

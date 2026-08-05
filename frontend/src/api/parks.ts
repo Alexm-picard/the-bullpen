@@ -63,6 +63,21 @@ export async function predictAllParks(
  * Canonical batted ball: 110 mph / 28° straightaway (~400 ft carry) off a RHB,
  * bases empty, 0 outs - the reference scorcher for the all-parks HR surface.
  */
+/**
+ * Spray-input range in degrees, matching the API's own validation bounds (the request DTO allows
+ * -90..90). Previously the /parks control clamped to 45, which excluded about 9.8% of the training
+ * corpus - including 195 home runs, whose spray reaches 52.7 degrees. A control built for exploring
+ * spray could not reach the values the model was trained on.
+ */
+export const SPRAY_LIMIT_DEG = 90;
+
+/**
+ * Widest spray observed on a 2026 HOME RUN. Home runs are fair by definition, so this is a hard
+ * empirical floor for how far the input must reach: any limit below it excludes real home runs
+ * from a home-run surface. Sourced from the corpus, not chosen.
+ */
+export const OBSERVED_HOME_RUN_SPRAY_MAX_DEG = 52.7;
+
 export const CANONICAL_BBE_INPUT: AllParksRequest = {
   launchSpeedMph: 110,
   launchAngleDeg: 28,

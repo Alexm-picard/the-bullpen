@@ -16,7 +16,7 @@ import { useDebouncedValue } from "@mantine/hooks";
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
 
-import { useAllParksPrediction } from "../api/parks";
+import { SPRAY_LIMIT_DEG, useAllParksPrediction } from "../api/parks";
 import type { AllParksRequest } from "../api/parks";
 import { LowerThird } from "../components/broadcast/lower-third";
 import { OverviewParksTable } from "../components/parks/overview-parks-table";
@@ -194,8 +194,8 @@ export default function ParksPage() {
             onChange={(v) =>
               setSprayAngleDeg(typeof v === "number" ? v : Number(v) || 0)
             }
-            min={-45}
-            max={45}
+            min={-SPRAY_LIMIT_DEG}
+            max={SPRAY_LIMIT_DEG}
             step={1}
             w={150}
           />
