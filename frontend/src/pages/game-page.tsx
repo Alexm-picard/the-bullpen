@@ -28,6 +28,7 @@ import {
   usePitchPrediction,
   usePitchTypePrediction,
   usePostPredictions,
+  useTeamContact,
   type GameSummary,
   type LivePitchRow,
   type RecentBattedBall,
@@ -48,6 +49,7 @@ import { LivePitchBoard } from "../components/games/live-pitch-board";
 import { NextPitchPanel } from "../components/games/next-pitch-panel";
 import { PitchTypePanel } from "../components/games/pitch-type-panel";
 import { PostPredictionPanel } from "../components/games/post-prediction-panel";
+import { TeamContactPanel } from "../components/games/team-contact-panel";
 import {
   type BattedBall,
   type ParkOutcome,
@@ -341,6 +343,13 @@ export function GamePage() {
     enabled: allParksReq != null,
   });
 
+  // The pre-first-pitch comparison fills the state the retired fixture used to occupy. Gated on
+  // there being NO batted ball: it is a season-wide scan plus N inferences per team, so it must not
+  // run alongside the live card it stands in for.
+  const teamContact = useTeamContact(game.data?.gameId ?? null, {
+    enabled: game.data != null && inPlay == null,
+  });
+
   // The live BattedBall, or null until BOTH the BIP and its prediction exist (->
   // the showcase fallback below). Memoised so polls with no new data are cheap.
   const liveBattedBall = useMemo<BattedBall | null>(() => {
@@ -605,7 +614,15 @@ export function GamePage() {
             <>No ball has been put in play in this game yet.</>
           )}
         </p>
-        {battedBall ? <BattedBallExplorer data={battedBall} /> : null}
+        {battedBall ? (
+          <BattedBallExplorer data={battedBall} />
+        ) : inPlay == null ? (
+          <TeamContactPanel
+            data={teamContact.data}
+            isLoading={teamContact.isLoading}
+            error={teamContact.error}
+          />
+        ) : null}
       </section>
 
       <section aria-labelledby="game-pitch-log-label">

@@ -160,6 +160,31 @@ test("live game page renders the pitch log when the feed has pitches", async ({
 }) => {
   const errors = trackPageErrors(page);
   await page.route(`**/v1/games/${GAME_ID}`, (route) => json(route, GAME));
+  // The pre-first-pitch comparison. Mocked explicitly rather than left to 404: an unmocked route
+  // exercises the panel's ERROR state, so the spec would assert the page survives a failed call
+  // rather than that the panel renders. These e2e fixtures are untyped, so tsc cannot force this
+  // the way it forces the vitest ones.
+  await page.route(`**/v1/games/${GAME_ID}/team-contact`, (route) =>
+    json(route, {
+      homeTeam: "TOR",
+      home: {
+        team: "TOR",
+        parkId: "TOR",
+        meanHrProbability: 0.041,
+        n: 231,
+        modelVersion: "v2",
+      },
+      awayTeam: "BOS",
+      away: {
+        team: "BOS",
+        parkId: "TOR",
+        meanHrProbability: 0.036,
+        n: 198,
+        modelVersion: "v2",
+      },
+      since: "2026-01-01",
+    }),
+  );
   await page.route(`**/v1/games/${GAME_ID}/pitches*`, (route) =>
     json(route, [
       pitch(1, 1, "ball", "FF"),
@@ -238,6 +263,31 @@ test("live game page renders the first-class empty pitch-log state when the feed
   const errors = trackPageErrors(page);
   await page.route(`**/v1/games/${GAME_ID}`, (route) => json(route, GAME));
   // An in-progress game whose pitch feed is still empty - the common pre-first-pitch case.
+  // The pre-first-pitch comparison. Mocked explicitly rather than left to 404: an unmocked route
+  // exercises the panel's ERROR state, so the spec would assert the page survives a failed call
+  // rather than that the panel renders. These e2e fixtures are untyped, so tsc cannot force this
+  // the way it forces the vitest ones.
+  await page.route(`**/v1/games/${GAME_ID}/team-contact`, (route) =>
+    json(route, {
+      homeTeam: "TOR",
+      home: {
+        team: "TOR",
+        parkId: "TOR",
+        meanHrProbability: 0.041,
+        n: 231,
+        modelVersion: "v2",
+      },
+      awayTeam: "BOS",
+      away: {
+        team: "BOS",
+        parkId: "TOR",
+        meanHrProbability: 0.036,
+        n: 198,
+        modelVersion: "v2",
+      },
+      since: "2026-01-01",
+    }),
+  );
   await page.route(`**/v1/games/${GAME_ID}/pitches*`, (route) =>
     json(route, []),
   );

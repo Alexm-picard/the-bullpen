@@ -873,10 +873,12 @@ public class LivePitchesRepository {
    * <p>The {@code (0,0)} check is the STORAGE-SENTINEL case, and it is a DIFFERENT degeneracy from
    * the plate-origin one {@link BattedBall#sprayAngleDeg} documents - do not read them as
    * duplicates and delete one. At the plate origin atan2(0,0) is 0, a false dead-centre. At the
-   * storage sentinel (0,0) the derivation is atan2(-125.42, 199.53) = -32.15 degrees, which is
+   * storage sentinel (0,0) the derivation is atan2(125.42, 198.27) = +32.32 degrees, which is
    * comfortably INSIDE the foul lines and so passes the invariant gate: without this check every
-   * non-batted-ball row would carry a confident fabricated spray. Null also when the row carries no
-   * live coordinates at all - a historical-only row reaches the model through its own path.
+   * non-batted-ball row would carry a confident fabricated spray. (The figure was -32.15 while the
+   * plate constant and sign were wrong; the CONCLUSION is unchanged, which is why a stale number
+   * here would have gone unnoticed.) Null also when the row carries no live coordinates at all - a
+   * historical-only row reaches the model through its own path.
    */
   private static Double sprayAngleOrNull(ResultSet rs) throws SQLException {
     double hcX = rs.getDouble("hc_x");
