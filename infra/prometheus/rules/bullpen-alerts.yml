@@ -292,3 +292,55 @@ groups:
         annotations:
           summary: "pitch-type prior coverage gap grew {{ $value | printf \"%.1f\" }} days over the last 3d"
           description: "The hole between the pitches corpus edge and the pitches_live TTL floor is GROWING - the manual backfill has not run and each day of growth is history leaving both tables permanently (prior_n biases lower for every pitcher active in the gap). The accepted standing level does not fire this; growth does. Run the pitch backfill. The min_over_time guard keeps the -1 boot state from reading as growth after a worker restart."
+
+  # ── prediction_log writer surface (issue 405) ──────────────────────────────────────────────────
+  #
+  # NOTE THE PREFIX. Every rule above targets `bullpen_*` (ingest + freshness). The rules below
+  # target `thebullpen_*`, which is the Micrometer-registered application surface. Before this
+  # group, ZERO rules referenced any `thebullpen_*` metric - so the writer for prediction_log, the
+  # table that drift PSI, promotion evidence (rule 5) and the truth-join all read, could fail
+  # silently. A rule written against a `thebullpen_*` metric using the `bullpen_*` prefix would
+  # never match anything, which is a rule that CANNOT FIRE - so check the prefix, not the shape.
+  - name: prediction-log-writer
+    rules:
+      - alert: PredictionLogDeadLettering
+        # ANY movement, not a rate threshold. Dead-lettering means rows ClickHouse permanently
+        # rejected were DISCARDED after MAX_WRITE_ATTEMPTS - evidence has been lost, and the
+        # up-to-499 innocent rows sharing that batch went with it. There is no acceptable
+        # background level, so `increase(...) > 0` is the threshold.
+        expr: |
+          increase(thebullpen_prediction_log_dead_lettered_total[15m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "prediction_log rows were dead-lettered - evidence has been lost"
+          description: "{{ $value | printf \"%.0f\" }} rows discarded in the last 15m after exhausting write attempts. The log line carries enough identity to reconstruct which rows were lost; drift baselines and rule-5 promotion evidence for that window are now incomplete. Check `journalctl -u bullpen-api | grep dead_letter`."
+
+      - alert: PredictionLogWriteFailuresSustained
+        # Sustained, not any: [30] makes logging best-effort and a transient ClickHouse blip is
+        # expected and self-healing via the backoff. What is NOT expected is failures continuing
+        # across the backoff's cap, which means the failure is not transient.
+        expr: |
+          rate(thebullpen_prediction_log_write_failures_total[5m]) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "prediction_log writes have been failing continuously for 15m"
+          description: "The async logger has failed every flush for 15m ({{ $value | printf \"%.2f\" }}/s). Backoff caps well inside this window, so this is not a transient blip. Predictions are still served - the write is off the request path by design - but nothing is being recorded, so the drift and evidence lanes are dark."
+
+      - alert: PredictionLogQueueSaturated
+        # The queue is ArrayBlockingQueue(bullpen.inference.log.queue-capacity, default 20000).
+        # Above 80% the flusher is not keeping up and enqueue() will start dropping - which is the
+        # documented [30] contract, so drops are not themselves a defect. Depth is the LEADING
+        # indicator; alerting here is what makes the drop contract observable BEFORE it engages.
+        expr: |
+          thebullpen_prediction_log_queue_depth > 16000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "prediction_log queue is above 80% of capacity"
+          description: "Depth {{ $value | printf \"%.0f\" }} of 20000 for 10m. The flusher drains in 500-row batches on a 1s cadence; sustained depth this high means writes are slower than arrivals, and enqueue() drops once it fills (decision [30] - best-effort by contract). Drops are silent by design, so this gauge is the warning that precedes them."
+
