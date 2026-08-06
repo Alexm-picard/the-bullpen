@@ -206,8 +206,8 @@ public class MlbFeedParser {
     JsonNode root = mapper.readTree(json);
     JsonNode gameData = root.path("gameData");
     long gamePk = root.path("gamePk").asLong(gameData.path("game").path("pk").asLong());
-    GameStatus status =
-        GameStatus.fromMlbDetailedState(textOrNull(gameData.path("status").path("detailedState")));
+    String rawDetailedState = textOrNull(gameData.path("status").path("detailedState"));
+    GameStatus status = GameStatus.fromMlbDetailedState(rawDetailedState);
     JsonNode home = gameData.path("teams").path("home");
     JsonNode away = gameData.path("teams").path("away");
 
@@ -324,6 +324,7 @@ public class MlbFeedParser {
     return new LiveGameFeed(
         gamePk,
         status,
+        rawDetailedState,
         gameDate,
         home.path("id").asInt(),
         away.path("id").asInt(),

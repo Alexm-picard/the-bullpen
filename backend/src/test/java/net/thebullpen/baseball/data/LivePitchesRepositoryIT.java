@@ -441,6 +441,7 @@ class LivePitchesRepositoryIT {
         new LiveGameFeed(
             555L,
             GameStatus.IN_PROGRESS,
+            "In Progress",
             LocalDate.of(2026, 6, 4),
             111,
             222,
@@ -817,6 +818,7 @@ class LivePitchesRepositoryIT {
         new LiveGameFeed(
             720L,
             GameStatus.IN_PROGRESS,
+            "In Progress",
             date,
             1,
             1,
@@ -843,6 +845,7 @@ class LivePitchesRepositoryIT {
         new LiveGameFeed(
             721L,
             GameStatus.IN_PROGRESS,
+            "In Progress",
             date,
             1,
             1,
@@ -869,6 +872,7 @@ class LivePitchesRepositoryIT {
         new LiveGameFeed(
             722L,
             GameStatus.IN_PROGRESS,
+            "In Progress",
             date,
             1,
             1,
@@ -925,6 +929,7 @@ class LivePitchesRepositoryIT {
         new LiveGameFeed(
             730L,
             GameStatus.IN_PROGRESS,
+            "In Progress",
             date,
             1,
             1,
@@ -956,6 +961,7 @@ class LivePitchesRepositoryIT {
         new LiveGameFeed(
             731L,
             GameStatus.IN_PROGRESS,
+            "In Progress",
             date,
             1,
             1,
@@ -968,6 +974,7 @@ class LivePitchesRepositoryIT {
         new LiveGameFeed(
             731L,
             GameStatus.IN_PROGRESS,
+            "In Progress",
             date,
             1,
             1,
@@ -990,6 +997,7 @@ class LivePitchesRepositoryIT {
         new LiveGameFeed(
             732L,
             GameStatus.IN_PROGRESS,
+            "In Progress",
             date,
             1,
             1,
