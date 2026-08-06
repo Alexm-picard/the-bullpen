@@ -1,0 +1,28 @@
+# Rule-8 self-policing: surface drill-record staleness on every PR.
+#
+# DELIBERATELY NOT PATH-FILTERED. Every other workflow here scopes to the code it tests; this one
+# must run whatever a PR touches, because the thing it watches is the ABSENCE of a commit. A
+# path-filtered version would only fire when someone edited docs/drills/ - i.e. exactly when the
+# record was being added, and never when it was missing.
+#
+# ci-gate aggregates every check-run, so this participates in the required gate. That is why the
+# script warns at 30 days and only FAILS at 45: a check that blocks all merges the day a drill goes
+# one day late is a check that gets bypassed, and a bypassed gate still reads green afterwards.
+name: drills
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  drill-freshness:
+    name: drill records are fresh (rule 8)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: check newest drill record age
+        run: ./scripts/check-drill-freshness.sh

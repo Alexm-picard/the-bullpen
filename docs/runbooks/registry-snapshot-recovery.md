@@ -54,21 +54,20 @@ curl -u "$THEBULLPEN_ADMIN_BASIC_AUTH" -X POST \
   -H "Content-Type: application/json"
 ```
 
-> **Note**: as of 3a.5 the restore endpoint is wired via
-> `RegistryService.restoreVersion(versionId)` but the HTTP route is
-> intentionally left for the next leaf (3b) which is when an admin UI
-> will need it. For now, restore is exercised via a one-shot JVM tool:
+> **CLI alternative**: the same restore can be driven without a running
+> server via a headless Spring context (no web server starts):
 >
 > ```bash
 > cd /opt/bullpen
-> sudo -u bullpen java -cp app.jar \
+> sudo -u bullpen java \
 >   -Dloader.main=net.thebullpen.baseball.registry.RestoreVersionMain \
->   <version_id>
+>   -jar app.jar <version_id>
 > ```
 >
-> Or, if you prefer to drive it programmatically, log into the JVM via
-> `bin/spring-shell` (once that's wired) and call
-> `service.restoreVersion(<id>)` directly.
+> This requires the JAR to use `PropertiesLauncher` (configured in
+> `build.gradle.kts` since the DR work order). The headless context
+> picks up `S3_ENDPOINT_URL` and credentials from the systemd
+> `EnvironmentFile`, same as the running service.
 
 ## What restore does
 
@@ -98,10 +97,12 @@ curl -s http://localhost:8080/v1/ops/registry/<model_name>/<version_id> \
 # Expect: artifact_path now a local path (not s3://), updated_at fresh.
 
 # 3. Load smoke-test (only if you intend to serve from it):
-sudo -u bullpen java -cp /opt/bullpen/app.jar \
-  -Dloader.main=net.thebullpen.baseball.inference.ModelLoadSmokeMain \
-  /var/lib/thebullpen/models/<model_name>/<version>/model.onnx
-# Expect: prints input + output shapes; exits 0.
+# Hit the predict endpoint - a 200 proves the model loads and infers.
+curl -s -o /dev/null -w '%{http_code}' -X POST \
+  "http://localhost:8080/v1/predict/pitch" \
+  -H 'content-type: application/json' \
+  -d '{"countBalls":0,"countStrikes":0,"outs":0,"inning":1,"baseState":0,"scoreDiff":0,"dow":3,"pitcherThrows":"R","batterStand":"L","parkId":"BOS","pitcherId":1,"batterId":2}'
+# Expect: 200 (model loaded and inferred). 503 = model not loadable.
 ```
 
 ## Failure modes
