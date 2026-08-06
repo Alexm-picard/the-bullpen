@@ -947,6 +947,52 @@ class LivePollingServiceTest {
   }
 
   /** A current play with an explicit batter id, for pinch-hitter / at-bat-rollover fixtures. */
+  @Test
+  void tick_evicts_per_game_state_for_games_no_longer_on_the_schedule() throws Exception {
+    MlbStatsApiClient client = mock(MlbStatsApiClient.class);
+    LivePitchesRepository repo = mock(LivePitchesRepository.class);
+    LivePitchPredictor predictor = mock(LivePitchPredictor.class);
+    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(repo.insertPitches(any())).thenReturn(1);
+
+    long gameA = 822810L;
+    long gameB = 822811L;
+    ScheduledGame sgA =
+        new ScheduledGame(
+            gameA, GameStatus.IN_PROGRESS, "BOS", "BAL", "BOS", "BAL", null, 0L, "", 0L, "");
+    ScheduledGame sgB =
+        new ScheduledGame(
+            gameB, GameStatus.IN_PROGRESS, "NYY", "TOR", "NYY", "TOR", null, 0L, "", 0L, "");
+
+    when(client.fetchSchedule(any())).thenReturn(List.of(sgA, sgB));
+    when(client.fetchLiveFeed(gameA))
+        .thenReturn(feedFor(gameA, List.of(pitchFor(gameA, 1, 1)), nextPitchFor(gameA, 1, 2)));
+    when(client.fetchLiveFeed(gameB))
+        .thenReturn(feedFor(gameB, List.of(pitchFor(gameB, 1, 1)), nextPitchFor(gameB, 1, 2)));
+
+    // scheduleRefreshMin=0 so the second tick re-fetches the schedule immediately.
+    LivePollingService svc =
+        new LivePollingService(
+            client,
+            repo,
+            Optional.of(predictor),
+            Optional.empty(),
+            new IngestMetrics(new SimpleMeterRegistry()),
+            heldLease(),
+            new IngestProperties(
+                new IngestProperties.Live("https://statsapi.mlb.com", "ua", 5000, 3, 0L, 0L, 30L),
+                new IngestProperties.Players(false)));
+    svc.tick();
+    assertThat(svc.trackedGameCount()).isEqualTo(2);
+
+    // Second schedule excludes game A.
+    when(client.fetchSchedule(any())).thenReturn(List.of(sgB));
+    svc.tick();
+    assertThat(svc.trackedGameCount())
+        .as("eviction must drop game A's per-game state after it leaves the schedule")
+        .isEqualTo(1);
+  }
+
   private static LiveNextPitch nextPitchWithBatter(int atBat, int pitchNumber, long batterId) {
     return new LiveNextPitch(
         822810L,
