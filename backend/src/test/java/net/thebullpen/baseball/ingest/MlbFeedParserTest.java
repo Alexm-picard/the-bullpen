@@ -479,6 +479,21 @@ class MlbFeedParserTest {
   }
 
   @Test
+  void gameDate_is_null_when_officialDate_is_absent() throws IOException {
+    // #380: the old fallback parsed dateTime as UTC, producing ET-date + 1 for late-ET games and
+    // breaking the pitches/pitches_live dedup key. With the fix, a missing officialDate yields null
+    // so the caller can skip the write rather than fabricate a wrong date.
+    String stripped =
+        resource("/mlb/feed_live_824753.json")
+            .replaceAll(",?\\s*\"officialDate\"\\s*:\\s*\"[^\"]*\"", "");
+    assertTrue(
+        !stripped.contains("officialDate"), "the fixture edit must actually remove the field");
+
+    LiveGameFeed feed = parser.parseLiveFeed(stripped);
+    assertNull(feed.gameDate(), "missing officialDate must produce null, never a UTC fallback");
+  }
+
+  @Test
   void declines_a_play_that_has_not_finished_being_measured() throws IOException {
     // The in-flight window: hitData populates transiently before the play resolves, and the
     // observed partial (physics present, result absent) was exactly that. Simulated by removing

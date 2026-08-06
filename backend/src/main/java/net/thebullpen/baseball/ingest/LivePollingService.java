@@ -228,9 +228,11 @@ public class LivePollingService {
             current);
       }
     }
-    writeNewPitches(gamePk, feed);
-    backfillCompletedBattedBalls(gamePk, feed);
-    predictNextPitch(gamePk, feed);
+    if (feed.gameDate() != null) {
+      writeNewPitches(gamePk, feed);
+      backfillCompletedBattedBalls(gamePk, feed);
+      predictNextPitch(gamePk, feed);
+    }
   }
 
   /**

@@ -501,8 +501,11 @@ public class MlbFeedParser {
     if (official != null && !official.isBlank()) {
       return LocalDate.parse(official);
     }
-    String dt = textOrNull(gameData.path("datetime").path("dateTime"));
-    return dt == null ? null : OffsetDateTime.parse(dt).toLocalDate();
+    // The old fallback parsed dateTime as UTC, producing ET-date + 1 for any game starting at or
+    // after 20:00 ET. That one-day disagreement with Statcast's game_date broke the
+    // pitches/pitches_live dedup key and double-counted pitches in the union window (#380).
+    // Returning null lets the caller skip the write rather than fabricate a wrong date.
+    return null;
   }
 
   private static boolean isOccupied(JsonNode base) {
