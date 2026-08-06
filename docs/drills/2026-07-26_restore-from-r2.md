@@ -67,6 +67,19 @@ incomplete one rather than as a completed one with missing paperwork.
 
 ## Action items
 
-1. Extend the drill to exercise the R2 `models-archive` pull-back. **[DEV]**
-2. Make the prediction probe gating: 200 = pass, 404/503 = fail. **[DEV]**
-3. Re-run and record measured RTO-to-serving. **[TD]**
+1. ~~Extend the drill to exercise the R2 `models-archive` pull-back.~~ **[DEV] DONE** -
+   `restore_model_artifacts` rclone-downloads champion ONNX from `models-archive/<name>/<version>/`
+   into the local paths the registry points at. Also wired: admin restore endpoint
+   (`POST /v1/admin/registry/{name}/restore/{id}`) and `RestoreVersionMain` CLI entry point
+   (`-Dloader.main=...`, PropertiesLauncher configured in `build.gradle.kts`).
+2. ~~Make the prediction probe gating: 200 = pass, 404/503 = fail.~~ **[DEV] DONE** -
+   `boot_profile` third arg `gating` makes the probe fatal. The `run_r2_drill` flow calls it
+   after model restore, so the probe tests the full recovery path.
+3. Re-run and record measured RTO-to-serving. **[TD]** - the drill now emits `RTO-to-serving`
+   in the result summary (drill start to first 200 on predict).
+4. ~~SLO alerts + watchdog dead-man.~~ **[DEV] DONE** - new `slo` rule group in
+   `bullpen-alerts.yml`: `PredictionLatencySLOBreach` (p99 > 100ms, 2x the 50ms SLO),
+   `InferenceErrorRateHigh` (champion error rate > 5%, traffic-gated),
+   `ApiServerErrorRate` (HTTP 5xx > 5%, traffic-gated), `Watchdog` (dead-man's switch,
+   `vector(1)` always-fires). Behavioural tests in `slo-alerts.test.yml`, wired into
+   `infra.yml`'s promtool lane. Total rule count: 28 (was 24).

@@ -152,6 +152,16 @@ tasks.matching { it.name == "compileJmhJava" }.configureEach {
 }
 tasks.matching { it.name == "spotbugsJmh" }.configureEach { enabled = false }
 
+// PropertiesLauncher: honors -Dloader.main=<class> to swap the entry point at runtime,
+// enabling RestoreVersionMain (docs/runbooks/registry-snapshot-recovery.md) without a
+// separate JAR. When no loader.main is set, falls back to Start-Class (Application),
+// so normal `java -jar app.jar` is unaffected.
+tasks.named<org.springframework.boot.gradle.tasks.bundling.BootJar>("bootJar") {
+    manifest {
+        attributes["Main-Class"] = "org.springframework.boot.loader.launch.PropertiesLauncher"
+    }
+}
+
 // Phase 3 accuracy scorecard: bundle the committed promotion-evidence JSONs (and, once the box
 // hand-off commits it, the batted-ball backfill artifact) into the JAR as classpath resources under
 // accuracy-evidence/, so the public GET /v1/ops/accuracy + /v1/ops/backfill-accuracy read them
