@@ -25,6 +25,9 @@ jobs:
       - name: Lint
         working-directory: frontend
         run: npm run lint
+      - name: Prettier check
+        working-directory: frontend
+        run: npx prettier --check "src/**/*.{ts,tsx,css}"
       # S3: design-token + a11y discipline gates (previously local-only scripts). Both are clean at
       # the current baseline, so they are blocking - a hex code in a component or a static a11y
       # defect now reds CI.
