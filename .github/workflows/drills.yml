@@ -23,6 +23,6 @@ jobs:
     name: drill records are fresh (rule 8)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: check newest drill record age
         run: ./scripts/check-drill-freshness.sh
