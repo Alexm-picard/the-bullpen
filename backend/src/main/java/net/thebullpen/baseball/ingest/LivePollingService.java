@@ -148,6 +148,7 @@ public class LivePollingService {
           }
         }
       }
+      evictStaleGames();
     } catch (Exception e) {
       log.warn("live poll tick failed", e);
     }
@@ -433,6 +434,24 @@ public class LivePollingService {
     } catch (Exception e) {
       log.warn("schedule refresh failed", e);
     }
+  }
+
+  int trackedGameCount() {
+    return statusByGame.size();
+  }
+
+  private void evictStaleGames() {
+    java.util.Set<Long> active =
+        schedule.stream().map(ScheduledGame::gamePk).collect(java.util.stream.Collectors.toSet());
+    statusByGame.keySet().retainAll(active);
+    statusPersisted.retainAll(active);
+    lastMatchupKey.keySet().retainAll(active);
+    lastPollAt.keySet().retainAll(active);
+    lastCursorByGame.keySet().retainAll(active);
+    lastPredictedKeyByGame.keySet().retainAll(active);
+    lastPostPredictedKeyByGame.keySet().retainAll(active);
+    lastFailedKeyByGame.keySet().retainAll(active);
+    battedBallWritten.keySet().retainAll(active);
   }
 
   private boolean isDue(long gamePk, GameStatus status) {
