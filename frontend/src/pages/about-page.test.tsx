@@ -45,8 +45,8 @@ describe("AboutPage", () => {
 
   it("renders the masthead nameplate", () => {
     const html = render(<AboutPage />);
-    expect(html).toContain("About");
-    expect(html).toContain("The Bullpen");
+    expect(html).toMatch(/style="display:block"[^>]*>About</);
+    expect(html).toMatch(/style="display:block"[^>]*>The Bullpen</);
     expect(html).toContain("Colophon");
   });
 
