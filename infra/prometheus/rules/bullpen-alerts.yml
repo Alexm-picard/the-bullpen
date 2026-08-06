@@ -210,7 +210,7 @@ groups:
       # climbs ~1/day and each day of climb is history falling out of BOTH tables permanently.
       # A monotonically growing gauge with no rule recreates the exact silent-degradation shape
       # [186] fixed. Growth fires; the accepted level does not.
-      # Thresholds (3d age / 26h stamp) are PROVISIONAL operational values pending that /decide;
+      # Thresholds (3d age / 26h stamp) locked as decision [189]; five days of operation with zero false fires confirmed the All-Star-break poller gate and the 26h stamp/uptime alignment.
       # the age gauges' own descriptions say the bound belongs there. The `< 0` never-ran state
       # the descriptions warn about is owned by the NeverRan rules' `== 0` stamp lane.
       # Semantics are PINNED BEHAVIORALLY by rules/tests/freshness-alerts.test.yml (promtool
