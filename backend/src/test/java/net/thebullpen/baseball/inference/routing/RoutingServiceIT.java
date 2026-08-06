@@ -498,6 +498,45 @@ class RoutingServiceIT {
         .hasMessageContaining("archived");
   }
 
+  // --- champion swap resets AB traffic (#379) ----------------------------
+
+  @Test
+  void champion_swap_resets_challenger_traffic_when_experiment_was_bound_to_old_champion()
+      throws Exception {
+    // v1 champion, v2 shadow challenger at AB/30%, then v3 promoted to champion.
+    // The AB experiment was bound to v1; carrying mode/pct forward would silently rebind it to v3.
+    ModelVersion v1 = registry.register(sampleRequest("swap_model", "v1"));
+    registry.transitionStage(v1.id(), Stage.CHAMPION);
+    ModelVersion v2 = registry.register(sampleRequest("swap_model", "v2"));
+    registry.transitionStage(v2.id(), Stage.SHADOW);
+    routing.setChallenger("swap_model", v2.id());
+    routing.setMode("swap_model", RoutingMode.AB);
+    routing.setTrafficPct("swap_model", 0.30);
+
+    RoutingConfig before = routing.getRouting("swap_model");
+    assertThat(before.challengerVersionId()).isEqualTo(v2.id());
+    assertThat(before.challengerTrafficPct()).isEqualTo(0.30);
+    assertThat(before.mode()).isEqualTo(RoutingMode.AB);
+
+    // Promote v3 to champion (requires passing evidence against v1).
+    ModelVersion v3 = registry.register(sampleRequest("swap_model", "v3"));
+    registry.transitionStage(v3.id(), Stage.SHADOW);
+    seedPassingExperiment("swap_model", v1.id(), v3.id());
+    registry.transitionStage(v3.id(), Stage.CHAMPION);
+
+    RoutingConfig after = routing.getRouting("swap_model");
+    assertThat(after.championVersionId()).isEqualTo(v3.id());
+    assertThat(after.challengerVersionId())
+        .as("challenger survives the swap (it is not the new champion)")
+        .isEqualTo(v2.id());
+    assertThat(after.challengerTrafficPct())
+        .as("traffic must reset to 0 - the AB experiment was bound to v1, not v3")
+        .isEqualTo(0.0);
+    assertThat(after.mode())
+        .as("mode must reset to SHADOW - re-enablement is a deliberate admin action")
+        .isEqualTo(RoutingMode.SHADOW);
+  }
+
   private int routingRowCount(String modelName) {
     Integer rows =
         jdbc.queryForObject(
