@@ -28,7 +28,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 
 /**
  * Serves the pitch-TYPE PRIOR (decision [183]).
@@ -156,7 +155,8 @@ public class PitchTypePredictionService {
           arsenal.deriveSequence(
               req.pitcherId(), req.gameId(), req.atBatIndex(), req.pitchNumber());
     } catch (PitchTypeArsenalDeriver.PriorUnavailable e) {
-      throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage(), e);
+      throw new CodedServiceException(
+          HttpStatus.SERVICE_UNAVAILABLE, "prior_unavailable", e.getMessage());
     } catch (RuntimeException e) {
       // A ClickHouse failure on the derivation reads is a real model-path failure and must be
       // COUNTED, not just surfaced as an HTTP 500. The "unknown" role bucket exists precisely for
@@ -188,12 +188,13 @@ public class PitchTypePredictionService {
               req.gameId(),
               versionId -> predictWith(versionId, features),
               () -> {
-                throw new ResponseStatusException(
+                throw new CodedServiceException(
                     HttpStatus.SERVICE_UNAVAILABLE,
+                    "model_not_promoted",
                     MODEL_NAME
-                        + " has no promoted champion and no A/B routing config; register and promote"
-                        + " a model first. 503 rather than 404: the route exists, the model does"
-                        + " not.");
+                        + " has no promoted champion and no A/B routing config; register and"
+                        + " promote a model first. 503 rather than 404: the route exists, the"
+                        + " model does not.");
               });
 
       role = routed.servingRole().name().toLowerCase(Locale.ROOT);
@@ -271,7 +272,7 @@ public class PitchTypePredictionService {
               });
 
       return new Served(probs, MODEL_NAME, serving.version(), ars.pitcherPriorN(), elapsedMicros);
-    } catch (ResponseStatusException e) {
+    } catch (CodedServiceException e) {
       // 503 is the designed no-champion / stale-prior answer, not a model fault. Counting it
       // against the model's error rate would make an unregistered model look broken.
       throw e;
