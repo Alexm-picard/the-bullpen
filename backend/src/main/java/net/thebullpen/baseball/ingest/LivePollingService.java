@@ -103,6 +103,7 @@ public class LivePollingService {
   // across polls (belt-and-suspenders alongside the cursor high-water that gates the fresh list).
   private final Map<Long, Long> lastPostPredictedKeyByGame = new ConcurrentHashMap<>();
   private final Map<Long, Long> lastFailedKeyByGame = new ConcurrentHashMap<>();
+  private final java.util.Set<String> seenUnknownStates = ConcurrentHashMap.newKeySet();
   private volatile List<ScheduledGame> schedule = List.of();
   private volatile Instant scheduleFetchedAt = Instant.EPOCH;
   private long lastApiCallMs;
@@ -196,8 +197,11 @@ public class LivePollingService {
     lastPollAt.put(gamePk, polledAt);
     metrics.markPollCompleted(polledAt);
     if (feed.status() == GameStatus.UNKNOWN) {
-      // Schema-drift tripwire: the feed's detailedState matched nothing we know.
       metrics.incrementParseAnomaly("unknown_game_status");
+      String raw = feed.rawDetailedState() != null ? feed.rawDetailedState() : "<null>";
+      if (seenUnknownStates.size() < 64 && seenUnknownStates.add(raw)) {
+        log.warn("ingest: unrecognised detailedState '{}' for gamePk={}", raw, gamePk);
+      }
     }
     // Persist when ANY of four things is true: first-ever observation of the game, a status
     // transition (step 7b), this process's first poll of it (L1: restart-robustness - the schedule
@@ -493,6 +497,7 @@ public class LivePollingService {
     return new LiveGameFeed(
         f.gamePk(),
         f.status(),
+        f.rawDetailedState(),
         f.gameDate(),
         f.homeTeamId(),
         f.awayTeamId(),

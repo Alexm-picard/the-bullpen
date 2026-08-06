@@ -217,6 +217,7 @@ class LivePollingServiceTest {
     return new LiveGameFeed(
         822810L,
         GameStatus.IN_PROGRESS,
+        "In Progress",
         LocalDate.of(2026, 6, 5),
         1,
         2,
@@ -291,7 +292,16 @@ class LivePollingServiceTest {
     when(client.fetchLiveFeed(822810L))
         .thenReturn(
             new LiveGameFeed(
-                822810L, GameStatus.IN_PROGRESS, null, 1, 2, "TOR", "BAL", List.of(), null));
+                822810L,
+                GameStatus.IN_PROGRESS,
+                "In Progress",
+                null,
+                1,
+                2,
+                "TOR",
+                "BAL",
+                List.of(),
+                null));
 
     assertThatCode(() -> service(client, repo, predictor).pollGame(822810L))
         .doesNotThrowAnyException();
@@ -391,6 +401,7 @@ class LivePollingServiceTest {
         new LiveGameFeed(
             822810L,
             GameStatus.UNKNOWN,
+            "Cancelled",
             LocalDate.of(2026, 6, 5),
             1,
             2,
@@ -625,6 +636,7 @@ class LivePollingServiceTest {
     return new LiveGameFeed(
         gameId,
         GameStatus.IN_PROGRESS,
+        "In Progress",
         LocalDate.of(2026, 6, 5),
         1,
         2,
@@ -662,7 +674,16 @@ class LivePollingServiceTest {
     when(client.fetchLiveFeed(822810L))
         .thenReturn(
             new LiveGameFeed(
-                822810L, GameStatus.IN_PROGRESS, null, 1, 2, "TOR", "BAL", List.of(), np))
+                822810L,
+                GameStatus.IN_PROGRESS,
+                "In Progress",
+                null,
+                1,
+                2,
+                "TOR",
+                "BAL",
+                List.of(),
+                np))
         .thenReturn(feed(List.of(pitch(1, 1)), np)); // same matchup, gameDate now present
 
     LivePollingService svc = service(client, repo, predictor);
@@ -909,6 +930,7 @@ class LivePollingServiceTest {
             new LiveGameFeed(
                 822810L,
                 GameStatus.MID_INNING,
+                "Mid Inning",
                 LocalDate.of(2026, 6, 5),
                 1,
                 2,
