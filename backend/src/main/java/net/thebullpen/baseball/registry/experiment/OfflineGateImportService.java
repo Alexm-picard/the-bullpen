@@ -275,7 +275,8 @@ public class OfflineGateImportService {
             ev.primaryThreshold() == null ? 0.0 : ev.primaryThreshold(),
             writeJson(ev.guardrails()),
             ev.sampleSizeTarget(),
-            notes);
+            notes,
+            null);
     experiments.markTerminal(
         running.id(),
         ExperimentResult.Status.PASSED.dbValue(),
