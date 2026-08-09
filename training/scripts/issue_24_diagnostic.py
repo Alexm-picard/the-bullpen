@@ -37,8 +37,6 @@ from bullpen_training.battedball.physics.spin import (
 )
 from bullpen_training.battedball.retrodict._atmospheres import load_weather_observed
 
-# Reuse the existing calibrate_spin infrastructure - same HR sample loader,
-# same weather join, same simulator, same physics calibration.
 from scripts.calibrate_spin import (
     _atmospheres,
     load_hr_sample,
