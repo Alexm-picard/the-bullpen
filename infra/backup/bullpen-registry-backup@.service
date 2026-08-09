@@ -1,0 +1,14 @@
+[Unit]
+Description=The Bullpen - hourly SQLite registry backup to R2 (K6, 24h->1h RPO)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/default/bullpen
+ExecStart=/home/%i/code/the-bullpen/infra/backup/registry-backup.sh
+Nice=15
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=multi-user.target
