@@ -29,6 +29,7 @@ import importlib
 from pathlib import Path
 
 import numpy as np
+
 from bullpen_training.battedball.physics.simulator import LaunchParams, simulate_batch
 from bullpen_training.battedball.physics.spin import (
     PHYSICS_PRIOR_COEFFS,
