@@ -25,6 +25,7 @@ Rule 13: seasons are clamped to 2015-2025. 2026 is holdout-only.
 from __future__ import annotations
 
 import argparse
+import importlib
 from pathlib import Path
 
 import numpy as np
@@ -37,10 +38,9 @@ from bullpen_training.battedball.physics.spin import (
 )
 from bullpen_training.battedball.retrodict._atmospheres import load_weather_observed
 
-from scripts.calibrate_spin import (
-    _atmospheres,
-    load_hr_sample,
-)
+_calibrate = importlib.import_module("scripts.calibrate_spin")
+load_hr_sample = _calibrate.load_hr_sample
+_atmospheres = _calibrate._atmospheres
 
 _TRAINING_ROOT = Path(__file__).resolve().parents[1]
 _DEFAULT_CALIB = _TRAINING_ROOT / "artifacts" / "physics_calibration.json"
