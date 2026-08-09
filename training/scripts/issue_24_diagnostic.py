@@ -8,13 +8,13 @@ scale or a small-n tail artifact.
 Run on the desktop (needs ClickHouse + weather_observed):
 
     cd ~/code/the-bullpen/training
-    uv run python /path/to/issue_24_diagnostic.py --sample 6000
+    uv run python -m scripts.issue_24_diagnostic --sample 6000
 
-Or copy the script into training/scripts/ first:
+Must be invoked as a module (-m) so the scripts package resolves.
+If the fitted calibration lives outside artifacts/, pass it explicitly:
 
-    cp issue_24_diagnostic.py ~/code/the-bullpen/training/scripts/
-    cd ~/code/the-bullpen/training
-    uv run python scripts/issue_24_diagnostic.py --sample 6000
+    uv run python -m scripts.issue_24_diagnostic --sample 6000 \
+        --calibration data/physics_calibration.json
 
 Output: a table of LA buckets with n, mean bias (pred - obs), MAE, and std,
 plus the overall numbers. Paste the output into issue #24.
