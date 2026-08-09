@@ -64,4 +64,31 @@ probe is working as designed.
 | Layout mismatch               | `models-archive` -> `snapshots` everywhere (drill, runbook, SnapshotStorage default) | This PR         |
 | Missing R2 bundles (instance) | Manual push of battedball_outcome/v2 + pitch_type_pre/v1 to R2                       | Done 2026-08-09 |
 | Missing R2 bundles (class)    | Push champion bundle to R2 at promote time (RegistryService)                         | This PR         |
-| Re-run gate                   | Box re-runs restore-drill.sh --from-r2 after this PR merges                          | Pending         |
+| Re-run gate                   | Box re-runs restore-drill.sh --from-r2 after this PR merges                          | **PASS** 15:01Z |
+
+## Re-run: PASS (2026-08-09, post-#427)
+
+- **Script:** `restore-drill.sh --from-r2` at `134bb3b` (post-#427 fixes)
+- **Source:** same snapshot `auto_20260809T070935Z`
+- **RTO-to-serving:** 1492s (~25 min), fetch-dominated (~23 min for the 3.0 GB tar;
+  restore-to-first-200 is ~90s once bytes are local)
+- **Status:** **PASS** - first end-to-end DR proof from offsite state alone
+
+### Evidence (verbatim from the box)
+
+```
+[15:00:30Z] registry restore verified (11 model_versions rows)
+[15:00:31Z]   battedball_outcome/v2: restored (model.onnx 195165B)
+[15:00:50Z]   pitch_outcome_post/v1: restored (model.onnx 17420303B)
+[15:01:06Z]   pitch_outcome_pre/v2: restored (model.onnx 11645406B)
+[15:01:31Z]   pitch_type_pre/v1: restored (model.onnx 8860151B)
+[15:01:31Z] models: restored 4 champion(s) from R2 snapshots/
+[15:01:36Z]   api prediction probe: HTTP 200 (GATING: 200=pass, else=fail)
+[15:01:53Z]   worker stable for 10s after UP
+RTO-to-serving: 1492s   RESULT: PASS
+```
+
+All four champion bundles pulled from `snapshots/`, api prediction probe 200, worker
+UP + stable. The recovery-time lever is download bandwidth, not the software path. The
+W-DR verification criterion ("restore drill boots readiness-UP with a measured RTO") is
+met with evidence.
