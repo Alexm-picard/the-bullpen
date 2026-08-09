@@ -341,6 +341,10 @@ export function GamePage() {
   // become a prediction, and must not silently borrow one.
   const allParks = useAllParksPrediction(allParksReq, {
     enabled: allParksReq != null,
+    context:
+      game.data && inPlay
+        ? { gameId: game.data.gameId, parkId: inPlay.parkId }
+        : undefined,
   });
 
   // The pre-first-pitch comparison fills the state the retired fixture used to occupy. Gated on
