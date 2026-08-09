@@ -28,14 +28,6 @@ import argparse
 from pathlib import Path
 
 import numpy as np
-
-# Reuse the existing calibrate_spin infrastructure - same HR sample loader,
-# same weather join, same simulator, same physics calibration.
-from scripts.calibrate_spin import (
-    _atmospheres,
-    load_hr_sample,
-)
-
 from bullpen_training.battedball.physics.simulator import LaunchParams, simulate_batch
 from bullpen_training.battedball.physics.spin import (
     PHYSICS_PRIOR_COEFFS,
@@ -44,6 +36,13 @@ from bullpen_training.battedball.physics.spin import (
     load_physics_calibration,
 )
 from bullpen_training.battedball.retrodict._atmospheres import load_weather_observed
+
+# Reuse the existing calibrate_spin infrastructure - same HR sample loader,
+# same weather join, same simulator, same physics calibration.
+from scripts.calibrate_spin import (
+    _atmospheres,
+    load_hr_sample,
+)
 
 _TRAINING_ROOT = Path(__file__).resolve().parents[1]
 _DEFAULT_CALIB = _TRAINING_ROOT / "artifacts" / "physics_calibration.json"
@@ -141,7 +140,8 @@ def main() -> None:
     overall_std = float(np.std(residuals[valid]))
     not_landed = int((~np.isfinite(pred)).sum())
     print(
-        f"  {'Overall':>10}  {overall_n:6d}  {overall_bias:+10.2f}  {overall_mae:10.2f}  {overall_std:10.2f}"
+        f"  {'Overall':>10}  {overall_n:6d}  {overall_bias:+10.2f}"
+        f"  {overall_mae:10.2f}  {overall_std:10.2f}"
     )
     if not_landed > 0:
         print(f"  ({not_landed} trajectories did not land - excluded)")
