@@ -221,10 +221,9 @@ public class RegistryAdminController {
    * deferred at 3a.5 and is now implemented for the DR drill).
    *
    * <p>The endpoint delegates to {@link RegistryService#restoreVersion(long)} which downloads every
-   * key under {@code models-archive/<model_name>/<version>/} from R2 to the local snapshot
-   * directory, then flips the registry's {@code artifact_path} and {@code metadata_path} to the
-   * local copies. Requires {@code S3_ENDPOINT_URL} to be set (the {@code R2ArchiveClient} bean must
-   * be present).
+   * key under {@code snapshots/<model_name>/<version>/} from R2 to the local snapshot directory,
+   * then flips the registry's {@code artifact_path} and {@code metadata_path} to the local copies.
+   * Requires {@code S3_ENDPOINT_URL} to be set (the {@code R2ArchiveClient} bean must be present).
    *
    * <p>Returns the refreshed {@link ModelVersion} row so the caller can verify the paths changed.
    * Throws 404 if the version doesn't exist, 400 if the path's model name doesn't match, and 503 if

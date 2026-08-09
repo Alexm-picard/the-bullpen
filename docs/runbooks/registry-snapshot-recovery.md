@@ -73,7 +73,7 @@ curl -u "$THEBULLPEN_ADMIN_BASIC_AUTH" -X POST \
 
 1. Reads `model_versions.artifact_path` for the row — must be `s3://`.
 2. Downloads every key under
-   `models-archive/<model_name>/<version>/` from R2 to
+   `snapshots/<model_name>/<version>/` from R2 to
    `${BULLPEN_MODELS_DIR}/<model_name>/<version>/`.
 3. Updates `model_versions.artifact_path` + `metadata_path` to point at
    the local copies.
