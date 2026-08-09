@@ -53,7 +53,10 @@ class ClickHouseDateBindingReproIT {
 
   @BeforeEach
   void setUp() throws java.sql.SQLException {
-    var ds = new com.clickhouse.jdbc.ClickHouseDataSource(CH.getJdbcUrl());
+    var props = new java.util.Properties();
+    props.setProperty("user", CH.getUsername());
+    props.setProperty("password", CH.getPassword());
+    var ds = new com.clickhouse.jdbc.ClickHouseDataSource(CH.getJdbcUrl(), props);
     jdbc = new JdbcTemplate(ds);
     jdbc.execute(
         "CREATE TABLE IF NOT EXISTS date_repro ("
