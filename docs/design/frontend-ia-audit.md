@@ -89,7 +89,7 @@ Plus a retrospective post-prediction panel (logged champion predictions replayed
 
 **What it shows:** The operational dashboard: model fleet table (registry rows with stage/version/schema), routing config, p99 latency (1d + 7d), retrain queue, ops event log, drift snapshot (PSI + ECE per model), and an infra services ribbon. Dense, multi-section, aimed at the operator.
 
-**Data source:** MIXED (predominantly live with fixture fallback). Seven live hooks. The infra ribbon is always fixture ("no status endpoint yet"). Drift values render as em-dashes until live data lands. All fallbacks captioned.
+**Data source:** MIXED (predominantly live with fixture fallback). Seven live hooks. The infra ribbon is always fixture ("no status endpoint yet"). Drift values populate from the live drift jobs (PSI + ECE per model). All fallbacks captioned.
 
 **Entry points:** Nav "OPS" link.
 
@@ -150,7 +150,7 @@ Plus a retrospective post-prediction panel (logged champion predictions replayed
 - **Navigation order undersells depth.** PARKS before PLAYERS before GAMES before OPS: the recruiter hits a fixture-heavy park-factors page before seeing the live game engine or the ops dashboard. The engineering depth is behind the third and fifth nav items.
 - **The home page undersells the model count.** "Tonight's Slate" reads as a game-tracker dashboard, not as "four calibrated ML models serving live." The fleet strip is there but visually subordinate to the matchup board.
 - **Accuracy is a separate nav item** that a recruiter might skip. If it were surfaced as part of an "ML" or "Models" grouping, the calibration/drift story would be harder to miss.
-- **The about page is fixture-heavy** and reads as a placeholder. The facts ribbon (133 decisions, 11 ADRs) is good signal but buried. The methodology prose is dense and not scannable.
+- **The about page is fixture-heavy** and reads as a placeholder. The facts ribbon (190 decisions, 16 ADRs) is good signal but buried. The methodology prose is dense and not scannable.
 
 ### 2.2 Baseball fan during a live game
 
