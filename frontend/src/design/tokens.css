@@ -1,41 +1,46 @@
-/* Tailwind 4 @theme block — exposes BROADCAST design tokens as CSS custom
- * properties + utility classes. Lives inside src/design/ so it's a legal hex
- * source for the lint:hex-codes allowlist.
+/* Tailwind 4 @theme block - BROADCAST design tokens (decision [160], dark-field
+ * arrangement per [191]/ADR-0017).
  *
- * Values mirror src/design/broadcast.ts exactly (decision [160]). If you
- * change one, change both. The paper-era tokens.ts mirror was deleted in the
- * redesign cleanup PR.
+ * Values mirror src/design/broadcast.ts exactly. If you change one, change both.
+ * Lives inside src/design/ so it's a legal hex source for lint:hex-codes.
  *
- * NOTE: the conditional-format ramp, sequential ramps, and colorblind alt are
- * intentionally OMITTED — consumed only via cellColor()/SVG, never as Tailwind
- * utilities.
- *
- * Legacy var names (--color-bgBase/--color-scarlet/--font-ui/--font-data and
- * friends) are kept as ALIASES to the broadcast values because page-level CSS
- * consumes them; they retire as those files migrate to the new names. */
+ * [191] DARK-FIELD: the chrome palette is promoted to ground. The previous
+ * light-field values survive as --color-paper-* for the Model Guide page's
+ * reading surface. This is a single committed look, NOT a dark-mode toggle. */
 
 @theme {
-  /* ── The analytical field ── */
-  --color-field: #f6f7f9;
-  --color-panel: #ffffff;
-  --color-fieldSubtle: #edf0f4;
-  --color-rule: #d9dee7;
+  /* ── Ground (dark broadcast field, [191]) ── */
+  --color-field: #080f1f;
+  --color-fieldHi: #0e1b33;
+  --color-panel: #101d38;
+  --color-panelEdge: #26365c;
+  --color-rule: #1c2a4a;
 
-  /* ── Broadcast chrome ── */
-  --color-chrome: #0e1b33;
-  --color-chromeDeep: #080f1f;
-  --color-chromeEdge: #26365c;
+  /* ── Neutral ── */
   --color-steel: #8b95a7;
 
   /* ── Accent ── */
   --color-gold: #f2a900;
-  --color-goldInk: #8a5f00;
+  --color-goldDeep: #c98d00;
 
-  /* ── Text ── */
-  --color-ink: #10141b;
-  --color-text: #272d38;
-  --color-textMuted: #5e6878;
-  --color-textOnChrome: #f4f6fa;
+  /* ── Text (on dark ground) ── */
+  --color-ink: #f4f6fa;
+  --color-text: #c9d1e0;
+  --color-textMuted: #7c8699;
+
+  /* ── Live state ── */
+  --color-live: #39d98a;
+
+  /* ── Heat ramp (batted-ball / pitch-location) ── */
+  --color-heatHi: #ff5a4e;
+  --color-heatMid: #f2a900;
+  --color-heatLo: #3d4f78;
+
+  /* ── Paper surface (Model Guide reading page, [191]) ── */
+  --color-paper: #f6f7f9;
+  --color-paperText: #272d38;
+  --color-paperMuted: #5e6878;
+  --color-paperRule: #d9dee7;
 
   /* ── Typography ── */
   --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
@@ -43,15 +48,28 @@
   --font-mono:
     "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
-  /* ── Legacy aliases (consumed by page CSS + index.css; retire on contact) ── */
-  --color-bgBase: #f6f7f9;
-  --color-bgSheet: #ffffff;
-  --color-bgSubtle: #edf0f4;
-  --color-bgEmphasis: #d9dee7;
-  --color-scarlet: #8a5f00; /* alias -> goldInk: legacy accent reads as the broadcast accent */
-  --color-textStrong: #10141b;
-  --color-textDefault: #272d38;
+  /* ── Spacing scale (8-point grid) ── */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 16px;
+  --space-4: 24px;
+  --space-5: 40px;
+  --space-6: 72px;
+
+  /* ── Legacy aliases (retire on contact as pages migrate to dark field) ── */
+  --color-bgBase: #080f1f;
+  --color-bgSheet: #101d38;
+  --color-bgSubtle: #0e1b33;
+  --color-bgEmphasis: #1c2a4a;
+  --color-scarlet: #c98d00;
+  --color-textStrong: #f4f6fa;
+  --color-textDefault: #c9d1e0;
   --color-textOnNavy: #f4f6fa;
+  --color-chrome: #0e1b33;
+  --color-chromeDeep: #080f1f;
+  --color-chromeEdge: #26365c;
+  --color-textOnChrome: #f4f6fa;
+  --color-goldInk: #c98d00;
   --font-ui: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-data:
     "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;

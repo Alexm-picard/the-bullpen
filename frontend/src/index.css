@@ -7,7 +7,7 @@
 
 :root {
   font-family: var(--font-ui);
-  color-scheme: light;
+  color-scheme: dark;
   background-color: var(--color-bgBase);
   color: var(--color-textDefault);
   font-size: 16px;
