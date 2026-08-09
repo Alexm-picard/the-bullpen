@@ -52,28 +52,67 @@ const NotFoundPage = lazy(() => import("./pages/not-found-page"));
 
 // Broadcast chrome nav ([160] cleanup PR): the global frame is the dark
 // telecast masthead - wordmark in Barlow italic with a gold tick, nav links
-// on chrome. Team color never appears here (the frame is brand, not matchup).
+// [191] journey-order nav: primary surfaces first, Models group second, ops/about last.
 const navLinkStyle: React.CSSProperties = {
   fontFamily: typography.fonts.display,
-  fontStyle: "italic",
   fontWeight: typography.weights.semibold,
   fontSize: 15,
-  letterSpacing: "0.06em",
+  letterSpacing: "0.08em",
   textTransform: "uppercase",
-  color: colors.textOnChrome,
+  color: colors.steel,
   textDecoration: "none",
+  height: 56,
+  display: "inline-flex",
+  alignItems: "center",
+  padding: "0 2px",
+  borderBottom: "3px solid transparent",
+  marginBottom: -2,
 };
 
-// One nav source for both surfaces (horizontal bar >= sm, drawer below sm - D1 mobile nav).
-const NAV_ITEMS: ReadonlyArray<{ to: string; label: string; end?: boolean }> = [
+const navLinkActiveStyle: React.CSSProperties = {
+  color: colors.ink,
+  borderBottomColor: colors.gold,
+};
+
+type NavItem = { to: string; label: string; end?: boolean };
+type NavGroup = { groupLabel: string; items: NavItem[] };
+type NavEntry = NavItem | NavGroup;
+
+function isGroup(e: NavEntry): e is NavGroup {
+  return "groupLabel" in e;
+}
+
+const NAV_ENTRIES: ReadonlyArray<NavEntry> = [
   { to: "/", label: "home", end: true },
-  { to: "/parks", label: "parks" },
-  { to: "/players", label: "players" },
   { to: "/games", label: "games" },
+  { to: "/players", label: "players" },
+  {
+    groupLabel: "Models",
+    items: [
+      { to: "/accuracy", label: "accuracy" },
+      { to: "/parks", label: "parks" },
+    ],
+  },
   { to: "/ops", label: "ops" },
-  { to: "/accuracy", label: "accuracy" },
   { to: "/about", label: "about" },
 ];
+
+const ALL_NAV_ITEMS: NavItem[] = NAV_ENTRIES.flatMap((e) =>
+  isGroup(e) ? e.items : [e],
+);
+
+const groupLabelStyle: React.CSSProperties = {
+  fontFamily: typography.fonts.mono,
+  fontSize: 9,
+  letterSpacing: "0.18em",
+  color: colors.textMuted,
+  textTransform: "uppercase",
+};
+
+const groupSeparatorStyle: React.CSSProperties = {
+  borderLeft: `1px solid ${colors.rule}`,
+  paddingLeft: 16,
+};
 
 function Layout() {
   // D1: below the `sm` breakpoint the 7-link bar cannot fit the 56px header, so the horizontal
@@ -94,42 +133,59 @@ function Layout() {
       >
         <Container size="lg" h="100%">
           <Group h="100%" justify="space-between">
-            <Group gap={8}>
-              <span
-                aria-hidden="true"
-                style={{
-                  width: 6,
-                  height: 22,
-                  backgroundColor: colors.gold,
-                  display: "inline-block",
-                }}
-              />
-              <Title
-                order={3}
-                style={{
-                  fontFamily: typography.fonts.display,
-                  fontStyle: "italic",
-                  fontWeight: typography.weights.heavy,
-                  letterSpacing: "0.04em",
-                  textTransform: "uppercase",
-                  color: colors.textOnChrome,
-                }}
-              >
-                The Bullpen
-              </Title>
-            </Group>
+            <Title
+              order={3}
+              style={{
+                fontFamily: typography.fonts.display,
+                fontWeight: typography.weights.heavy,
+                fontSize: 21,
+                letterSpacing: "0.03em",
+                textTransform: "uppercase",
+                color: colors.ink,
+              }}
+            >
+              The <span style={{ color: colors.gold }}>Bullpen</span>
+            </Title>
             <Group gap="md" visibleFrom="sm">
-              {NAV_ITEMS.map((item) => (
-                <Anchor
-                  key={item.to}
-                  component={NavLink}
-                  to={item.to}
-                  end={item.end}
-                  style={navLinkStyle}
-                >
-                  {item.label}
-                </Anchor>
-              ))}
+              {NAV_ENTRIES.map((entry) =>
+                isGroup(entry) ? (
+                  <Group
+                    key={entry.groupLabel}
+                    gap="md"
+                    style={groupSeparatorStyle}
+                  >
+                    <span style={groupLabelStyle}>{entry.groupLabel}</span>
+                    {entry.items.map((item) => (
+                      <Anchor
+                        key={item.to}
+                        component={NavLink}
+                        to={item.to}
+                        end={item.end}
+                        style={({ isActive }: { isActive: boolean }) => ({
+                          ...navLinkStyle,
+                          ...(isActive ? navLinkActiveStyle : {}),
+                        })}
+                      >
+                        {item.label}
+                      </Anchor>
+                    ))}
+                  </Group>
+                ) : (
+                  <Anchor
+                    key={entry.to}
+                    component={NavLink}
+                    to={entry.to}
+                    end={entry.end}
+                    style={({ isActive }: { isActive: boolean }) => ({
+                      ...navLinkStyle,
+                      ...(isActive ? navLinkActiveStyle : {}),
+                      ...(entry.label === "about" ? { fontSize: 13 } : {}),
+                    })}
+                  >
+                    {entry.label}
+                  </Anchor>
+                ),
+              )}
             </Group>
             <Burger
               hiddenFrom="sm"
@@ -167,14 +223,21 @@ function Layout() {
         }}
       >
         <Stack gap="sm" pt="sm">
-          {NAV_ITEMS.map((item) => (
+          {ALL_NAV_ITEMS.map((item) => (
             <Anchor
               key={item.to}
               component={NavLink}
               to={item.to}
               end={item.end}
               onClick={closeNav}
-              style={{ ...navLinkStyle, fontSize: 20, padding: "6px 0" }}
+              style={{
+                ...navLinkStyle,
+                fontSize: 20,
+                padding: "6px 0",
+                height: "auto",
+                borderBottom: "none",
+                marginBottom: 0,
+              }}
             >
               {item.label}
             </Anchor>
