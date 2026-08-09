@@ -44,10 +44,17 @@ export class ParksApiError extends ApiError {}
 
 export async function predictAllParks(
   req: AllParksRequest,
+  context?: { gameId?: number; parkId?: string },
 ): Promise<AllParksResponse> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (context?.gameId != null)
+    headers["X-Bullpen-Game-Id"] = String(context.gameId);
+  if (context?.parkId) headers["X-Bullpen-Park-Id"] = context.parkId;
   const res = await fetch(`${API_BASE}/v1/predict/batted-ball/all-parks`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(req),
   });
   if (!res.ok) {
@@ -90,7 +97,10 @@ export const CANONICAL_BBE_INPUT: AllParksRequest = {
 
 export function useAllParksPrediction(
   req: AllParksRequest | null,
-  opts: { enabled?: boolean } = {},
+  opts: {
+    enabled?: boolean;
+    context?: { gameId?: number; parkId?: string };
+  } = {},
 ) {
   return useQuery<AllParksResponse, ParksApiError>({
     // NULL-KEYED when the caller has no request, mirroring usePitchPrediction. `enabled: false`
@@ -104,7 +114,7 @@ export function useAllParksPrediction(
     queryKey: ["parks", "all-parks", req],
     queryFn: () => {
       if (req == null) throw new Error("request required");
-      return predictAllParks(req);
+      return predictAllParks(req, opts.context);
     },
     staleTime: 30_000,
     // POST /v1/predict/batted-ball/all-parks logs EVERY request to prediction_log (the drift

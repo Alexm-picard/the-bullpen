@@ -87,14 +87,15 @@ public class PredictAllParksController {
   @PostMapping("/batted-ball/all-parks")
   public AllParksPredictionResponse predictAllParks(
       @Valid @RequestBody AllParksOutcomeRequest req,
-      @RequestHeader(value = "X-Bullpen-Game-Id", required = false) Long gameIdHeader)
+      @RequestHeader(value = "X-Bullpen-Game-Id", required = false) Long gameIdHeader,
+      @RequestHeader(value = "X-Bullpen-Park-Id", required = false) String parkIdHeader)
       throws Exception {
     long gameId = gameIdHeader != null ? gameIdHeader : ThreadLocalRandom.current().nextLong();
     String correlationId = MDC.get("correlation_id");
     FeaturePipelineBattedBall.Request pipeReq = toPipelineRequest(req);
 
     PredictionOrchestrator.Served<LoadedAllParksModel.AllParksPrediction> served =
-        orchestrator.predict(new AllParksFamily(req, pipeReq), gameId, correlationId);
+        orchestrator.predict(new AllParksFamily(req, pipeReq, parkIdHeader), gameId, correlationId);
 
     // Response mapping needs the serving model's outcome order; the FK is never null on this
     // family (the -1L policy re-resolves the champion), so this is a Caffeine cache hit.
@@ -120,10 +121,15 @@ public class PredictAllParksController {
       implements PredictionOrchestrator.Family<LoadedAllParksModel.AllParksPrediction> {
     private final AllParksOutcomeRequest req;
     private final FeaturePipelineBattedBall.Request pipeReq;
+    private final String parkContext;
 
-    private AllParksFamily(AllParksOutcomeRequest req, FeaturePipelineBattedBall.Request pipeReq) {
+    private AllParksFamily(
+        AllParksOutcomeRequest req,
+        FeaturePipelineBattedBall.Request pipeReq,
+        String parkIdHeader) {
       this.req = req;
       this.pipeReq = pipeReq;
+      this.parkContext = parkIdHeader;
     }
 
     @Override
@@ -133,9 +139,11 @@ public class PredictAllParksController {
 
     @Override
     public Object featurePayload() {
-      // The RAW request DTO, never the transformed pipeReq - the drift observed side
-      // JSONExtracts by request-field name (launchSpeedMph etc.).
-      return req;
+      // The raw request DTO enriched with the park context so prediction_log rows are
+      // self-contained (ADR-0016). parkContext is the X-Bullpen-Park-Id header: a real park
+      // code for game-page calls, null for explorer calls. Null is logged explicitly so
+      // absent-by-design is distinguishable from absent-by-bug.
+      return Map.of("request", req, "parkContext", parkContext != null ? parkContext : "");
     }
 
     @Override
