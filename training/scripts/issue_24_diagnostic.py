@@ -60,9 +60,7 @@ LA_BINS = [
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(
-        description="Issue #24: LA-binned carry residuals at scale."
-    )
+    ap = argparse.ArgumentParser(description="Issue #24: LA-binned carry residuals at scale.")
     ap.add_argument("--season-from", type=int, default=2015)
     ap.add_argument("--season-to", type=int, default=2025)
     ap.add_argument("--sample", type=int, default=6000)
@@ -77,24 +75,18 @@ def main() -> None:
 
     st = min(args.season_to, _HOLDOUT_YEAR - 1)
     print(f"Loading HR sample ({args.season_from}-{st}, target {args.sample}) ...")
-    data = load_hr_sample(
-        sf=args.season_from, st=st, sample=args.sample, container=args.container
-    )
+    data = load_hr_sample(sf=args.season_from, st=st, sample=args.sample, container=args.container)
     n = len(data["ev"])
     print(f"Loaded {n} HRs.")
 
     print("Loading weather ...")
-    weather_by_game = load_weather_observed(
-        args.season_from, st, container=args.container
-    )
+    weather_by_game = load_weather_observed(args.season_from, st, container=args.container)
     atmos = _atmospheres(data, weather_by_game)
 
     # Load the fitted calibration (cd_scale + spin coefficients).
     if args.calibration.exists():
         calib = load_physics_calibration(args.calibration)
-        print(
-            f"Using calibration from {args.calibration} (cd_scale={calib.cd_scale:.4f})"
-        )
+        print(f"Using calibration from {args.calibration} (cd_scale={calib.cd_scale:.4f})")
     else:
         calib = PhysicsCalibration(spin=PHYSICS_PRIOR_COEFFS, cd_scale=1.0)
         print("No calibration file found, using cd_scale=1.0 + physics-prior spin.")
@@ -132,18 +124,14 @@ def main() -> None:
         mask = (la >= lo) & (la < hi) & np.isfinite(residuals)
         bucket_n = int(mask.sum())
         if bucket_n == 0:
-            print(
-                f"  {lo:2d}-{hi:2d} deg    {'---':>6}  {'---':>10}  {'---':>10}  {'---':>10}"
-            )
+            print(f"  {lo:2d}-{hi:2d} deg    {'---':>6}  {'---':>10}  {'---':>10}  {'---':>10}")
             continue
         r = residuals[mask]
         bias = float(np.mean(r))
         mae = float(np.mean(np.abs(r)))
         std = float(np.std(r))
         total_valid += bucket_n
-        print(
-            f"  {lo:2d}-{hi:2d} deg    {bucket_n:6d}  {bias:+10.2f}  {mae:10.2f}  {std:10.2f}"
-        )
+        print(f"  {lo:2d}-{hi:2d} deg    {bucket_n:6d}  {bias:+10.2f}  {mae:10.2f}  {std:10.2f}")
 
     print("-" * 56)
     valid = np.isfinite(residuals)
@@ -178,9 +166,7 @@ def main() -> None:
             print("   Candidates: spin decay, lift-coefficient saturation, or")
             print("   Statcast extrapolated hit_distance_ft vs full-carry.")
         else:
-            print(
-                "-> SOFTENED AT SCALE: no action needed beyond mean-corrected calibration."
-            )
+            print("-> SOFTENED AT SCALE: no action needed beyond mean-corrected calibration.")
     print()
 
 
