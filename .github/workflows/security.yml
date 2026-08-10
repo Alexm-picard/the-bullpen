@@ -43,7 +43,7 @@ jobs:
         with:
           fetch-depth: 0 # full history so PRs scan the whole diff range
       # Free for public repos; a private org would need GITLEAKS_LICENSE.
-      - uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
