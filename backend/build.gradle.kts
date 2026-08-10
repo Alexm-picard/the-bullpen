@@ -11,7 +11,7 @@ plugins {
     // JMH microbenchmarks for the inference hot path (S1g). Runs via `./gradlew jmh`,
     // nightly in CI against a committed baseline (build is NOT gated on it — JMH
     // timing flaps on shared runners). Creates the `src/jmh/java` source set.
-    id("me.champeau.jmh") version "0.7.2"
+    id("me.champeau.jmh") version "0.7.3"
 }
 
 group = "net.thebullpen"
@@ -81,7 +81,7 @@ dependencies {
 
     // ADR-0007: single S3-compatible client across prod (Cloudflare R2) and offline dev (MinIO).
     // bom keeps the s3 + apache-client + sts versions aligned without listing each explicitly.
-    implementation(platform("software.amazon.awssdk:bom:2.30.20"))
+    implementation(platform("software.amazon.awssdk:bom:2.51.3"))
     implementation("software.amazon.awssdk:s3")
     implementation("software.amazon.awssdk:apache-client")
 
