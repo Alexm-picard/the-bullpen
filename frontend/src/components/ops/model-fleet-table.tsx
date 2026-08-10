@@ -20,7 +20,6 @@ import {
   PSI_METRIC,
 } from "../../data/ops-fixtures";
 import { colors, typography } from "../../design/broadcast";
-import { broadcastStatTablePalette } from "../broadcast/palettes";
 import { StatTable } from "../shared/stat-table";
 import type { StatTableColumn, StatTableRow } from "../shared/stat-table";
 
@@ -105,7 +104,7 @@ export function ModelFleetTable({ rows, caption }: ModelFleetTableProps) {
       }}
     >
       <StatTable
-        palette={broadcastStatTablePalette}
+        
         columns={fleetColumns()}
         rows={rowsFor(rows)}
         caption={caption}

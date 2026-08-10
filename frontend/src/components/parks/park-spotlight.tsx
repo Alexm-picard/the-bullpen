@@ -12,7 +12,6 @@
  * this component — Coors-or-otherwise is selected upstream.
  */
 
-import { broadcastKeyNotesPalette } from "../broadcast/palettes";
 import { KeyNotes } from "../scouting/key-notes";
 import { ParkFactorStrip } from "./park-factor-strip";
 import { ParkFieldSvg } from "./park-field-svg";
@@ -53,7 +52,7 @@ export function ParkSpotlight({ spotlight }: ParkSpotlightProps) {
         <ParkFactorStrip factors={spotlight.factors} />
         <KeyNotes
           notes={spotlight.keyReads}
-          palette={broadcastKeyNotesPalette}
+          
         />
       </div>
     </div>

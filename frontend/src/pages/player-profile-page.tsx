@@ -28,8 +28,6 @@ import { ReliabilityDiagram } from "../components/charts/reliability-diagram";
 import { BroadcastPanel } from "../components/broadcast/broadcast-panel";
 import { LowerThird } from "../components/broadcast/lower-third";
 import {
-  broadcastKeyNotesPalette,
-  broadcastStatTablePalette,
 } from "../components/broadcast/palettes";
 import { BattedBallsView } from "../components/players/batted-balls-view";
 import { PitcherArsenalCard } from "../components/players/pitcher-arsenal-card";
@@ -198,7 +196,7 @@ function PitcherColumn({ report }: { report: MatchupReport }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <PlayerProfileCard player={pitcher} variant="pitcher" />
       <StatTable
-        palette={broadcastStatTablePalette}
+        
         columns={pitchMixColumns()}
         rows={mixRows}
         caption={`Pitch mix · ${pitcher.team} 2025–26 · vs opposite hand`}
@@ -232,7 +230,7 @@ function BatterColumn({ report }: { report: MatchupReport }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <PlayerProfileCard player={batter} variant="batter" />
       <StatTable
-        palette={broadcastStatTablePalette}
+        
         columns={splitsColumns()}
         rows={splitRows}
         caption={`Splits · ${batter.team} 2025–26 season-to-date`}
@@ -442,7 +440,7 @@ export default function PlayerProfilePage() {
         {isRealPlayer ? null : (
           <KeyNotes
             notes={report.keyNotes}
-            palette={broadcastKeyNotesPalette}
+            
           />
         )}
       </div>
