@@ -121,7 +121,7 @@ describe("GamePage (broadcast identity)", () => {
 
   it("renders the scorebug as a status element and the pitch-log lower third", () => {
     const html = render(<GamePage />, "/games/12345");
-    expect(html).toContain('role="status"');
+    expect(html).toMatch(/role="status"[^>]*aria-label="[^"]+, [^"]+,/);
     expect(html).toContain("Live Pitch Log");
   });
 

@@ -83,9 +83,9 @@ CH_DB=${CH_DB:-default}
 #   ${REMOTE}/${NAME}/clickhouse/...          (the clickhouse-backup output)
 #   ${REMOTE}/${NAME}/sqlite/registry.sqlite  (the P1-irreplaceable registry capture)
 BULLPEN_OFFSITE_REMOTE="${BULLPEN_OFFSITE_REMOTE:-}"
-# R2 remote for model artifacts. SnapshotStorage archives under models-archive/ in the
+# R2 remote for model artifacts. Bundles live under snapshots/<name>/<version>/ in the
 # same bucket the backups live in (bullpen-prod). Default derives from the backup remote:
-#   bullpen-r2:bullpen-prod/backups -> bullpen-r2:bullpen-prod/models-archive
+#   bullpen-r2:bullpen-prod/backups -> bullpen-r2:bullpen-prod/snapshots
 MODELS_ARCHIVE_REMOTE="${MODELS_ARCHIVE_REMOTE:-}"
 RCLONE_BIN="${RCLONE_BIN:-rclone}"
 # The root/cron context cannot discover the dev user's rclone config on its own
@@ -361,18 +361,18 @@ restore_registry() {
 }
 
 restore_model_artifacts() {
-  # Pull champion model artifacts from R2 models-archive/ into the local paths the
+  # Pull champion model artifacts from R2 snapshots/ into the local paths the
   # registry points at. In a real DR the ClickHouse data and SQLite registry are
   # restored from the offsite backup, but champion ONNX weights live separately in R2
-  # (SnapshotStorage archives under models-archive/<model_name>/<version>/). Without
-  # this step the system has data but cannot serve predictions (the 2026-07-26 drill
-  # finding: "data-complete, not serving-capable").
-  log "models: restoring champion artifacts from R2 models-archive"
+  # (snapshots/<model_name>/<version>/ per ADR-0007). Without this step the system has
+  # data but cannot serve predictions (the 2026-07-26 drill finding: "data-complete,
+  # not serving-capable").
+  log "models: restoring champion artifacts from R2 snapshots/"
 
   # Derive archive remote if not set explicitly
   local archive_remote="$MODELS_ARCHIVE_REMOTE"
   if [[ -z "$archive_remote" ]]; then
-    archive_remote="${BULLPEN_OFFSITE_REMOTE%/backups}/models-archive"
+    archive_remote="${BULLPEN_OFFSITE_REMOTE%/backups}/snapshots"
   fi
 
   if [[ "$DRY_RUN" == "1" ]]; then
@@ -380,12 +380,23 @@ restore_model_artifacts() {
     return 0
   fi
 
+  # The registry stores stages lowercase (V001 CHECK constraint). A case mismatch
+  # here silently returns 0 rows and the restore stage looks like an empty registry.
   local champions
   champions=$(sqlite3 "$SCRATCH_REGISTRY" \
-    "SELECT model_name, version, artifact_path FROM model_versions WHERE stage='CHAMPION'" 2>/dev/null)
+    "SELECT model_name, version, artifact_path FROM model_versions WHERE stage='champion'" 2>/dev/null)
 
   if [[ -z "$champions" ]]; then
-    log "  no CHAMPION versions in scratch registry - model restore skipped (probe will 503)"
+    # Fail loud when the registry HAS champion rows but the query missed them (case bug
+    # or schema change). An empty registry is the legitimate "nothing to restore" case;
+    # a registry with champions and a query returning none is a drill defect.
+    local total_champions
+    total_champions=$(sqlite3 "$SCRATCH_REGISTRY" \
+      "SELECT count(*) FROM model_versions WHERE stage='champion'" 2>/dev/null || echo 0)
+    if [[ "${total_champions:-0}" -gt 0 ]]; then
+      fail "scratch registry has ${total_champions} champion(s) but the restore query returned none - check the stage value and query"
+    fi
+    log "  no champion versions in scratch registry - model restore skipped (probe will 503)"
     return 0
   fi
 
@@ -423,8 +434,8 @@ restore_model_artifacts() {
   done <<< "$champions"
 
   [[ "$restored" -ge 1 ]] \
-    || fail "no champion artifacts restored from R2 - models-archive prefix may be empty or misconfigured"
-  log "models: restored ${restored} champion(s) from R2 models-archive"
+    || fail "no champion artifacts restored from R2 - snapshots/ prefix may be empty or misconfigured"
+  log "models: restored ${restored} champion(s) from R2 snapshots/"
 }
 
 boot_profile() {
@@ -487,7 +498,7 @@ boot_profile() {
         || fail "prediction probe returned HTTP ${code} after model restore - system is not serving (check ${DRILL_TMP}/boot-api.log)"
     else
       # Data-only restore: model artifacts are not part of the backup set (they live in
-      # R2 models-archive/). 404/503 is expected; actuator UP is the hard gate.
+      # R2 snapshots/). 404/503 is expected; actuator UP is the hard gate.
       log "  api prediction probe: HTTP ${code} (informational: 200=artifact loaded, 404/503=artifact absent)"
     fi
   else
@@ -551,7 +562,7 @@ run_r2_drill() {
   echo "  source:           ${BULLPEN_OFFSITE_REMOTE%/}/${NAME}"
   echo "  clickhouse:        restored into scratch (core tables non-empty)"
   echo "  registry:          integrity ok, model_versions in range (1..live)"
-  echo "  models:            champion artifacts restored from R2 models-archive"
+  echo "  models:            champion artifacts restored from R2 snapshots"
   echo "  api profile:       actuator UP, prediction probe 200 (GATING)"
   echo "  worker profile:    actuator UP + stable ${WORKER_SETTLE}s (no crash-loop)"
   echo "  RTO-to-serving:    ${RTO_SECONDS}s (drill start to first 200 on predict)"
