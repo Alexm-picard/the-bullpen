@@ -17,5 +17,5 @@ export type AboutDisciplineProps = {
 };
 
 export function AboutDiscipline({ notes }: AboutDisciplineProps) {
-  return <KeyNotes notes={notes}  />;
+  return <KeyNotes notes={notes} />;
 }

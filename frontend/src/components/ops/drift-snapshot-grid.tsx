@@ -104,7 +104,6 @@ export function DriftSnapshotGrid({
     <div className="ops-drift__pair">
       <div>
         <StatTable
-          
           columns={psiCols}
           rows={psiRows(psiByFeature)}
           caption="PSI by feature · 0.25 notice threshold"
@@ -112,7 +111,6 @@ export function DriftSnapshotGrid({
       </div>
       <div>
         <StatTable
-          
           columns={eceCols}
           rows={eceRows(eceByOutput)}
           caption="ECE by segment · 0.10 page threshold"

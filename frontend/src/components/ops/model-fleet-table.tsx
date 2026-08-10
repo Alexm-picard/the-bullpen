@@ -104,7 +104,6 @@ export function ModelFleetTable({ rows, caption }: ModelFleetTableProps) {
       }}
     >
       <StatTable
-        
         columns={fleetColumns()}
         rows={rowsFor(rows)}
         caption={caption}

@@ -83,11 +83,5 @@ export function OverviewParksTable({ rows }: OverviewParksTableProps) {
     },
   }));
 
-  return (
-    <StatTable
-      
-      columns={COLUMNS}
-      rows={tableRows}
-    />
-  );
+  return <StatTable columns={COLUMNS} rows={tableRows} />;
 }

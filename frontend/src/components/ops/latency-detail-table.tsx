@@ -47,7 +47,6 @@ function rowsFor(rows: LatencyRow[]): StatTableRow[] {
 export function LatencyDetailTable({ rows, caption }: LatencyDetailTableProps) {
   return (
     <StatTable
-      
       columns={latencyColumns()}
       rows={rowsFor(rows)}
       caption={caption}
