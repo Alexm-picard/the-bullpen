@@ -238,6 +238,52 @@ public class PitcherPitchTypePriorRepository {
    * @param y7Expression the training SQL's own class fold, passed through so a taxonomy change
    *     cannot desync training from serving.
    */
+  /**
+   * How many days of history are covered by NEITHER table - the size of the hole between the
+   * manually-backfilled corpus and the live surface's 14-day TTL window.
+   *
+   * <p>THE NUMBER [186]'s UNION MADE INVISIBLE, restored deliberately. Before the union the anchor
+   * was {@code max(game_date) FROM pitches}, so a stale corpus produced a large age and the deriver
+   * refused loudly - that refusal is what surfaced the whole 2026-07-27 finding. With the union the
+   * live leg dominates the anchor, so {@code as_of_date} reads ~yesterday and the freshness gauge
+   * reads ~1 EVEN WHEN weeks of history are missing from both tables. The freshness gauge answers
+   * "is the newest data recent"; this one answers "is the history CONTIGUOUS", and only the second
+   * can see the hole.
+   *
+   * <p>It matters more here than for the sibling 28-day form window: that quantity is ROLLING, so a
+   * hole ages out and self-heals within 28 days. This one is CAREER-EXPANDING and rebuilt from
+   * scratch nightly with no memory, so a gap is permanent until a backfill runs, and it biases
+   * {@code prior_n} - itself a model feature - and every {@code ars_*} ratio derived from it.
+   * Undercount, not lookahead, so it is not leakage; it is a provenance defect, which is why it
+   * gets a signal rather than a silent accepted limit.
+   *
+   * <p>Zero when the two ranges touch or overlap, and zero when {@code pitches_live} is empty
+   * (there is no hole if there is no second source - the freshness gauge owns that case).
+   */
+  public long coverageGapDays() {
+    // The ifNull wrappers below are DEAD, deliberately left with this note: min()/max() over an
+    // empty non-Nullable column return the TYPE DEFAULT (1970-01-01), not NULL. What actually
+    // produces the documented 0 on an empty pitches_live is the greatest() clamp - an empty live
+    // table yields epoch minus corpus_max, hugely negative. Do not "simplify" the clamp away on
+    // the reasoning that ifNull covers the case; it does not. (The same trap killed the
+    // snapshot SQL's live_floor guard - see PitcherPitchTypePriorSnapshotSql.)
+    //
+    // One state this clamp reads oddly for, on purpose: EMPTY pitches with a populated
+    // pitches_live (a fresh or just-restored box, before the first backfill) reports ~20,600 -
+    // literally true, since everything before the live floor is missing, but it will look like a
+    // broken gauge at exactly the moment someone is watching a restore drill. The gauge
+    // description names that state so an alert rule can tell it from a real backfill lag.
+    Long gap =
+        jdbc.queryForObject(
+            "SELECT greatest(0, toInt64(ifNull("
+                + "  (SELECT min(game_date) FROM pitches_live"
+                + "    WHERE pitch_type NOT IN ('', 'PO', 'IN')), toDate(0))"
+                + "  - ifNull((SELECT max(game_date) FROM pitches"
+                + "    WHERE pitch_type NOT IN ('', 'PO', 'IN')), toDate(0)) - 1))",
+            Long.class);
+    return gap == null ? 0L : gap;
+  }
+
   public LocalDate refreshSnapshot(String y7Expression) {
     jdbc.execute(PitcherPitchTypePriorSnapshotSql.refreshInsert(y7Expression));
     LocalDate asOf =

@@ -53,6 +53,11 @@ def _frame(n: int = 1_200, seed: int = 0, nan_frac: float = 0.08) -> pd.DataFram
     df["stand_i"] = rng.integers(0, 2, n)
     df["throws_i"] = rng.integers(0, 2, n)
     df["park_i"] = rng.integers(0, 3, n)
+    # The raw request-space sources the real loader now keeps alongside their encoded twins -
+    # the native drift baseline reads THESE (the observed side logs "R"/"L", not 0/1).
+    df["stand"] = np.where(df["stand_i"] == 0, "R", "L")
+    df["p_throws"] = np.where(df["throws_i"] == 0, "R", "L")
+    df["park_id"] = "PARK0" + df["park_i"].astype(str)
     for c in _NULLABLE_S:
         df[c] = rng.integers(0, 4, n).astype("float64")
     for c in _ARS:
@@ -421,3 +426,180 @@ def test_cli_model_lr_runs_end_to_end(tmp_path: Path, monkeypatch: pytest.Monkey
     )
     assert result.exit_code == 0, result.output
     assert (tmp_path / "pitch_type_lr_baseline" / "vcli" / "model.pkl").exists()
+
+
+# --- native drift baselines (E-1 part 2, both blocks) ---------------------------------------
+
+
+def test_native_baselines_land_in_metadata(bundle_dir: Path) -> None:
+    """Every produced bundle is PSI-ready at registration; without this, promoting the model
+    fires DriftBaselineMissing on the first nightly PSI pass."""
+    from bullpen_training.registry_client.distributions import CHAMPIONS
+
+    cfg = CHAMPIONS["pitch_type_pre"]
+    meta = json.loads((bundle_dir / "metadata.json").read_text())
+
+    fd = meta["feature_distributions"]
+    assert set(fd) == set(cfg.continuous) | set(cfg.categorical), (
+        "the reference must watch exactly the declared request-DTO keys"
+    )
+    # Request-space VALUES, not the encoded twins: the observed side logs "R"/"L".
+    assert set(fd["stand"]["counts"]) <= {"R", "L"}
+    assert set(fd["parkId"]["counts"]) <= {"PARK00", "PARK01", "PARK02"}
+
+    pred = meta["training_prediction_distribution"]
+    assert set(pred) == set(cfg.class_labels)
+    assert all(len(v) > 0 for v in pred.values())
+
+    assert meta["train_split_seasons"] == "2015-2023"
+    prov = meta["baseline_provenance"]
+    assert prov["slice"] == "train"
+    assert prov["source"] == "native_trainer_emission"
+
+
+def test_native_baselines_read_the_train_slice_not_the_test_snapshot(bundle_dir: Path) -> None:
+    """The bundle's parquet snapshot is the TEST slice for this family; a reference built from
+    the held-out year would re-aim the PSI comparison from live-vs-training to live-vs-2025.
+    The synthetic loader seeds by start_year, so the two slices are distinguishable."""
+    meta = json.loads((bundle_dir / "metadata.json").read_text())
+    balls_counts = {int(k): v for k, v in meta["feature_distributions"]["balls"]["counts"].items()}
+
+    train_counts = _frame(seed=2015)["balls"].value_counts().to_dict()
+    test_counts = _frame(seed=2025)["balls"].value_counts().to_dict()
+    assert balls_counts == {int(k): v for k, v in train_counts.items()}
+    assert balls_counts != {int(k): v for k, v in test_counts.items()}, (
+        "the two slices must be distinguishable or this test proves nothing"
+    )
+
+
+def test_baseline_prediction_pass_is_row_capped_and_deterministic() -> None:
+    """A seeded-random sampler and a head slice BOTH passed the first version of this test
+    (reviewer mutation battery): it asserted only the row COUNT. The head slice is the one that
+    costs something - over the date-ordered 5M-row box slice, arange(cap) is roughly 2015 alone,
+    and every nightly PSI thereafter reads the league's own 2015->2025 pitch-mix evolution as
+    drift. So this pins WHICH rows: the exact evenly-spaced linspace positions."""
+    from bullpen_training.pitch_type.baselines import train_slice_baselines
+
+    frame = _frame(n=100, seed=7)
+    seen_positions: list[np.ndarray] = []
+
+    def _proba(df: pd.DataFrame) -> np.ndarray:
+        # positional identity of the selected rows, robust to any index labels
+        seen_positions.append(frame.index.get_indexer(df.index))
+        k = len(PITCH_TYPE_CLASSES)
+        # per-class DISTINCT values so the block is order-sensitive (see the label-order test)
+        return np.tile(np.arange(k, dtype=np.float64) / 10.0, (len(df), 1))
+
+    out = train_slice_baselines(frame, _proba, train_window="2015-2023", prediction_row_cap=10)
+    np.testing.assert_array_equal(seen_positions[0], np.linspace(0, 99, 10).astype(np.int64))
+    assert out["baseline_provenance"]["prediction_rows"] == 10
+    # under the cap: the full frame goes through, in order
+    seen_positions.clear()
+    train_slice_baselines(frame, _proba, train_window="2015-2023", prediction_row_cap=1_000)
+    np.testing.assert_array_equal(seen_positions[0], np.arange(100))
+
+
+def test_baseline_prediction_block_preserves_class_label_order() -> None:
+    """compute_prediction_distribution maps proba[:, j] -> class_labels[j]; order is
+    load-bearing, and a set-equality assertion cannot see a reversal (live-FF would be compared
+    against reference-OFF, silently). The fake proba gives column j the value j/10."""
+    from bullpen_training.pitch_type.baselines import train_slice_baselines
+    from bullpen_training.registry_client.distributions import CHAMPIONS
+
+    cfg = CHAMPIONS["pitch_type_pre"]
+    assert cfg.class_labels == list(PITCH_TYPE_CLASSES), (
+        "the drift reference's label order must be the model's own class order"
+    )
+    frame = _frame(n=50, seed=3)
+
+    def _proba(df: pd.DataFrame) -> np.ndarray:
+        k = len(PITCH_TYPE_CLASSES)
+        return np.tile(np.arange(k, dtype=np.float64) / 10.0, (len(df), 1))
+
+    out = train_slice_baselines(frame, _proba, train_window="2015-2023")
+    pred = out["training_prediction_distribution"]
+    for j, label in enumerate(cfg.class_labels):
+        assert set(pred[label]) == {j / 10.0}, f"column {j} must map to {label}"
+
+
+def test_native_emission_uses_the_served_chain_not_the_raw_booster(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The docstring's own requirement: a raw-margin reference would make the calibrator itself
+    read as drift. Pins that production hands train_slice_baselines the BOUND predict_proba of
+    the ModelBundle (LightGBM + temperature), not booster.predict."""
+    from bullpen_training.pitch_type import baselines as baselines_mod
+    from bullpen_training.pitch_type.train import ModelBundle
+
+    captured: list[Any] = []
+    real = baselines_mod.train_slice_baselines
+
+    def _spy(train_df: pd.DataFrame, predict_proba: Any, **kw: Any) -> dict[str, Any]:
+        captured.append(predict_proba)
+        return real(train_df, predict_proba, **kw)
+
+    monkeypatch.setattr(production_mod, "train_slice_baselines", _spy)
+    train_and_persist(
+        _SyntheticLoader(),
+        version="vspy",
+        artifacts_dir=tmp_path,
+        skip_cv=True,
+        num_boost_round=10,
+        early_stopping_rounds=5,
+    )
+    assert len(captured) == 1
+    assert getattr(captured[0], "__func__", None) is ModelBundle.predict_proba
+
+
+def test_baseline_max_sample_is_threaded_not_hardcoded() -> None:
+    """A hardcoded literal equal to DEFAULT_MAX_SAMPLE diverges silently the day the default
+    moves (reviewer mutation: 5000 -> 50 survived). Pin that the knob actually reaches the
+    continuous samples."""
+    from bullpen_training.pitch_type.baselines import train_slice_baselines
+
+    frame = _frame(n=100, seed=11)
+
+    def _proba(df: pd.DataFrame) -> np.ndarray:
+        k = len(PITCH_TYPE_CLASSES)
+        return np.full((len(df), k), 1.0 / k)
+
+    out = train_slice_baselines(frame, _proba, train_window="2015-2023", max_sample=7)
+    fd = out["feature_distributions"]
+    for key, block in fd.items():
+        if block["kind"] == "continuous":
+            assert len(block["sample"]) <= 7, key
+    assert any(len(b["sample"]) == 7 for b in fd.values() if b["kind"] == "continuous"), (
+        "at least one large column must be capped at exactly max_sample"
+    )
+    assert out["baseline_provenance"]["max_sample"] == 7
+
+
+def test_bytes_valued_raw_columns_yield_string_reference_keys() -> None:
+    """The driver can hand FixedString(1) back as bytes; b"R"-vs-"R" correctness must be a
+    guarantee, not a pandas-version property - a bytes-keyed reference would value-mismatch the
+    observed "R"/"L" and silently empty the drift surface (the loader decodes at source; this
+    pins the block layer independently)."""
+    from bullpen_training.pitch_type.baselines import train_slice_baselines
+
+    frame = _frame(n=60, seed=5)
+    frame["stand"] = [b"R" if v == "R" else b"L" for v in frame["stand"]]
+    frame["p_throws"] = [b"R" if v == "R" else b"L" for v in frame["p_throws"]]
+
+    def _proba(df: pd.DataFrame) -> np.ndarray:
+        k = len(PITCH_TYPE_CLASSES)
+        return np.full((len(df), k), 1.0 / k)
+
+    out = train_slice_baselines(frame, _proba, train_window="2015-2023")
+    assert set(out["feature_distributions"]["stand"]["counts"]) <= {"R", "L"}
+    assert set(out["feature_distributions"]["pThrows"]["counts"]) <= {"R", "L"}
+
+
+def test_baseline_refuses_an_empty_train_slice() -> None:
+    from bullpen_training.pitch_type.baselines import train_slice_baselines
+
+    with pytest.raises(ValueError, match="empty"):
+        train_slice_baselines(
+            _frame(n=100).iloc[0:0],
+            lambda df: np.zeros((0, len(PITCH_TYPE_CLASSES))),
+            train_window="2015-2023",
+        )

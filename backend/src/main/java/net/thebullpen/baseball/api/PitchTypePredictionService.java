@@ -28,7 +28,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 
 /**
  * Serves the pitch-TYPE PRIOR (decision [183]).
@@ -59,9 +58,10 @@ import org.springframework.web.server.ResponseStatusException;
  * RegistryService.promoteToChampionAtomically}, behind the rule-5 evidence gate, so a model with no
  * champion has no routing config, takes the fallback, and 503s exactly as it did before this
  * change. The false version of this claim is worse than merely wrong: it points a reader who needs
- * first-champion evidence at hand-inserting a {@code model_routing} row, which V011 does not
- * stage-constrain - that would serve an unpromoted model as {@code role=champion} and breach rules
- * 5 and 6 together.
+ * first-champion evidence at hand-inserting a {@code model_routing} row - which would serve an
+ * unpromoted model as {@code role=champion} and breach rules 5 and 6 together. Since task #94 (V020
+ * + the RoutingService write-path check + the boot integrity check) that hand-insert is refused at
+ * every layer, not merely forbidden by convention.
  *
  * <p>The first champion for this family promotes via the OFFLINE GATE ([182]/#334), as {@link
  * net.thebullpen.baseball.registry.RegistryBaselines} already records against this exact model
@@ -155,7 +155,8 @@ public class PitchTypePredictionService {
           arsenal.deriveSequence(
               req.pitcherId(), req.gameId(), req.atBatIndex(), req.pitchNumber());
     } catch (PitchTypeArsenalDeriver.PriorUnavailable e) {
-      throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage(), e);
+      throw new CodedServiceException(
+          HttpStatus.SERVICE_UNAVAILABLE, "prior_unavailable", e.getMessage());
     } catch (RuntimeException e) {
       // A ClickHouse failure on the derivation reads is a real model-path failure and must be
       // COUNTED, not just surfaced as an HTTP 500. The "unknown" role bucket exists precisely for
@@ -187,12 +188,13 @@ public class PitchTypePredictionService {
               req.gameId(),
               versionId -> predictWith(versionId, features),
               () -> {
-                throw new ResponseStatusException(
+                throw new CodedServiceException(
                     HttpStatus.SERVICE_UNAVAILABLE,
+                    "model_not_promoted",
                     MODEL_NAME
-                        + " has no promoted champion and no A/B routing config; register and promote"
-                        + " a model first. 503 rather than 404: the route exists, the model does"
-                        + " not.");
+                        + " has no promoted champion and no A/B routing config; register and"
+                        + " promote a model first. 503 rather than 404: the route exists, the"
+                        + " model does not.");
               });
 
       role = routed.servingRole().name().toLowerCase(Locale.ROOT);
@@ -270,7 +272,7 @@ public class PitchTypePredictionService {
               });
 
       return new Served(probs, MODEL_NAME, serving.version(), ars.pitcherPriorN(), elapsedMicros);
-    } catch (ResponseStatusException e) {
+    } catch (CodedServiceException e) {
       // 503 is the designed no-champion / stale-prior answer, not a model fault. Counting it
       // against the model's error rate would make an unregistered model look broken.
       throw e;

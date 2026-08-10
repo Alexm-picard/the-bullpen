@@ -9,8 +9,10 @@ outcomes on the game page (decision [177]). The pre-pitch head now has its own n
 there; its declared primary was re-aimed from Brier edge to absolute calibration (ECE < 0.02,
 passing at 0.0036 - decision [180] / ADR-0014, amending the [154] / ADR-0011 hold), and the panel
 renders a clean "model not yet promoted" state until the human-gated promotion lands (rule 6). Built to
-operate through at least one MLB season for a real drift postmortem (the in-season postmortem is
-pending; a synthetic induced-drift drill stands in for now).
+operate through at least one MLB season for a real drift postmortem - delivered: the flagship
+write-up documents a real two-month silent staleness event on the live pitch path, caught by
+designed machinery and verified recovered
+([`docs/postmortems/2026-08-03_pitcher-form-silent-staleness.md`](docs/postmortems/2026-08-03_pitcher-form-silent-staleness.md)).
 
 - **Live site**: https://thebullpen.net/
 - **Ops dashboard**: https://thebullpen.net/ops
@@ -49,7 +51,10 @@ pending; a synthetic induced-drift drill stands in for now).
   a logistic-regression baseline to bound the neural model's lift.
 - A **drift -> postmortem** chain (automated trigger, human promotion gate -
   decision [44] / rule 6), validated end-to-end by a synthetic induced-drift
-  drill; the first real in-season postmortem is pending.
+  drill and then proven for real: the flagship postmortem documents two
+  months of silent production feature staleness caught by a deliberately
+  loud staleness design, root-caused, fixed, and verified recovered
+  ([`docs/postmortems/2026-08-03_pitcher-form-silent-staleness.md`](docs/postmortems/2026-08-03_pitcher-form-silent-staleness.md)).
 - **Measured test coverage**, not a vibe: 700+ backend test methods, 600+ Python
   tests (including the four required temporal-leakage tests, checked by fault
   injection - shuffled-target, future-contamination, calendar-date trace,
@@ -392,14 +397,17 @@ at_bat_index, pitch_number)` is implemented and feeds the nightly calibration
 
 - **Drift postmortems** land under
   [`docs/postmortems/`](docs/postmortems/) when a model degrades and the
-  human review writes one up. The flagship Phase-6 artifact is the
-  honestly-labeled synthetic **induced-drift drill** (decision [175]) -
-  [`2026-07-16_induced-drift-drill.md`](docs/postmortems/2026-07-16_induced-drift-drill.md)
-  - which injected a known shift, watched detection fire, and walked the real
-    detect → PAGE/NOTICE → human-gated response chain end-to-end. Explicitly
-    synthetic; it proves the detector has teeth before the first real in-season
-    event (a confirmed natural event supersedes it, [169]). An earlier pre-season
-    drill
+  human review writes one up. The flagship Phase-6 artifact is the REAL one:
+  [`2026-08-03_pitcher-form-silent-staleness.md`](docs/postmortems/2026-08-03_pitcher-form-silent-staleness.md)
+  - two months of silent Tier-3 form staleness on the live pitch path,
+    detected by a deliberately data-anchored staleness refusal, root-caused
+    to an unowned freshness assumption, fixed through locked decision [186]
+    with parity-tested queries, and verified recovered with numbers. It
+    executes [169]'s natural-event-supersedes clause over the earlier
+    honestly-labeled synthetic **induced-drift drill** (decision [175],
+    [`2026-07-16_induced-drift-drill.md`](docs/postmortems/2026-07-16_induced-drift-drill.md)
+    - now reclassified as the drill report that proved the detector had teeth
+    before the real event arrived). An earlier pre-season drill
     [`drill-2026-05-30-induced-battedball-drift.md`](docs/postmortems/drill-2026-05-30-induced-battedball-drift.md)
     (PSI 0.912, ECE 0.188) and the first-organic-PSI triage
     [`2026-07-16_first-organic-psi-triage.md`](docs/postmortems/2026-07-16_first-organic-psi-triage.md)

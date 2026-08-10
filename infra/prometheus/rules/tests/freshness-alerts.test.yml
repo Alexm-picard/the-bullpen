@@ -1,0 +1,207 @@
+# promtool unit tests for the [186] freshness watchdogs (2026-08-01 P1).
+#
+# `promtool check config` proves the rules PARSE; it would happily accept a rule whose `and`
+# never matches. These prove the rules FIRE - and, as important, stay SILENT - in the exact
+# scenarios the review caught bugs in: the never-ran/stale split (an or-disjunct rendered
+# "last succeeded 0s ago" on the never-ran page) and the corpus-stale poller gate (a 7d gate
+# false-paged every All-Star break). A passing check is not evidence unless you've confirmed
+# it could have failed; this file is that confirmation for the alert layer.
+#
+# Lives under rules/tests/ - prometheus.yml's rule_files glob (/etc/prometheus/rules/*.yml) is
+# non-recursive, so the box never loads this as a rule file.
+#
+# Run (CI does this in infra.yml; locally):
+#   docker run --rm -v "$PWD/infra/prometheus/rules:/rules:ro" \
+#     --entrypoint promtool prom/prometheus:v3.0.1 test rules /rules/tests/freshness-alerts.test.yml
+
+rule_files:
+  - ../bullpen-alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  # --- never-ran vs stale: the split with an honest $value ------------------------------------
+  # Worker boots at t=0 (process_start_time_seconds = 0), the form stamp never leaves 0.
+  - interval: 1m
+    input_series:
+      - series: 'process_start_time_seconds{job="thebullpen-worker", instance="w", profile="worker"}'
+        values: "0x2000"
+      - series: 'bullpen_pitcher_form_last_refresh_timestamp_seconds{job="thebullpen-worker", instance="w", profile="worker"}'
+        values: "0x2000"
+      - series: 'bullpen_pitchtype_prior_last_refresh_timestamp_seconds{job="thebullpen-worker", instance="w", profile="worker"}'
+        values: "0x2000"
+    alert_rule_test:
+      # Before the 26h uptime gate: a freshly deployed worker must NOT page.
+      - eval_time: 25h
+        alertname: PitcherFormRefreshNeverRan
+        exp_alerts: []
+      # After it: never-succeeded-since-boot pages, with the never-ran wording (no "0s ago").
+      - eval_time: 27h
+        alertname: PitcherFormRefreshNeverRan
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: thebullpen-worker
+              instance: w
+              profile: worker
+            exp_annotations:
+              summary: "pitcher_form refresh has never succeeded in this worker process"
+              description:
+                "The worker has been up > 26h and the 02:40 ET pitcher_form refresh has
+                not succeeded once since boot. Tier-3 form for the live pitch path is riding the
+                last deploy's snapshot. Check `journalctl -u bullpen-worker | grep
+                PitcherFormRefreshJob`."
+      # The twin family fires the same way (copy-paste drift between the pairs would break this).
+      - eval_time: 27h
+        alertname: PitchTypePriorRefreshNeverRan
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: thebullpen-worker
+              instance: w
+              profile: worker
+            exp_annotations:
+              summary: "pitch-type prior refresh has never succeeded in this worker process"
+              description:
+                "The worker has been up > 26h and the 02:50 ET pitcher_pitchtype_prior
+                refresh has not succeeded once since boot. The deriver refuses predictions past
+                its staleness bound, so this precedes a serving refusal. Check `journalctl -u
+                bullpen-worker | grep pitcher_pitchtype_prior_refresh`."
+      # The STALE lane must stay silent while the stamp is 0 - never-ran is not "stale since
+      # the epoch", and this is the assertion that reds if the or-disjunct shape comes back.
+      - eval_time: 27h
+        alertname: PitcherFormRefreshStale
+        exp_alerts: []
+      - eval_time: 27h
+        alertname: PitchTypePriorRefreshStale
+        exp_alerts: []
+
+  # --- stale: succeeded once at t=1h, then the job died ---------------------------------------
+  - interval: 1m
+    input_series:
+      - series: 'process_start_time_seconds{job="thebullpen-worker", instance="w", profile="worker"}'
+        values: "0x2000"
+      - series: 'bullpen_pitcher_form_last_refresh_timestamp_seconds{job="thebullpen-worker", instance="w", profile="worker"}'
+        values: "3600x2000"
+    alert_rule_test:
+      # 20h after boot the stamp is 19h old - inside the 26h budget, silent.
+      - eval_time: 20h
+        alertname: PitcherFormRefreshStale
+        exp_alerts: []
+      # 28h after boot the stamp is 27h old - stale fires; never-ran must NOT (stamp > 0).
+      - eval_time: 28h
+        alertname: PitcherFormRefreshStale
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: thebullpen-worker
+              instance: w
+              profile: worker
+            exp_annotations:
+              summary: "pitcher_form nightly refresh has stopped succeeding"
+              description:
+                "The 02:40 ET pitcher_form refresh last succeeded 1d 3h 0m 0s ago in this
+                worker process. Tier-3 form for the live pitch path is riding a stale snapshot.
+                Check `journalctl -u bullpen-worker | grep PitcherFormRefreshJob`."
+      - eval_time: 28h
+        alertname: PitcherFormRefreshNeverRan
+        exp_alerts: []
+
+  # --- corpus-stale: the age gauge fires only while the poller gate is open --------------------
+  - interval: 1m
+    input_series:
+      # Last successful poll at t=0; the corpus is 4 days behind throughout.
+      - series: 'bullpen_ingest_last_poll_timestamp_seconds{job="thebullpen-worker", instance="w", profile="worker"}'
+        values: "0x6000"
+      - series: 'bullpen_pitcher_form_age_days{job="thebullpen-worker", instance="w", profile="worker"}'
+        values: "4x6000"
+      - series: 'bullpen_pitchtype_prior_age_days{job="thebullpen-worker", instance="w", profile="worker"}'
+        values: "1x6000"
+    alert_rule_test:
+      # 1h after the last poll: in-season shape, age 4 > 3 - fires, with the honest day count.
+      - eval_time: 1h
+        alertname: PitcherFormCorpusStale
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: thebullpen-worker
+              instance: w
+              profile: worker
+            exp_annotations:
+              summary: "pitcher_form corpus is 4 days behind during the season"
+              description:
+                "The form refresh is running but its source corpus (pitches UNION
+                pitches_live) is 4 days old while games polled within the last 3d - the [186]
+                failure shape. Past ~14 days, unbackfilled history starts falling out of the
+                pitches_live TTL entirely. Check the live poller, then the manual backfill."
+      # 4 days after the last poll (All-Star break / season end): the gate is closed - the same
+      # age reading must NOT page. This is the assertion that reds if the gate widens again.
+      - eval_time: 96h
+        alertname: PitcherFormCorpusStale
+        exp_alerts: []
+      # A healthy age never fires regardless of the gate.
+      - eval_time: 1h
+        alertname: PitchTypePriorCorpusStale
+        exp_alerts: []
+
+  # --- coverage-gap GROWTH (level is accepted; growth is loss) --------------------------------
+  # ~1/day climb while the backfill is unrun: gap 49 at t=0, +1 every 24h.
+  - interval: 1h
+    input_series:
+      - series: 'bullpen_pitchtype_prior_coverage_gap_days{job="thebullpen-worker", instance="w", profile="worker"}'
+        values: "49x23 50x23 51x23 52x23 53x23 54x23"
+    alert_rule_test:
+      # 5 days in: delta over 3d is ~+3 - the growth fires (with the 6h for: satisfied).
+      - eval_time: 120h
+        alertname: PitchTypePriorCoverageGapGrowing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: thebullpen-worker
+              instance: w
+              profile: worker
+            exp_annotations:
+              summary: "pitch-type prior coverage gap grew 3.0 days over the last 3d"
+              description:
+                "The hole between the pitches corpus edge and the pitches_live TTL floor
+                is GROWING - the manual backfill has not run and each day of growth is history
+                leaving both tables permanently (prior_n biases lower for every pitcher active in
+                the gap). The accepted standing level does not fire this; growth does. Run the
+                pitch backfill. The min_over_time guard keeps the -1 boot state from reading as
+                growth after a worker restart."
+
+  # A high but FLAT gap - the accepted backlog - must never page.
+  - interval: 1h
+    input_series:
+      - series: 'bullpen_pitchtype_prior_coverage_gap_days{job="thebullpen-worker", instance="w", profile="worker"}'
+        values: "54x168"
+    alert_rule_test:
+      - eval_time: 120h
+        alertname: PitchTypePriorCoverageGapGrowing
+        exp_alerts: []
+
+  # A worker restart (-1 boot value, then the real reading) must not read as growth: the -1 -> 54
+  # jump is a +55 delta that the min_over_time >= 0 guard suppresses.
+  - interval: 1h
+    input_series:
+      - series: 'bullpen_pitchtype_prior_coverage_gap_days{job="thebullpen-worker", instance="w", profile="worker"}'
+        values: "-1x11 54x157"
+    alert_rule_test:
+      - eval_time: 48h
+        alertname: PitchTypePriorCoverageGapGrowing
+        exp_alerts: []
+      # ...and once the boot value ages out of the window, flat 54 still stays quiet.
+      - eval_time: 120h
+        alertname: PitchTypePriorCoverageGapGrowing
+        exp_alerts: []
+
+  # The backfill runs: the gap collapses. The large NEGATIVE delta must not fire, and the
+  # recovered flat state stays quiet.
+  - interval: 1h
+    input_series:
+      - series: 'bullpen_pitchtype_prior_coverage_gap_days{job="thebullpen-worker", instance="w", profile="worker"}'
+        values: "54x71 0x97"
+    alert_rule_test:
+      - eval_time: 120h
+        alertname: PitchTypePriorCoverageGapGrowing
+        exp_alerts: []

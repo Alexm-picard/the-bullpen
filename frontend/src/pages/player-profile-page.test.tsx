@@ -32,7 +32,7 @@ describe("PlayerProfilePage", () => {
     const html = render(<PlayerProfilePage />);
     // The section scaffolds still render...
     expect(html).toContain("Recent Predictions");
-    expect(html).toContain("Calibration");
+    expect(html).toContain("Calibration · pitch_outcome_pre");
     // ...and each falls to its designed empty state, not an error or blank table.
     expect(html).toContain("No settled predictions for this player yet");
     expect(html).toContain("No calibration data yet");

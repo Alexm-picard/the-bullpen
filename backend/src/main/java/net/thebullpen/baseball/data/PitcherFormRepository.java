@@ -16,11 +16,13 @@ import org.springframework.stereotype.Repository;
  * live pitch path reads by a single point lookup, instead of re-scanning ~50M pitch rows per
  * request (V007 doc).
  *
- * <p>DP2 / WS3. The nightly refresh recomputes each active pitcher's 28-day form FRESH from {@code
- * pitches} (current as-of-today), NOT from the training {@code features} table: that table is the
- * per-fold historical store written during CV runs, so reading it would serve stale form. The
- * strike / swstrike / in-play definitions mirror {@code compute_tier3.sql} EXACTLY so the live
- * snapshot is consistent with what the model trained on.
+ * <p>DP2 / WS3. The nightly refresh recomputes each active pitcher's 28-day form FRESH from the
+ * {@code pitches} UNION {@code pitches_live} source (decision [186]), NOT from the training {@code
+ * features} table: that table is the per-fold historical store written during CV runs, so reading
+ * it would serve stale form. The strike / swstrike / in-play definitions mirror {@code
+ * compute_tier3.sql} EXACTLY so the live snapshot is consistent with what the model trained on -
+ * pinned by the parity test in {@code PitcherFormRepositoryIT}, which runs the real training SQL
+ * from disk against the same fixture.
  *
  * <p>Gated on {@code bullpen.clickhouse.enabled} (NOT
  * {@code @ConditionalOnBean(clickhouseDataSource)} - that bean-ordering guard crash-looped the
@@ -34,49 +36,107 @@ import org.springframework.stereotype.Repository;
 public class PitcherFormRepository {
 
   /**
-   * Current 28-day form per active pitcher, as of today. Notes:
+   * The shared window SOURCE (decision [186]): the UNION of {@code pitches} (manually-backfilled
+   * historical corpus) and {@code pitches_live} (live surface, 14-day TTL), deduped on the
+   * canonical pitch key {@code (game_id, at_bat_index, pitch_number)} - identical names and types
+   * in both tables by V015's explicit design. Dedup mechanics: each leg is FINAL (both are
+   * ReplacingMergeTrees; the live leg's re-polled corrections would double-count without it), legs
+   * are tagged with a source priority, and {@code ORDER BY src LIMIT 1 BY <key>} keeps the
+   * HISTORICAL row when a future backfill overlaps the live window - the curated corpus wins.
    *
-   * <ul>
-   *   <li>{@code pitches FINAL} - pitches is a ReplacingMergeTree, so FINAL dedups a re-ingested
-   *       pitch (DEF-H3) before it double-counts the window aggregates.
-   *   <li>{@code days_since_last_appearance} is days since the pitcher's most recent game. It uses
-   *       {@code max(game_date)}, NOT {@code lagInFrame}, so there is no 1970-01-01 epoch trap (the
-   *       bug fixed in compute_tier3.sql) and it is never NULL for an active pitcher - one game is
-   *       guaranteed inside the 28-day window by the WHERE clause.
-   *   <li>{@code pitches_in_game = 0} in the nightly snapshot: in-game count is a live-poll concept
-   *       the intra-day upsert (a documented follow-up) sets during a game.
-   *   <li>This is a CURRENT aggregate over PAST games only ({@code game_date <= today}); there is
-   *       no future data and no per-pitch streaming-cutoff surface, so it is not a leakage path.
-   * </ul>
+   * <p>{@code toString(description)} on the pitches leg: pitches stores an Enum8, pitches_live a
+   * LowCardinality(String) - the cast is explicit rather than trusting implicit supertype
+   * resolution across UNION ALL.
+   *
+   * <p>BOTH bounds are the strictly-before contract [186] preserves: {@code <= TODAY_ET - 1}
+   * matches training's {@code RANGE ... 1 PRECEDING} (exclude the current day). Under the old
+   * pitches-only source this bound was academic (the corpus never held today); with the live leg it
+   * is LOAD-BEARING - an intra-day {@code runOnce} would otherwise pull today's in-progress pitches
+   * into the 28d rates, which training never sees. Today's pitches are the intra-day upsert's job,
+   * not this window's.
    */
+  /**
+   * The date basis for every bound below. ClickHouse {@code today()} resolves in the SERVER
+   * timezone (UTC in prod - infra/docker-compose.yml sets none), while this job's schedule and its
+   * freshness gauge are both {@code America/New_York}. Between 20:00 and 23:59 ET those disagree by
+   * a day, which would let a run in that window treat ET-today as "yesterday" and pull tonight's
+   * in-progress live pitches into the 28d rates - exactly what the strictly-before bound exists to
+   * prevent. Unreachable from the 02:40 ET cron (UTC date == ET date at that hour), but the bound
+   * must be true on its own terms, not on its caller's schedule. (ml-leakage-auditor finding 1.)
+   */
+  private static final String TODAY_ET = "toDate(now('America/New_York'))";
+
+  private static final String WINDOW_SOURCE =
+      "SELECT pitcher_id, game_date, description FROM ("
+          + "   SELECT game_id, at_bat_index, pitch_number, pitcher_id, game_date,"
+          + "          toString(description) AS description, ingested_at, 1 AS src"
+          + "   FROM pitches FINAL"
+          + "   WHERE description != 'unknown'"
+          + "     AND game_date >= "
+          + TODAY_ET
+          + " - 28 AND game_date <= "
+          + TODAY_ET
+          + " - 1"
+          + "   UNION ALL"
+          + "   SELECT game_id, at_bat_index, pitch_number, pitcher_id, game_date,"
+          + "          description, ingested_at, 2 AS src"
+          + "   FROM pitches_live FINAL"
+          + "   WHERE description != 'unknown'"
+          + "     AND game_date >= "
+          + TODAY_ET
+          + " - 28 AND game_date <= "
+          + TODAY_ET
+          + " - 1"
+          // The dedup key includes game_date: pitches' OWN ReplacingMergeTree identity is
+          // (game_date, game_id, at_bat_index, pitch_number), and a 3-part key would merge
+          // distinct-by-date rows sharing a game_id - data real feeds should never produce but
+          // the schema permits, and the union must not be STRICTER than the table's identity.
+          // (The parity test caught exactly this: a fixture reusing game_id across dates lost
+          // rows to the 3-part key.) The same real pitch carries the same game_date in both
+          // tables, so cross-table overlap still dedups.
+          + " ) ORDER BY src, ingested_at DESC"
+          + "   LIMIT 1 BY game_date, game_id, at_bat_index, pitch_number";
+
+  /**
+   * The anchor: newest usable game_date across the UNION, bounded strictly-before like the window.
+   * Textually shared by REFRESH, COUNT_AT_ANCHOR, and {@link #windowSourceMaxGameDate()} (evaluated
+   * independently in each; a backfill landing mid-run can skew the count and log line, never the
+   * data - accepted, the 02:40 ET slot).
+   */
+  private static final String ANCHOR_SUBQUERY =
+      "(SELECT max(game_date) FROM ("
+          + "   SELECT game_date FROM pitches"
+          + "    WHERE description != 'unknown' AND game_date <= "
+          + TODAY_ET
+          + " - 1"
+          + "   UNION ALL"
+          + "   SELECT game_date FROM pitches_live"
+          + "    WHERE description != 'unknown' AND game_date <= "
+          + TODAY_ET
+          + " - 1"
+          + " ))";
+
   private static final String REFRESH =
       "INSERT INTO pitcher_form_current"
           + " (pitcher_id, as_of_date, pitches_in_game, pitches_last_28d,"
           + "  strike_rate_28d, swstrike_rate_28d, inplay_rate_28d, days_since_last_appearance)"
-          // ANCHORED TO THE DATA, NOT THE CLOCK (2026-07-27 finding). This job stamped
-          // as_of_date = today() while computing its windows FROM pitches, a manually-backfilled
-          // corpus (last backfill RAN 2026-05-28, loading games THROUGH 2026-05-25 - two numbers,
-          // write time vs coverage, kept distinct because a reviewer already mistook one for a
-          // typo of the other) - so the stamp said "fresh" while the 28-day window had selected
-          // nothing for two months, and the PRE head silently served NaN form to most of the
-          // cohort. The stamp now records what the DATA covers, so it goes stale when the corpus
-          // does. The sibling V030 job already did this and refused loudly, which is what
-          // surfaced this defect before that model served a single prediction.
-          //
-          // The anchor subquery carries the SAME game_date <= today() bound the outer WHERE
-          // defends below: unbounded, a future-dated row would stamp as_of_date LATER than
-          // anything the aggregate covers - overstating freshness, this fix's exact failure
-          // class - and would drive the age gauge negative into its -1 never-ran sentinel.
-          // (The anchor is evaluated independently here, in COUNT_AT_ANCHOR, and in
-          // corpusMaxGameDate(); a backfill landing mid-run can skew the count and log line,
-          // never the data. Accepted - the 02:40 ET slot.)
-          //
-          // The WINDOW BASE (today() - 28) is deliberately UNCHANGED: rebasing it to the corpus
-          // edge would alter Tier-3 feature semantics on a LIVE model, and which table feeds this
-          // window is exactly the open /decide. Stamp honesty ships now; semantics wait.
+          // ANCHORED TO THE DATA, NOT THE CLOCK (2026-07-27 finding), and since [186] the data is
+          // the UNION: this job once stamped as_of_date = today() while its windows read pitches
+          // alone, a manually-backfilled corpus (last backfill RAN 2026-05-28, loading games
+          // THROUGH 2026-05-25 - two numbers, write time vs coverage, kept distinct because a
+          // reviewer already mistook one for a typo of the other) - so the stamp said "fresh"
+          // while the 28-day window had selected nothing for two months, and the PRE head
+          // silently served NaN form to most of the cohort. The sibling V030 job's data-anchored
+          // refusal is what surfaced the defect; [186] resolves it by reading the union (live
+          // rows fill the recent window between backfills) with the anchor tracking what the
+          // union actually covers. Known accepted limit ([186]): pitches_live's 14-day TTL means
+          // a gap older than 14 days but after the last backfill stays invisible until the next
+          // backfill - the age gauge is what surfaces that, honestly, rather than the union
+          // pretending completeness.
           + " SELECT pitcher_id,"
-          + "        (SELECT max(game_date) FROM pitches"
-          + "          WHERE description != 'unknown' AND game_date <= today()) AS as_of_date,"
+          + "        "
+          + ANCHOR_SUBQUERY
+          + " AS as_of_date,"
           + "        0 AS pitches_in_game,"
           + "        toUInt32(count()) AS pitches_last_28d,"
           + "        toFloat32(countIf(description IN ('called_strike','swinging_strike','foul'))"
@@ -84,14 +144,13 @@ public class PitcherFormRepository {
           + "        toFloat32(countIf(description = 'swinging_strike') / count())"
           + "                  AS swstrike_rate_28d,"
           + "        toFloat32(countIf(description = 'in_play') / count()) AS inplay_rate_28d,"
-          + "        toUInt16(today() - max(game_date)) AS days_since_last_appearance"
-          + " FROM pitches FINAL"
-          // game_date <= today() makes the past-only contract LOCAL to this query (defense in
-          // depth): pitches is historical-only today (live data lands in pitches_live), but an
-          // explicit upper bound means a future backfill cannot make today()-max(game_date) wrap
-          // negative through toUInt16. (ml-leakage-auditor note.)
-          + " WHERE description != 'unknown'"
-          + "   AND game_date >= today() - 28 AND game_date <= today()"
+          + "        toUInt16("
+          + TODAY_ET
+          + " - max(game_date))"
+          + "          AS days_since_last_appearance"
+          + " FROM ("
+          + WINDOW_SOURCE
+          + ")"
           + " GROUP BY pitcher_id";
 
   // Counts at the DATA anchor, not today(). The old today()-based count reported live-leg strays
@@ -101,13 +160,12 @@ public class PitcherFormRepository {
   // anchor; carried-forward intra-day rows at the same anchor dedup via DISTINCT. When the corpus
   // is static across days, this counts the cohort AT the anchor, not just rows written this run -
   // acceptable for a log line, noted so nobody reads it as a write count.)
-  // The subquery is TEXTUALLY IDENTICAL to the REFRESH's anchor - both filters included - or the
+  // The subquery is the SHARED anchor constant - the same string the REFRESH stamps with - or the
   // two could disagree and the count would miss the rows the refresh just wrote.
   private static final String COUNT_AT_ANCHOR =
       "SELECT count(DISTINCT pitcher_id) FROM pitcher_form_current"
-          + " WHERE as_of_date ="
-          + "   (SELECT max(game_date) FROM pitches"
-          + "     WHERE description != 'unknown' AND game_date <= today())";
+          + " WHERE as_of_date = "
+          + ANCHOR_SUBQUERY;
 
   private final JdbcTemplate jdbc;
 
@@ -116,8 +174,9 @@ public class PitcherFormRepository {
   }
 
   /**
-   * Recompute and insert a current-form row for every pitcher active in the trailing 28-day window,
-   * stamped at the CORPUS ANCHOR (the newest usable game_date in pitches) rather than today.
+   * Recompute and insert a current-form row for every pitcher active in the trailing 28-day window
+   * of the pitches UNION pitches_live source ([186]), stamped at the UNION ANCHOR (the newest
+   * usable game_date across both tables) rather than today.
    *
    * <p>Returns the count of distinct pitchers with a row AT that anchor - the cohort at the anchor,
    * NOT a write count (see COUNT_AT_ANCHOR's caveat: rows from earlier nights at the same anchor
@@ -136,30 +195,26 @@ public class PitcherFormRepository {
   }
 
   /**
-   * The newest USABLE {@code game_date} in {@code pitches} - what the nightly windows can possibly
-   * see, and therefore the number the freshness gauge is built from. {@code pitches} is a MANUALLY
-   * BACKFILLED corpus (last backfill ran 2026-05-28, loading games through 2026-05-25; no live
-   * handoff job exists), so this grows only when a backfill runs, and the gap to today grows
-   * without bound in between.
+   * The newest USABLE {@code game_date} across the UNION ([186]) - what the nightly windows can
+   * possibly see, and therefore the number the freshness gauge is built from. In steady state the
+   * live leg keeps this at ~yesterday; if the poller stops AND the corpus is stale, the gap grows
+   * and the gauge is what says so. ({@code pitches} alone is a MANUALLY BACKFILLED corpus - last
+   * backfill ran 2026-05-28, loading games through 2026-05-25; no live handoff job exists, per
+   * [186] deliberately.)
    *
-   * <p>Same filters as the REFRESH anchor, deliberately: unfiltered, a future-dated or
-   * unknown-description row would report coverage the windows cannot use - and a future date would
-   * drive the age gauge negative, colliding with its -1 never-ran sentinel.
+   * <p>Same shared anchor constant as the REFRESH stamp, deliberately - the gauge must measure
+   * exactly what the windows read.
    *
-   * <p>ClickHouse trap, handled rather than discovered: {@code max()} over an empty table returns
+   * <p>ClickHouse trap, handled rather than discovered: {@code max()} over an empty source returns
    * the type default (1970-01-01), NOT NULL, so both are treated as the same fault.
    */
-  public LocalDate corpusMaxGameDate() {
-    LocalDate d =
-        jdbc.queryForObject(
-            "SELECT max(game_date) FROM pitches"
-                + " WHERE description != 'unknown' AND game_date <= today()",
-            LocalDate.class);
+  public LocalDate windowSourceMaxGameDate() {
+    LocalDate d = jdbc.queryForObject("SELECT " + ANCHOR_SUBQUERY, LocalDate.class);
     if (d == null || !d.isAfter(LocalDate.EPOCH)) {
       throw new IllegalStateException(
-          "pitches is empty (max(game_date) returned "
+          "the pitches UNION pitches_live window source is empty (max(game_date) returned "
               + d
-              + "); the Tier-3 form windows have no corpus to read");
+              + "); the Tier-3 form windows have nothing to read");
     }
     return d;
   }
@@ -219,7 +274,10 @@ public class PitcherFormRepository {
           // scattered a pitcher's replacements across monthly partitions forever, hidden only by
           // read-time FINAL.
           + " SELECT pitcher_id, as_of_date,"
-          + "        (SELECT toUInt32(count()) FROM pitches_live"
+          // FINAL on the live count ([186] PR-1 rider): pitches_live is a ReplacingMergeTree on
+          // ingested_at, so a re-polled correction of the same pitch used to double-count here -
+          // a latent defect the union scout surfaced (LivePitchesRepository already reads FINAL).
+          + "        (SELECT toUInt32(count()) FROM pitches_live FINAL"
           + "         WHERE game_id = ? AND pitcher_id = ?) AS pitches_in_game,"
           + "        pitches_last_28d, strike_rate_28d, swstrike_rate_28d, inplay_rate_28d,"
           + "        toUInt16(0)"

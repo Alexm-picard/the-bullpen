@@ -34,6 +34,10 @@ _ARS = ("ars_FF", "ars_SI", "ars_FC", "ars_SL", "ars_CU", "ars_CH", "ars_OFF", "
 def _frame(n: int = 900, seed: int = 0) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
     df = pd.DataFrame({c: rng.random(n) for c in PITCH_TYPE_FEATURE_COLUMNS})
+    # Raw request-space sources the loader keeps for the native drift baseline.
+    df["stand"] = np.where(rng.integers(0, 2, n) == 0, "R", "L")
+    df["p_throws"] = np.where(rng.integers(0, 2, n) == 0, "R", "L")
+    df["park_id"] = "PARK00"
     k = len(PITCH_TYPE_CLASSES)
     df["label"] = (df["ars_FF"] * k).astype("int64").clip(0, k - 1)
     return df

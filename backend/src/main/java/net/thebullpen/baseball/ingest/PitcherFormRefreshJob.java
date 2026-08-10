@@ -2,6 +2,7 @@ package net.thebullpen.baseball.ingest;
 
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
@@ -42,6 +43,9 @@ public class PitcherFormRefreshJob {
   /** Days between today and max(game_date) in pitches; -1 until the first run this process sees. */
   private final AtomicLong ageDays = new AtomicLong(-1);
 
+  /** Epoch seconds of the last SUCCESSFUL refresh in this process; 0 before the first one. */
+  private final AtomicLong lastRefreshEpochSeconds = new AtomicLong(0);
+
   public PitcherFormRefreshJob(PitcherFormRepository repo, MeterRegistry meters) {
     this.repo = repo;
     // THE HALF THAT WOULD HAVE MADE THIS VISIBLE IN JUNE. The 2026-07-27 finding: this job's
@@ -56,15 +60,33 @@ public class PitcherFormRefreshJob {
     // threshold reads in the units the staleness is felt in.
     Gauge.builder("bullpen_pitcher_form_age_days", ageDays, AtomicLong::doubleValue)
         .description(
-            "Days between today and the newest usable game_date in pitches - the corpus the"
-                + " Tier-3 28-day form windows read. -1 before the first refresh this process"
-                + " ran, so any alert rule must be `< 0 or > N` (a bare `> N` reads -1 as fresher"
-                + " than fresh). Climbs between manual backfills; a large value means the nightly"
-                + " full-cohort refresh selects little or nothing and most pitchers serve NaN"
-                + " form. Set only on a successful run: a DEAD job pins it at its last value, so"
-                + " it cannot distinguish corpus-stale from job-dead - the last-success-timestamp"
-                + " companion (the bullpen_ingest_last_poll idiom) is the queued fix for that"
-                + " half.")
+            "Days between today and the newest usable game_date across pitches UNION"
+                + " pitches_live - the [186] source the Tier-3 28-day form windows read. Steady"
+                + " state is ~1 (the live leg keeps the union at yesterday); a climb means the"
+                + " live poller stopped AND the corpus is stale, and past ~14 (the pitches_live"
+                + " TTL) unbackfilled history is falling out of the window entirely. -1 before"
+                + " the first refresh this process ran, so any alert rule must be `< 0 or > N`"
+                + " (a bare `> N` reads -1 as fresher than fresh). Set only on a successful run:"
+                + " a DEAD job pins it at its last value, so it cannot distinguish source-stale"
+                + " from job-dead - bullpen_pitcher_form_last_refresh_timestamp_seconds below"
+                + " covers that half.")
+        .register(meters);
+    // THE OTHER HALF, promised by the description above. The age gauge freezes at its last value
+    // when the job dies (it is set only on success), so a dead job reads as eternally fresh -
+    // the same silent-degradation shape the age gauge exists to expose, one level up. This is
+    // the bullpen_ingest_last_poll idiom: an epoch-seconds stamp Prometheus can subtract from
+    // time(). 0 before the first success in this process, so the alert rule must gate on
+    // process age (see infra/prometheus/rules/bullpen-alerts.yml) or a restart pages instantly.
+    Gauge.builder(
+            "bullpen_pitcher_form_last_refresh_timestamp_seconds",
+            lastRefreshEpochSeconds,
+            AtomicLong::doubleValue)
+        .description(
+            "Epoch seconds of the last successful pitcher_form_current refresh IN THIS PROCESS;"
+                + " 0 until the first success after boot. Alert on time() - this > 26h, gated on"
+                + " process_start_time_seconds so a freshly restarted worker is not stale by"
+                + " definition. Distinguishes job-dead (this climbs stale) from corpus-stale"
+                + " (this is fresh while the age gauge climbs).")
         .register(meters);
   }
 
@@ -77,6 +99,7 @@ public class PitcherFormRefreshJob {
       log.error("PitcherFormRefreshJob: refresh failed", e);
       return;
     }
+    lastRefreshEpochSeconds.set(Instant.now().getEpochSecond());
     try {
       updateAgeGauge();
     } catch (RuntimeException e) {
@@ -103,11 +126,12 @@ public class PitcherFormRefreshJob {
    */
   public long runOnce() {
     long n = repo.refreshCurrentForm();
+    lastRefreshEpochSeconds.set(Instant.now().getEpochSecond());
     updateAgeGauge();
     return n;
   }
 
   private void updateAgeGauge() {
-    ageDays.set(ChronoUnit.DAYS.between(repo.corpusMaxGameDate(), LocalDate.now(ET)));
+    ageDays.set(ChronoUnit.DAYS.between(repo.windowSourceMaxGameDate(), LocalDate.now(ET)));
   }
 }

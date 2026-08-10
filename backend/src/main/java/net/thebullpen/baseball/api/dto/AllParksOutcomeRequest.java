@@ -30,7 +30,17 @@ public record AllParksOutcomeRequest(
         @DecimalMin("-90.0")
         @DecimalMax("90.0")
         Double launchAngleDeg,
-    @Schema(example = "12.0", description = "Horizontal spray angle, degrees (- pull, + oppo).")
+    @Schema(
+            example = "12.0",
+            description =
+                "Horizontal spray angle, degrees. ABSOLUTE, not batter-relative:"
+                    + " positive is toward 3B / LEFT field, negative toward 1B / right."
+                    + " Matches training's hc_to_spray_deg convention, which the served"
+                    + " model was trained on and the feature pipeline passes through"
+                    + " unmodified. It was previously documented as \"- pull, + oppo\","
+                    + " which is only correct for a LEFT-handed batter: pull and oppo"
+                    + " swap with handedness, so a batter-relative label cannot describe"
+                    + " an absolute axis.")
         @NotNull
         @DecimalMin("-90.0")
         @DecimalMax("90.0")

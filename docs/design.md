@@ -282,10 +282,14 @@ declared primary (or an honestly re-aimed primary it genuinely passes).
 The exemption never waves a model through a primary it failed (see
 ADR-0011 / decision [154]).
 
-**Logging**: every prediction (champion + shadow + challenger) logged to
-ClickHouse `prediction_log`, partitioned by month, joined to outcomes
-table at query time (NOT updated in place — ClickHouse mutations are
-expensive).
+**Logging**: every DELIVERED prediction logged to ClickHouse
+`prediction_log` (the champion + shadow + challenger legs of the same
+input all log), partitioned by month, joined to outcomes table at query
+time (NOT updated in place — ClickHouse mutations are expensive). Model
+evaluations that are only intermediates in computing something else are
+NOT logged - when N evaluations collapse into 1 delivered value, the N
+are intermediates - and emit their own metrics instead. See decision
+[188] / ADR-0016.
 
 ```sql
 CREATE TABLE prediction_log (
@@ -605,6 +609,9 @@ incoherent chain with no way to detect it. The response reports
 simulate latency lands on a dedicated
 `thebullpen_inference_simulate_latency_seconds` metric under `role="simulator"`,
 never the served-prediction histogram. See decision [176].
+It also writes no `prediction_log` rows at all: its ~12 per-state probes are
+intermediates in one delivered answer, making it the first instance of the
+delivered-vs-internal rule in decision [188] / ADR-0016.
 
 **Half-inning extension** deferred to v1.5: continue the chain through
 outs to compute "P(scoring this inning)." Useful, low marginal effort,

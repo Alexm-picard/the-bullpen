@@ -185,6 +185,14 @@ public class RegistryService {
 
     String candidateHash = hasher.compute(Path.of(req.featurePipelinePath()));
     int archived = repo.archiveAllForModel(req.modelName());
+    // Task #94: archiveAllForModel just flipped every version - including a serving champion - to
+    // ARCHIVED, but until this line nothing touched model_routing. A surviving routing row would
+    // keep the router serving the archived champion, which is the V011 bypass in its most
+    // reachable form (no hand-edit needed, just this escape hatch). Remove it in the same
+    // transaction, mirroring the INC-1 rollback branch: no champion means no routing row, and the
+    // legacy fallback (or a 503) serves until a new champion is promoted through the gates.
+    routingService.removeRouting(
+        req.modelName(), "bootstrap reset archived all versions including any champion");
     log.warn(
         "registry: bootstrap reset for {} — archived {} prior version(s); new pinned hash={};"
             + " reason: {}",
@@ -382,6 +390,7 @@ public class RegistryService {
       assertBaselineRegistered(current);
       assertPromotionCriteriaMet(current);
       promoteToChampionAtomically(current);
+      pushChampionToR2(current);
     } else if (current.stage() == Stage.CHAMPION && newStage == Stage.SHADOW) {
       // INC-1 (decision [150]) controlled rollback. champion_version_id is NOT NULL, so the routing
       // row can't be emptied - remove it so InferenceRouter finds none and the legacy fallback
@@ -392,14 +401,36 @@ public class RegistryService {
       // recovers:
       // demote, fix the snapshot, re-promote the same version.
       repo.updateStage(id, Stage.SHADOW);
-      routingService.removeRouting(current.modelName());
+      routingService.removeRouting(
+          current.modelName(), "champion rolled back to SHADOW (INC-1 / decision [150])");
       log.warn(
           "registry: ROLLBACK {}/{} (id={}) CHAMPION->SHADOW, routing row removed",
           current.modelName(),
           current.version(),
           id);
+    } else if (current.stage() == Stage.CHAMPION && newStage == Stage.ARCHIVED) {
+      // Task #94: archiving a SERVING champion must drop its routing row in the same transaction,
+      // for the same reason the INC-1 rollback branch above does - a routing row referencing an
+      // ARCHIVED version keeps the router serving a version outside the rule-5/rule-6 gates. This
+      // branch only fires for a direct CHAMPION->ARCHIVED transition; the promote path archives
+      // the prior champion via repo.updateStage directly and repoints (not removes) the row.
+      repo.updateStage(id, Stage.ARCHIVED);
+      routingService.removeRouting(
+          current.modelName(), "serving champion archived via direct CHAMPION->ARCHIVED");
+      log.warn(
+          "registry: ARCHIVED serving champion {}/{} (id={}), routing row removed",
+          current.modelName(),
+          current.version(),
+          id);
     } else {
       repo.updateStage(id, newStage);
+      if (newStage == Stage.ARCHIVED) {
+        // Issue #374, the challenger-side mirror of the task-#94 branches above: archiving a
+        // version that currently occupies its model's challenger slot must clear that slot in
+        // the same transaction, or shadow legs keep hitting an archived version (and mode=AB
+        // would route it real traffic). No-op for versions not in a slot.
+        routingService.clearChallengerIfRouted(current.modelName(), id);
+      }
     }
     return repo.findById(id)
         .orElseThrow(
@@ -519,6 +550,29 @@ public class RegistryService {
     // promotion auto-creates with SHADOW mode + 0 traffic; subsequent promotions just update
     // the champion_version_id. Same enclosing transaction as the stage update.
     routingService.ensureRoutingForChampion(incoming.modelName(), incoming.id());
+  }
+
+  /**
+   * Post-promotion: push the champion's bundle to R2 so a DR restore can recover it. A champion you
+   * can't recover is a promotion that shouldn't finalize silently. Runs AFTER the human gate and
+   * the atomic promote, so the promotion is committed regardless; the push failure surfaces as a
+   * 500 so the operator knows the R2 copy is missing and can retry or push manually.
+   */
+  private void pushChampionToR2(ModelVersion mv) {
+    try {
+      if (!snapshotStorage.pushChampionBundle(mv)) {
+        return;
+      }
+    } catch (SnapshotStorageException e) {
+      log.error(
+          "registry: champion {}/{} (id={}) promoted but R2 push FAILED - the champion is"
+              + " serving but NOT recoverable from R2 until manually pushed",
+          mv.modelName(),
+          mv.version(),
+          mv.id(),
+          e);
+      throw new RegistryException.R2PushFailed(mv, e);
+    }
   }
 
   // --- helpers ------------------------------------------------------------

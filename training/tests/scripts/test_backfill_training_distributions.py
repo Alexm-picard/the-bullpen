@@ -63,3 +63,31 @@ def test_merge_preserves_existing_metadata_keys(tmp_path: Path):
     for k, v in original.items():
         assert merged[k] == v  # every original key survives
     assert "feature_distributions" in merged and "training_prediction_distribution" in merged
+
+
+# --- the pitch_type_pre slice fences (reviewer A4: reachable with argparse alone) -----------
+
+
+def test_pitch_type_refuses_the_test_slice_parquet(tmp_path: Path) -> None:
+    """The refusal standing between an operator and a reference built from the held-out 2025
+    slice - the failure the module docstring exists to prevent."""
+    with pytest.raises(SystemExit):
+        backfill.main(
+            [
+                "--model",
+                "pitch_type_pre",
+                "--model-dir",
+                str(tmp_path),
+                "--training-parquet",
+                str(tmp_path / "training_data.parquet"),
+            ]
+        )
+
+
+def test_pitch_type_refuses_a_seasons_override(tmp_path: Path) -> None:
+    """--seasons silently not applying would be worse than refusing it: the window is pinned to
+    the fold-4 train slice."""
+    with pytest.raises(SystemExit):
+        backfill.main(
+            ["--model", "pitch_type_pre", "--model-dir", str(tmp_path), "--seasons", "2015-2024"]
+        )

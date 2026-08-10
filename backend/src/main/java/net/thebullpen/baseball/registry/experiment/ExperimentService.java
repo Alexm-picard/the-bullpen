@@ -45,12 +45,20 @@ public class ExperimentService {
   private static final Logger log = LoggerFactory.getLogger(ExperimentService.class);
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
+  private static final String DEAD_LETTER_COUNTER_NAME =
+      "thebullpen_prediction_log_dead_lettered_total";
+
   private final ExperimentResultsRepository repo;
   private final PairedPredictionFetcher fetcher;
+  private final io.micrometer.core.instrument.MeterRegistry meterRegistry;
 
-  public ExperimentService(ExperimentResultsRepository repo, PairedPredictionFetcher fetcher) {
+  public ExperimentService(
+      ExperimentResultsRepository repo,
+      PairedPredictionFetcher fetcher,
+      io.micrometer.core.instrument.MeterRegistry meterRegistry) {
     this.repo = repo;
     this.fetcher = fetcher;
+    this.meterRegistry = meterRegistry;
   }
 
   // --- start ------------------------------------------------------------
@@ -68,6 +76,7 @@ public class ExperimentService {
     }
     String guardrailsJson = writeJson(req.guardrails());
     String notes = "started: " + req.reason();
+    Double deadLetterSnapshot = readDeadLetterCount();
     ExperimentResult inserted =
         repo.insertRunning(
             req.modelName(),
@@ -77,16 +86,19 @@ public class ExperimentService {
             req.primaryThreshold(),
             guardrailsJson,
             req.sampleSizeTarget(),
-            notes);
+            notes,
+            deadLetterSnapshot);
     log.info(
-        "experiment: started id={} {} champ={} chall={} metric={} threshold={} target={}",
+        "experiment: started id={} {} champ={} chall={} metric={} threshold={} target={}"
+            + " dead_lettered_at_start={}",
         inserted.id(),
         req.modelName(),
         req.championVersionId(),
         req.challengerVersionId(),
         req.primaryMetric(),
         req.primaryThreshold(),
-        req.sampleSizeTarget());
+        req.sampleSizeTarget(),
+        deadLetterSnapshot);
     return inserted;
   }
 
@@ -173,14 +185,24 @@ public class ExperimentService {
         verdict.championMetric(),
         verdict.challengerMetric(),
         observedJson);
+    Double deadLetterDelta = deadLetterDelta(exp);
     log.info(
-        "experiment: completed id={} status={} sample={} champ_metric={} chall_metric={} guardrails_violated={}",
+        "experiment: completed id={} status={} sample={} champ_metric={} chall_metric={}"
+            + " guardrails_violated={} dead_letter_delta={}",
         experimentId,
         terminalStatus,
         verdict.sampleSizeObserved(),
         verdict.championMetric(),
         verdict.challengerMetric(),
-        verdict.guardrailsViolated().keySet());
+        verdict.guardrailsViolated().keySet(),
+        deadLetterDelta);
+    if (deadLetterDelta != null && deadLetterDelta > 0) {
+      log.warn(
+          "experiment: id={} had {} dead-lettered predictions during its window"
+              + " - the sample may undercount",
+          experimentId,
+          deadLetterDelta.longValue());
+    }
     return repo.findById(experimentId).orElseThrow();
   }
 
@@ -258,5 +280,29 @@ public class ExperimentService {
       log.warn("experiment: malformed guardrails JSON; treating as empty: {}", json);
       return Map.of();
     }
+  }
+
+  private Double readDeadLetterCount() {
+    try {
+      io.micrometer.core.instrument.Counter counter =
+          meterRegistry.find(DEAD_LETTER_COUNTER_NAME).counter();
+      return counter != null ? counter.count() : null;
+    } catch (Exception e) {
+      log.debug("experiment: could not read dead-letter counter at start", e);
+      return null;
+    }
+  }
+
+  private Double deadLetterDelta(ExperimentResult exp) {
+    if (exp.deadLetteredAtStart() == null) {
+      return null;
+    }
+    Double current = readDeadLetterCount();
+    if (current == null) {
+      return null;
+    }
+    double delta = current - exp.deadLetteredAtStart();
+    // Negative delta means the JVM restarted and the counter reset.
+    return delta >= 0 ? delta : null;
   }
 }

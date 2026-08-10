@@ -11,6 +11,8 @@ import java.util.Optional;
 import net.thebullpen.baseball.retraining.dto.QueueStatus;
 import net.thebullpen.baseball.retraining.dto.RetrainingTrigger;
 import net.thebullpen.baseball.retraining.dto.TriggerType;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -31,6 +33,8 @@ import org.springframework.stereotype.Repository;
  */
 @Repository
 public class RetrainingQueueRepository {
+
+  private static final Logger log = LoggerFactory.getLogger(RetrainingQueueRepository.class);
 
   private static final String SELECT_ALL =
       "SELECT id, trigger_id, model_name, trigger_type, trigger_metadata, status,"
@@ -114,9 +118,12 @@ public class RetrainingQueueRepository {
         // queued row and then race the UPDATE. The loser cannot get the write lock, and SQLite
         // breaks the potential deadlock with an immediate SQLITE_BUSY that busy_timeout does not
         // rescue. Treat that exactly like the updated==0 outcome below - we lost the race, the
-        // other
-        // instance is claiming this row, so return empty and let the scheduled consumer retry next
-        // tick. Any non-BUSY SQL fault still fails loud (rethrown).
+        // other instance is claiming this row, so return empty and let the scheduled consumer
+        // retry next tick. Any non-BUSY SQL fault still fails loud (rethrown).
+        log.warn(
+            "retraining: SQLITE_BUSY on claim for id={} - lost a lock race, queue may NOT be"
+                + " empty; next scheduled tick will retry",
+            id);
         return Optional.empty();
       }
       throw e;

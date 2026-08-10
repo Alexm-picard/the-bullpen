@@ -53,7 +53,7 @@ public class PitchTypeArsenalDeriver {
 
   public PitchTypeArsenalDeriver(
       PitcherPitchTypePriorRepository priors,
-      @Value("${bullpen.pitchtype.max-snapshot-age-days:2}") int maxSnapshotAgeDays) {
+      @Value("${bullpen.pitchtype.max-snapshot-age-days:7}") int maxSnapshotAgeDays) {
     this.priors = priors;
     this.maxSnapshotAgeDays = maxSnapshotAgeDays;
   }

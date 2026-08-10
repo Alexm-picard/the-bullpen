@@ -30,6 +30,11 @@ import org.springframework.transaction.annotation.Transactional;
  *   <li>Challenger stage != SHADOW → {@link RoutingException.ChallengerNotInShadow}.
  *   <li>{@code traffic_pct} outside [0, 100] → {@link RoutingException.InvalidTrafficPct}.
  *   <li>SHADOW mode with {@code traffic_pct > 0} → {@link RoutingException.ShadowModeWithTraffic}.
+ *   <li>Champion not at CHAMPION stage → {@link RoutingException.ChampionNotAtChampionStage}.
+ *       Checked before EVERY upsert, including the four paths that merely carry the current
+ *       champion forward - perpetuating a bad reference is the same bypass as writing one (task
+ *       #94). The V020 triggers enforce the same invariant at the SQLite layer; this check exists
+ *       so the failure is a typed, precisely-worded refusal instead of an SQLException.
  * </ul>
  */
 @Service
@@ -90,6 +95,7 @@ public class RoutingService {
     RoutingConfig current =
         repo.findByModelName(modelName)
             .orElseThrow(() -> new RoutingException.UnknownModel(modelName));
+    assertChampionStage(modelName, current.championVersionId());
     if (current.championVersionId() == challengerVersionId) {
       throw new RoutingException.ChallengerSameAsChampion(challengerVersionId);
     }
@@ -103,6 +109,19 @@ public class RoutingService {
     if (candidate.stage() != Stage.SHADOW) {
       throw new RoutingException.ChallengerNotInShadow(
           challengerVersionId, candidate.stage().name());
+    }
+    // Rule 9, challenger side: a SHADOW version of a DIFFERENT model must not enter this model's
+    // challenger slot - its shadow predictions would be logged (and eventually evaluated) under
+    // the wrong head. Caller error, not state corruption, so IllegalArgumentException -> 400.
+    if (!candidate.modelName().equals(modelName)) {
+      throw new IllegalArgumentException(
+          "routing: version "
+              + challengerVersionId
+              + " belongs to model '"
+              + candidate.modelName()
+              + "', not '"
+              + modelName
+              + "' - the challenger must be a version of the routed model (rule 9)");
     }
     RoutingConfig updated =
         repo.upsert(
@@ -122,6 +141,7 @@ public class RoutingService {
     RoutingConfig current =
         repo.findByModelName(modelName)
             .orElseThrow(() -> new RoutingException.UnknownModel(modelName));
+    assertChampionStage(modelName, current.championVersionId());
     RoutingConfig updated =
         repo.upsert(modelName, current.championVersionId(), null, 0.0, RoutingMode.SHADOW);
     log.info("routing: {} challenger cleared, mode set to SHADOW", modelName);
@@ -141,6 +161,7 @@ public class RoutingService {
     RoutingConfig current =
         repo.findByModelName(modelName)
             .orElseThrow(() -> new RoutingException.UnknownModel(modelName));
+    assertChampionStage(modelName, current.championVersionId());
     if (current.mode() == RoutingMode.SHADOW && pct > 0) {
       throw new RoutingException.ShadowModeWithTraffic(pct);
     }
@@ -162,6 +183,7 @@ public class RoutingService {
     RoutingConfig current =
         repo.findByModelName(modelName)
             .orElseThrow(() -> new RoutingException.UnknownModel(modelName));
+    assertChampionStage(modelName, current.championVersionId());
     double pct = mode == RoutingMode.SHADOW ? 0.0 : current.challengerTrafficPct();
     RoutingConfig updated =
         repo.upsert(
@@ -181,12 +203,20 @@ public class RoutingService {
    */
   @Transactional
   @CacheEvict(value = CacheConfig.ROUTING_CACHE, allEntries = true)
-  public void removeRouting(String modelName) {
+  public void removeRouting(String modelName, String reason) {
     int deleted = repo.deleteByModelName(modelName);
-    log.warn(
-        "routing: removed routing row for {} ({} row(s)) - champion rolled back, falling back to legacy",
-        modelName,
-        deleted);
+    // WARN only when a row actually went away - callers (bootstrap in particular, which is the
+    // path every FIRST registration takes) invoke this unconditionally, and a WARN claiming the
+    // router "fell back" when no row existed would be a false operator signal.
+    if (deleted > 0) {
+      log.warn(
+          "routing: removed routing row for {} ({} row(s)) - {}; router falls back to legacy",
+          modelName,
+          deleted,
+          reason);
+    } else {
+      log.debug("routing: removeRouting no-op for {} (no row existed) - {}", modelName, reason);
+    }
   }
 
   /**
@@ -199,6 +229,10 @@ public class RoutingService {
   @Transactional
   @CacheEvict(value = CacheConfig.ROUTING_CACHE, allEntries = true)
   public RoutingConfig ensureRoutingForChampion(String modelName, long championVersionId) {
+    // The registry promote flips the version to CHAMPION before calling here, in the same
+    // transaction, so this reads the just-updated stage. Anything else reaching this method with
+    // a non-champion id is exactly the bypass the check exists for.
+    assertChampionStage(modelName, championVersionId);
     Optional<RoutingConfig> existing = repo.findByModelName(modelName);
     if (existing.isEmpty()) {
       RoutingConfig created =
@@ -217,8 +251,12 @@ public class RoutingService {
         current.challengerVersionId() != null && current.challengerVersionId() == championVersionId
             ? null
             : current.challengerVersionId();
-    double pct = challenger == null ? 0.0 : current.challengerTrafficPct();
-    RoutingMode mode = challenger == null ? RoutingMode.SHADOW : current.mode();
+    // #379: if the champion changed and a challenger survives, its AB experiment was bound to the
+    // OLD champion. Carrying mode/pct forward would silently rebind the experiment to a different
+    // baseline. Reset to SHADOW/0 so traffic re-enablement is a deliberate admin action.
+    boolean championChanged = current.championVersionId() != championVersionId;
+    double pct = challenger == null || championChanged ? 0.0 : current.challengerTrafficPct();
+    RoutingMode mode = challenger == null || championChanged ? RoutingMode.SHADOW : current.mode();
     RoutingConfig updated = repo.upsert(modelName, championVersionId, challenger, pct, mode);
     log.info(
         "routing: {} champion updated to {} (challenger={}, mode={})",
@@ -227,5 +265,68 @@ public class RoutingService {
         challenger,
         mode);
     return updated;
+  }
+
+  /**
+   * Clear {@code versionId} out of {@code modelName}'s challenger slot IF it currently occupies it;
+   * no-op otherwise (issue #374). Called by the registry when a version is ARCHIVED: an archived
+   * version left in a challenger slot would keep taking shadow legs (failed loads counted as drops)
+   * and, under mode=AB with traffic, REAL user traffic - a rule-6 violation in substance. Mirrors
+   * {@link #clearChallenger}'s semantics: slot to null, traffic to 0, mode to SHADOW. Reads the
+   * repository directly (not the cached {@code findRouting}) because this runs inside the
+   * registry's archive transaction and must see current state.
+   */
+  @Transactional
+  @CacheEvict(value = CacheConfig.ROUTING_CACHE, allEntries = true)
+  public void clearChallengerIfRouted(String modelName, long versionId) {
+    Optional<RoutingConfig> row = repo.findByModelName(modelName);
+    if (row.isEmpty()
+        || row.get().challengerVersionId() == null
+        || row.get().challengerVersionId() != versionId) {
+      return;
+    }
+    assertChampionStage(modelName, row.get().championVersionId());
+    repo.upsert(modelName, row.get().championVersionId(), null, 0.0, RoutingMode.SHADOW);
+    log.warn(
+        "routing: {} challenger (version {}) was archived - slot cleared, traffic 0, mode SHADOW",
+        modelName,
+        versionId);
+  }
+
+  /**
+   * The V011-bypass guard (task #94): every write that stores a {@code champion_version_id} - or
+   * carries the current one forward - first proves the referenced version is at {@link
+   * Stage#CHAMPION}. A routing row is the registry's serving switch; a row referencing any other
+   * stage means a version is serving (or about to serve) without having passed the rule-5/rule-6
+   * promotion gates. Refusing on the carry-forward paths too is deliberate: an admin write that
+   * perpetuates a bad reference launders it.
+   */
+  private void assertChampionStage(String modelName, long championVersionId) {
+    // Detecting corruption must be loud SERVER-SIDE, not only in the HTTP response: the
+    // ResponseStatusException path in ApiErrorAdvice does not log, and an operator who never sees
+    // the 500 body would otherwise have no trace that the integrity check fired mid-lifetime.
+    Optional<ModelVersion> found = registry.getById(championVersionId);
+    if (found.isEmpty() || found.get().stage() != Stage.CHAMPION) {
+      String badStage = found.map(v -> v.stage().name()).orElse("<no model_versions row>");
+      log.error(
+          "routing integrity: champion_version_id {} is at stage {}, not CHAMPION - refusing the"
+              + " write (task #94)",
+          championVersionId,
+          badStage);
+      throw new RoutingException.ChampionNotAtChampionStage(championVersionId, badStage);
+    }
+    // Rule 9: a champion of the WRONG MODEL is just as much a bypass as a non-champion - the
+    // router would serve model B's weights under model A's name. Stage-only checking would wave
+    // this through (the reviewer proved it against the real migration).
+    if (!found.get().modelName().equals(modelName)) {
+      log.error(
+          "routing integrity: champion_version_id {} belongs to model '{}', not '{}' - refusing"
+              + " the write (task #94 / rule 9)",
+          championVersionId,
+          found.get().modelName(),
+          modelName);
+      throw new RoutingException.ChampionNotAtChampionStage(
+          championVersionId, modelName, found.get().modelName());
+    }
   }
 }
