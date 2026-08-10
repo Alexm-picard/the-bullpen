@@ -17,8 +17,9 @@ import java.util.Set;
  *       handles skewed features that would collapse under equal-width binning). Both distributions
  *       are normalized to proportions; zero proportions get a smoothing epsilon (default {@code
  *       1e-4}) to avoid {@code log(0) = -inf}.
- *   <li>{@link #computeCategorical} — chi-squared distance for categorical features. Symmetric in
- *       reference/actual. New categories in `actual` (absent from reference) are smoothed.
+ *   <li>{@link #computeCategorical} - symmetric chi-squared distance for categorical features,
+ *       normalized to proportions so it is scale-invariant (training-scale reference vs a small
+ *       actual window). Bounded in [0, 2]; new categories on either side stay finite.
  * </ul>
  *
  * <p>PSI interpretation (industry rule-of-thumb): &lt; 0.1 = no drift; 0.1–0.25 = moderate; &gt;
@@ -59,9 +60,22 @@ public final class Psi {
   }
 
   /**
-   * Symmetric chi-squared distance over categorical counts. New categories present only in {@code
-   * actual} are smoothed (reference count → 0 contribution; chi² formula still finite because we
-   * divide by {@code ref + actual}).
+   * Symmetric chi-squared distance over categorical distributions, normalized to proportions so the
+   * result is scale-invariant. Each side is divided by its OWN total before the sum, so a reference
+   * at training scale (~10^5-10^6 rows) compared against a 24h actual window (~10^2 rows) scores on
+   * the shape of the shift, not on the row counts.
+   *
+   * <p>Before this normalization the sum collapsed to ~the reference row count when the two sides
+   * were at wildly different scales (each term {@code (act - ref)^2 / (act + ref)} approaches
+   * {@code ref} once {@code ref} dominates {@code act}). That was a real production defect,
+   * surfaced on the first live drift cycle (2026-07-08): every categorical feature read ~710k, the
+   * training row count. The May restore drill never caught it because its reference and actual
+   * sides were at similar scales.
+   *
+   * <p>New categories present only in {@code actual} (or only in {@code reference}) stay finite:
+   * the missing side contributes proportion 0 and the denominator {@code pRef + pAct} is still
+   * positive. The distance is bounded in {@code [0, 2]}: 0 = identical shape, 2 = disjoint
+   * supports.
    */
   public static double computeCategorical(
       Map<String, Integer> reference, Map<String, Integer> actual) {
@@ -74,15 +88,29 @@ public final class Psi {
     if (keys.isEmpty()) {
       return 0.0;
     }
+    double refTotal = 0.0;
+    for (int v : reference.values()) {
+      refTotal += v;
+    }
+    double actTotal = 0.0;
+    for (int v : actual.values()) {
+      actTotal += v;
+    }
+    // No mass on one side means we cannot assess a shift (an empty actual window is
+    // absence-of-data,
+    // not drift). Callers already skip empty windows; this guards 0/0 -> NaN defensively.
+    if (refTotal == 0.0 || actTotal == 0.0) {
+      return 0.0;
+    }
     double sum = 0.0;
     for (String key : keys) {
-      double ref = reference.getOrDefault(key, 0);
-      double act = actual.getOrDefault(key, 0);
-      double denom = ref + act;
+      double pRef = reference.getOrDefault(key, 0) / refTotal;
+      double pAct = actual.getOrDefault(key, 0) / actTotal;
+      double denom = pRef + pAct;
       if (denom == 0.0) {
         continue;
       }
-      double diff = act - ref;
+      double diff = pAct - pRef;
       sum += (diff * diff) / denom;
     }
     return sum;

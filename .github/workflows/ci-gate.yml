@@ -6,12 +6,16 @@ name: ci-gate
 # that never reports). This gate runs on EVERY PR (no path filter) and aggregates: it waits for all
 # OTHER check-runs on the PR head to finish, then passes iff each that ran concluded success (or
 # skipped/neutral). A workflow the path filter skipped simply never appears, so unrelated PRs pass
-# with no stall. Require ONLY "ci-gate" in branch protection.
+# with no stall. Require ONLY "ci-gate" in branch protection. It also runs on push to main so the
+# merged tip is gated (and a direct push to main can't land red unnoticed), not just the PR head.
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: [main]
 
 permissions:
+  actions: read
   checks: read
   contents: read
 
@@ -23,16 +27,62 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
-          echo "ci-gate: aggregating the check-runs for $HEAD_SHA"
-          # Let the path-matched workflows register their check-runs before the first poll (they are
-          # queued within seconds of the PR event; 30s is a safe settle margin).
-          sleep 30
-          deadline=$(( $(date +%s) + 1800 ))   # 30-minute ceiling
+          echo "ci-gate: aggregating checks for $HEAD_SHA"
+
+          deadline=$(( $(date +%s) + 1800 ))   # 30-minute ceiling (shared: loops AND gh_api)
+
+          # Retry wrapper: a transient GitHub API blip must NOT red the gate. Two incidents shaped
+          # this: a bare `gh api` under `set -e` redded the gate on 2026-07-07 (run 28832926418),
+          # and the 5-attempt/45s linear budget that replaced it redded THREE runs on 2026-07-16
+          # (29541456257, 29541699973 + its rerun) during a sustained Actions-API degradation that
+          # returned HTML error pages ("invalid character '<'" from --jq) for well over 45s - while
+          # the gate's own deadline had ~28 minutes left. An API call has no business giving up
+          # before the gate itself would: retry with capped exponential backoff (5s..60s) until the
+          # SHARED 30-minute deadline; only a failure that outlives the deadline is fatal.
+          gh_api() {
+            local backoff=5 out
+            while true; do
+              if out=$(gh api "$@" 2>/tmp/gh_api_err); then printf '%s' "$out"; return 0; fi
+              if [ "$(date +%s)" -ge "$deadline" ]; then
+                echo "::error::ci-gate: gh api still failing at the 30m deadline: $* -> $(head -c 300 /tmp/gh_api_err)" >&2
+                return 1
+              fi
+              echo "ci-gate: gh api failed (retrying in ${backoff}s): $(head -c 200 /tmp/gh_api_err)" >&2
+              sleep "$backoff"
+              backoff=$(( backoff * 2 )); [ "$backoff" -gt 60 ] && backoff=60
+            done
+          }
+
+          # Phase 1 - reconcile against the workflow RUNS actually TRIGGERED for this SHA (the
+          # authoritative expected set), instead of a blind sleep that could poll BEFORE the
+          # path-matched workflows register. A path-filtered workflow that did not match creates no
+          # run and is correctly absent; a run that has not registered yet keeps us WAITING rather
+          # than falsely concluding "none applicable". Wait until >=1 non-ci-gate run exists AND all
+          # such runs are completed. (Always-on workflows - security scans etc. - guarantee the set
+          # is non-empty, so an empty set means "polled too early", never "genuinely none".)
           while true; do
-            json=$(gh api --paginate "repos/$REPO/commits/$HEAD_SHA/check-runs" \
+            runs=$(gh_api --paginate "repos/$REPO/actions/runs?head_sha=$HEAD_SHA&per_page=100" \
+              --jq '.workflow_runs[] | select(.name != "ci-gate") | {name, status}')
+            n_runs=$(printf '%s' "$runs" | jq -rs 'length')
+            n_incomplete=$(printf '%s' "$runs" | jq -rs '[.[] | select(.status != "completed")] | length')
+            if [ "${n_runs:-0}" -gt 0 ] && [ "${n_incomplete:-0}" -eq 0 ]; then break; fi
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "::error::ci-gate timed out (30m): ${n_incomplete}/${n_runs} triggered workflow run(s) still running (or none registered)"
+              exit 1
+            fi
+            echo "ci-gate: waiting on triggered workflow runs (${n_incomplete}/${n_runs} incomplete)..."
+            sleep 20
+          done
+          echo "ci-gate: all ${n_runs} triggered workflow run(s) completed; evaluating check-runs"
+
+          # Phase 2 - all triggered Actions workflows are done, so their check-runs are final. Poll
+          # the check-runs (which also include external app checks like Vercel that are not Actions
+          # runs); wait for any still-completing, then require each to have concluded pass.
+          while true; do
+            json=$(gh_api --paginate "repos/$REPO/commits/$HEAD_SHA/check-runs" \
               --jq '.check_runs[] | select(.name != "ci-gate") | {name, status, conclusion}')
             pending=$(printf '%s' "$json" | jq -rs '[.[] | select(.status != "completed")] | length')
             total=$(printf '%s' "$json" | jq -rs 'length')
@@ -42,9 +92,10 @@ jobs:
               printf '%s' "$json" | jq -rs '.[] | select(.status != "completed") | "  pending: \(.name) [\(.status)]"'
               exit 1
             fi
-            echo "ci-gate: waiting on ${pending}/${total} check(s)..."
-            sleep 20
+            echo "ci-gate: waiting on ${pending}/${total} check-run(s)..."
+            sleep 15
           done
+
           bad=$(printf '%s' "$json" | jq -rs '[.[] | select(.conclusion as $c | ["success","skipped","neutral"] | index($c) | not)]')
           n_bad=$(printf '%s' "$bad" | jq 'length')
           if [ "${n_bad:-0}" -gt 0 ]; then
@@ -52,4 +103,4 @@ jobs:
             printf '%s' "$bad" | jq -r '.[] | "  FAILED: \(.name) -> \(.conclusion)"'
             exit 1
           fi
-          echo "ci-gate: all ${total} path-relevant check(s) passed (or none applicable)."
+          echo "ci-gate: all ${total} check-run(s) passed after reconciling ${n_runs} triggered workflow(s)."

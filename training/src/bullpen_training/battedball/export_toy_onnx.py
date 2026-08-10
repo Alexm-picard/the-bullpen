@@ -23,7 +23,6 @@ byte-stable for the ONNX bytes and the lookup JSON.
 
 from __future__ import annotations
 
-import copy
 import hashlib
 import json
 import logging
@@ -42,6 +41,7 @@ from bullpen_training.battedball.features_toy import FEATURES, TARGET
 from bullpen_training.battedball.train_toy import DEFAULT_OUTPUT_DIR
 from bullpen_training.ingest.clickhouse_client import ClickHouseSettings, make_client
 from bullpen_training.logging_config import configure_logging, get_logger
+from bullpen_training.registry_client import feature_hasher
 
 log = get_logger(__name__)
 
@@ -62,11 +62,7 @@ def load_canonical_pipeline() -> dict[str, Any]:
     """
     spec = cast(dict[str, Any], json.loads(CONTRACT_PATH.read_text()))
     declared = spec["schema_hash"]
-    canonical = copy.deepcopy(spec)
-    canonical["schema_hash"] = ""
-    recomputed = hashlib.sha256(
-        json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
+    recomputed = feature_hasher.compute(CONTRACT_PATH)
     if declared != recomputed:
         raise RuntimeError(
             f"/contracts/feature_pipeline_toy.json schema_hash is stale "

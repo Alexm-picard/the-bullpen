@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "artifact_name": "pitch_type_pre_promotion_gate",
+  "data_source": "full",
+  "data_source_note": "FULL-data first-champion gate for pitch_type_pre, built from the two co-trained bundles' 4-fold CV summaries rather than a driver re-run (the driver's generic factories fit isotonic; both shipped heads use temperature so [183]'s log-loss guardrail compares models, not calibrators). Import-shaped (OfflineGateEvidence): a RELATIVE ECE non-inferiority-to-baseline check at threshold 0.0 that the anti-bypass can verify; the declared -0.02 lane is vacuous and is recorded as declared_primary_threshold rather than imported. The declared absolute ECE bar is applied in `status` because the Java re-derivation cannot check it. Metrics are UNWEIGHTED MEANS OF PER-FOLD values (for ECE that is not the pooled-rows ECE), and the ECE is TOP-LABEL, not classwise. No promotion here (rule 6).",
+  "model_name": "pitch_type_pre",
+  "champion_model_name": "pitch_type_lr_baseline",
+  "challenger_model_name": "pitch_type_pre",
+  "primary_metric": "ece",
+  "primary_threshold": 0.0,
+  "declared_primary_threshold": -0.02,
+  "champion_metric": 0.043618393739013786,
+  "challenger_metric": 0.016077342981393673,
+  "sample_size_target": 2000,
+  "sample_size_observed": 709855,
+  "guardrails": {
+    "log-loss": 0.0
+  },
+  "guardrails_observed": {
+    "log-loss": -0.14330835564634192
+  },
+  "guardrails_violated": {},
+  "status": "passed",
+  "verdict": {
+    "outcome": "would_pass",
+    "passed": true,
+    "sample_size_met": true,
+    "primary_margin_required": 0.0,
+    "primary_margin_observed": -0.027541050757620113
+  },
+  "supplementary_checks": [
+    {
+      "name": "absolute_ece_phase2_bar",
+      "metric": "ece",
+      "max_allowed": 0.02,
+      "observed": 0.016077342981393673,
+      "passed": true,
+      "per_fold_observed": [
+        0.022497119698533834,
+        0.017259348323153813,
+        0.01591034912007437,
+        0.008642554783812673
+      ],
+      "folds_over_bar": {
+        "fold_1": 0.022497119698533834
+      },
+      "rationale": "THE declared [183] primary: TOP-LABEL ECE of the y7 distribution must be below the bar. Recorded here because OfflineGateEvidence has no field for an absolute bar, and folded into `status` so it is not merely decorative. The bar binds the CV MEAN; per_fold_observed and folds_over_bar carry the dispersion so a fold individually exceeding the bar is visible to the promotion decision rather than smoothed into a passing mean. BASIS NOTE: the sibling driver-emitted artifacts (pitch_outcome_pre) apply this bar to the FINAL FOLD's ECE, not the mean - two conventions coexist, so `observed` means different things across sibling artifacts; the final-fold reading is recoverable as per_fold_observed[-1], and unifying the basis belongs to the open /decide on fold-level bounds."
+    }
+  ],
+  "provenance": {
+    "git_commit": "461c9655076b43a2ffcb06d510eadf945c7be670",
+    "generated_at": "2026-08-02T18:43:10.314951+00:00",
+    "challenger_bundle": "/opt/bullpen/data/models/pitch_type_pre/v1",
+    "challenger_metrics_sha256": "1e847ee3aaa05998c572dbef25979b500d4985a228971d3dc4fd86766bc5651b",
+    "challenger_trained_at": "2026-07-28T21:24:42+00:00",
+    "challenger_git_commit": "461c9655076b43a2ffcb06d510eadf945c7be670",
+    "baseline_bundle": "/opt/bullpen/data/models/pitch_type_lr_baseline/v1",
+    "baseline_metrics_sha256": "862b2fc8bf42357e58eaff9f2cfe007874763a3323836f357a929b9b3b45812a",
+    "baseline_trained_at": "2026-07-28T21:37:17+00:00",
+    "baseline_git_commit": "461c9655076b43a2ffcb06d510eadf945c7be670",
+    "training_data_window": "2015-2023",
+    "training_data_hash": "cf5a4ce41324925067d7f846d809c0be0449d163c0492e0ff69722825aee6709",
+    "feature_pipeline_hash": "a2a5d474f5d8a8db0ed88632f4604122f56da006c7ece38ba974fb737bde68bd",
+    "n_folds": 4,
+    "class_labels": [
+      "FF",
+      "SI",
+      "FC",
+      "SL",
+      "CU",
+      "CH",
+      "OFF"
+    ],
+    "rule_13_holdout": "2026 excluded - trained and validated on 2015-2025 only",
+    "evidence_shape": "Unpaired at the row level, PAIRED AT THE FOLD LEVEL: within each fold both heads score identical test rows, so each per-fold delta is a paired difference. Reported metrics are unweighted means of per-fold values; sample_size_observed is the FINAL fold's test rows only, while the metrics summarise all folds. per_fold_deltas and folds_won below carry the dispersion the means discard - a 4/4 sign-consistent win and a 2/4 split are different evidence for the same mean margin.",
+    "per_fold_deltas": {
+      "log-loss": [
+        -0.13845914720544394,
+        -0.1440162608607618,
+        -0.1495092720373563,
+        -0.1412487424818052
+      ],
+      "ece": [
+        -0.024015943523382117,
+        -0.029273368969283602,
+        -0.029779039056564607,
+        -0.02709585148125012
+      ]
+    },
+    "per_fold_values": {
+      "challenger": {
+        "log-loss": [
+          1.2232050303888606,
+          1.2422884604869255,
+          1.2710022607770328,
+          1.2874155132783252
+        ],
+        "ece": [
+          0.022497119698533834,
+          0.017259348323153813,
+          0.01591034912007437,
+          0.008642554783812673
+        ]
+      },
+      "baseline": {
+        "log-loss": [
+          1.3616641775943046,
+          1.3863047213476873,
+          1.4205115328143891,
+          1.4286642557601303
+        ],
+        "ece": [
+          0.04651306322191595,
+          0.046532717292437416,
+          0.04568938817663898,
+          0.03573840626506279
+        ]
+      }
+    },
+    "folds_won": {
+      "log-loss": 4,
+      "ece": 4
+    },
+    "folds_total": 4,
+    "top_k_accuracy_note": "Decision [183]: top-1 is around 0.45 and top-3 around 0.88, both SUPPLEMENTARY. This model is promoted on calibration and never on accuracy. The numbers live in the bundle's metadata.json and are deliberately absent from criteria - and from supplementary_checks, because a permanently-passing entry in a list of checks is a check that cannot fire."
+  }
+}

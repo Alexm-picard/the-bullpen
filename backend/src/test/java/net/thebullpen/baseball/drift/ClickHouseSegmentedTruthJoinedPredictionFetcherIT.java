@@ -226,6 +226,33 @@ class ClickHouseSegmentedTruthJoinedPredictionFetcherIT {
   }
 
   @Test
+  void dedups_a_restart_re_logged_pitch_to_the_latest_whole_row() {
+    // prediction_log ACCUMULATES: a worker restart re-logs the SAME pitch at a later request_at. A
+    // raw read double-counts it and biases the per-segment calibration. LIMIT 1 BY the pitch key
+    // must
+    // keep the LATEST WHOLE row - its prediction AND its features (the segment source) - never a
+    // mix.
+    Instant older = Instant.now().minus(3, ChronoUnit.HOURS);
+    Instant newer = Instant.now().minus(1, ChronoUnit.HOURS);
+    // Same pitch (7,1,1): a STALE row (park BOS, ball-heavy) then a NEWER re-log (park NYY,
+    // in-play).
+    insertAt(
+        V, 7, 1, 1, features("BOS", "R", 0, 0, 5), pitchJson(0.90, 0.03, 0.03, 0.02, 0.02), older);
+    insertAt(
+        V, 7, 1, 1, features("NYY", "R", 0, 0, 5), pitchJson(0.10, 0.10, 0.10, 0.20, 0.50), newer);
+    truth(7, 1, 1, "in_play", "FF");
+
+    Map<String, List<TruthJoinedRow>> bySeg = fetch("park_id");
+
+    // ONE row total, bucketed under the LATEST features' park (NYY) - not the stale BOS - and
+    // carrying the LATEST prediction. A raw read would emit two rows (BOS + NYY).
+    assertThat(bySeg).containsOnlyKeys("NYY");
+    assertThat(bySeg.get("NYY")).hasSize(1);
+    assertThat(bySeg.get("NYY").get(0).probs())
+        .containsExactly(new double[] {0.10, 0.10, 0.10, 0.20, 0.50}, within(1e-9));
+  }
+
+  @Test
   void unknown_segment_dimension_fails_loud() {
     assertThatThrownBy(
             () ->

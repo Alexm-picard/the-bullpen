@@ -1,10 +1,11 @@
 package net.thebullpen.baseball.api.admin;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
 import net.thebullpen.baseball.api.admin.dto.PromoteRequest;
-import net.thebullpen.baseball.api.dto.OpsEventType;
 import net.thebullpen.baseball.data.OpsEventsRepository;
+import net.thebullpen.baseball.domain.OpsEventType;
 import net.thebullpen.baseball.inference.ModelLoadValidator;
 import net.thebullpen.baseball.registry.RegistryException;
 import net.thebullpen.baseball.registry.RegistryService;
@@ -55,9 +56,16 @@ import org.springframework.web.server.ResponseStatusException;
  *   <li>{@code FeatureSchemaMismatch} → 409
  *   <li>{@code ResetConfirmationMissing} → 400
  *   <li>{@code PromotionCriteriaMissing} → 409 (rule 5 — no passing experiment row)
+ *   <li>{@code ModelKindMismatch} → 422 (decision [184]; metadata.json must declare model_kind)
  *   <li>{@code IllegalArgumentException} from path/body mismatch → 400
  * </ul>
  */
+@Tag(
+    name = "Admin: Registry",
+    description =
+        "ADMIN-authed model registry writes: list versions, register a model (feature-schema-hash"
+            + " gated), and promote/transition stage (rule-5 promotion gate on CHAMPION). Requires"
+            + " HTTP Basic (SecurityConfig /v1/admin/**).")
 @RestController
 @RequestMapping("/v1/admin/registry")
 @Profile("api")
@@ -115,7 +123,15 @@ public class RegistryAdminController {
           OpsEventType.REGISTER,
           mv.modelName() + " " + mv.version() + " registered as " + mv.stage());
       return mv;
-    } catch (RegistryException.ArtifactMissing e) {
+    } catch (RegistryException.ArtifactMissing | RegistryException.ModelKindMismatch e) {
+      // 422 rather than 409: the artifact on the server is wrong and the caller can fix it by
+      // re-exporting, which is the same shape as ArtifactMissing. NOT 409 like
+      // FeatureSchemaMismatch, whose message steers the operator to registerWithBootstrap - that
+      // archives every prior version, which would be a wildly disproportionate remedy here.
+      //
+      // This catch is load-bearing: the handler uses catch clauses, not a pattern switch, so the
+      // sealed hierarchy gives NO compile-time exhaustiveness check. An unmapped RegistryException
+      // surfaces as an opaque 500 and the operator never learns why the gate refused.
       throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, e.getMessage(), e);
     } catch (RegistryException.DuplicateVersion | RegistryException.FeatureSchemaMismatch e) {
       throw new ResponseStatusException(HttpStatus.CONFLICT, e.getMessage(), e);
@@ -197,5 +213,56 @@ public class RegistryAdminController {
         | RegistryException.BaselineMissing e) {
       throw new ResponseStatusException(HttpStatus.CONFLICT, e.getMessage(), e);
     }
+  }
+
+  /**
+   * Pull an archived version's snapshot back from S3 to local disk. Wires the primary recovery
+   * method documented in {@code docs/runbooks/registry-snapshot-recovery.md} (the HTTP route was
+   * deferred at 3a.5 and is now implemented for the DR drill).
+   *
+   * <p>The endpoint delegates to {@link RegistryService#restoreVersion(long)} which downloads every
+   * key under {@code snapshots/<model_name>/<version>/} from R2 to the local snapshot directory,
+   * then flips the registry's {@code artifact_path} and {@code metadata_path} to the local copies.
+   * Requires {@code S3_ENDPOINT_URL} to be set (the {@code R2ArchiveClient} bean must be present).
+   *
+   * <p>Returns the refreshed {@link ModelVersion} row so the caller can verify the paths changed.
+   * Throws 404 if the version doesn't exist, 400 if the path's model name doesn't match, and 503 if
+   * the restore itself fails (S3 unreachable, object not found, disk full).
+   */
+  @PostMapping("/{modelName}/restore/{versionId}")
+  public ModelVersion restore(@PathVariable String modelName, @PathVariable long versionId) {
+    ModelVersion current =
+        registry
+            .getById(versionId)
+            .orElseThrow(
+                () ->
+                    new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "no model_version with id " + versionId));
+    if (!current.modelName().equals(modelName)) {
+      throw new ResponseStatusException(
+          HttpStatus.BAD_REQUEST,
+          "path modelName="
+              + modelName
+              + " does not match registered modelName="
+              + current.modelName()
+              + " for id="
+              + versionId);
+    }
+    try {
+      java.nio.file.Path restored = registry.restoreVersion(versionId);
+      log.info(
+          "admin: restored {}/{} (id={}) to {}",
+          current.modelName(),
+          current.version(),
+          versionId,
+          restored);
+      emit(
+          OpsEventType.REGISTER,
+          current.modelName() + " " + current.version() + " restored from archive to " + restored);
+    } catch (net.thebullpen.baseball.registry.SnapshotStorageException e) {
+      throw new ResponseStatusException(
+          HttpStatus.SERVICE_UNAVAILABLE, "restore failed: " + e.getMessage(), e);
+    }
+    return registry.getById(versionId).orElseThrow();
   }
 }

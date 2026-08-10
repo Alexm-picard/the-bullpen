@@ -11,6 +11,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import net.thebullpen.baseball.domain.BattedBall;
+import net.thebullpen.baseball.domain.GameStatus;
+import net.thebullpen.baseball.domain.LivePitch;
+import net.thebullpen.baseball.domain.ScheduledGame;
 import org.springframework.stereotype.Component;
 
 /**
@@ -202,8 +206,8 @@ public class MlbFeedParser {
     JsonNode root = mapper.readTree(json);
     JsonNode gameData = root.path("gameData");
     long gamePk = root.path("gamePk").asLong(gameData.path("game").path("pk").asLong());
-    GameStatus status =
-        GameStatus.fromMlbDetailedState(textOrNull(gameData.path("status").path("detailedState")));
+    String rawDetailedState = textOrNull(gameData.path("status").path("detailedState"));
+    GameStatus status = GameStatus.fromMlbDetailedState(rawDetailedState);
     JsonNode home = gameData.path("teams").path("home");
     JsonNode away = gameData.path("teams").path("away");
 
@@ -263,6 +267,10 @@ public class MlbFeedParser {
         JsonNode e = pitchEvents.get(i);
         JsonNode details = e.path("details");
         JsonNode pd = e.path("pitchData");
+        JsonNode breaks = pd.path("breaks");
+        // Derive the movement + release-position Tier-4 fields from the raw 9-param fit; null when
+        // the fit is incomplete (tracking blip) so the post leg skips the pitch (F2.1a).
+        GumboKinematics.Derived tier4 = deriveTier4(pd);
         pitches.add(
             new LivePitch(
                 gamePk,
@@ -287,7 +295,15 @@ public class MlbFeedParser {
                 asDouble(pd.path("startSpeed")),
                 asDouble(pd.path("coordinates").path("pX")),
                 asDouble(pd.path("coordinates").path("pZ")),
-                i == pitchEvents.size() - 1));
+                tier4 == null ? null : tier4.pfxXFt(),
+                tier4 == null ? null : tier4.pfxZFt(),
+                // spin is a validated pass-through (RPM + degrees, same units + frame).
+                asDouble(breaks.path("spinRate")),
+                asDouble(breaks.path("spinDirection")),
+                tier4 == null ? null : tier4.releasePosXFt(),
+                tier4 == null ? null : tier4.releasePosZFt(),
+                i == pitchEvents.size() - 1,
+                parseBattedBall(play, e)));
         // The next pitch's pre-count is this pitch's post-count (read from the feed, not computed).
         JsonNode c = e.path("count");
         preBalls = c.path("balls").asInt(preBalls);
@@ -308,6 +324,7 @@ public class MlbFeedParser {
     return new LiveGameFeed(
         gamePk,
         status,
+        rawDetailedState,
         gameDate,
         home.path("id").asInt(),
         away.path("id").asInt(),
@@ -436,13 +453,60 @@ public class MlbFeedParser {
         gameDate);
   }
 
+  /**
+   * The measured physics of a ball in play, or null - which is the common case, since most pitches
+   * are not put in play and a play that is still in flight has not finished being measured.
+   *
+   * <p>ALL-OR-NOTHING by construction, because {@link BattedBall} promises its consumers that a
+   * record which exists is entirely real. Any missing piece yields null rather than a record with a
+   * hole in it.
+   *
+   * <p>The {@code event} check is doing more work than it looks: it is the COMPLETENESS marker.
+   * hitData populates transiently while a play is still in flight, and the observed partial
+   * (physics present, coordinates and result absent) was exactly that window. Declining until the
+   * play resolves means the transient never reaches storage, so no downstream consumer has to
+   * defend against a half-measured batted ball. The poller re-writes the pitch once the play
+   * completes (see LivePollingService's BIP backfill), so declining here costs the row nothing.
+   *
+   * <p>{@code launchSpeed <= 0} is rejected as well as null: 0 mph is not a batted ball, and it is
+   * the sentinel the storage layer uses for absence (V032). Letting one through would make a row
+   * that reads back as absent, which is a silent hole rather than a loud one. {@code trajectory} is
+   * allowed to be blank - the display falls back to a launch-angle band - but nothing else is.
+   */
+  private static BattedBall parseBattedBall(JsonNode play, JsonNode pitchEvent) {
+    String event = play.path("result").path("event").asText("");
+    if (event.isBlank() || !pitchEvent.path("details").path("isInPlay").asBoolean()) {
+      return null;
+    }
+    JsonNode hit = pitchEvent.path("hitData");
+    JsonNode coords = hit.path("coordinates");
+    Double launchSpeed = asDouble(hit.path("launchSpeed"));
+    Double launchAngle = asDouble(hit.path("launchAngle"));
+    Double distance = asDouble(hit.path("totalDistance"));
+    Double hcX = asDouble(coords.path("coordX"));
+    Double hcY = asDouble(coords.path("coordY"));
+    if (launchSpeed == null
+        || launchSpeed <= 0
+        || launchAngle == null
+        || distance == null
+        || hcX == null
+        || hcY == null) {
+      return null;
+    }
+    return new BattedBall(
+        launchSpeed, launchAngle, distance, hcX, hcY, hit.path("trajectory").asText(""), event);
+  }
+
   private static LocalDate parseGameDate(JsonNode gameData) {
     String official = textOrNull(gameData.path("datetime").path("officialDate"));
     if (official != null && !official.isBlank()) {
       return LocalDate.parse(official);
     }
-    String dt = textOrNull(gameData.path("datetime").path("dateTime"));
-    return dt == null ? null : OffsetDateTime.parse(dt).toLocalDate();
+    // The old fallback parsed dateTime as UTC, producing ET-date + 1 for any game starting at or
+    // after 20:00 ET. That one-day disagreement with Statcast's game_date broke the
+    // pitches/pitches_live dedup key and double-counted pitches in the union window (#380).
+    // Returning null lets the caller skip the write rather than fabricate a wrong date.
+    return null;
   }
 
   private static boolean isOccupied(JsonNode base) {
@@ -451,6 +515,41 @@ public class MlbFeedParser {
 
   private static Double asDouble(JsonNode n) {
     return n.isNumber() ? n.asDouble() : null;
+  }
+
+  /**
+   * Extract the raw 9-parameter trajectory fit ({@code pitchData.coordinates.*}) + {@code
+   * extension} and derive the Savant-equivalent movement + release-position Tier-4 fields (see
+   * {@link GumboKinematics}). Returns {@code null} when ANY of the ten inputs is absent - the
+   * completeness gate: an incomplete fit yields a skipped post prediction, never a NaN-fed one
+   * (F2.1a).
+   */
+  private static GumboKinematics.Derived deriveTier4(JsonNode pd) {
+    JsonNode c = pd.path("coordinates");
+    Double x0 = asDouble(c.path("x0"));
+    Double y0 = asDouble(c.path("y0"));
+    Double z0 = asDouble(c.path("z0"));
+    Double vX0 = asDouble(c.path("vX0"));
+    Double vY0 = asDouble(c.path("vY0"));
+    Double vZ0 = asDouble(c.path("vZ0"));
+    Double aX = asDouble(c.path("aX"));
+    Double aY = asDouble(c.path("aY"));
+    Double aZ = asDouble(c.path("aZ"));
+    Double extension = asDouble(pd.path("extension"));
+    if (x0 == null
+        || y0 == null
+        || z0 == null
+        || vX0 == null
+        || vY0 == null
+        || vZ0 == null
+        || aX == null
+        || aY == null
+        || aZ == null
+        || extension == null) {
+      return null;
+    }
+    return GumboKinematics.derive(
+        new GumboKinematics.Fit(x0, y0, z0, vX0, vY0, vZ0, aX, aY, aZ, extension));
   }
 
   private static String textOrNull(JsonNode n) {

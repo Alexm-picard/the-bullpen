@@ -86,6 +86,160 @@ _REQUEST_COLS: tuple[str, ...] = (
 )
 
 
+# Deterministic synthetic request rows for the CI parity path (no ClickHouse). The pitcher/batter/
+# park values deliberately mix in-universe ids (present in the miniature TE + park lookups written
+# by `generate_ci_artifacts`) and out-of-universe ids (prior / missing-value fallback). Tier 3 form
+# columns include explicit nulls to exercise the null-on-wire <-> NaN-in-memory path. Keep the id
+# universe in sync with `generate_ci_artifacts.PITCHER_IDS / BATTER_IDS / PARK_CODES`.
+SYNTHETIC_INPUT_ROWS: list[dict[str, Any]] = [
+    {
+        "game_id": 700001,
+        "at_bat_index": 1,
+        "pitch_number": 1,
+        "game_date": "2025-04-01",
+        "pitcher_id": 100003,
+        "batter_id": 200005,
+        "pitcher_throws": "R",
+        "batter_stand": "R",
+        "park_id": "NYY",
+        "count_balls": 0,
+        "count_strikes": 0,
+        "outs": 0,
+        "inning": 1,
+        "base_state": 0,
+        "score_diff": 0,
+        "dow": 2,
+        "pitcher_pitches_last_28d": 310.0,
+        "pitcher_pitches_in_game": 12.0,
+        "days_since_last_appearance": 5.0,
+        "pitcher_strike_rate_28d": 0.64,
+        "pitcher_swstrike_rate_28d": 0.11,
+        "pitcher_inplay_rate_28d": 0.18,
+        "pitcher_strike_rate_std": 0.04,
+        "batter_strike_rate_28d": 0.62,
+        "batter_inplay_rate_28d": 0.19,
+        "batter_ball_rate_28d": 0.36,
+        "batter_inplay_rate_std": 0.05,
+    },
+    {
+        "game_id": 700002,
+        "at_bat_index": 4,
+        "pitch_number": 3,
+        "game_date": "2025-05-12",
+        "pitcher_id": 999999,
+        "batter_id": 888888,
+        "pitcher_throws": "L",
+        "batter_stand": "L",
+        "park_id": "ZZZ",
+        "count_balls": 2,
+        "count_strikes": 1,
+        "outs": 1,
+        "inning": 4,
+        "base_state": 3,
+        "score_diff": -2,
+        "dow": 5,
+        "pitcher_pitches_last_28d": None,
+        "pitcher_pitches_in_game": 45.0,
+        "days_since_last_appearance": None,
+        "pitcher_strike_rate_28d": None,
+        "pitcher_swstrike_rate_28d": 0.09,
+        "pitcher_inplay_rate_28d": 0.21,
+        "pitcher_strike_rate_std": None,
+        "batter_strike_rate_28d": 0.58,
+        "batter_inplay_rate_28d": None,
+        "batter_ball_rate_28d": 0.40,
+        "batter_inplay_rate_std": None,
+    },
+    {
+        "game_id": 700003,
+        "at_bat_index": 7,
+        "pitch_number": 6,
+        "game_date": "2025-06-20",
+        "pitcher_id": 100011,
+        "batter_id": 200018,
+        "pitcher_throws": "L",
+        "batter_stand": "R",
+        "park_id": "LAD",
+        "count_balls": 3,
+        "count_strikes": 2,
+        "outs": 2,
+        "inning": 7,
+        "base_state": 7,
+        "score_diff": 3,
+        "dow": 0,
+        "pitcher_pitches_last_28d": 190.0,
+        "pitcher_pitches_in_game": 88.0,
+        "days_since_last_appearance": 1.0,
+        "pitcher_strike_rate_28d": 0.60,
+        "pitcher_swstrike_rate_28d": 0.13,
+        "pitcher_inplay_rate_28d": 0.17,
+        "pitcher_strike_rate_std": 0.06,
+        "batter_strike_rate_28d": 0.66,
+        "batter_inplay_rate_28d": 0.15,
+        "batter_ball_rate_28d": 0.33,
+        "batter_inplay_rate_std": 0.04,
+    },
+    {
+        "game_id": 700004,
+        "at_bat_index": 2,
+        "pitch_number": 2,
+        "game_date": "2025-07-04",
+        "pitcher_id": 100007,
+        "batter_id": 999000,
+        "pitcher_throws": "R",
+        "batter_stand": "L",
+        "park_id": "BOS",
+        "count_balls": 1,
+        "count_strikes": 0,
+        "outs": 0,
+        "inning": 2,
+        "base_state": 1,
+        "score_diff": 1,
+        "dow": 4,
+        "pitcher_pitches_last_28d": None,
+        "pitcher_pitches_in_game": None,
+        "days_since_last_appearance": None,
+        "pitcher_strike_rate_28d": None,
+        "pitcher_swstrike_rate_28d": None,
+        "pitcher_inplay_rate_28d": None,
+        "pitcher_strike_rate_std": None,
+        "batter_strike_rate_28d": None,
+        "batter_inplay_rate_28d": None,
+        "batter_ball_rate_28d": None,
+        "batter_inplay_rate_std": None,
+    },
+    {
+        "game_id": 700005,
+        "at_bat_index": 9,
+        "pitch_number": 4,
+        "game_date": "2025-08-15",
+        "pitcher_id": 100015,
+        "batter_id": 200002,
+        "pitcher_throws": "R",
+        "batter_stand": "R",
+        "park_id": "CHC",
+        "count_balls": 0,
+        "count_strikes": 2,
+        "outs": 1,
+        "inning": 9,
+        "base_state": 5,
+        "score_diff": -1,
+        "dow": 6,
+        "pitcher_pitches_last_28d": 275.0,
+        "pitcher_pitches_in_game": 20.0,
+        "days_since_last_appearance": 3.0,
+        "pitcher_strike_rate_28d": 0.63,
+        "pitcher_swstrike_rate_28d": 0.10,
+        "pitcher_inplay_rate_28d": 0.20,
+        "pitcher_strike_rate_std": 0.05,
+        "batter_strike_rate_28d": 0.61,
+        "batter_inplay_rate_28d": 0.18,
+        "batter_ball_rate_28d": 0.37,
+        "batter_inplay_rate_std": 0.05,
+    },
+]
+
+
 def _load_rows(client: Any, year: int, fold_id: int, n: int) -> pd.DataFrame:
     """Pull a deterministic slice of `features` rows for the test fold."""
     cols = ", ".join(_REQUEST_COLS)
@@ -195,6 +349,7 @@ def generate(
     fold_id: int = 4,
     n: int = 10,
     settings: ClickHouseSettings | None = None,
+    synthetic: bool = False,
 ) -> dict[str, Any]:
     mdir = model_dir or DEFAULT_MODEL_DIR
     onnx_path = mdir / "model.onnx"
@@ -219,13 +374,19 @@ def generate(
     calibrator = IsotonicCalibrator.from_json(cal_path)
     session = ort.InferenceSession(str(onnx_path))
 
-    df = _load_rows(make_client(settings), year, fold_id, n)
+    if synthetic:
+        # CI path: fixed synthetic request rows, no ClickHouse. Already native Python types.
+        raw_rows: list[dict[str, Any]] = [dict(r) for r in SYNTHETIC_INPUT_ROWS]
+    else:
+        df = _load_rows(make_client(settings), year, fold_id, n)
+        raw_rows = [
+            {str(k): (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in raw_row.items()}
+            for _, raw_row in df.iterrows()
+        ]
+
     inputs: list[dict[str, Any]] = []
     expected: list[dict[str, Any]] = []
-    for _, raw_row in df.iterrows():
-        row: dict[str, Any] = {
-            str(k): (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in raw_row.items()
-        }
+    for row in raw_rows:
         # Cast id columns to int so JSON is human-readable + Java-friendly
         for id_col in ("pitcher_id", "batter_id", "game_id", "at_bat_index", "pitch_number"):
             if row.get(id_col) is not None:
@@ -248,7 +409,11 @@ def generate(
         raw_probs = _onnx_distribution(session, feature_vector)
         calibrated = calibrator.transform(np.array([raw_probs], dtype=np.float64))[0]
         inputs.append(row)
-        # NaN → None on the wire so the JSON is strict (Jackson rejects "NaN")
+        # NaN → None on the wire so the JSON is strict (Jackson rejects "NaN"). Values are emitted
+        # as-is (float64): the Java mirror reads them back and casts to float32, so the fixture only
+        # stays within the 1e-6 tolerance when the input values are Float32-representable. Box CH
+        # data is Nullable(Float32) so this holds; the synthetic CI rows use Float32-exact values
+        # for the same reason (see the SYNTHETIC_INPUT_ROWS comment).
         feature_vector_serialised: list[float | None] = [
             None if np.isnan(v) else v for v in feature_vector
         ]
@@ -310,6 +475,12 @@ def generate(
     default=None,
 )
 @click.option(
+    "--synthetic",
+    is_flag=True,
+    default=False,
+    help="Use the fixed synthetic request rows (CI path, no ClickHouse) instead of a fold pull.",
+)
+@click.option(
     "--log-format",
     type=click.Choice(["console", "json"], case_sensitive=False),
     default="console",
@@ -319,12 +490,13 @@ def main(
     fold_id: int,
     n: int,
     model_dir: Path | None,
+    synthetic: bool,
     log_format: str,
 ) -> None:
     if log_format.lower() == "json":
         os.environ["LOG_FORMAT"] = "json"
     configure_logging(level=logging.INFO)
-    generate(year=year, fold_id=fold_id, n=n, model_dir=model_dir)
+    generate(year=year, fold_id=fold_id, n=n, model_dir=model_dir, synthetic=synthetic)
 
 
 if __name__ == "__main__":

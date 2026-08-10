@@ -9,6 +9,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.concurrent.atomic.AtomicInteger;
+import net.thebullpen.baseball.config.IngestProperties;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -27,9 +28,17 @@ class MlbStatsApiClientTest {
     }
   }
 
+  private static IngestProperties props(
+      String baseUrl, String userAgent, int timeoutMs, int maxRetries) {
+    return new IngestProperties(
+        new IngestProperties.Live(baseUrl, userAgent, timeoutMs, maxRetries, 500L, 15L, 30L),
+        new IngestProperties.Players(false));
+  }
+
   private static MlbStatsApiClient client(int maxRetries, HttpStub stub) {
     return new MlbStatsApiClient(
-        new MlbFeedParser(new ObjectMapper()), "https://statsapi.mlb.com", "ua", 1000, maxRetries) {
+        new MlbFeedParser(new ObjectMapper()),
+        props("https://statsapi.mlb.com", "ua", 1000, maxRetries)) {
       @Override
       String httpGet(String url) throws IOException {
         return stub.get(url);

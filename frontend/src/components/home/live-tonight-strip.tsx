@@ -9,7 +9,7 @@
  * states; this renders the resolved slate (with its own empty state).
  */
 
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 
 import type { GameSummary } from "../../api/games";
 import { colors, typography } from "../../design/broadcast";

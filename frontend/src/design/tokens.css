@@ -1,41 +1,32 @@
-/* Tailwind 4 @theme block — exposes BROADCAST design tokens as CSS custom
- * properties + utility classes. Lives inside src/design/ so it's a legal hex
- * source for the lint:hex-codes allowlist.
+/* Tailwind 4 @theme block - BROADCAST design tokens (decision [160], dark-field
+ * per [191]/ADR-0017, light/dark toggle per [192]).
  *
- * Values mirror src/design/broadcast.ts exactly (decision [160]). If you
- * change one, change both. The paper-era tokens.ts mirror was deleted in the
- * redesign cleanup PR.
+ * Values mirror src/design/broadcast.ts exactly. If you change one, change both.
  *
- * NOTE: the conditional-format ramp, sequential ramps, and colorblind alt are
- * intentionally OMITTED — consumed only via cellColor()/SVG, never as Tailwind
- * utilities.
- *
- * Legacy var names (--color-bgBase/--color-scarlet/--font-ui/--font-data and
- * friends) are kept as ALIASES to the broadcast values because page-level CSS
- * consumes them; they retire as those files migrate to the new names. */
+ * [192] TOGGLE: theme-switching colors use --bp-* CSS vars stamped by
+ * ThemeProvider. Chrome elements (nav, LowerThird, footer) stay constant
+ * in both modes - the broadcast identity is always dark chrome. */
 
 @theme {
-  /* ── The analytical field ── */
-  --color-field: #f6f7f9;
-  --color-panel: #ffffff;
-  --color-fieldSubtle: #edf0f4;
-  --color-rule: #d9dee7;
-
-  /* ── Broadcast chrome ── */
+  /* ── Static tokens (same in both themes) ── */
   --color-chrome: #0e1b33;
   --color-chromeDeep: #080f1f;
   --color-chromeEdge: #26365c;
   --color-steel: #8b95a7;
-
-  /* ── Accent ── */
   --color-gold: #f2a900;
-  --color-goldInk: #9a6b00;
-
-  /* ── Text ── */
-  --color-ink: #10141b;
-  --color-text: #272d38;
-  --color-textMuted: #5e6878;
+  --color-goldDeep: #c98d00;
+  --color-live: #39d98a;
+  --color-heatHi: #ff5a4e;
+  --color-heatMid: #f2a900;
+  --color-heatLo: #3d4f78;
   --color-textOnChrome: #f4f6fa;
+  --color-textOnChromeMuted: #9da9bf;
+
+  /* ── Paper surface (Model Guide, always light) ── */
+  --color-paper: #f6f7f9;
+  --color-paperText: #272d38;
+  --color-paperMuted: #5e6878;
+  --color-paperRule: #d9dee7;
 
   /* ── Typography ── */
   --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
@@ -43,15 +34,65 @@
   --font-mono:
     "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
-  /* ── Legacy aliases (consumed by page CSS + index.css; retire on contact) ── */
-  --color-bgBase: #f6f7f9;
-  --color-bgSheet: #ffffff;
-  --color-bgSubtle: #edf0f4;
-  --color-bgEmphasis: #d9dee7;
-  --color-scarlet: #9a6b00; /* alias -> goldInk: legacy accent reads as the broadcast accent */
-  --color-textStrong: #10141b;
-  --color-textDefault: #272d38;
+  /* ── Spacing scale ── */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 16px;
+  --space-4: 24px;
+  --space-5: 40px;
+  --space-6: 72px;
+}
+
+/* ── [192] Theme-switching palette ────────────────────────────────────────── */
+
+:root,
+:root[data-theme="dark"] {
+  --bp-field: #080f1f;
+  --bp-field-hi: #0e1b33;
+  --bp-panel: #101d38;
+  --bp-panel-edge: #26365c;
+  --bp-rule: #1c2a4a;
+  --bp-ink: #f4f6fa;
+  --bp-text: #c9d1e0;
+  --bp-muted: #95a0b3;
+  --bp-gold-ink: #c98d00;
+  --bp-cond-good3: #39a568;
+  --bp-cond-good1: #1f4d3a;
+  --bp-cond-neutral: #1c2a4a;
+  --bp-cond-bad1: #4d2a28;
+  --bp-cond-bad3: #e05a4c;
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --bp-field: #f6f7f9;
+  --bp-field-hi: #edf0f4;
+  --bp-panel: #ffffff;
+  --bp-panel-edge: #d9dee7;
+  --bp-rule: #d9dee7;
+  --bp-ink: #10141b;
+  --bp-text: #272d38;
+  --bp-muted: #5e6878;
+  --bp-gold-ink: #8a5f00;
+  --bp-cond-good3: #39a568;
+  --bp-cond-good1: #bfe3c6;
+  --bp-cond-neutral: #ebeef2;
+  --bp-cond-bad1: #f6c9c2;
+  --bp-cond-bad3: #e05a4c;
+  color-scheme: light;
+}
+
+/* ── Legacy aliases ── */
+:root {
+  --color-bgBase: var(--bp-field);
+  --color-bgSheet: var(--bp-panel);
+  --color-bgSubtle: var(--bp-field-hi);
+  --color-bgEmphasis: var(--bp-rule);
+  --color-scarlet: var(--bp-gold-ink);
+  --color-textStrong: var(--bp-ink);
+  --color-textDefault: var(--bp-text);
   --color-textOnNavy: #f4f6fa;
+  --color-goldInk: var(--bp-gold-ink);
   --font-ui: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-data:
     "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;

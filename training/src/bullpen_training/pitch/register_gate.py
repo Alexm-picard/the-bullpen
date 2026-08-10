@@ -27,8 +27,6 @@ registration).
 
 from __future__ import annotations
 
-import copy
-import hashlib
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -53,6 +51,7 @@ from bullpen_training.pitch.register_snapshot import (
     contract_path_for,
     feature_columns_for,
 )
+from bullpen_training.registry_client import feature_hasher
 
 # Tier-4 columns as they appear in the contract feature_order: pitch_type ->
 # pitch_type_int (the integer encoding), matching the boundary leakage test.
@@ -80,10 +79,7 @@ class GateReport:
 
 
 def _recompute_schema_hash(spec: dict[str, Any]) -> str:
-    canonical = copy.deepcopy(spec)
-    canonical["schema_hash"] = ""
-    blob = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    return hashlib.sha256(blob).hexdigest()
+    return feature_hasher.compute_from_content(json.dumps(spec))
 
 
 def run_gate(

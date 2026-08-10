@@ -2,12 +2,9 @@ package net.thebullpen.baseball.retraining.triggers;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 import net.thebullpen.baseball.registry.RegistryRepository;
 import net.thebullpen.baseball.registry.dto.ModelVersion;
-import net.thebullpen.baseball.registry.dto.Stage;
 import net.thebullpen.baseball.retraining.RetrainingException;
 import net.thebullpen.baseball.retraining.RetrainingQueueService;
 import net.thebullpen.baseball.retraining.dto.TriggerType;
@@ -53,7 +50,7 @@ public class ScheduledTrigger {
   public int runOnce(LocalDate today) {
     String month = today.format(MONTH_FMT);
     int enqueued = 0;
-    for (ModelVersion champ : activeChampions()) {
+    for (ModelVersion champ : registryRepo.findActiveChampions()) {
       String triggerId = "sched-" + month + "-" + champ.modelName();
       try {
         queue.enqueue(
@@ -71,24 +68,5 @@ public class ScheduledTrigger {
     }
     log.info("ScheduledTrigger: monthly run for {} — enqueued {} model(s)", month, enqueued);
     return enqueued;
-  }
-
-  private List<ModelVersion> activeChampions() {
-    List<String> seen = new ArrayList<>();
-    List<ModelVersion> out = new ArrayList<>();
-    for (String[] pair : registryRepo.findAllNameVersionPairs()) {
-      if (!seen.contains(pair[0])) {
-        seen.add(pair[0]);
-      }
-    }
-    for (String name : seen) {
-      for (ModelVersion v : registryRepo.findByName(name)) {
-        if (v.stage() == Stage.CHAMPION) {
-          out.add(v);
-          break;
-        }
-      }
-    }
-    return out;
   }
 }

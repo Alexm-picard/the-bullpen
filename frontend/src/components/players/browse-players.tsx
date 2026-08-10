@@ -13,7 +13,7 @@
  */
 
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 
 import { usePlayerRoster } from "../../api/players";
 import { colors, typography } from "../../design/broadcast";

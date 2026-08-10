@@ -7,8 +7,8 @@
  *   - IBM Plex Mono 12px caption in textMuted ("+18% vs lg")
  *   - Background color via cellColor(value, FACTOR_METRIC) so distance from
  *     1.00 tints the block (the block bg carries the conditional signal —
- *     caption color stays muted because color is layered onto the block,
- *     not the text)
+ *     caption renders in ink - the AA-safe color on every tint stop;
+ *     size keeps it subordinate to the figure)
  *
  * The WIND block is categorical: it renders a Saira display 32px string
  * ("LF → RF") instead of a numeric figure and gets no cellColor tint.
@@ -17,20 +17,31 @@
  * each. Border 1 px bgEmphasis.
  */
 
-import { cellColor } from "../../design/cellColor";
+import {
+  cellColorWith,
+  rampFrom,
+  type CondFormatRamp,
+} from "../../design/cellColor";
 import { radii, colors, typography } from "../../design/broadcast";
 import {
   FACTOR_METRIC,
   type ParkSpotlightFactor,
   type ParkSpotlightWindBlock,
 } from "../../data/parks-fixtures";
+import { useTheme } from "../../design/use-theme";
 
 export type ParkFactorStripProps = {
   factors: (ParkSpotlightFactor | ParkSpotlightWindBlock)[];
 };
 
-function NumericBlock({ block }: { block: ParkSpotlightFactor }) {
-  const bg = cellColor(block.value, FACTOR_METRIC);
+function NumericBlock({
+  block,
+  ramp,
+}: {
+  block: ParkSpotlightFactor;
+  ramp: CondFormatRamp;
+}) {
+  const bg = cellColorWith(ramp, block.value, FACTOR_METRIC);
   return (
     <div
       style={{
@@ -71,7 +82,9 @@ function NumericBlock({ block }: { block: ParkSpotlightFactor }) {
         style={{
           fontFamily: typography.fonts.mono,
           fontSize: 12,
-          color: colors.textMuted,
+          // D4 (AA): the caption sits ON the cellColor tint - muted gray reads 1.5:1 on the
+          // strongest stop; ink clears >=5:1 on every stop, size keeps it subordinate.
+          color: colors.ink,
           fontFeatureSettings: '"tnum" 1',
         }}
       >
@@ -125,7 +138,8 @@ function WindBlock({ block }: { block: ParkSpotlightWindBlock }) {
         style={{
           fontFamily: typography.fonts.mono,
           fontSize: 12,
-          color: colors.textMuted,
+          // D4 (AA): same on-tint rule as the numeric block above.
+          color: colors.ink,
         }}
       >
         {block.caption}
@@ -135,6 +149,10 @@ function WindBlock({ block }: { block: ParkSpotlightWindBlock }) {
 }
 
 export function ParkFactorStrip({ factors }: ParkFactorStripProps) {
+  const { theme } = useTheme();
+  const ramp = rampFrom(
+    theme === "dark" ? colors.condFormatDark : colors.condFormatLight,
+  );
   return (
     <div
       style={{
@@ -147,7 +165,11 @@ export function ParkFactorStrip({ factors }: ParkFactorStripProps) {
         f.key === "WIND" ? (
           <WindBlock key={f.key} block={f as ParkSpotlightWindBlock} />
         ) : (
-          <NumericBlock key={f.key} block={f as ParkSpotlightFactor} />
+          <NumericBlock
+            key={f.key}
+            block={f as ParkSpotlightFactor}
+            ramp={ramp}
+          />
         ),
       )}
     </div>

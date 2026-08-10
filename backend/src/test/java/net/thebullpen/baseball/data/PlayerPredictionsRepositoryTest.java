@@ -3,7 +3,7 @@ package net.thebullpen.baseball.data;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.lang.reflect.Method;
-import net.thebullpen.baseball.api.dto.PlayerPredictionRow;
+import net.thebullpen.baseball.domain.PlayerPredictionRow;
 import org.junit.jupiter.api.Test;
 
 /**

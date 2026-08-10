@@ -3,10 +3,14 @@ package net.thebullpen.baseball.drift.jobs;
 import java.nio.file.Path;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import net.thebullpen.baseball.data.JobLockRepository;
+import net.thebullpen.baseball.drift.DriftHealthMetrics;
 import net.thebullpen.baseball.drift.DriftMetric;
 import net.thebullpen.baseball.drift.DriftMetricsRepository;
 import net.thebullpen.baseball.drift.FeatureDistributionFetcher;
@@ -17,6 +21,7 @@ import net.thebullpen.baseball.drift.algorithms.Psi;
 import net.thebullpen.baseball.registry.RegistryRepository;
 import net.thebullpen.baseball.registry.SnapshotStorage;
 import net.thebullpen.baseball.registry.dto.ModelVersion;
+import net.thebullpen.baseball.registry.dto.Stage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Profile;
@@ -44,25 +49,39 @@ public class PsiFeatureJob {
 
   private static final Logger log = LoggerFactory.getLogger(PsiFeatureJob.class);
 
+  private static final String JOB_NAME = "psi_feature";
+  private static final ZoneId ET = ZoneId.of("America/New_York");
+
   private final RegistryRepository registryRepo;
   private final TrainingDistributionLoader trainingLoader;
   private final FeatureDistributionFetcher fetcher;
   private final DriftMetricsRepository driftRepo;
+  private final JobLockRepository jobLocks;
+  private final DriftHealthMetrics driftHealth;
 
   public PsiFeatureJob(
       RegistryRepository registryRepo,
       TrainingDistributionLoader trainingLoader,
       FeatureDistributionFetcher fetcher,
-      DriftMetricsRepository driftRepo) {
+      DriftMetricsRepository driftRepo,
+      JobLockRepository jobLocks,
+      DriftHealthMetrics driftHealth) {
     this.registryRepo = registryRepo;
     this.trainingLoader = trainingLoader;
     this.fetcher = fetcher;
     this.driftRepo = driftRepo;
+    this.jobLocks = jobLocks;
+    this.driftHealth = driftHealth;
   }
 
   /** Cron: 2 AM ET daily (post-baseball-window). */
   @Scheduled(cron = "0 0 2 * * *", zone = "America/New_York")
   public void run() {
+    LocalDate fireDate = LocalDate.now(ET);
+    if (!jobLocks.tryAcquire(JOB_NAME, fireDate)) {
+      log.info("{} already ran for {} on another instance; skipping", JOB_NAME, fireDate);
+      return;
+    }
     try {
       runOnce(Instant.now());
     } catch (RuntimeException e) {
@@ -115,6 +134,7 @@ public class PsiFeatureJob {
     }
     ReferenceDistributions refs = trainingLoader.load(champ.id(), Path.of(champ.metadataPath()));
     if (refs.isEmpty()) {
+      reportMissingBaseline(champ);
       return out;
     }
     // Continuous PSI per feature.
@@ -164,6 +184,31 @@ public class PsiFeatureJob {
               windowEnd));
     }
     return out;
+  }
+
+  /**
+   * A serving version has no feature-distribution baseline in its {@code metadata.json}. For a
+   * CHAMPION this is PSI going dark on the production model (decision [175]'s silent-starve) - WARN
+   * loudly, name the remediation, and bump the alertable counter. For a SHADOW challenger the miss
+   * is benign (its PSI is nice-to-have) - INFO only, no counter, so the alert stays clean.
+   */
+  private void reportMissingBaseline(ModelVersion serving) {
+    if (serving.stage() == Stage.CHAMPION) {
+      log.warn(
+          "PsiFeatureJob: CHAMPION {} (id={}) has NO feature-distribution baseline - PSI is dark"
+              + " for this production model. Run"
+              + " scripts/backfill_training_distributions.py --model {} against the champion bundle.",
+          serving.naturalKey(),
+          serving.id(),
+          serving.modelName());
+      driftHealth.markChampionMissingBaseline(serving.modelName(), "feature");
+    } else {
+      log.info(
+          "PsiFeatureJob: {} {} (id={}) has no feature-distribution baseline; skipping PSI",
+          serving.stage(),
+          serving.naturalKey(),
+          serving.id());
+    }
   }
 
   private static double[] toArr(List<Double> xs) {

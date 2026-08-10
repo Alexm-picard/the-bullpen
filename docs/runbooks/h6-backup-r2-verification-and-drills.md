@@ -15,7 +15,7 @@
 > push is the off-machine copy that makes Layer 1 durable.
 >
 > **References:** `infra/backup/README.md` (backup architecture, both layers),
-> `infra/backup/clickhouse-snapshot.sh`, `ops/scripts/restore-drill.sh`,
+> `infra/backup/clickhouse-snapshot.sh`, `infra/backup/restore-drill.sh`,
 > `docs/drills/2026-05-23_restore.md` (last drill - PASS, local-only),
 > ADR-0007 (S3-compatible storage abstraction), decisions [13] [14] [128].
 
@@ -24,7 +24,7 @@
 > 1. **Part A treats the R2 offsite push as an unimplemented gap.** It is now
 >    IMPLEMENTED - not by appending `rclone` to `clickhouse-snapshot.sh`, but as
 >    a decoupled leg: `infra/backup/offsite-push.sh` driven by
->    `bullpen-offsite.timer` (03:30), pushing to `bullpen-r2:bullpen-prod/backups/<NAME>/`
+>    `bullpen-offsite@<user>.timer` (03:30), pushing to `bullpen-r2:bullpen-prod/backups/<NAME>/`
 >    plus `<NAME>_sqlite/registry.sqlite` (ADR-0007 revision history, decision [153]).
 >    So A1/A2 are done; treat Part A as "verify the offsite leg ran," not "add it."
 > 2. **The restore drill is redesigned as restore-FROM-R2** (the canonical
@@ -108,12 +108,12 @@ rclone lsd bullpen-r2:bullpen-prod --config ~/.config/rclone/rclone.conf
 ### A4 - Verify the restore-from-R2 path (extend restore-drill.sh)
 
 The 2026-05-23 drill explicitly noted "R2 round-trip not proven" as a follow-up.
-Once A2/A3 are done, extend `ops/scripts/restore-drill.sh` with a `--from-r2`
+Once A2/A3 are done, extend `infra/backup/restore-drill.sh` with a `--from-r2`
 mode on the Mac, deploy, and run:
 
 ```bash
 # On the box (after the --from-r2 mode is merged and deployed)
-bash ops/scripts/restore-drill.sh --from-r2
+bash infra/backup/restore-drill.sh --from-r2
 # Should: rclone copy the latest snapshot from R2, then run the local restore loop
 ```
 
@@ -150,7 +150,7 @@ docker ps --format '{{.Names}}\t{{.Status}}' | grep bullpen-clickhouse
 
 ```bash
 cd ~/code/the-bullpen
-bash ops/scripts/restore-drill.sh
+bash infra/backup/restore-drill.sh
 ```
 
 Expected output (last block):
@@ -220,7 +220,7 @@ After a PASS, write the drill report to `docs/drills/` and update
 
 ```bash
 # On the box: capture the output and bring it back to the Mac for commit (ADR-0006)
-bash ops/scripts/restore-drill.sh 2>&1 | tee /tmp/restore-drill-$(date +%Y-%m-%d).log
+bash infra/backup/restore-drill.sh 2>&1 | tee /tmp/restore-drill-$(date +%Y-%m-%d).log
 # scp the log to Mac, then commit to docs/drills/<date>_restore.md
 ```
 
@@ -242,7 +242,7 @@ Before shutting down, capture the running state:
 ```bash
 # On the box
 echo "=== systemd units ==="
-systemctl is-active bullpen-api bullpen-worker cloudflared docker bullpen-snapshot.timer
+systemctl is-active bullpen-api bullpen-worker cloudflared docker "bullpen-snapshot@$(whoami).timer"
 
 echo "=== listening ports ==="
 ss -tlnp | grep -E "8080|8081|8123|9000|9090|3000"
@@ -281,7 +281,7 @@ ps -o pid,comm -p 1
 # Expect: 1 systemd
 
 # 2. All bullpen units active
-systemctl is-active bullpen-api bullpen-worker cloudflared docker bullpen-snapshot.timer
+systemctl is-active bullpen-api bullpen-worker cloudflared docker "bullpen-snapshot@$(whoami).timer"
 # All must print 'active'
 
 # 3. Docker containers up
@@ -306,7 +306,7 @@ rclone lsd bullpen-r2:bullpen-prod --config ~/.config/rclone/rclone.conf
 # Expect: raw/  samples/  snapshots/
 
 # 8. Snapshot timer catch-up (Persistent=true)
-systemctl list-timers bullpen-snapshot.timer
+systemctl list-timers "bullpen-snapshot@*.timer"
 # Expect a NEXT time; if LAST was missed, Persistent=true queues a catch-up
 
 # 9. Worker not crash-looping

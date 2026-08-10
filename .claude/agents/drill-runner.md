@@ -23,7 +23,7 @@ end-to-end.
 
 Steps you walk through:
 
-The executable is `ops/scripts/restore-drill.sh --from-r2` (run `--dry-run` first to preview the
+The executable is `infra/backup/restore-drill.sh --from-r2` (run `--dry-run` first to preview the
 plan + resolved config without touching docker / rclone / the JAR). It performs steps 1-4 below;
 you still do the pre-flight, the compare/capture in step 5, and write the report. The steps:
 

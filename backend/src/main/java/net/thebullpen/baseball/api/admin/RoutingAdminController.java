@@ -1,5 +1,6 @@
 package net.thebullpen.baseball.api.admin;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
 import net.thebullpen.baseball.api.admin.dto.SetChallengerRequest;
@@ -48,8 +49,21 @@ import org.springframework.web.server.ResponseStatusException;
  *   <li>{@code UnknownModel} → 404
  *   <li>{@code ChallengerNotInShadow} / {@code ChallengerSameAsChampion} / {@code
  *       InvalidTrafficPct} / {@code ShadowModeWithTraffic} → 400
+ *   <li>{@code ChampionNotAtChampionStage} → 500. Deliberately NOT a 4xx: the caller's request was
+ *       fine - the STORED routing row references a non-CHAMPION version (task #94), which is
+ *       server-side state corruption. The write is refused rather than perpetuating the bad
+ *       reference, and the precise message surfaces which version id is wrong. This deviates from
+ *       the codebase's usual 5xx-body policy of never echoing internals, deliberately: {@code
+ *       /v1/admin/**} sits behind HTTP Basic, the reader IS the operator, and the version id in the
+ *       body is the difference between a one-query diagnosis and a log dig. Do not "fix" this back
+ *       to the generic envelope.
  * </ul>
  */
+@Tag(
+    name = "Admin: Routing",
+    description =
+        "ADMIN-authed A/B routing writes: set/clear challenger, move the traffic slider, and flip"
+            + " SHADOW <-> AB mode. Requires HTTP Basic (SecurityConfig /v1/admin/**).")
 @RestController
 @RequestMapping("/v1/admin/routing")
 @Profile("api")
@@ -92,6 +106,8 @@ public class RoutingAdminController {
       throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage(), e);
     } catch (RoutingException.ChallengerNotInShadow | RoutingException.ChallengerSameAsChampion e) {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage(), e);
+    } catch (RoutingException.ChampionNotAtChampionStage e) {
+      throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
     }
   }
 
@@ -103,6 +119,8 @@ public class RoutingAdminController {
       return updated;
     } catch (RoutingException.UnknownModel e) {
       throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage(), e);
+    } catch (RoutingException.ChampionNotAtChampionStage e) {
+      throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
     }
   }
 
@@ -121,6 +139,8 @@ public class RoutingAdminController {
       throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage(), e);
     } catch (RoutingException.InvalidTrafficPct | RoutingException.ShadowModeWithTraffic e) {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage(), e);
+    } catch (RoutingException.ChampionNotAtChampionStage e) {
+      throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
     }
   }
 
@@ -142,6 +162,8 @@ public class RoutingAdminController {
       return updated;
     } catch (RoutingException.UnknownModel e) {
       throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage(), e);
+    } catch (RoutingException.ChampionNotAtChampionStage e) {
+      throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
     }
   }
 }

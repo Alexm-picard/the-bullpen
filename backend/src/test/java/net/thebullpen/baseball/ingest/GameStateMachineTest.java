@@ -3,6 +3,7 @@ package net.thebullpen.baseball.ingest;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Duration;
+import net.thebullpen.baseball.domain.GameStatus;
 import org.junit.jupiter.api.Test;
 
 class GameStateMachineTest {

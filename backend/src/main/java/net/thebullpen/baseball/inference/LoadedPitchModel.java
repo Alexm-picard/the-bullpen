@@ -83,8 +83,10 @@ public final class LoadedPitchModel implements AutoCloseable {
     FeaturePipelinePitchPre pipeline =
         FeaturePipelinePitchPre.load(
             snapshotDir.resolve(SnapshotStorage.FEATURE_PIPELINE_FILE), snapshotDir);
-    PitchOnnxModel onnx = new PitchOnnxModel(snapshotDir.resolve(SnapshotStorage.ARTIFACT_FILE));
     IsotonicCalibratorJava calibrator = loadCalibrator(snapshotDir);
+    // SESSION LAST (task #87): every fallible parse above, the native session below - a throw
+    // past a live session leaks the handle (no cache entry -> removalListener never fires).
+    PitchOnnxModel onnx = new PitchOnnxModel(snapshotDir.resolve(SnapshotStorage.ARTIFACT_FILE));
     log.info(
         "loaded pitch PRE model {}/{} (id={}) from {} (onnx input={})",
         modelName,
@@ -116,8 +118,10 @@ public final class LoadedPitchModel implements AutoCloseable {
     FeaturePipelinePitchPost pipeline =
         FeaturePipelinePitchPost.load(
             snapshotDir.resolve(SnapshotStorage.FEATURE_PIPELINE_FILE), snapshotDir);
-    PitchOnnxModel onnx = new PitchOnnxModel(snapshotDir.resolve(SnapshotStorage.ARTIFACT_FILE));
     IsotonicCalibratorJava calibrator = loadCalibrator(snapshotDir);
+    // SESSION LAST (task #87): every fallible parse above, the native session below - a throw
+    // past a live session leaks the handle (no cache entry -> removalListener never fires).
+    PitchOnnxModel onnx = new PitchOnnxModel(snapshotDir.resolve(SnapshotStorage.ARTIFACT_FILE));
     log.info(
         "loaded pitch POST model {}/{} (id={}) from {} (onnx input={})",
         modelName,
@@ -239,6 +243,13 @@ public final class LoadedPitchModel implements AutoCloseable {
 
   public List<String> classLabels() {
     return classLabels;
+  }
+
+  /**
+   * True once this bundle's close has begun (evicted or shutting down) - reload for a fresh one.
+   */
+  public boolean isRetired() {
+    return onnx.isRetired();
   }
 
   @Override

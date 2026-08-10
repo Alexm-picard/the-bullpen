@@ -5,11 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import net.thebullpen.baseball.registry.dto.ModelVersion;
 import net.thebullpen.baseball.registry.dto.RegisterRequest;
 import net.thebullpen.baseball.registry.dto.ResetFeatureSchemaConfirmation;
@@ -50,9 +47,6 @@ public class RegistryService {
 
   private static final Logger log = LoggerFactory.getLogger(RegistryService.class);
 
-  /** Reads {@code lookup_path} declarations out of a model's {@code feature_pipeline.json}. */
-  private static final ObjectMapper MAPPER = new ObjectMapper();
-
   /**
    * B2: promotion evidence older than this is stale - the monthly scheduled-retrain floor (decision
    * [79]) means a >30d-old comparison spans at least one retrain generation, and the champion /
@@ -60,24 +54,14 @@ public class RegistryService {
    */
   static final java.time.Duration PROMOTION_EVIDENCE_MAX_AGE = java.time.Duration.ofDays(30);
 
-  /**
-   * B4 / rule 9: each primary head's partner LR baseline. Promotion of a key to CHAMPION requires
-   * at least one non-archived registered version of the value. Hardcoded (vs a baseline_model_name
-   * column) deliberately: the pairing is a design-time fact from decision [37]/[46], the map is
-   * tiny, and it avoids a migration into the L5-noted duplicate-numbering minefield. Baseline model
-   * names themselves are absent from the map, so baselines promote without self-reference.
-   */
-  private static final Map<String, String> BASELINE_FOR_PRIMARY =
-      Map.of(
-          "pitch_outcome_pre", "pitch_outcome_lr_baseline",
-          "pitch_outcome_post", "pitch_outcome_lr_baseline",
-          "battedball_outcome", "lr_baseline_batted_ball",
-          "battedball_lgbm_per_park", "lr_baseline_batted_ball");
+  // B4 / rule 9 primary -> LR baseline mapping now lives in RegistryBaselines (single source of
+  // truth, shared with OfflineGateImportService's first-champion binding).
 
   private final RegistryRepository repo;
   private final FeatureSchemaHasher hasher;
   private final ExperimentResultsRepository experimentRepo;
   private final SnapshotStorage snapshotStorage;
+  private final SnapshotRestoreService restoreService;
   private final CanonicalContracts canonicalContracts;
   // @Lazy breaks the circular dep: RoutingService -> RegistryService (challenger lookup) and
   // RegistryService -> RoutingService (ensureRoutingForChampion on promote). The Spring-injected
@@ -89,6 +73,7 @@ public class RegistryService {
       FeatureSchemaHasher hasher,
       ExperimentResultsRepository experimentRepo,
       SnapshotStorage snapshotStorage,
+      SnapshotRestoreService restoreService,
       CanonicalContracts canonicalContracts,
       @org.springframework.context.annotation.Lazy
           net.thebullpen.baseball.inference.routing.RoutingService routingService) {
@@ -96,6 +81,7 @@ public class RegistryService {
     this.hasher = hasher;
     this.experimentRepo = experimentRepo;
     this.snapshotStorage = snapshotStorage;
+    this.restoreService = restoreService;
     this.canonicalContracts = canonicalContracts;
     this.routingService = routingService;
   }
@@ -199,6 +185,14 @@ public class RegistryService {
 
     String candidateHash = hasher.compute(Path.of(req.featurePipelinePath()));
     int archived = repo.archiveAllForModel(req.modelName());
+    // Task #94: archiveAllForModel just flipped every version - including a serving champion - to
+    // ARCHIVED, but until this line nothing touched model_routing. A surviving routing row would
+    // keep the router serving the archived champion, which is the V011 bypass in its most
+    // reachable form (no hand-edit needed, just this escape hatch). Remove it in the same
+    // transaction, mirroring the INC-1 rollback branch: no champion means no routing row, and the
+    // legacy fallback (or a 503) serves until a new champion is promoted through the gates.
+    routingService.removeRouting(
+        req.modelName(), "bootstrap reset archived all versions including any champion");
     log.warn(
         "registry: bootstrap reset for {} — archived {} prior version(s); new pinned hash={};"
             + " reason: {}",
@@ -211,88 +205,31 @@ public class RegistryService {
     return doInsert(reqWithReason, candidateHash);
   }
 
+  private static final ObjectMapper METADATA_MAPPER = new ObjectMapper();
+
   private ModelVersion doInsert(RegisterRequest req, String featureSchemaHash) {
-    // 3a.5: copy the caller's source files into the canonical snapshot layout
-    // <local-base>/<model_name>/<version>/{model.onnx, metadata.json, feature_pipeline.json}.
-    // The registered paths point at the canonical destination so retention + restore have a
-    // single place to flip. featurePipelinePath isn't a tracked column (the schema_hash is the
-    // proxy), but we still archive the file so the pipeline can be reconstituted from S3.
-    // BUG-1c: also copy the calibrator + ONNX external-data sidecar when the trainer produced them
-    // beside the model. Both are co-located in the source dir but were omitted from the copy-list,
-    // so registered snapshots served UNCALIBRATED (no calibrator.json) and external-data ONNX
-    // models
-    // failed to load (no model.onnx.data). Both are optional - the toy / small in-graph models have
-    // neither, so include only when the source file is actually present.
-    Path artifactSource = Path.of(req.artifactPath());
-    Path featurePipelineSource = Path.of(req.featurePipelinePath());
-    Map<String, Path> sources = new java.util.LinkedHashMap<>();
-    sources.put(SnapshotStorage.ARTIFACT_FILE, artifactSource);
-    sources.put(SnapshotStorage.METADATA_FILE, Path.of(req.metadataPath()));
-    sources.put(SnapshotStorage.FEATURE_PIPELINE_FILE, featurePipelineSource);
-    Path sourceDir = artifactSource.getParent();
-    if (sourceDir != null) {
-      Path calibrator = sourceDir.resolve(SnapshotStorage.CALIBRATOR_FILE);
-      if (java.nio.file.Files.isRegularFile(calibrator)) {
-        sources.put(SnapshotStorage.CALIBRATOR_FILE, calibrator);
-      }
-      Path externalData = sourceDir.resolve(SnapshotStorage.ARTIFACT_FILE + ".data");
-      if (java.nio.file.Files.isRegularFile(externalData)) {
-        sources.put(SnapshotStorage.ARTIFACT_FILE + ".data", externalData);
-      }
-    }
-    // BUG-1c-for-pitch (W4a): a registered pitch model resolves its Tier-2 lookups
-    // (park_id_mapping.json, pitcher_te.json, batter_te.json, and for post pitch_type_mapping.json)
-    // from the snapshot dir at load time - LoadedPitchModel.loadPre / loadPost fail loud when any
-    // is
-    // absent. The 3a.5 copy-list only relocated model.onnx + metadata.json + feature_pipeline.json
-    // +
-    // calibrator + external-data, so a pitch snapshot loaded with missing lookups and the load
-    // threw.
-    // Drive the extra copies off the feature_pipeline.json itself: every lookup the serving
-    // pipeline
-    // needs is DECLARED as a `lookup_path` under one of its `preprocess` entries (the contract the
-    // ml-engineer's W4b export driver emits to - it places these beside model.onnx). This stays
-    // model-agnostic: any model that declares lookups gets them copied, no per-model-name branch,
-    // and
-    // a contract with no lookups (the toy / batted-ball in-graph models) is a no-op.
+    // Decision [184], and it lives HERE rather than in register() deliberately:
+    // registerWithBootstrap
+    // does not call register(), so a check placed there would leave the bootstrap path - the very
+    // path a first registration takes from the box - an open door. doInsert is the single funnel
+    // both public entry points cross.
     //
-    // Co-located-and-optional, exactly like the calibrator / external-data sidecars above: copy
-    // each
-    // declared lookup that is actually present beside the model. We do NOT hard-fail here when a
-    // declared lookup is absent from the SOURCE dir - that keeps registration decoupled from how
-    // the
-    // caller stages files (some callers stage the snapshot dir directly), and the real fail-loud
-    // for
-    // a genuinely-missing lookup already lives at LOAD time in LoadedPitchModel, which serves
-    // before
-    // any user sees a prediction. What we DO assert post-copy is that everything we asked
-    // placeArtifacts to relocate actually landed - that catches a copy-list / placeArtifacts
-    // regression at registration rather than at first load.
-    Set<String> declaredLookups = declaredLookupFiles(featurePipelineSource);
-    Set<String> copiedLookups = new LinkedHashSet<>();
-    if (sourceDir != null) {
-      for (String lookup : declaredLookups) {
-        Path lookupSource = sourceDir.resolve(lookup);
-        if (Files.isRegularFile(lookupSource)) {
-          sources.put(lookup, lookupSource);
-          copiedLookups.add(lookup);
-        } else {
-          log.warn(
-              "registry: feature_pipeline for {}/{} declares lookup '{}' but it is not present in"
-                  + " the source dir {} - the snapshot will rely on it being placed another way;"
-                  + " LoadedPitchModel.loadPre/loadPost will fail loud at load if it is still"
-                  + " missing",
-              req.modelName(),
-              req.version(),
-              lookup,
-              sourceDir);
-        }
-      }
-    }
-    Path snapshotDir = snapshotStorage.placeArtifacts(req.modelName(), req.version(), sources);
-    assertLookupsPlaced(snapshotDir, copiedLookups);
-    String canonicalArtifact = snapshotDir.resolve(SnapshotStorage.ARTIFACT_FILE).toString();
-    String canonicalMetadata = snapshotDir.resolve(SnapshotStorage.METADATA_FILE).toString();
+    // [184] put model_kind in the artifact's metadata.json rather than a model_versions column, and
+    // says in its own text that a metadata-only field is a convention unless the registration path
+    // hard-fails a model that lacks it. The Python register_gate is the fast local twin; a
+    // hand-rolled curl bypasses that and cannot bypass this. Same posture as the rule-7 hash check.
+    //
+    // Runs BEFORE stageForRegistration because placeArtifacts copies files to disk that a
+    // rolled-back transaction does not un-copy: refuse first, touch disk second.
+    assertDeclaredModelKind(req);
+
+    // Assemble the copy-list, place the snapshot, and derive the canonical registered paths. The
+    // "what goes in the snapshot" policy (calibrator + external-data sidecars + pipeline-declared
+    // Tier-2 lookups) lives in SnapshotRestoreService; this runs inside register()'s transaction
+    // (stageForRegistration is not @Transactional, so it joins it exactly as the inline block did).
+    SnapshotRestoreService.StagedSnapshot staged = restoreService.stageForRegistration(req);
+    String canonicalArtifact = staged.canonicalArtifactPath();
+    String canonicalMetadata = staged.canonicalMetadataPath();
     ModelVersion inserted =
         repo.insert(
             req.modelName(),
@@ -319,71 +256,13 @@ public class RegistryService {
   }
 
   /**
-   * Pull an archived version's snapshot back from S3 to local disk and update the tracked paths to
-   * the local copies. Wraps {@link SnapshotStorage#restoreVersion(long)} so callers go through the
-   * service boundary (the runbook references this method).
+   * Pull an archived version's snapshot back from S3 to local disk. Delegates to {@link
+   * SnapshotRestoreService#restoreVersion(long)}; kept on this service boundary because the runbook
+   * and {@code SnapshotStorageIT} reference {@code RegistryService.restoreVersion}.
    */
   @Transactional
   public Path restoreVersion(long versionId) {
-    return snapshotStorage.restoreVersion(versionId);
-  }
-
-  /**
-   * Read the distinct {@code lookup_path} values declared under the {@code preprocess} block of a
-   * model's {@code feature_pipeline.json}. These are the Tier-2 lookup files the serving pipeline
-   * resolves from the snapshot dir at load time (pitch pre: park_id_mapping.json, pitcher_te.json,
-   * batter_te.json; pitch post: + pitch_type_mapping.json). Model-agnostic: a contract that
-   * declares no lookups (the toy / batted-ball in-graph models) yields an empty set and the copy
-   * list is unchanged. Order is preserved (insertion order of the declarations) for stable logs.
-   *
-   * <p>A pipeline whose JSON is unreadable is treated as having no declared lookups - the
-   * feature-schema hash check ({@link FeatureSchemaHasher}) already runs against this same file
-   * before we get here, so a truly malformed pipeline fails earlier; this method must not throw on
-   * an absent {@code preprocess} block (the legacy toy contract has none).
-   */
-  static Set<String> declaredLookupFiles(Path featurePipelinePath) {
-    Set<String> lookups = new LinkedHashSet<>();
-    JsonNode root;
-    try {
-      root = MAPPER.readTree(Files.readAllBytes(featurePipelinePath));
-    } catch (IOException e) {
-      throw new RegistryException.ArtifactMissing(featurePipelinePath.toString(), e);
-    }
-    JsonNode preprocess = root.path("preprocess");
-    if (!preprocess.isObject()) {
-      return lookups;
-    }
-    for (Map.Entry<String, JsonNode> entry : preprocess.properties()) {
-      JsonNode lookupPath = entry.getValue().path("lookup_path");
-      if (lookupPath.isTextual() && !lookupPath.asText().isBlank()) {
-        lookups.add(lookupPath.asText());
-      }
-    }
-    return lookups;
-  }
-
-  /**
-   * Post-copy guard (W4a): every lookup we handed to {@link SnapshotStorage#placeArtifacts} (the
-   * declared lookups that were present in the source dir) must now exist as a regular file inside
-   * the placed snapshot directory. A miss here means {@code placeArtifacts} silently dropped a file
-   * we asked it to relocate - a placement / copy-list regression - so we fail loud at registration
-   * with {@link RegistryException.ArtifactMissing}, before the row is returned, rather than
-   * discovering it at first load. This does NOT assert declared-but-absent-from-source lookups
-   * (those are the load-time fail-loud's job in {@link
-   * net.thebullpen.baseball.inference.LoadedPitchModel}).
-   */
-  private static void assertLookupsPlaced(Path snapshotDir, Set<String> copiedLookups) {
-    for (String lookup : copiedLookups) {
-      Path placed = snapshotDir.resolve(lookup);
-      if (!Files.isRegularFile(placed)) {
-        throw new RegistryException.ArtifactMissing(
-            "lookup '"
-                + lookup
-                + "' was copied but did not land in the snapshot at "
-                + placed
-                + " - placeArtifacts is out of sync with the registration copy-list");
-      }
-    }
+    return restoreService.restoreVersion(versionId);
   }
 
   private static RegisterRequest appendNotesReason(
@@ -432,6 +311,52 @@ public class RegistryService {
     return repo.findChallenger(modelName);
   }
 
+  /**
+   * Decision [184]: a family whose serving loader is resolved by an explicit metadata {@code
+   * model_kind} must declare it, or {@link net.thebullpen.baseball.inference.ModelLoadValidator}
+   * routes the snapshot to the batted-ball loader and every promotion 422s about the wrong model.
+   *
+   * <p>SCOPED, NOT UNIVERSAL, and that is a correctness requirement rather than politeness: the
+   * requirement is derived from {@link CanonicalContracts}' family table, so families registered
+   * before [184] - batted-ball and pitch-outcome pre/post, none of whose metadata carries the field
+   * - keep registering untouched. An unconditional check would refuse every re-registration of the
+   * existing fleet: automated retraining registers new versions of those same models across this
+   * endpoint, and {@code docs/runbooks/registry-snapshot-recovery.md} tells the operator to
+   * "register a fresh version from the Python training artifacts" when a snapshot is unrecoverable.
+   * (It would NOT break the restore drill - that restores registry.sqlite with {@code sqlite3
+   * .restore} and never crosses this path. Decision [185] records that correction.)
+   *
+   * <p>A caller cannot exploit the scoping. The arming is keyed off the model NAME, which {@code
+   * RegisterRequest}'s compact constructor has already fenced to {@code ^[a-z0-9_]+$}, and never
+   * off anything the payload declares about itself. An UNMAPPED novel name registers unarmed but
+   * dead-ends: serving dispatch is by hardcoded model-name constants, and the promote load gate
+   * still sniffs metadata, so a kind-less bundle falls to the batted-ball loader and 422s before it
+   * can reach any serving stage.
+   */
+  private void assertDeclaredModelKind(RegisterRequest req) {
+    Optional<String> expected = CanonicalContracts.requiredModelKindFor(req.modelName());
+    if (expected.isEmpty()) {
+      // Do not even OPEN metadata.json for a field-sniffed family. Pre-[184] artifacts are not
+      // required to be parseable JSON at this point, so parsing unconditionally and validating
+      // only when armed would be a silent behaviour change for every existing model.
+      return;
+    }
+    String declared;
+    try {
+      JsonNode md = METADATA_MAPPER.readTree(Files.readAllBytes(Path.of(req.metadataPath())));
+      declared = md.path("model_kind").asText("");
+    } catch (IOException e) {
+      // Fail closed. Metadata the registry cannot read is metadata it cannot trust, and the serving
+      // loader reads these same bytes later.
+      throw new RegistryException.ModelKindMismatch(
+          req.modelName(), expected.get(), "<unreadable metadata.json: " + e.getMessage() + ">");
+    }
+    if (!expected.get().equals(declared)) {
+      throw new RegistryException.ModelKindMismatch(
+          req.modelName(), expected.get(), declared.isEmpty() ? "<absent>" : declared);
+    }
+  }
+
   // --- state transitions --------------------------------------------------
 
   /**
@@ -465,6 +390,7 @@ public class RegistryService {
       assertBaselineRegistered(current);
       assertPromotionCriteriaMet(current);
       promoteToChampionAtomically(current);
+      pushChampionToR2(current);
     } else if (current.stage() == Stage.CHAMPION && newStage == Stage.SHADOW) {
       // INC-1 (decision [150]) controlled rollback. champion_version_id is NOT NULL, so the routing
       // row can't be emptied - remove it so InferenceRouter finds none and the legacy fallback
@@ -475,14 +401,36 @@ public class RegistryService {
       // recovers:
       // demote, fix the snapshot, re-promote the same version.
       repo.updateStage(id, Stage.SHADOW);
-      routingService.removeRouting(current.modelName());
+      routingService.removeRouting(
+          current.modelName(), "champion rolled back to SHADOW (INC-1 / decision [150])");
       log.warn(
           "registry: ROLLBACK {}/{} (id={}) CHAMPION->SHADOW, routing row removed",
           current.modelName(),
           current.version(),
           id);
+    } else if (current.stage() == Stage.CHAMPION && newStage == Stage.ARCHIVED) {
+      // Task #94: archiving a SERVING champion must drop its routing row in the same transaction,
+      // for the same reason the INC-1 rollback branch above does - a routing row referencing an
+      // ARCHIVED version keeps the router serving a version outside the rule-5/rule-6 gates. This
+      // branch only fires for a direct CHAMPION->ARCHIVED transition; the promote path archives
+      // the prior champion via repo.updateStage directly and repoints (not removes) the row.
+      repo.updateStage(id, Stage.ARCHIVED);
+      routingService.removeRouting(
+          current.modelName(), "serving champion archived via direct CHAMPION->ARCHIVED");
+      log.warn(
+          "registry: ARCHIVED serving champion {}/{} (id={}), routing row removed",
+          current.modelName(),
+          current.version(),
+          id);
     } else {
       repo.updateStage(id, newStage);
+      if (newStage == Stage.ARCHIVED) {
+        // Issue #374, the challenger-side mirror of the task-#94 branches above: archiving a
+        // version that currently occupies its model's challenger slot must clear that slot in
+        // the same transaction, or shadow legs keep hitting an archived version (and mode=AB
+        // would route it real traffic). No-op for versions not in a slot.
+        routingService.clearChallengerIfRouted(current.modelName(), id);
+      }
     }
     return repo.findById(id)
         .orElseThrow(
@@ -562,12 +510,12 @@ public class RegistryService {
 
   /**
    * B4 / rule 9: a primary head cannot reach CHAMPION while its partner LR baseline (decision
-   * [37]/[46], {@link #BASELINE_FOR_PRIMARY}) has never been registered. Any non-archived stage
-   * counts - the baseline only has to EXIST in the registry, not serve. Until now this rule lived
-   * only in the Python dry-run gate; nothing in the JVM enforced it.
+   * [37]/[46], {@link RegistryBaselines}) has never been registered. Any non-archived stage counts
+   * - the baseline only has to EXIST in the registry, not serve. Until now this rule lived only in
+   * the Python dry-run gate; nothing in the JVM enforced it.
    */
   private void assertBaselineRegistered(ModelVersion incoming) {
-    String baseline = BASELINE_FOR_PRIMARY.get(incoming.modelName());
+    String baseline = RegistryBaselines.baselineFor(incoming.modelName()).orElse(null);
     if (baseline == null) {
       return; // not a mapped primary (baselines themselves land here)
     }
@@ -604,26 +552,70 @@ public class RegistryService {
     routingService.ensureRoutingForChampion(incoming.modelName(), incoming.id());
   }
 
+  /**
+   * Post-promotion: push the champion's bundle to R2 so a DR restore can recover it. A champion you
+   * can't recover is a promotion that shouldn't finalize silently. Runs AFTER the human gate and
+   * the atomic promote, so the promotion is committed regardless; the push failure surfaces as a
+   * 500 so the operator knows the R2 copy is missing and can retry or push manually.
+   */
+  private void pushChampionToR2(ModelVersion mv) {
+    try {
+      if (!snapshotStorage.pushChampionBundle(mv)) {
+        return;
+      }
+    } catch (SnapshotStorageException e) {
+      log.error(
+          "registry: champion {}/{} (id={}) promoted but R2 push FAILED - the champion is"
+              + " serving but NOT recoverable from R2 until manually pushed",
+          mv.modelName(),
+          mv.version(),
+          mv.id(),
+          e);
+      throw new RegistryException.R2PushFailed(mv, e);
+    }
+  }
+
   // --- helpers ------------------------------------------------------------
 
   /**
    * Local-filesystem existence + readability check. The artifact paths land here as plain strings
-   * (could be relative or absolute); we resolve them with {@link Path#of(String, String...)} and
-   * fall through to {@link Files#exists(Path, java.nio.file.LinkOption...)}.
+   * (could be relative or absolute); we resolve them with {@link Path#of(String, String...)}.
    *
-   * <p>Once 3a.5 lands, this becomes an S3 HEAD call instead — the swap is local because every
+   * <p>ENOENT vs EACCES matters here: {@code Files.exists()} returns false BOTH for a genuinely
+   * absent file and for one whose parent directory the api process cannot traverse. C-31 attempt
+   * #11 burned a full GPU training run on that ambiguity ("does not exist" actually meant "exists,
+   * unreadable" - /home/&lt;user&gt; is 750). We stat via {@code Files.readAttributes} so the two
+   * failure modes throw distinct, actionable 422 messages; the documented staging default is {@code
+   * /opt/bullpen/retrain-artifacts} (trainer-writable, api-readable).
+   *
+   * <p>Once 3a.5 lands, this becomes an S3 HEAD call instead - the swap is local because every
    * caller goes through this single method.
    */
   private void assertArtifactExists(String pathStr) {
+    Path path;
     try {
-      Path path = Path.of(pathStr);
-      if (!Files.exists(path)) {
-        throw new RegistryException.ArtifactMissing(pathStr);
-      }
-    } catch (RegistryException e) {
-      throw e;
+      path = Path.of(pathStr);
     } catch (RuntimeException e) {
-      throw new RegistryException.ArtifactMissing(pathStr, e);
+      throw new RegistryException.ArtifactMissing(pathStr, "path is not parseable", e);
+    }
+    try {
+      Files.readAttributes(path, java.nio.file.attribute.BasicFileAttributes.class);
+    } catch (java.nio.file.NoSuchFileException e) {
+      throw new RegistryException.ArtifactMissing(pathStr, "does not exist on disk (ENOENT)", e);
+    } catch (java.nio.file.AccessDeniedException e) {
+      throw new RegistryException.ArtifactMissing(
+          pathStr,
+          "is not accessible by the api process (EACCES - a parent directory the service user"
+              + " cannot traverse, e.g. a 750 home dir; stage artifacts under"
+              + " /opt/bullpen/retrain-artifacts)",
+          e);
+    } catch (java.io.IOException e) {
+      throw new RegistryException.ArtifactMissing(
+          pathStr, "could not be checked (" + e.getClass().getSimpleName() + ")", e);
+    }
+    if (!Files.isReadable(path)) {
+      throw new RegistryException.ArtifactMissing(
+          pathStr, "exists but is not readable by the api process (EACCES on the file itself)");
     }
   }
 }

@@ -143,8 +143,9 @@ class InferenceRouterIT {
         .as("SHADOW mode must produce a shadow response from the parallel challenger run")
         .isTrue();
     assertThat(result.shadowVersionId()).contains(v1Id);
-    // v0 and v1 have identical artifacts → predictions match exactly.
-    assertThat(result.shadowResponse().orElseThrow())
+    // v0 and v1 have identical artifacts → predictions match exactly. F1.4: the shadow is a
+    // fire-and-forget future now, so join() drives the challenger run to completion.
+    assertThat(result.shadowFuture().orElseThrow().join())
         .as("identical artifacts produce identical predictions")
         .isEqualTo(result.servingResponse());
   }

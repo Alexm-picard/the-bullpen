@@ -222,7 +222,7 @@ sudo dpkg -i clickhouse-backup_amd64.deb
 
 # Drop in systemd units
 sudo cp infra/backup/bullpen-snapshot.service /etc/systemd/system/bullpen-snapshot@.service
-sudo cp infra/backup/bullpen-snapshot.timer   /etc/systemd/system/bullpen-snapshot.timer
+sudo cp "infra/backup/bullpen-snapshot@.timer" /etc/systemd/system/bullpen-snapshot@.timer
 
 # Env file (KEEP chmod 600 — contains Discord webhook)
 sudo tee /etc/default/bullpen >/dev/null <<EOF
@@ -234,7 +234,7 @@ sudo chmod 600 /etc/default/bullpen
 
 # Enable + smoke test
 sudo systemctl daemon-reload
-sudo systemctl enable --now bullpen-snapshot.timer
+sudo systemctl enable --now "bullpen-snapshot@$(whoami).timer"
 sudo systemctl start "bullpen-snapshot@$(whoami).service"
 sudo journalctl -u "bullpen-snapshot@$(whoami).service" --since today
 ```
@@ -399,7 +399,7 @@ SETUP-NEXT-STEPS.md                                (this file)
 .claude/commands/ci-add.md                         (new)
 infra/backup/clickhouse-snapshot.sh                (new, +x — daily snapshot script)
 infra/backup/bullpen-snapshot.service              (new — systemd unit template)
-infra/backup/bullpen-snapshot.timer                (new — daily 03:00 timer)
+infra/backup/bullpen-snapshot@.timer               (new — daily 03:00 template timer)
 infra/backup/usb-backup.sh                         (new, +x — air-gapped USB backup)
 infra/backup/README.md                             (new — full backup runbook)
 .githooks/pre-commit                               (new, +x — schema_hash discipline)

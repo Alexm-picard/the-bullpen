@@ -30,12 +30,11 @@ from pathlib import Path
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 
 from bullpen_training.battedball.mlp import (
     FeatureScaler,
 )
-from bullpen_training.battedball.mlp.architecture import build_model
+from bullpen_training.battedball.mlp.architecture import build_model, predict_park_probs
 from bullpen_training.battedball.mlp.calibration import (
     expected_calibration_error,
     fit_per_park_calibrators,
@@ -69,11 +68,16 @@ def _forward_all(
     model.load_state_dict(torch.load(model_dir / "model.pt", weights_only=True))
     model.eval()
 
-    feat, lab = load_arrays(season_from=season_from, season_to=season_to, park_order=park_order)
+    # load_arrays returns (features, labels, carry) since the Phase-4 carry head;
+    # the calibrator fits on the OUTCOME distribution only, so carry is unused here.
+    feat, lab, _carry = load_arrays(
+        season_from=season_from, season_to=season_to, park_order=park_order
+    )
     xs = scaler.transform(feat)
     ys = lab
-    with torch.no_grad():
-        probs = F.softmax(model(torch.from_numpy(xs)), dim=-1).numpy()
+    # predict_park_probs unpacks the 2-output (logits, carry) forward and softmaxes
+    # the logits (a bare softmax(model(xs)) crashes on the carry model).
+    probs = predict_park_probs(model, xs)
     return probs, ys, park_order
 
 

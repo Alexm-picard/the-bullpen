@@ -2,7 +2,7 @@
 
 > **Project**: The Bullpen (`thebullpen.net`)
 > **Total estimate**: ~465–595 hours / ~8–10 months calendar at 12–15h/week
-> **Status**: Phase 0 in progress (Mac side complete; WSL2 host-side items remaining — see `docs/phase-status.json`)
+> **Status**: Planning-era document (locked 2026-05). Authoritative for the phased build plan and locked decisions; it deliberately does NOT track live build status - that lives in `docs/phase-status.json` (read by `/status`).
 > **Last updated**: 2026-05-21
 
 This is the working plan. For full rationale on any decision, see

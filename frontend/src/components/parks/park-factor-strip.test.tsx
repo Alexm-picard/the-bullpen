@@ -57,8 +57,8 @@ describe("ParkFactorStrip", () => {
     // Coors HR 1.18 / BABIP 1.12 / 3B 1.42 / OPS 1.13 all land outside the
     // neutral band — we expect at least one bad1 or bad3 fill in the markup.
     const lower = html.toLowerCase();
-    const bad1 = colors.condFormat.bad1.toLowerCase();
-    const bad3 = colors.condFormat.bad3.toLowerCase();
+    const bad1 = colors.condFormatDark.bad1.toLowerCase();
+    const bad3 = colors.condFormatDark.bad3.toLowerCase();
     expect(lower.includes(bad1) || lower.includes(bad3)).toBe(true);
   });
 });

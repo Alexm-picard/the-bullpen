@@ -3,8 +3,8 @@ package net.thebullpen.baseball.inference;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
+import java.time.Duration;
 import java.util.concurrent.ConcurrentHashMap;
-import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 /**
@@ -15,23 +15,31 @@ import org.springframework.stereotype.Component;
  * <ul>
  *   <li>{@code thebullpen_inference_prediction_latency_seconds{model_name}} — histogram
  *   <li>{@code thebullpen_inference_prediction_total{model_name,role}} — counter
- *   <li>{@code thebullpen_inference_prediction_errors_total{model_name,error_class}} — counter
+ *   <li>{@code thebullpen_inference_prediction_errors_total{model_name,role,error_class}} — counter
  * </ul>
  *
  * <p>One timer/counter per (model_name[, label]) combo is cached so we don't allocate per request.
  */
+// Not @Profile-restricted: InferenceRouter (used by the worker's LivePitchPredictor too) injects
+// this for the shadow-latency metric, so it must exist in the worker context as well as the api.
 @Component
-@Profile("api")
 public class InferenceMetrics {
 
   private static final String LATENCY_METRIC = "thebullpen_inference_prediction_latency_seconds";
+  private static final String SHADOW_LATENCY_METRIC = "thebullpen_inference_shadow_latency_seconds";
+  private static final String SHADOW_DROPPED_METRIC = "thebullpen_inference_shadow_dropped_total";
+  private static final String SIMULATE_LATENCY_METRIC =
+      "thebullpen_inference_simulate_latency_seconds";
   private static final String COUNT_METRIC = "thebullpen_inference_prediction_total";
   private static final String ERROR_METRIC = "thebullpen_inference_prediction_errors_total";
 
   private final MeterRegistry registry;
   private final ConcurrentHashMap<String, Timer> timers = new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<String, Timer> shadowTimers = new ConcurrentHashMap<>();
   private final ConcurrentHashMap<String, Counter> counters = new ConcurrentHashMap<>();
   private final ConcurrentHashMap<String, Counter> errors = new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<String, Counter> shadowDrops = new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<String, Timer> simulateTimers = new ConcurrentHashMap<>();
 
   public InferenceMetrics(MeterRegistry registry) {
     this.registry = registry;
@@ -43,12 +51,115 @@ public class InferenceMetrics {
         name ->
             Timer.builder(LATENCY_METRIC)
                 .tag("model_name", name)
-                .publishPercentiles(0.5, 0.95, 0.99)
+                // Histogram-only. In this micrometer-prometheus registry a meter renders as EITHER
+                // a
+                // summary (client-computed {quantile=}) OR a histogram (_bucket{le=}) under one
+                // name,
+                // never both - so client .publishPercentiles(...) would be inert once the histogram
+                // is on, and is deliberately omitted. The histogram is strictly more capable: a
+                // fleet-wide p99 aggregates _bucket across instances, and a per-instance p99 is
+                // still
+                // available by grouping histogram_quantile() by instance.
+                // serviceLevelObjectives(50ms)
+                // adds an explicit le=0.05 SLA bucket; min/max bound the ladder to the real latency
+                // band (~45 buckets/model instead of the unbounded ~70, and sharper low-end
+                // interp).
+                .publishPercentileHistogram()
+                .serviceLevelObjectives(Duration.ofMillis(50))
+                .minimumExpectedValue(Duration.ofMillis(1))
+                .maximumExpectedValue(Duration.ofSeconds(1))
                 .register(registry));
   }
 
   public Timer.Sample startTimer() {
     return Timer.start(registry);
+  }
+
+  /**
+   * Record the latency of the fire-and-forget SHADOW challenger leg, on its OWN metric so it never
+   * blends into the served {@link #LATENCY_METRIC} the user experiences (F1.4). The shadow runs off
+   * the request path, so this is the shadow's true wall time, not anything the user waited on.
+   */
+  public void recordShadowLatency(Timer.Sample sample, String modelName) {
+    sample.stop(
+        shadowTimers.computeIfAbsent(
+            modelName,
+            name ->
+                Timer.builder(SHADOW_LATENCY_METRIC)
+                    .tag("model_name", name)
+                    .description("Latency of the off-request-path shadow-challenger inference")
+                    .publishPercentileHistogram()
+                    .serviceLevelObjectives(Duration.ofMillis(50))
+                    .minimumExpectedValue(Duration.ofMillis(1))
+                    .maximumExpectedValue(Duration.ofSeconds(1))
+                    .register(registry)));
+  }
+
+  /**
+   * Record the latency of a forward-simulator request, on its OWN metric ({@link
+   * #SIMULATE_LATENCY_METRIC}) so it NEVER blends into the served {@link #LATENCY_METRIC}. A
+   * simulate request is ~12 per-state ONNX calls plus a Markov/MC solve, so its wall time is not a
+   * single served prediction and must not skew the served-latency histogram (F1.6, decision:
+   * simulate is an unrouted diagnostic). Wider bounds than the served timer, no 50ms SLO. Returns
+   * the elapsed nanos for the response body.
+   */
+  public long recordSimulateLatency(Timer.Sample sample, String modelName) {
+    return sample.stop(
+        simulateTimers.computeIfAbsent(
+            modelName,
+            name ->
+                Timer.builder(SIMULATE_LATENCY_METRIC)
+                    .tag("model_name", name)
+                    .description("Latency of an unrouted forward-simulator request")
+                    .publishPercentileHistogram()
+                    .minimumExpectedValue(Duration.ofMillis(1))
+                    .maximumExpectedValue(Duration.ofSeconds(10))
+                    .register(registry)));
+  }
+
+  /** Aggregate-path timer name. Never the served histogram - see decision [188]. */
+  public static final String AGGREGATE_LATENCY_METRIC =
+      "thebullpen_inference_aggregate_latency_seconds";
+
+  private final ConcurrentHashMap<String, Timer> aggregateTimers = new ConcurrentHashMap<>();
+
+  /**
+   * Latency of an INTERNAL aggregate evaluation - the champion run over many rows to produce one
+   * displayed number.
+   *
+   * <p>Its own timer for the reason decision [188] requires one: an aggregate writes nothing to
+   * {@code prediction_log}, so without a metric it would be entirely invisible - a page feature
+   * quietly burning hundreds of inferences per render with nothing in Grafana to show it. Bypassing
+   * the log must not trade pollution for invisibility. Wide bounds and no SLO: this is N inferences
+   * plus a ClickHouse scan, not one served prediction, and it must never skew the served histogram.
+   */
+  public long recordAggregateLatency(Timer.Sample sample, String modelName) {
+    return sample.stop(
+        aggregateTimers.computeIfAbsent(
+            modelName,
+            name ->
+                Timer.builder(AGGREGATE_LATENCY_METRIC)
+                    .tag("model_name", name)
+                    .description("Latency of an internal aggregate model evaluation (not served)")
+                    .publishPercentileHistogram()
+                    .minimumExpectedValue(Duration.ofMillis(1))
+                    .maximumExpectedValue(Duration.ofSeconds(30))
+                    .register(registry)));
+  }
+
+  /**
+   * Count of individual model evaluations performed inside aggregates, and of failed aggregates.
+   */
+  public void incrementAggregateEvaluations(String modelName, long n) {
+    registry
+        .counter("thebullpen_inference_aggregate_evaluations_total", "model_name", modelName)
+        .increment(n);
+  }
+
+  public void incrementAggregateErrors(String modelName) {
+    registry
+        .counter("thebullpen_inference_aggregate_errors_total", "model_name", modelName)
+        .increment();
   }
 
   public void incrementPrediction(String modelName, String role) {
@@ -63,13 +174,42 @@ public class InferenceMetrics {
         .increment();
   }
 
-  public void incrementError(String modelName, String errorClass) {
+  /**
+   * Count a fire-and-forget SHADOW challenger leg that produced no {@code prediction_log} row
+   * (F1.4). {@code reason} is one of {@code timeout} (the {@code orTimeout} bound fired), {@code
+   * defect} (a programming bug / {@link Error}), {@code degraded} (a normal inference/load
+   * failure), or {@code log_failed} (the caller-side logging callback threw AFTER inference
+   * succeeded - a model load or serialization failure in the {@code whenComplete} leg, which the
+   * router's own hooks cannot see). Without this, dropped shadows would silently bias the shadow
+   * log that feeds experiment eval - the counter makes the drop rate (and a post-routing-flip
+   * timeout spike) observable.
+   */
+  public void incrementShadowDropped(String modelName, String reason) {
+    shadowDrops
+        .computeIfAbsent(
+            modelName + "|" + reason,
+            key ->
+                Counter.builder(SHADOW_DROPPED_METRIC)
+                    .tag("model_name", modelName)
+                    .tag("reason", reason)
+                    .register(registry))
+        .increment();
+  }
+
+  /**
+   * Count an inference-path error, dimensioned by the serving {@code role} (mirroring {@link
+   * #incrementPrediction}) so a per-role error RATE is computable - a champion erroring is
+   * page-worthy, a shadow/simulator erroring is not. {@code role} is {@code "unknown"} when the
+   * error fired before routing resolved a serving role (e.g. a non-503 routing failure).
+   */
+  public void incrementError(String modelName, String role, String errorClass) {
     errors
         .computeIfAbsent(
-            modelName + "|" + errorClass,
+            modelName + "|" + role + "|" + errorClass,
             key ->
                 Counter.builder(ERROR_METRIC)
                     .tag("model_name", modelName)
+                    .tag("role", role)
                     .tag("error_class", errorClass)
                     .register(registry))
         .increment();

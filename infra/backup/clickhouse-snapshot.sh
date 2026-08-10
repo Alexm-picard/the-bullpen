@@ -45,8 +45,10 @@ CH_PASSWORD="${CH_PASSWORD:-${BULLPEN_CLICKHOUSE_PASSWORD:-}}"
   echo "fatal: CH_PASSWORD/BULLPEN_CLICKHOUSE_PASSWORD unset - refusing a default credential" >&2
   exit 1
 }
-# ClickHouse user - Path B points this at the dedicated `bullpen` SQL user post-rotation; defaults
-# to `default`. Must match whichever user owns CH_PASSWORD.
+# ClickHouse user. The snapshot is BACKUP tooling and authenticates as `default`, NOT the
+# least-privilege `bullpen` app user (which cannot run backups). bullpen-snapshot@.service pins
+# CH_USER=default; this honors that pin first, then BULLPEN_CLICKHOUSE_USER, then `default`. Both
+# CH users share the one rotated BULLPEN_CLICKHOUSE_PASSWORD, so CH_PASSWORD matches either.
 CH_USER="${CH_USER:-${BULLPEN_CLICKHOUSE_USER:-default}}"
 CB_HOST_BINARY="${CB_HOST_BINARY:-/usr/bin/clickhouse-backup}"
 

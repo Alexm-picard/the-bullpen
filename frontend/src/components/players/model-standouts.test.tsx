@@ -5,7 +5,7 @@
  * fixture level so both metrics stay covered.
  */
 import { renderToStaticMarkup } from "react-dom/server";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 
 import { MODEL_STANDOUTS } from "../../data/players-landing-fixtures";

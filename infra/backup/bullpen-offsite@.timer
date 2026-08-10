@@ -1,0 +1,15 @@
+[Unit]
+Description=The Bullpen — offsite push timer for %i (03:30 local, after the 03:00 snapshot)
+
+[Timer]
+# 30 minutes after the local snapshot timer; both are off-peak, outside any live-game
+# window. Persistent=true catches up if the host was off when the timer should have fired.
+# Template timer: the operator username is the instance (%i), so nothing user-specific is
+# hardcoded in a committed unit. Enable as: systemctl enable --now bullpen-offsite@<user>.timer
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+RandomizedDelaySec=10min
+Unit=bullpen-offsite@%i.service
+
+[Install]
+WantedBy=timers.target

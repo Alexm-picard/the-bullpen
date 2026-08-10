@@ -1,19 +1,20 @@
 package net.thebullpen.baseball.drift.alerting;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import net.thebullpen.baseball.data.JobLockRepository;
 import net.thebullpen.baseball.drift.DriftMetric;
 import net.thebullpen.baseball.drift.DriftMetricsRepository;
+import net.thebullpen.baseball.drift.DriftWindows;
 import net.thebullpen.baseball.drift.MetricType;
 import net.thebullpen.baseball.registry.DiscordNotifier;
 import net.thebullpen.baseball.registry.RegistryRepository;
 import net.thebullpen.baseball.registry.dto.ModelVersion;
-import net.thebullpen.baseball.registry.dto.Stage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -32,11 +33,16 @@ import org.springframework.stereotype.Component;
  * <ul>
  *   <li>{@link AlertSeverity#PAGE}: champion {@link MetricType#CALIBRATION_ERROR} (segment="all")
  *       sustained &gt; {@code calibrationPageThreshold} (default 0.10) for 3+ consecutive days. The
- *       leaf body says "1.5× training calibration sustained 3 days" — we fall back to an absolute
+ *       leaf body says "1.5x training calibration sustained 3 days" - we fall back to an absolute
  *       threshold per leaf "Known edge cases" because {@code training_calibration} is not yet
  *       emitted into {@code metadata.json}.
  *   <li>{@link AlertSeverity#NOTICE}: any {@link MetricType#PSI_FEATURE} value &gt; {@code
- *       featurePsiNoticeThreshold} (default 0.25) sustained 7+ consecutive days per feature.
+ *       featurePsiNoticeThreshold} (default 0.25) sustained {@code featurePsiNoticeDays}+ (default
+ *       7) consecutive days per feature, counting only rows whose {@code sampleSize} clears {@code
+ *       featurePsiMinSample} (default 300 - below the noise floor a PSI value measures the sample
+ *       size, not drift; see docs/postmortems/2026-07-16_first-organic-psi-triage.md). The lookback
+ *       window equals the day count, so the E-2 live drill can set days to 1 to fire on a single
+ *       injected night (prod stays 7).
  * </ul>
  *
  * <p>Dedup: each alert key is suppressed for 24h after fire (Discord-spam prevention).
@@ -53,36 +59,86 @@ public class DriftAlertEvaluator {
 
   private static final Duration DEDUP_WINDOW = Duration.ofHours(24);
   private static final Duration PAGE_LOOKBACK = Duration.ofDays(3);
-  private static final Duration NOTICE_LOOKBACK = Duration.ofDays(7);
+  // A NOTICE needs at least one over-threshold day; the sustain window is otherwise configurable
+  // (default 7, see featurePsiNoticeDays) so the E-2 live drill can fire on a single night.
+  private static final int MIN_NOTICE_DAYS = 1;
   // "Consecutive days" is measured in calendar days in this zone (matches the 3 AM ET schedule).
   private static final ZoneId ALERT_ZONE = ZoneId.of("America/New_York");
+
+  private static final String JOB_NAME = "drift_alert_evaluator";
 
   private final RegistryRepository registryRepo;
   private final DriftMetricsRepository driftRepo;
   private final AlertHistoryRepository historyRepo;
   private final DiscordNotifier discord;
+  private final JobLockRepository jobLocks;
   private final double calibrationPageThreshold;
   private final double featurePsiNoticeThreshold;
+  private final int featurePsiNoticeDays;
+  private final long featurePsiMinSample;
 
   public DriftAlertEvaluator(
       RegistryRepository registryRepo,
       DriftMetricsRepository driftRepo,
       AlertHistoryRepository historyRepo,
       DiscordNotifier discord,
+      JobLockRepository jobLocks,
       @Value("${bullpen.drift.alert.calibration-page-threshold:0.10}")
           double calibrationPageThreshold,
       @Value("${bullpen.drift.alert.feature-psi-notice-threshold:0.25}")
-          double featurePsiNoticeThreshold) {
+          double featurePsiNoticeThreshold,
+      // Consecutive-days sustain window for the feature-PSI NOTICE. Default 7 = current prod
+      // semantics, unchanged. The E-2 live drill sets this to 1 (BULLPEN_DRIFT_ALERT_FEATURE_PSI
+      // _NOTICE_DAYS=1 on the worker) so a single night of injected drift fires the feature-PSI
+      // NOTICE in one 3 AM cycle instead of waiting 7 days. The NOTICE is the TERMINAL leg for
+      // this lane: DriftTrigger keys exclusively on 7-day sustained CALIBRATION_ERROR and never
+      // on feature PSI (E-2 postmortem GAP 2, 2026-07-16).
+      @Value("${bullpen.drift.alert.feature-psi-notice-days:7}") int featurePsiNoticeDays,
+      // Minimum observed sample for a PSI_FEATURE row to COUNT toward the NOTICE (the 2026-07-16
+      // first-organic-triage finding): with 10 reference bins the no-drift noise floor is
+      // E[PSI] ~= (B-1)/n, which crosses the 0.25 threshold on its own below n ~= 36, and PSI is
+      // not usefully stable until n reaches the hundreds - the n=27 break-window rows read 1.62
+      // with ZERO real drift. Rows below this floor still get WRITTEN (the ops grid shows them
+      // with their sample sizes); they just cannot fire an alert. 0 disables the gate (a
+      // deliberate off-switch, e.g. a drill on a miniature window).
+      @Value("${bullpen.drift.alert.feature-psi-min-sample:300}") long featurePsiMinSample) {
     this.registryRepo = registryRepo;
     this.driftRepo = driftRepo;
     this.historyRepo = historyRepo;
     this.discord = discord;
+    this.jobLocks = jobLocks;
     this.calibrationPageThreshold = calibrationPageThreshold;
     this.featurePsiNoticeThreshold = featurePsiNoticeThreshold;
+    this.featurePsiNoticeDays = featurePsiNoticeDays;
+    this.featurePsiMinSample = featurePsiMinSample;
+    if (featurePsiNoticeDays < MIN_NOTICE_DAYS) {
+      // A typo'd env (e.g. 0 or negative) is coerced up to the most drift-sensitive setting
+      // (fire on a single day). Make that visible rather than silently arming it in prod.
+      log.warn(
+          "bullpen.drift.alert.feature-psi-notice-days={} is below the {}-day floor; coercing to"
+              + " {} (fires on a single over-threshold day). Set it to 7 for prod semantics.",
+          featurePsiNoticeDays,
+          MIN_NOTICE_DAYS,
+          MIN_NOTICE_DAYS);
+    }
+    if (featurePsiMinSample < 0) {
+      // 0 is the documented off-switch (silent, deliberate); a NEGATIVE value is an unambiguous
+      // misconfig that silently behaves as disabled (sampleSize is always >= 0) - the exact
+      // failure mode this gate exists to prevent. Loud, mirroring the notice-days guard.
+      log.warn(
+          "bullpen.drift.alert.feature-psi-min-sample={} is negative; behaving as 0 (gate"
+              + " DISABLED). Set 0 explicitly to disable, or a positive floor (default 300).",
+          featurePsiMinSample);
+    }
   }
 
   @Scheduled(cron = "0 0 3 * * *", zone = "America/New_York")
   public void evaluate() {
+    LocalDate fireDate = LocalDate.now(ALERT_ZONE);
+    if (!jobLocks.tryAcquire(JOB_NAME, fireDate)) {
+      log.info("{} already ran for {} on another instance; skipping", JOB_NAME, fireDate);
+      return;
+    }
     try {
       runOnce();
     } catch (RuntimeException e) {
@@ -93,7 +149,7 @@ public class DriftAlertEvaluator {
   /** Visible-for-tests entry point. Returns number of alerts fired (excluding dedup-suppressed). */
   public int runOnce() {
     int fired = 0;
-    for (ModelVersion champ : activeChampions()) {
+    for (ModelVersion champ : registryRepo.findActiveChampions()) {
       fired += evaluateCalibration(champ);
       fired += evaluateFeaturePsi(champ);
     }
@@ -110,7 +166,7 @@ public class DriftAlertEvaluator {
     // the 2:30 calibration batch writes multiple rows, and counting rows would let 3 reruns on one
     // day masquerade as 3 consecutive days and fire a false PAGE (DEF-M3). Latest sample wins per
     // day (reruns supersede). 3 distinct days within the 3-day lookback ARE consecutive.
-    List<Double> daily = dailyCanonical(recent);
+    List<Double> daily = DriftWindows.dailyCanonical(recent, ALERT_ZONE);
     if (daily.size() < 3) {
       return 0;
     }
@@ -149,18 +205,30 @@ public class DriftAlertEvaluator {
 
   private int evaluateFeaturePsi(ModelVersion champ) {
     int fired = 0;
+    // Sustain window (days) and lookback are the SAME window by construction: the gate below
+    // requires EVERY day in the window to be over threshold, so a lookback wider than the required
+    // days would pull in organic below-threshold days and block an otherwise-valid NOTICE. Coupling
+    // them means the default 7 reproduces prod exactly, and the drill's 1 narrows both together.
+    int noticeDays = Math.max(featurePsiNoticeDays, MIN_NOTICE_DAYS);
+    Duration noticeLookback = Duration.ofDays(noticeDays);
+    Instant cutoff = Instant.now().minus(noticeLookback);
     // Group recent PSI_FEATURE rows by feature_or_segment then check sustained-over-threshold.
     List<DriftMetric> recent =
-        driftRepo.findRecent(champ.modelName(), MetricType.PSI_FEATURE, "", NOTICE_LOOKBACK);
-    // The repository's findRecent filters by exact featureOrSegment value — querying "" matches
+        driftRepo.findRecent(champ.modelName(), MetricType.PSI_FEATURE, "", noticeLookback);
+    // The repository's findRecent filters by exact featureOrSegment value - querying "" matches
     // only rows that intentionally use empty segment, which would NEVER match PSI_FEATURE rows
     // (those carry the feature name). For per-feature evaluation we need a different lookup;
-    // we use findAllForModel + filter in memory. At the volumes 3c.2 writes (~30 features × 7
+    // we use findAllForModel + filter in memory. At the volumes 3c.2 writes (~30 features x 7
     // days = 210 rows per model per week), the in-memory filter is fine.
     List<DriftMetric> psiRows =
         driftRepo.findAllForModel(champ.modelName()).stream()
             .filter(m -> m.metricType() == MetricType.PSI_FEATURE)
-            .filter(m -> m.computedAt().isAfter(java.time.Instant.now().minus(NOTICE_LOOKBACK)))
+            .filter(m -> m.computedAt().isAfter(cutoff))
+            // Min-sample gate (first-organic-triage, 2026-07-16): a PSI value computed on a tiny
+            // observed window is dominated by the (B-1)/n noise floor, not drift - drop such rows
+            // from ALERT consideration entirely (they neither count toward the sustain days nor
+            // break the allMatch). The rows stay in drift_metrics for visibility.
+            .filter(m -> m.sampleSize() >= featurePsiMinSample)
             .toList();
     if (psiRows.isEmpty()) {
       return 0;
@@ -171,10 +239,10 @@ public class DriftAlertEvaluator {
     }
     for (var entry : byFeature.entrySet()) {
       String feature = entry.getKey();
-      // Same calendar-day collapse as calibration: 7 distinct days over threshold, not 7 rows
-      // (a same-day PSI rerun must not count twice toward the 7-day sustain) (DEF-M3).
-      List<Double> daily = dailyCanonical(entry.getValue());
-      if (daily.size() < 7) {
+      // Same calendar-day collapse as calibration: N distinct days over threshold, not N rows
+      // (a same-day PSI rerun must not count twice toward the sustain window) (DEF-M3).
+      List<Double> daily = DriftWindows.dailyCanonical(entry.getValue(), ALERT_ZONE);
+      if (daily.size() < noticeDays) {
         continue;
       }
       if (!daily.stream().allMatch(v -> v > featurePsiNoticeThreshold)) {
@@ -217,45 +285,5 @@ public class DriftAlertEvaluator {
           recent.size());
     }
     return fired;
-  }
-
-  /**
-   * Collapse drift rows to one canonical value per calendar day (in {@link #ALERT_ZONE}), the
-   * latest sample winning so a same-day rerun supersedes rather than double-counts. Ordered
-   * ascending by day, so "N values within an N-day lookback" correctly means N consecutive days
-   * (DEF-M3).
-   */
-  private static List<Double> dailyCanonical(List<DriftMetric> rows) {
-    Map<LocalDate, DriftMetric> latestPerDay = new HashMap<>();
-    for (DriftMetric m : rows) {
-      LocalDate day = m.computedAt().atZone(ALERT_ZONE).toLocalDate();
-      DriftMetric cur = latestPerDay.get(day);
-      if (cur == null || m.computedAt().isAfter(cur.computedAt())) {
-        latestPerDay.put(day, m);
-      }
-    }
-    return latestPerDay.entrySet().stream()
-        .sorted(Map.Entry.comparingByKey())
-        .map(e -> e.getValue().metricValue())
-        .toList();
-  }
-
-  private List<ModelVersion> activeChampions() {
-    List<String> seen = new ArrayList<>();
-    List<ModelVersion> out = new ArrayList<>();
-    for (String[] pair : registryRepo.findAllNameVersionPairs()) {
-      if (!seen.contains(pair[0])) {
-        seen.add(pair[0]);
-      }
-    }
-    for (String name : seen) {
-      for (ModelVersion v : registryRepo.findByName(name)) {
-        if (v.stage() == Stage.CHAMPION) {
-          out.add(v);
-          break;
-        }
-      }
-    }
-    return out;
   }
 }

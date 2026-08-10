@@ -46,12 +46,15 @@ class RegistryServiceIT {
     // 3a.5: SnapshotStorage writes copies of every registered artifact under this base path.
     // Per-JVM temp so the tests don't pollute ./data/models. R2 is intentionally NOT configured
     // (bullpen.s3.endpoint-url stays blank) so the retention sweep no-ops.
-    Path snapshotBase =
+    snapshotBase =
         Path.of(
             System.getProperty("java.io.tmpdir"),
             "bullpen-registry-svc-it-snapshots-" + UUID.randomUUID());
     registry.add("bullpen.snapshot.local-base-path", snapshotBase::toString);
   }
+
+  /** Where SnapshotStorage places registered artifacts; asserted empty after a refusal. */
+  private static Path snapshotBase;
 
   @Autowired private RegistryService service;
   @Autowired private RegistryRepository registryRepo;
@@ -144,6 +147,23 @@ class RegistryServiceIT {
     assertThat(serving).extracting(ModelVersion::stage).containsOnly(Stage.CHAMPION, Stage.SHADOW);
   }
 
+  @Test
+  void findActiveChampions_returns_champions_only() {
+    // The scheduled + drift retrain triggers act on the CHAMPION set only (not SHADOW challengers).
+    // V016 enforces at most one champion per model, so distinct models carry distinct champion
+    // rows.
+    long champA = insertAt("model_a", "v2", Stage.CHAMPION);
+    long champD = insertAt("model_d", "v1", Stage.CHAMPION);
+    insertAt("model_a", "v3", Stage.SHADOW); // same model, shadow challenger - excluded
+    insertAt("model_b", "v1", Stage.CANDIDATE); // not yet serving - excluded
+    insertAt("model_c", "v1", Stage.ARCHIVED); // terminal - excluded
+
+    List<ModelVersion> champions = registryRepo.findActiveChampions();
+
+    assertThat(champions).extracting(ModelVersion::id).containsExactlyInAnyOrder(champA, champD);
+    assertThat(champions).extracting(ModelVersion::stage).containsOnly(Stage.CHAMPION);
+  }
+
   private long insertAt(String name, String version, Stage stage) {
     return registryRepo
         .insert(
@@ -180,7 +200,53 @@ class RegistryServiceIT {
             null,
             null);
     assertThatThrownBy(() -> service.register(req))
-        .isInstanceOf(RegistryException.ArtifactMissing.class);
+        .isInstanceOf(RegistryException.ArtifactMissing.class)
+        // C-31 attempt #11 postmortem: the message must say WHICH failure this is.
+        .hasMessageContaining("ENOENT");
+  }
+
+  @Test
+  void register_with_unreadable_artifact_names_EACCES_not_does_not_exist() throws Exception {
+    // C-31 attempt #11 burned a full GPU training run because "does not exist" actually
+    // meant "exists, but the api user cannot traverse a 750 parent dir". The 422 must
+    // distinguish EACCES from ENOENT.
+    org.junit.jupiter.api.Assumptions.assumeFalse(
+        System.getProperty("os.name").toLowerCase(java.util.Locale.ROOT).contains("win"),
+        "POSIX permissions test");
+    Path lockedDir = artifactDir.resolve("locked-parent");
+    Files.createDirectories(lockedDir);
+    Path artifact = lockedDir.resolve("model.onnx");
+    Files.writeString(artifact, "onnx-bytes");
+    Path metadata = writeArtifact("metadata-unreadable-artifact.json");
+    Path pipeline = writePipeline("unreadable-artifact-pipeline.json", "salt-eacces");
+    java.util.Set<java.nio.file.attribute.PosixFilePermission> original =
+        Files.getPosixFilePermissions(lockedDir);
+    Files.setPosixFilePermissions(lockedDir, java.util.Set.of());
+    // Running as root (never in CI, possibly in odd local setups) can still traverse -
+    // the scenario can't be constructed there, so skip rather than fake it.
+    org.junit.jupiter.api.Assumptions.assumeFalse(
+        Files.isReadable(artifact), "cannot construct EACCES while running as root");
+    try {
+      RegisterRequest req =
+          new RegisterRequest(
+              "pitch_outcome",
+              "v-unreadable-artifact",
+              artifact.toString(),
+              metadata.toString(),
+              pipeline.toString(),
+              "h-train",
+              "[2024-01-01,2024-12-31]",
+              "{}",
+              Instant.now(),
+              null,
+              null);
+      assertThatThrownBy(() -> service.register(req))
+          .isInstanceOf(RegistryException.ArtifactMissing.class)
+          .hasMessageContaining("EACCES")
+          .satisfies(t -> assertThat(t.getMessage()).doesNotContain("does not exist"));
+    } finally {
+      Files.setPosixFilePermissions(lockedDir, original);
+    }
   }
 
   @Test
@@ -670,6 +736,108 @@ class RegistryServiceIT {
    * {@code ../contracts} resolves from the Gradle test working directory ({@code backend/}), the
    * same geometry as {@link CanonicalContracts}' dev default.
    */
+
+  // --- decision [184]: mandatory model_kind for the families it arms ----------------------
+
+  @Test
+  void pitch_type_registration_without_model_kind_is_refused() throws Exception {
+    // THE [184] CLAUSE. Without this the field is a convention: the row registers looking healthy
+    // and only fails at promote, when ModelLoadValidator sniffs it into the batted-ball branch and
+    // reports an error about a different model entirely.
+    RegisterRequest req =
+        canonicalFamilyRequest(
+            "pitch_type_lr_baseline", "v1", "{\"model_name\":\"pitch_type_lr_baseline\"}");
+    assertThatThrownBy(() -> service.register(req))
+        .isInstanceOf(RegistryException.ModelKindMismatch.class)
+        .hasMessageContaining("[184]")
+        .hasMessageContaining("pitch_type");
+    assertThat(service.findByName("pitch_type_lr_baseline")).isEmpty();
+    // Pins the ORDERING, which otherwise only a comment holds: the check runs before
+    // stageForRegistration, because placeArtifacts copies files that a rolled-back transaction
+    // does not un-copy. Without this, moving the check after staging stays green while leaving a
+    // snapshot dir on disk with no registry row behind it.
+    assertThat(snapshotBase.resolve("pitch_type_lr_baseline")).doesNotExist();
+  }
+
+  @Test
+  void pitch_type_registration_with_the_wrong_model_kind_is_refused() throws Exception {
+    RegisterRequest req =
+        canonicalFamilyRequest("pitch_type_pre", "v1", "{\"model_kind\":\"battedball\"}");
+    assertThatThrownBy(() -> service.register(req))
+        .isInstanceOf(RegistryException.ModelKindMismatch.class)
+        .hasMessageContaining("battedball");
+    assertThat(service.findByName("pitch_type_pre")).isEmpty();
+  }
+
+  @Test
+  void pitch_type_registration_with_unreadable_metadata_is_refused() throws Exception {
+    // Fail CLOSED. The serving loader reads these same bytes later, so metadata the registry
+    // cannot parse is a model it cannot route.
+    RegisterRequest req = canonicalFamilyRequest("pitch_type_pre", "v1", "{not json");
+    assertThatThrownBy(() -> service.register(req))
+        .isInstanceOf(RegistryException.ModelKindMismatch.class);
+    assertThat(service.findByName("pitch_type_pre")).isEmpty();
+  }
+
+  @Test
+  void pitch_type_registration_declaring_the_kind_succeeds() throws Exception {
+    RegisterRequest req =
+        canonicalFamilyRequest("pitch_type_pre", "v1", "{\"model_kind\":\"pitch_type\"}");
+    assertThat(service.register(req).modelName()).isEqualTo("pitch_type_pre");
+  }
+
+  @Test
+  void register_with_bootstrap_cannot_bypass_the_model_kind_check() throws Exception {
+    // THE REASON THE CHECK LIVES IN doInsert. registerWithBootstrap is a sibling entry point that
+    // never calls register(), and it is the path a first registration takes from the box - so a
+    // check placed in register() would leave precisely the door open that matters.
+    // Seed a prior version so the rollback is genuinely exercised: registerWithBootstrap archives
+    // ALL prior versions BEFORE doInsert runs, so the refusal lands after a destructive archive
+    // and only @Transactional saves it. With no prior version, archiveAllForModel touches 0 rows
+    // and this would pass without ever proving the rollback works.
+    ModelVersion prior =
+        service.register(
+            canonicalFamilyRequest("pitch_type_pre", "v0", "{\"model_kind\":\"pitch_type\"}"));
+    RegisterRequest req =
+        canonicalFamilyRequest("pitch_type_pre", "v1", "{\"model_kind\":\"battedball\"}");
+    assertThatThrownBy(
+            () ->
+                service.registerWithBootstrap(
+                    req, new ResetFeatureSchemaConfirmation("pitch_type_pre", "bypass attempt")))
+        .isInstanceOf(RegistryException.ModelKindMismatch.class);
+    assertThat(service.findByName("pitch_type_pre"))
+        .extracting(ModelVersion::version)
+        .containsExactly("v0");
+    assertThat(registryRepo.findById(prior.id()).orElseThrow().stage())
+        .isNotEqualTo(Stage.ARCHIVED);
+  }
+
+  @Test
+  void a_field_sniffed_family_still_registers_without_model_kind() throws Exception {
+    // REGRESSION FENCE. No family that predates [184] carries the field, so an unconditional check
+    // would refuse every re-registration of the existing fleet: automated retraining registers new
+    // versions of these same models, and the snapshot-recovery runbook tells the operator to
+    // register a fresh version from the training artifacts. (NOT the restore drill - that restores
+    // registry.sqlite via sqlite3 .restore and never crosses this path; see decision [185].)
+    // This fails the moment someone widens the check beyond the armed families.
+    assertThat(service.register(canonicalFamilyRequest("battedball_outcome", "v1")).modelName())
+        .isEqualTo("battedball_outcome");
+    assertThat(service.register(canonicalFamilyRequest("pitch_outcome_post", "v1")).modelName())
+        .isEqualTo("pitch_outcome_post");
+  }
+
+  /**
+   * {@link #canonicalFamilyRequest(String, String)} with real JSON in metadata.json. The default
+   * helper writes the literal "stub for tests" placeholder, which is not parseable JSON - fine for
+   * a field-sniffed family, correctly refused for one armed by decision [184].
+   */
+  private RegisterRequest canonicalFamilyRequest(String modelName, String version, String metaJson)
+      throws Exception {
+    RegisterRequest base = canonicalFamilyRequest(modelName, version);
+    Files.writeString(Path.of(base.metadataPath()), metaJson);
+    return base;
+  }
+
   private RegisterRequest canonicalFamilyRequest(String modelName, String version)
       throws Exception {
     String contractFile =

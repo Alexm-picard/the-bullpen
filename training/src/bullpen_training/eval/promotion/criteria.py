@@ -93,7 +93,12 @@ class PromotionCriteria:
     """The PRE-DECLARED rule-5 criteria for one model.
 
     - ``primary_metric`` / ``primary_threshold``: challenger must beat the
-      baseline on this metric by at least the threshold (metric units).
+      baseline on this metric by at least the threshold (metric units). A
+      NEGATIVE threshold is the [166] non-inferiority idiom (the challenger may
+      be up to |threshold| worse): battedball_outcome uses it as a true
+      non-inferiority margin; pitch_outcome_pre uses threshold == -absolute_ece_bar
+      to make the relative lane vacuous so the ABSOLUTE bar is the gating
+      primary (ADR-0014).
     - ``sample_size_target``: minimum number of scored rows before the verdict
       is allowed to be terminal (the Java gate refuses to ``complete`` below
       this). On sample data this is sized to the sample, not the full season;
@@ -101,12 +106,14 @@ class PromotionCriteria:
     - ``guardrails``: metrics that must not regress past their max-delta
       (relative, challenger-vs-baseline; mirrors the Java guardrail shape).
     - ``absolute_ece_bar``: the ABSOLUTE Phase-2 calibration bar (ECE < bar) the
-      challenger must clear regardless of the baseline. This supplements the
-      relative ECE guardrail because a relative-only ECE check is meaningless
-      against a degenerately-well-calibrated baseline (e.g. the constant
-      marginal-class floor has ~0 ECE), and a tight relative ECE delta is noisy
-      at sample scale; the absolute bar is the leakage-free, baseline-agnostic
-      calibration gate. ``None`` opts out (no absolute ECE check).
+      challenger must clear regardless of the baseline. For most models this
+      supplements the relative ECE guardrail because a relative-only ECE check
+      is meaningless against a degenerately-well-calibrated baseline (e.g. the
+      constant marginal-class floor has ~0 ECE), and a tight relative ECE delta
+      is noisy at sample scale; the absolute bar is the leakage-free,
+      baseline-agnostic calibration gate. For pitch_outcome_pre the bar IS the
+      declared gating primary (ADR-0014), not a supplement. ``None`` opts out
+      (no absolute ECE check).
     """
 
     model_name: str
@@ -289,7 +296,9 @@ def evaluate_challenger_vs_baseline(
 #     bounded and not dominated by a handful of confident-wrong rows, so it is
 #     the stable primary for a challenger-vs-baseline margin. (The Java
 #     PrimaryMetric default for the 5-class pitch outcome is BRIER for the
-#     same reason.)
+#     same reason.) EXCEPTION: pitch_outcome_pre's primary was re-aimed to
+#     ABSOLUTE calibration (ECE < 0.02) by ADR-0014 / decision [180] - see the
+#     _PITCH_PRE block.
 #   - GUARDRAILS = log-loss + ECE. Log-loss catches a challenger that wins
 #     Brier on average but blows up on confident-wrong rows; ECE catches a
 #     challenger that wins accuracy but ships miscalibrated probabilities
@@ -303,35 +312,50 @@ def evaluate_challenger_vs_baseline(
 # ---------------------------------------------------------------------------
 
 
+# ADR-0014 (decision [180]): pitch_outcome_pre's DECLARED primary is ABSOLUTE
+# calibration - ECE < 0.02 (the absolute_ece_bar below, the same bar the
+# batted-ball champion cleared per [141]) - NOT a Brier edge over the baseline.
+# PRE is a calibrated pre-pitch outcome-DISTRIBUTION estimator; its value is a
+# trustworthy probability distribution over the 5 outcome classes, not a
+# best-guess accuracy win, and v1 FAILED the old Brier-edge primary (0.00084 vs
+# the 0.002 margin - ADR-0011) while passing calibration at ECE 0.0036. The
+# negative primary_threshold is the [166] non-inferiority idiom: the relative
+# ECE lane (chal_ece + threshold <= base_ece) is DELIBERATELY vacuous whenever
+# the absolute bar passes (chal_ece - 0.02 <= base_ece holds for any
+# base_ece >= 0 once chal_ece < 0.02), so the ABSOLUTE bar - enforced as a hard
+# supplementary check in the artifact's overall status - is the gating primary,
+# exactly as ADR-0014 declares. Guardrails are the ADR-0014 pair: PRE must BEAT
+# the LR baseline on Brier AND log-loss (max_delta 0.0 = no regression at all,
+# the _BATTED_BALL_LR idiom).
 _PITCH_PRE = PromotionCriteria(
     model_name="pitch_outcome_pre",
-    primary_metric=PrimaryMetric.BRIER,
-    # Challenger (LightGBM pre head) must beat the co-registered LR baseline's
-    # multiclass Brier by >= 0.002 (5-class pitch outcome; a 0.002 Brier gain
-    # is a real, non-noise lift at season scale - the full-data gap is larger,
-    # but the sample-stage bar stays conservative).
-    primary_threshold=0.002,
+    primary_metric=PrimaryMetric.ECE,
+    primary_threshold=-0.02,  # == -absolute_ece_bar; see the block comment above.
     sample_size_target=2_000,
     guardrails=(
         GuardrailSpec(
-            metric=PrimaryMetric.LOG_LOSS,
-            max_delta=0.01,
-            rationale="challenger log-loss may not regress > 0.01 vs the LR baseline "
-            "(guards against a Brier win that masks confident-wrong blowups).",
+            metric=PrimaryMetric.BRIER,
+            max_delta=0.0,
+            rationale="PRE multiclass Brier may not regress vs the co-registered LR "
+            "baseline at all (ADR-0014 guardrail; v1 beats it per ADR-0011).",
         ),
         GuardrailSpec(
-            metric=PrimaryMetric.ECE,
-            max_delta=0.015,
-            rationale="challenger ECE may not regress > 0.015 vs the LR baseline "
-            "(sample-stage allowance: the per-model ECE estimate is noisy at "
-            "sample scale, so the RELATIVE bar is loose; absolute calibration is "
-            "gated by absolute_ece_bar below).",
+            metric=PrimaryMetric.LOG_LOSS,
+            max_delta=0.0,
+            rationale="PRE log-loss may not regress vs the LR baseline at all (ADR-0014 "
+            "guardrail; guards confident-wrong blowups a Brier check can mask).",
         ),
     ),
-    absolute_ece_bar=0.02,  # Phase-2 exit bar: challenger ECE must be < 0.02.
-    rationale="pre-pitch LightGBM challenger vs the rule-9 co-registered LR baseline. "
-    "Calibration is gated by BOTH a loose relative ECE guardrail (sample noise) and "
-    "the absolute Phase-2 ECE bar.",
+    absolute_ece_bar=0.02,  # THE PRIMARY CLAIM (ADR-0014): PRE's ECE must be < 0.02.
+    rationale="pre-pitch LightGBM vs the rule-9 co-registered LR baseline. Primary "
+    "re-aimed by ADR-0014 / decision [180] from Brier-edge (failed - ADR-0011) to "
+    "ABSOLUTE calibration ECE < 0.02 (passes at 0.0036) - the [141] batted-ball "
+    "precedent: correct the declared claim to what the model honestly earns, then "
+    "pass it. Guardrails: must beat the LR baseline on Brier AND log-loss (both "
+    "hold). The negative primary_threshold is the [166] non-inferiority idiom "
+    "making the absolute bar the gating primary. Public claim: calibrated "
+    "pre-pitch outcome probabilities (ECE < 0.02), strictly better than the "
+    "linear baseline; no accuracy-superiority claim.",
 )
 
 _PITCH_POST = PromotionCriteria(
@@ -357,6 +381,40 @@ _PITCH_POST = PromotionCriteria(
     absolute_ece_bar=0.02,
     rationale="post-pitch LightGBM challenger vs the rule-9 co-registered LR baseline. "
     "Calibration gated by a loose relative ECE guardrail + the absolute Phase-2 ECE bar.",
+)
+
+# Decision [183]: pitch-TYPE PRIOR (report candidate A). SAME calibration-first shape as
+# _PITCH_PRE / ADR-0014 - a well-calibrated y7 distribution is the deliverable, NOT a top-1
+# predictor (pitch selection is high-entropy; top-1 ~0.45, the low ceiling the report documents).
+# PRIMARY = absolute ECE < 0.02, made the gating primary by the -absolute_ece_bar threshold
+# (the [166] non-inferiority idiom leaves the relative ECE lane vacuous). GUARDRAIL = beat the
+# rule-9 co-registered pitch_type_lr_baseline on log-loss (max_delta 0). top-3 accuracy (~0.88)
+# is DELIBERATELY not a criteria metric - PrimaryMetric has no TOP3 and [183] scopes it as a
+# SUPPLEMENTARY, non-gating figure the trainer records in the evidence, never a promotion gate.
+_PITCH_TYPE_PRE = PromotionCriteria(
+    model_name="pitch_type_pre",
+    primary_metric=PrimaryMetric.ECE,
+    primary_threshold=-0.02,  # == -absolute_ece_bar; see the block comment above.
+    sample_size_target=2_000,
+    guardrails=(
+        GuardrailSpec(
+            metric=PrimaryMetric.LOG_LOSS,
+            max_delta=0.0,
+            rationale="pitch_type_pre multiclass log-loss may not regress vs the rule-9 "
+            "co-registered pitch_type_lr_baseline at all (decision [183] guardrail; the "
+            "bake-off's candidate A beats the LR baseline on log-loss).",
+        ),
+    ),
+    absolute_ece_bar=0.02,  # THE gating primary ([183]): the y7 distribution's ECE must be < 0.02.
+    rationale="pre-pitch pitch-TYPE PRIOR (decision [183], report candidate A): a "
+    "well-calibrated y7 distribution, NOT a top-1 predictor. PRIMARY = absolute calibration "
+    "ECE < 0.02 (the relative lane is vacuous by the -0.02 threshold idiom, so the absolute "
+    "bar gates, like pitch_outcome_pre / ADR-0014); GUARDRAIL = beat the LR baseline on "
+    "log-loss. top-3 accuracy (~0.88 in the bake-off) is a SUPPLEMENTARY, non-gating check "
+    "the trainer records - pitch selection is high-entropy (top-1 ~0.45), so the value is the "
+    "calibrated distribution, never accuracy. First champion via the [182] first-champion "
+    "offline-gate path. Public claim: calibrated pitch-type prior (ECE < 0.02), never 'we "
+    "predict the next pitch'.",
 )
 
 _BATTED_BALL_LR = PromotionCriteria(
@@ -424,11 +482,71 @@ _BATTED_BALL_MLP = PromotionCriteria(
 )
 
 
+# ---------------------------------------------------------------------------
+# Carry champion (battedball_outcome v2) promotion criteria - NON-INFERIORITY, not
+# beats-a-baseline. See decision [166] (+ [141]/[163]/[154]/ADR-0011/[150]/[72]).
+#
+# WHY THIS IS DIFFERENT from _BATTED_BALL_MLP above: that criteria evidences the MLP vs the
+# rule-9 LR baseline. The served batted-ball champion does NOT beat the LR baseline on REALIZED
+# outcomes (v1 Brier ~0.107 / v2 ~0.117 vs LR ~0.086) - by design: it is a calibrated per-park
+# PHYSICS ESTIMATE ([141]/[163]), and v1 itself serves only via the first-champion bootstrap (it
+# never produced a passing beats-LR row). So a beats-LR gate is the WRONG primary for promoting
+# v2 over v1; that realized-vs-LR gap is carried as a documented, NON-GATING fact, not the gate.
+#
+# v2 = v1's exact outcome model + an ADDITIVE per-park carry head (PR-3/4, schema_hash unchanged).
+# The only honest promotion question is: does adding the carry objective REGRESS the served
+# outcome? -> a NON-INFERIORITY test of v2 (carry recipe) vs v1 (no-carry recipe = v1's method),
+# paired on identical rolling-origin folds. The negative ``primary_threshold`` is the
+# non-inferiority margin: WOULD_PASS iff ``chal_brier + threshold <= base_brier`` i.e.
+# ``v2_brier <= v1_brier + 0.002`` - "v2's outcome Brier may not be WORSE than v1's by more than
+# 0.002". The carry head's physical plausibility is a SEPARATE hard gate (carry_gate, applied by
+# the carry-promotion eval), not expressible in this challenger-vs-baseline shape.
+# ---------------------------------------------------------------------------
+
+
+_BATTED_BALL_CARRY = PromotionCriteria(
+    model_name="battedball_outcome",
+    primary_metric=PrimaryMetric.BRIER,
+    # NON-INFERIORITY margin (negative threshold): v2 (carry) may be at most 0.002 multiclass-Brier
+    # WORSE than v1 (no-carry) on the home-park realized outcome. ~2% of the ~0.11 realized Brier
+    # and ~5x the rolling-origin fold std (~0.0004), so it tolerates run-to-run + carry noise
+    # without admitting a real outcome regression. NOT a beats-baseline margin (see header).
+    primary_threshold=-0.002,
+    sample_size_target=2_000,
+    guardrails=(
+        GuardrailSpec(
+            metric=PrimaryMetric.LOG_LOSS,
+            max_delta=0.01,
+            rationale="v2 (carry) log-loss may not regress > 0.01 vs v1 (no-carry) "
+            "(guards a Brier non-inferiority that hides confident-wrong outcome blowups).",
+        ),
+        GuardrailSpec(
+            metric=PrimaryMetric.ECE,
+            max_delta=0.015,
+            rationale="v2 (carry) raw-softmax ECE may not regress > 0.015 vs v1 (no-carry); the "
+            "served per-park isotonic calibration is applied equally downstream, so this guards "
+            "the underlying outcome head, not the served calibration.",
+        ),
+    ),
+    # No absolute ECE bar: this is an outcome NON-INFERIORITY of two raw-softmax heads (the absolute
+    # calibration gate is the served per-park isotonic, fit + verified at registration). An absolute
+    # raw-ECE bar would fail by construction (uncalibrated) and is not the question here.
+    absolute_ece_bar=None,
+    rationale="carry champion v2 vs the current champion v1 (battedball_outcome): outcome "
+    "NON-INFERIORITY (Brier within 0.002, log-loss/ECE non-regression) + a SEPARATE hard carry "
+    "sanity gate. The realized-Brier-vs-LR gap is the documented [141]/[163] reality gap, NOT this "
+    "gate (this model is a calibrated per-park physics ESTIMATE; v1 serves on the bootstrap). "
+    "See decision [166].",
+)
+
+
 CRITERIA_BY_MODEL: Final[dict[str, PromotionCriteria]] = {
     _PITCH_PRE.model_name: _PITCH_PRE,
     _PITCH_POST.model_name: _PITCH_POST,
+    _PITCH_TYPE_PRE.model_name: _PITCH_TYPE_PRE,
     _BATTED_BALL_LR.model_name: _BATTED_BALL_LR,
     _BATTED_BALL_MLP.model_name: _BATTED_BALL_MLP,
+    _BATTED_BALL_CARRY.model_name: _BATTED_BALL_CARRY,
 }
 
 

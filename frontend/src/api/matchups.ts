@@ -12,7 +12,7 @@
  */
 import { useQuery } from "@tanstack/react-query";
 
-import { API_BASE } from "./base";
+import { ApiError, apiGet } from "./base";
 
 /** One row of GET /v1/matchups/today (mirrors the backend MatchupSummary DTO). */
 export type MatchupSummary = {
@@ -32,21 +32,10 @@ export type MatchupSummary = {
   stage: string; // "default" | "lineup"
 };
 
-export class MatchupApiError extends Error {
-  readonly status: number;
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
+export class MatchupApiError extends ApiError {}
 
-async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`);
-  if (!res.ok) {
-    throw new MatchupApiError(res.status, `${path} failed: HTTP ${res.status}`);
-  }
-  return (await res.json()) as T;
-}
+const get = <T>(path: string): Promise<T> =>
+  apiGet<T>(path, (s, m) => new MatchupApiError(s, m));
 
 export const fetchTodaysMatchups = () =>
   get<MatchupSummary[]>("/v1/matchups/today");

@@ -3,6 +3,7 @@ package net.thebullpen.baseball.api.admin;
 import static org.hamcrest.Matchers.equalTo;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -195,6 +196,42 @@ class RegistryControllerIT {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(mapper.writeValueAsString(req)))
         .andExpect(status().isUnprocessableEntity());
+  }
+
+  @Test
+  void admin_register_without_model_kind_is_422_not_500() throws Exception {
+    // THE MAPPING IS THE POINT, not the refusal - RegistryServiceIT already pins that. This
+    // handler uses catch clauses rather than a pattern switch, so the sealed hierarchy gives NO
+    // compile-time exhaustiveness check: an unmapped RegistryException surfaces as an opaque
+    // internal_error and the operator never learns why registration was refused. (That is not
+    // hypothetical - ResetConfirmationMissing is documented as 400 and 500s today for exactly
+    // this reason.) Decision [184]'s gate is only useful if its message reaches the caller.
+    Path artifact = writeFile("kindless-model.onnx", "stub");
+    Path metadata = writeFile("kindless-meta.json", "{\"model_name\":\"pitch_type_pre\"}");
+    Path pipeline =
+        writeFile(
+            "kindless-pipeline.json",
+            Files.readString(Path.of("../contracts/feature_pipeline_pitchtype.json")));
+    RegisterRequest req =
+        new RegisterRequest(
+            "pitch_type_pre",
+            "v-nokind",
+            artifact.toString(),
+            metadata.toString(),
+            pipeline.toString(),
+            "h",
+            "[2024-01-01,2024-12-31]",
+            "{}",
+            Instant.now(),
+            null,
+            null);
+    mvc.perform(
+            post("/v1/admin/registry/pitch_type_pre/register")
+                .header("Authorization", BASIC)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(req)))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(content().string(org.hamcrest.Matchers.containsString("[184]")));
   }
 
   // --- promote endpoint --------------------------------------------------

@@ -16,14 +16,29 @@
  * only. This page imports ONLY the broadcast token namespace ([160] migration
  * rule: one namespace per screen).
  */
-import { useParams } from "react-router-dom";
+import { useMemo } from "react";
+import { useParams } from "react-router";
 
 import {
+  matchupIsAheadOf,
+  nextPitchRequest,
+  pitchTypeRequest,
   useGame,
   useLivePitches,
+  usePitchPrediction,
+  usePitchTypePrediction,
+  usePostPredictions,
+  useTeamContact,
   type GameSummary,
   type LivePitchRow,
+  type RecentBattedBall,
 } from "../api/games";
+import {
+  useAllParksPrediction,
+  type AllParksRequest,
+  type AllParksResponse,
+} from "../api/parks";
+import { usePlayer } from "../api/players";
 import { BigStat } from "../components/broadcast/big-stat";
 import { BroadcastPanel } from "../components/broadcast/broadcast-panel";
 import { LowerThird } from "../components/broadcast/lower-third";
@@ -31,9 +46,18 @@ import { Scorebug } from "../components/broadcast/scorebug";
 import { TickerStrip } from "../components/broadcast/ticker-strip";
 import { BattedBallExplorer } from "../components/games/batted-ball-explorer";
 import { LivePitchBoard } from "../components/games/live-pitch-board";
-import { SHOWCASE_BATTED_BALL } from "../data/batted-ball-fixtures";
-import { BUILD_DATE, BUILD_SHA } from "../build-info";
-import { colors, layouts, typography } from "../design/broadcast";
+import { NextPitchPanel } from "../components/games/next-pitch-panel";
+import { PitchTypePanel } from "../components/games/pitch-type-panel";
+import { PostPredictionPanel } from "../components/games/post-prediction-panel";
+import { TeamContactPanel } from "../components/games/team-contact-panel";
+import {
+  type BattedBall,
+  type ParkOutcome,
+  type ParkOutcomeTone,
+} from "../data/batted-ball-fixtures";
+import { PARK_ROWS } from "../data/parks-fixtures";
+import { BroadcastFooter, PageChrome } from "../components/shared/page-chrome";
+import { colors, typography } from "../design/broadcast";
 
 function todayIssueDate(): string {
   return new Intl.DateTimeFormat("en-US", {
@@ -83,19 +107,119 @@ function tickerItems(pitches: LivePitchRow[]): string[] {
     );
 }
 
-const fieldStyle: React.CSSProperties = {
-  backgroundColor: colors.field,
-  minHeight: "100%",
-  padding: "24px 16px 0",
-};
+// ── Phase 1.2: live batted-ball -> BattedBall mapping ────────────────────────
+//
+// The all-parks endpoint exposes P(HR) per park ONLY - not a full fielded-outcome
+// distribution. So the per-park chip is honestly HR-likelihood, NOT a fabricated
+// 1B/2B/3B/OUT: a park reads HR at/above HR_THRESHOLD, else "In play" (the ball
+// stays in the yard; the model makes no claim whether it's a hit or an out). The
+// actual realized result is the card's top-line `result` (from the live event).
+// hrParkCount uses the same HR_THRESHOLD so the headline and chips agree. err is NULL on the live
+// path: AllParksResponse carries no per-park uncertainty, and printing a fixed band beside a real
+// carry would be an invented confidence interval read as the model's own precision.
+const HR_THRESHOLD = 0.5;
 
-const columnStyle: React.CSSProperties = {
-  maxWidth: layouts.broadcastMaxWidth,
-  margin: "0 auto",
-  display: "flex",
-  flexDirection: "column",
-  gap: 24,
-};
+function titleCaseFromSnake(value: string): string {
+  return value
+    .split("_")
+    .map((w) => (w ? w[0]!.toUpperCase() + w.slice(1) : w))
+    .join(" ");
+}
+
+// Contact descriptor when bb_type is absent: derive a coarse hit class from the
+// launch angle so the sub-line still reads (mirrors the showcase "Fly ball ...").
+function bandFromLaunchAngle(deg: number): string {
+  if (deg < 10) return "Ground ball";
+  if (deg < 25) return "Line drive";
+  if (deg < 50) return "Fly ball";
+  return "Pop up";
+}
+
+function outcomeForProb(p: number): { outcome: string; tone: ParkOutcomeTone } {
+  // P(HR)-only model -> honest binary: likely-HR vs stays-in-play. No invented 2B.
+  if (p >= HR_THRESHOLD) return { outcome: "HR", tone: "hr" };
+  return { outcome: "In play", tone: "out" };
+}
+
+/**
+ * Map the most-recent in-play pitch + the all-parks prediction into the
+ * BattedBall the explorer consumes. The launch fields are guaranteed non-null by
+ * the caller's predicate; the park id -> name/team join mirrors <ParkHrHeatmap>.
+ * Per-park dist uses the model's carry when the champion serves one, else the
+ * BIP's own (estimated) distance; xBA is a placeholder (the endpoint has none).
+ */
+function buildLiveBattedBall(
+  inPlay: RecentBattedBall,
+  pred: AllParksResponse,
+  batterName: string | undefined,
+  homeTeam: string | undefined,
+): BattedBall {
+  const exitVeloMph = inPlay.launchSpeedMph;
+  const launchAngleDeg = inPlay.launchAngleDeg;
+  const distanceFt = Math.round(inPlay.hitDistanceFt);
+
+  const rowById = new Map(PARK_ROWS.map((row) => [row.id, row]));
+  const carry = pred.carryFtByPark;
+  const probEntries = Object.entries(pred.probHrByPark);
+
+  const parks: ParkOutcome[] = probEntries.map(([id, p]) => {
+    const row = rowById.get(id);
+    const { outcome, tone } = outcomeForProb(p);
+    const parkCarry = carry?.[id];
+    return {
+      park: row?.parkName ?? id,
+      team: row?.team ?? id,
+      outcome,
+      tone,
+      dist: parkCarry != null ? Math.round(parkCarry) : distanceFt,
+      err: null, // the model reports no per-park uncertainty; do not invent one
+      here: id === homeTeam,
+    };
+  });
+
+  const parkCount = probEntries.length;
+  const hrParkCount = probEntries.filter(([, p]) => p >= HR_THRESHOLD).length;
+
+  // Default-shown: the home park (pinned) first, then the most interesting parks
+  // by P(HR), capped at six (matching the showcase's six-row default).
+  const byProbDesc = [...probEntries]
+    .sort((a, b) => b[1] - a[1])
+    .map(([id]) => rowById.get(id)?.parkName ?? id);
+  const homeParkName = parks.find((pk) => pk.here)?.park;
+  const defaultShown: string[] = [];
+  if (homeParkName) defaultShown.push(homeParkName);
+  for (const name of byProbDesc) {
+    if (defaultShown.length >= 6) break;
+    if (!defaultShown.includes(name)) defaultShown.push(name);
+  }
+
+  // ONE band, used by both the sub-line and the distance metric. Previously the sub-line used
+  // this value while the metric re-derived its own from the ROUNDED angle - so a raw 9.6 degrees
+  // read "Ground ball" in one place and "Line drive" in the other, and a present bbType made the
+  // two disagree by source as well as by input.
+  const descriptor = inPlay.bbType
+    ? titleCaseFromSnake(inPlay.bbType)
+    : bandFromLaunchAngle(launchAngleDeg);
+
+  return {
+    batter: batterName ?? `#${inPlay.batterId}`,
+    description: `${descriptor} · ${inPlay.outs} out`,
+    result: inPlay.event ? titleCaseFromSnake(inPlay.event) : "In play",
+    exitVeloMph,
+    launchDeg: Math.round(launchAngleDeg),
+    distanceFt,
+    band: descriptor,
+    xba: "—", // AllParksResponse carries no xBA; do not fabricate one.
+    hrParkCount,
+    parkCount,
+    parks,
+    defaultShown,
+    // Name the real served champion (calibration source); omit the editorial narrative on the
+    // live path so no hardcoded "caught at the track" line contradicts the actual result.
+    modelName: pred.modelName,
+    modelVersion: pred.modelVersion,
+  };
+}
 
 const errorTextStyle: React.CSSProperties = {
   fontFamily: typography.fonts.body,
@@ -110,145 +234,530 @@ export function GamePage() {
 
   const game = useGame(valid ? numericId : null);
   const pitches = useLivePitches(valid ? numericId : null, game.data?.status);
+  const postPredictions = usePostPredictions(
+    valid ? numericId : null,
+    game.data?.status,
+  );
+  const mostRecent = pitches.pitches[0];
+  // WHO IS BATTING: the live currentPlay matchup when the feed has one, the last thrown pitch
+  // otherwise. The fallback is why this can never render worse than before - it IS the old
+  // behaviour - but when the matchup is present the page flips to the new batter within one poll
+  // of him stepping in, instead of a plate appearance later when his first pitch lands.
+  const liveMatchup = game.data?.currentMatchup ?? null;
+  // The matchup has moved PAST the newest stored pitch: that pitch is now past tense, so anything
+  // derived from it describes a moment that is over. Before this feature the whole page described
+  // one moment - stale, but internally consistent; naming the live batter alongside a finished
+  // at-bat's count would trade that consistency for a confidently wrong composite ("leadoff
+  // hitter, 1-2 count, 2 outs"), which is checkable against the broadcast and worse than stale.
+  const rowIsPastTense = matchupIsAheadOf(liveMatchup, mostRecent);
+  const shownPitcherId =
+    liveMatchup?.pitcherId ?? mostRecent?.pitcherId ?? null;
+  const shownBatterId = liveMatchup?.batterId ?? mostRecent?.batterId ?? null;
+  // Hooks run before the early return; null id disables them.
+  const currentPitcher = usePlayer(shownPitcherId);
+  const currentBatter = usePlayer(shownBatterId);
+
+  // A6: the forward-looking next-pitch estimate (ADR-0014). nextPitchRequest returns null unless
+  // the at-bat is settled (mid-at-bat, full V028 context), and the query additionally gates on the
+  // game being live - both required, because every fired request logs to prediction_log.
+  // NOTE the matchup is applied CONDITIONALLY here, unlike the display above: nextPitchRequest
+  // derives the count from the row, so it uses the matchup only when the two describe the same
+  // at-bat, and withholds the request entirely once the matchup has moved past it.
+  const nextReq =
+    mostRecent && game.data
+      ? nextPitchRequest(mostRecent, game.data.gameDate, liveMatchup)
+      : null;
+  const nextPitchEnabled = isLive(game.data) && nextReq != null;
+  const nextPitch = usePitchPrediction(nextReq, { enabled: nextPitchEnabled });
+
+  // The pitch-type PRIOR ([183], champion since 2026-08-02). Built on the SAME derivation as the
+  // next-pitch request, so the two panels cannot disagree about whether an upcoming pitch exists:
+  // both describe one specific pitch in one specific count, so both gate identically. The enabled
+  // gate is equally mandatory here - this endpoint also logs every call to prediction_log.
+  const pitchTypeReq =
+    mostRecent && game.data
+      ? pitchTypeRequest(
+          mostRecent,
+          game.data.gameDate,
+          game.data.gameId,
+          liveMatchup,
+        )
+      : null;
+  const pitchTypeEnabled = isLive(game.data) && pitchTypeReq != null;
+  const pitchType = usePitchTypePrediction(pitchTypeReq, {
+    enabled: pitchTypeEnabled,
+  });
+
+  // Phase 1.2: the most recent in-play batted ball carrying launch physics. The
+  // pitch store is newest-first, so .find() yields the LATEST qualifying BIP.
+  // The most recent COMPLETED ball in play, from the game summary rather than a scan of the pitch
+  // list. That list is the newest 50 pitches - a window, not the game - so scanning it found a
+  // batted ball only while it happened to still be inside, and failed by looking like "no batted
+  // ball yet" rather than like a bug.
+  const inPlay = game.data?.mostRecentBattedBall ?? null;
+  // The BIP's batter, keyed to the in-play pitch (NOT mostRecent, which may be a
+  // later non-BIP pitch in the same at-bat or a new one).
+  const inPlayBatter = usePlayer(inPlay?.batterId ?? null);
+
+  // All-parks prediction for the live BIP. The query is GATED on a live BIP
+  // (enabled below): POST /v1/predict/batted-ball/all-parks logs every request to
+  // prediction_log (the drift-baseline source), so a throwaway prediction on a
+  // pregame / between-BIP mount would pollute the drift baselines the Phase-6
+  // postmortem reads. When any required field is missing the request is NULL, so the query has no
+  // key at all - it neither fires nor reads a cache entry another page populated.
+  const allParksReq = useMemo<AllParksRequest | null>(() => {
+    if (
+      inPlay == null ||
+      // Spray is REQUIRED and cannot be invented. The server declines it where the geometry
+      // degenerates (a ball tracked at or behind the plate, or an angle outside the foul lines),
+      // and the honest response to a declined value is to not ask the model - not to send 0.
+      // Measured cost: ~2% of balls at 150+ ft, so this almost never fires on a ball anyone would
+      // want compared across parks.
+      inPlay.sprayAngleDeg == null ||
+      inPlay.baseState == null
+    ) {
+      return null;
+    }
+    // Batter side from the ROW, resolved for switch hitters exactly as nextPitchRequest resolves
+    // it. Previously hardcoded "R": harmless only while the card almost never rendered live, and a
+    // live-scored left-hander would otherwise be modelled as a right-hander on the page whose
+    // entire purpose is showing the real batted ball.
+    // Switch hitters are already resolved server-side, at the source, so the page does not
+    // re-derive a side the model input might disagree with.
+    const stand = inPlay.stand;
+    if (stand !== "R" && stand !== "L") return null;
+    return {
+      launchSpeedMph: inPlay.launchSpeedMph,
+      launchAngleDeg: inPlay.launchAngleDeg,
+      sprayAngleDeg: inPlay.sprayAngleDeg,
+      hitDistanceFt: inPlay.hitDistanceFt,
+      stand,
+      baseState: inPlay.baseState,
+      outs: inPlay.outs,
+    };
+  }, [inPlay]);
+  // A null request means the query has no key at all, so it neither fires nor reads a cache entry
+  // some other page populated. Withholding is the whole point: an incomplete request must not
+  // become a prediction, and must not silently borrow one.
+  const allParks = useAllParksPrediction(allParksReq, {
+    enabled: allParksReq != null,
+    context:
+      game.data && inPlay
+        ? { gameId: game.data.gameId, parkId: inPlay.parkId }
+        : undefined,
+  });
+
+  // The pre-first-pitch comparison fills the state the retired fixture used to occupy. Gated on
+  // there being NO batted ball: it is a season-wide scan plus N inferences per team, so it must not
+  // run alongside the live card it stands in for.
+  const teamContact = useTeamContact(game.data?.gameId ?? null, {
+    enabled: game.data != null && inPlay == null,
+  });
+
+  // The live BattedBall, or null until BOTH the BIP and its prediction exist (->
+  // the showcase fallback below). Memoised so polls with no new data are cheap.
+  const liveBattedBall = useMemo<BattedBall | null>(() => {
+    if (!inPlay || !allParks.data) return null;
+    return buildLiveBattedBall(
+      inPlay,
+      allParks.data,
+      inPlayBatter.data?.name,
+      game.data?.homeTeam,
+    );
+  }, [inPlay, allParks.data, inPlayBatter.data?.name, game.data?.homeTeam]);
 
   if (!valid) {
     return (
-      <div style={fieldStyle}>
-        <div style={columnStyle}>
-          <p style={errorTextStyle}>Invalid game id.</p>
-        </div>
-      </div>
+      <PageChrome gap={24}>
+        <p style={errorTextStyle}>Invalid game id.</p>
+      </PageChrome>
     );
   }
 
   const summary = game.data;
-  const mostRecent = pitches.pitches[0];
+  // While the lookup for a JUST-CHANGED player is in flight, show the em-dash rather than a raw
+  // MLB id: this feature makes identity flip at every at-bat, pitching change and half-inning, so
+  // what used to be a rare glimpse of a bare numeric player id would now be a regular one in the
+  // page's most prominent live line. (An MLB id is six digits, so a literal example here reads as
+  // a color to lint:hex-codes - hence the prose.) Deliberately NOT keeping the previous name as placeholder data - that
+  // would re-introduce, for a few hundred milliseconds, exactly the wrong-batter display this
+  // whole change exists to remove.
+  const playerName = (
+    q: { data?: { name?: string }; isPending: boolean },
+    id: number | null,
+  ): string => q.data?.name ?? (q.isPending || id == null ? "—" : `#${id}`);
+  const pitcherName = playerName(currentPitcher, shownPitcherId);
+  const batterName = playerName(currentBatter, shownBatterId);
+  // Handedness rides the name only when there IS a name: "— (R)" attaches a hand to an unknown
+  // player, and this feature makes that pending window recur at every at-bat, pitching change and
+  // half-inning. "S" is resolved against the current pitcher exactly as nextPitchRequest resolves
+  // it, so the chyron and the model input never disagree about which side a switch hitter bats -
+  // an unresolved "(S)" would read to a viewer as a handedness, which it is not.
+  // The "#id" fallback DOES identify a player, so handedness on it is truthful; only the pending
+  // em-dash names nobody.
+  const named = (n: string) => n !== "—";
+  // Gated on the RESOLVED code, not the raw one: a switch hitter whose pitcher hand has not
+  // arrived resolves to "", and gating on the raw "S" would render an empty " ()".
+  const handSuffix = (resolved: string, name: string) =>
+    resolved !== "" && named(name) ? ` (${resolved})` : "";
+  const livePitchHand = liveMatchup?.pitchHand ?? "";
+  const liveBatSideRaw = liveMatchup?.batSide ?? "";
+  const liveBatSide =
+    liveBatSideRaw === "S"
+      ? livePitchHand === "R"
+        ? "L"
+        : livePitchHand === "L"
+          ? "R"
+          : ""
+      : liveBatSideRaw;
+  const shownPitchHand = handSuffix(livePitchHand, pitcherName);
+  const shownBatSide = handSuffix(liveBatSide, batterName);
+  // Per-pitcher pitch count - the CURRENT pitcher only, not the whole-game total. Counted against
+  // the pitcher actually on the mound, so a pitching change resets it immediately rather than
+  // carrying the reliever's count over from the pitcher he replaced.
+  const pitcherPitchCount =
+    shownPitcherId != null
+      ? pitches.pitches.filter((p) => p.pitcherId === shownPitcherId).length
+      : 0;
+
+  // No fixture fallback. A labelled static example was defensible while no real batted ball could
+  // ever render here; now that one can, a Stanton card sitting on a live game page is the
+  // fixtures-presented-as-content defect the audit named. When there is no ball in play yet the
+  // page says so and shows nothing, which is the truth about the game.
+  const battedBall = liveBattedBall;
+  const battedBallLive = liveBattedBall != null;
 
   return (
-    <div style={fieldStyle}>
-      <div style={columnStyle}>
-        <header>
-          <h1
-            style={{
-              margin: 0,
-              fontFamily: typography.fonts.display,
-              fontStyle: "italic",
-              fontWeight: typography.weights.heavy,
-              fontSize: typography.scale[6],
-              lineHeight: typography.lineHeights.display,
-              letterSpacing: "0.01em",
-              textTransform: "uppercase",
-              color: colors.ink,
-            }}
-          >
-            {summary?.awayTeam ?? "—"}{" "}
-            <span style={{ color: colors.textMuted, fontWeight: 600 }}>@</span>{" "}
-            {summary?.homeTeam ?? "—"}
-          </h1>
-          <p
-            style={{
-              margin: "2px 0 12px",
-              fontFamily: typography.fonts.mono,
-              fontSize: 12,
-              fontFeatureSettings: '"tnum" 1',
-              letterSpacing: "0.02em",
-              color: colors.textMuted,
-            }}
-          >
-            {todayIssueDate()} · live ingest · pitch model pending
-          </p>
-          <Scorebug
-            awayTeam={summary?.awayTeam ?? "—"}
-            homeTeam={summary?.homeTeam ?? "—"}
-            awayScore={summary?.awayScore ?? 0}
-            homeScore={summary?.homeScore ?? 0}
-            state={scorebugState(summary)}
-            live={isLive(summary)}
-            detail={mostRecent ? lastPitchRead(mostRecent) : undefined}
-          />
-        </header>
-
-        {game.isError ? (
-          <p style={errorTextStyle}>
-            Could not load game
-            {game.error instanceof Error ? `: ${game.error.message}` : ""}.
-          </p>
-        ) : null}
-
-        <BroadcastPanel cut>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 40 }}>
-            <BigStat
-              label="Count"
-              value={
-                mostRecent ? `${mostRecent.balls}-${mostRecent.strikes}` : "—"
-              }
-            />
-            <BigStat
-              label="Outs"
-              value={mostRecent ? String(mostRecent.outs) : "—"}
-            />
-            <BigStat label="Last Pitch" value={lastPitchRead(mostRecent)} />
-            <BigStat
-              label="Pitches"
-              value={String(pitches.pitches.length)}
-              tone="gold"
-            />
-          </div>
-        </BroadcastPanel>
-
-        <section aria-labelledby="batted-ball-label">
-          <div style={{ marginBottom: 12 }}>
-            <LowerThird id="batted-ball-label" meta="SHOWCASE · CHAMPION">
-              Last Batted Ball
-            </LowerThird>
-          </div>
-          <BattedBallExplorer data={SHOWCASE_BATTED_BALL} />
-        </section>
-
-        <section aria-labelledby="game-pitch-log-label">
-          <div style={{ marginBottom: 12 }}>
-            <LowerThird
-              id="game-pitch-log-label"
-              meta={`NEWEST ${Math.min(pitches.pitches.length, 50)}`}
-            >
-              Live Pitch Log
-            </LowerThird>
-          </div>
-          {pitches.isError ? (
-            <p style={errorTextStyle}>
-              Could not load pitches
-              {pitches.error instanceof Error
-                ? `: ${pitches.error.message}`
-                : ""}
-              .
-            </p>
-          ) : (
-            <LivePitchBoard pitches={pitches.pitches} />
-          )}
-        </section>
-
-        <TickerStrip items={tickerItems(pitches.pitches)} />
-
-        <footer
+    <PageChrome gap={24}>
+      <header>
+        <h1
           style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            margin: "0 -16px",
-            padding: "10px 16px",
-            backgroundColor: colors.chromeDeep,
-            fontFamily: typography.fonts.mono,
-            fontSize: 11,
-            letterSpacing: "0.04em",
-            color: colors.textOnChromeMuted,
+            margin: 0,
+            fontFamily: typography.fonts.display,
+            fontStyle: "italic",
+            fontWeight: typography.weights.heavy,
+            fontSize: typography.scale[6],
+            lineHeight: typography.lineHeights.display,
+            letterSpacing: "0.01em",
+            textTransform: "uppercase",
+            color: colors.ink,
           }}
         >
-          <span>THE BULLPEN · LIVE GAME</span>
-          <span>
-            build {BUILD_SHA} · {BUILD_DATE}
-          </span>
-        </footer>
-      </div>
-    </div>
+          {summary?.awayTeam ?? "—"}{" "}
+          <span style={{ color: colors.textMuted, fontWeight: 600 }}>@</span>{" "}
+          {summary?.homeTeam ?? "—"}
+        </h1>
+        <p
+          style={{
+            margin: "2px 0 12px",
+            fontFamily: typography.fonts.mono,
+            fontSize: 12,
+            fontFeatureSettings: '"tnum" 1',
+            letterSpacing: "0.02em",
+            color: colors.textMuted,
+          }}
+        >
+          {todayIssueDate()} · live ingest
+        </p>
+        <Scorebug
+          awayTeam={summary?.awayTeam ?? "—"}
+          homeTeam={summary?.homeTeam ?? "—"}
+          awayScore={summary?.awayScore ?? 0}
+          homeScore={summary?.homeScore ?? 0}
+          state={scorebugState(summary)}
+          live={isLive(summary)}
+          detail={mostRecent ? lastPitchRead(mostRecent) : undefined}
+        />
+        <p
+          style={{
+            margin: "10px 0 0",
+            fontFamily: typography.fonts.body,
+            fontSize: 13,
+            color: colors.text,
+          }}
+        >
+          Pitching: <strong>{pitcherName}</strong>
+          {shownPitchHand} &middot; At bat: <strong>{batterName}</strong>
+          {shownBatSide}
+        </p>
+      </header>
+
+      {game.isError ? (
+        <p style={errorTextStyle}>
+          Could not load game
+          {game.error instanceof Error ? `: ${game.error.message}` : ""}.
+        </p>
+      ) : null}
+
+      <BroadcastPanel cut>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 40 }}>
+          {/* Count and Outs are derived from the newest STORED pitch, so once the live matchup
+              has moved past that pitch's at-bat they describe a moment that is over. Naming the
+              live batter beside a finished at-bat's count would read as one confident composite
+              ("leadoff hitter, 1-2 count, 2 outs") that is checkable against the broadcast and
+              wrong - worse than the stale-but-consistent page this replaced. Em-dash is this
+              page's existing way of saying "not known right now". */}
+          <BigStat
+            label="Count"
+            value={
+              mostRecent && !rowIsPastTense
+                ? `${mostRecent.balls}-${mostRecent.strikes}`
+                : "—"
+            }
+          />
+          <BigStat
+            label="Outs"
+            value={
+              mostRecent && !rowIsPastTense ? String(mostRecent.outs) : "—"
+            }
+          />
+          <BigStat label="Last Pitch" value={lastPitchRead(mostRecent)} />
+          <BigStat
+            label="Pitch Count"
+            value={String(pitcherPitchCount)}
+            tone="gold"
+          />
+        </div>
+      </BroadcastPanel>
+
+      <section
+        aria-labelledby="next-pitch-label"
+        style={
+          nextPitchEnabled
+            ? {
+                borderLeft: `3px solid ${colors.gold}`,
+                paddingLeft: 16,
+                marginLeft: -19,
+              }
+            : undefined
+        }
+      >
+        <div
+          style={{
+            marginBottom: 12,
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
+          <LowerThird
+            id="next-pitch-label"
+            meta={nextPitchEnabled ? "LIVE ESTIMATE" : "GATED"}
+          >
+            Next-Pitch Model
+          </LowerThird>
+          <a
+            href="/models/guide#next-pitch"
+            style={{
+              fontFamily: typography.fonts.mono,
+              fontSize: 10,
+              letterSpacing: "0.12em",
+              color: colors.textMuted,
+              textDecoration: "none",
+              textTransform: "uppercase",
+              border: `1px solid ${colors.rule}`,
+              padding: "4px 10px",
+            }}
+          >
+            <span style={{ color: colors.gold, fontSize: 11 }}>{"ⓘ"}</span> What
+          </a>
+        </div>
+        <NextPitchPanel
+          prediction={nextPitch.data}
+          isLoading={nextPitch.isLoading}
+          error={nextPitch.error}
+          enabled={nextPitchEnabled}
+        />
+      </section>
+
+      <section aria-labelledby="pitch-type-label">
+        <div
+          style={{
+            marginBottom: 12,
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
+          <LowerThird
+            id="pitch-type-label"
+            meta={pitchTypeEnabled ? "LIVE PRIOR" : "GATED"}
+          >
+            Pitch-Type Model
+          </LowerThird>
+          <a
+            href="/models/guide#pitch-type"
+            style={{
+              fontFamily: typography.fonts.mono,
+              fontSize: 10,
+              letterSpacing: "0.12em",
+              color: colors.textMuted,
+              textDecoration: "none",
+              textTransform: "uppercase",
+              border: `1px solid ${colors.rule}`,
+              padding: "4px 10px",
+            }}
+          >
+            <span style={{ color: colors.gold, fontSize: 11 }}>{"ⓘ"}</span> What
+          </a>
+        </div>
+        <PitchTypePanel
+          prior={pitchType.data}
+          isLoading={pitchType.isLoading}
+          error={pitchType.error}
+          enabled={pitchTypeEnabled}
+        />
+      </section>
+
+      <section
+        aria-labelledby="batted-ball-label"
+        style={
+          battedBallLive
+            ? {
+                borderLeft: `3px solid ${colors.gold}`,
+                paddingLeft: 16,
+                marginLeft: -19,
+              }
+            : undefined
+        }
+      >
+        <div
+          style={{
+            marginBottom: 12,
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
+          <LowerThird
+            id="batted-ball-label"
+            // Not "MODEL EXAMPLE" any more - there is no example. The fixture is retired, so
+            // the un-live state is an absence of data, not a substitute for it.
+            // Three-way, not two. "AWAITING BIP" above a caption that says "Scoring this batted
+            // ball..." asserts a known falsehood in the highest-contrast element of the section -
+            // the same defect the caption was just fixed for, one line up, and now contradicting
+            // the fix rather than merely agreeing with the old bug.
+            meta={
+              battedBallLive
+                ? "LIVE BIP"
+                : inPlay != null
+                  ? "SCORING"
+                  : "AWAITING BIP"
+            }
+          >
+            Batted-Ball Model
+          </LowerThird>
+          <a
+            href="/models/guide#batted-ball"
+            style={{
+              fontFamily: typography.fonts.mono,
+              fontSize: 10,
+              letterSpacing: "0.12em",
+              color: colors.textMuted,
+              textDecoration: "none",
+              textTransform: "uppercase",
+              border: `1px solid ${colors.rule}`,
+              padding: "4px 10px",
+            }}
+          >
+            <span style={{ color: colors.gold, fontSize: 11 }}>{"ⓘ"}</span> What
+          </a>
+        </div>
+        <p
+          style={{
+            margin: "0 0 12px",
+            fontFamily: typography.fonts.body,
+            fontSize: 12,
+            color: colors.textMuted,
+          }}
+        >
+          {battedBallLive ? (
+            <>Most recent in-play batted ball, scored across all 30 parks.</>
+          ) : inPlay != null ? (
+            // A ball WAS put in play - the page has been told so. Saying "no ball has been put in
+            // play yet" here is the same defect as saying it on an error: asserting a fact the page
+            // knows to be false. Three sub-states, all reachable, one of them the HAPPY PATH: every
+            // new ball re-keys the all-parks query, so `data` is undefined while it fetches.
+            allParksReq == null ? (
+              <>
+                A ball was put in play, but its landing coordinates were not
+                tracked cleanly enough to score it across parks - so the
+                comparison is withheld rather than estimated.
+              </>
+            ) : allParks.isError ? (
+              <>Could not score this batted ball across parks.</>
+            ) : (
+              <>Scoring this batted ball across all 30 parks&hellip;</>
+            )
+          ) : game.isError ? (
+            // NOT "no ball in play yet": that asserts a fact about the game when we simply failed
+            // to load it. An error state must say what it knows, which is nothing.
+            <>Could not load this game&rsquo;s batted balls.</>
+          ) : game.isPending ? (
+            <>Loading this game&rsquo;s batted balls&hellip;</>
+          ) : summary?.status === "COMPLETED" ? (
+            // "yet" promises more baseball. A finished game with no ball in play is finished.
+            <>No ball was put in play in this game.</>
+          ) : (
+            <>No ball has been put in play in this game yet.</>
+          )}
+        </p>
+        {battedBall ? (
+          <BattedBallExplorer data={battedBall} />
+        ) : inPlay == null ? (
+          <TeamContactPanel
+            data={teamContact.data}
+            isLoading={teamContact.isLoading}
+            error={teamContact.error}
+          />
+        ) : null}
+      </section>
+
+      <section aria-labelledby="game-pitch-log-label">
+        <div style={{ marginBottom: 12 }}>
+          <LowerThird
+            id="game-pitch-log-label"
+            meta={`NEWEST ${Math.min(pitches.pitches.length, 50)}`}
+          >
+            Live Pitch Log
+          </LowerThird>
+        </div>
+        {pitches.isError ? (
+          <p style={errorTextStyle}>
+            Could not load pitches
+            {pitches.error instanceof Error ? `: ${pitches.error.message}` : ""}
+            .
+          </p>
+        ) : (
+          <LivePitchBoard pitches={pitches.pitches} />
+        )}
+      </section>
+
+      <section aria-labelledby="game-post-predictions-label">
+        <div style={{ marginBottom: 12 }}>
+          <LowerThird id="game-post-predictions-label" meta="RETROSPECTIVE">
+            Post-Pitch Model Scorecard
+          </LowerThird>
+        </div>
+        {postPredictions.isError ? (
+          <p style={errorTextStyle}>
+            Could not load post-pitch predictions
+            {postPredictions.error instanceof Error
+              ? `: ${postPredictions.error.message}`
+              : ""}
+            .
+          </p>
+        ) : (
+          <PostPredictionPanel
+            rows={postPredictions.data?.rows ?? []}
+            hasNext={postPredictions.data?.hasNext ?? false}
+          />
+        )}
+      </section>
+
+      <TickerStrip items={tickerItems(pitches.pitches)} />
+
+      <BroadcastFooter>LIVE GAME</BroadcastFooter>
+    </PageChrome>
   );
 }

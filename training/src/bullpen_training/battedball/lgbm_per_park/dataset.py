@@ -37,6 +37,8 @@ def _query_park_bips_json(
 ) -> str:
     limit_clause = f"LIMIT {limit}" if limit else ""
     offset_clause = f"OFFSET {offset}" if offset > 0 else ""
+    # partial_merge: the FINAL x FINAL hash join OOMs under the box's 4 GiB cap
+    # (CH exit 241) - same fix as #238 / mlp/dataset.py, identical result set.
     return f"""
     SELECT
       toString(p.launch_speed_mph) AS launch_speed_mph,
@@ -67,6 +69,7 @@ def _query_park_bips_json(
       AND r.park_id = '{park_id}'
     ORDER BY p.game_date, p.game_id, p.at_bat_index, p.pitch_number
     {limit_clause} {offset_clause}
+    SETTINGS join_algorithm = 'partial_merge'
     FORMAT JSONEachRow
     """
 

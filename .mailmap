@@ -1,0 +1,6 @@
+# Collapse the split author identities (2 names / 3 emails) into one canonical identity so
+# `git shortlog -sn` and the GitHub contribution graph attribute every commit to one person.
+# Format: Canonical Name <canonical-email> <mapped-email>
+Alex Picard <118379879+Alexm-picard@users.noreply.github.com>
+Alex Picard <118379879+Alexm-picard@users.noreply.github.com> <am.picard03@gmail.com>
+Alex Picard <118379879+Alexm-picard@users.noreply.github.com> <derpthund@gmail.com>

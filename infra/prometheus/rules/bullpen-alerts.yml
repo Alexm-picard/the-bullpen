@@ -61,3 +61,363 @@ groups:
         annotations:
           summary: "ClickHouse/registry snapshot is stale (> 26h)"
           description: "No successful snapshot in over 26h (last success {{ $value | humanizeDuration }} ago). The daily 03:00 timer has missed a cycle - backups are not current. Check `systemctl status bullpen-snapshot.timer` and the last clickhouse-snapshot.sh run."
+
+      # Layer-2 (air-gapped USB) freshness. usb-backup.sh writes
+      # bullpen_usb_backup_last_success_timestamp_seconds to the node_exporter textfile collector on
+      # success. Unlike the daily Layer-1 snapshot this backup is MANUAL (recommended weekly during
+      # build, daily during season - see infra/backup/README.md), so it has no SLA: warning severity
+      # + a generous 9-day threshold means a normal weekly cadence with slack never false-fires, but a
+      # silently-lapsed or forgotten backup (the failure mode a manual dead-man exists to catch)
+      # surfaces before it is a month gone. Before the first-ever USB backup the metric is absent and
+      # the rule stays quiet by design (matches SnapshotStale - no absent() check, to avoid noise).
+      - alert: UsbBackupStale
+        expr: time() - bullpen_usb_backup_last_success_timestamp_seconds > 9 * 24 * 3600
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Air-gapped USB (Layer-2) backup is stale (> 9d)"
+          description: "No successful USB backup in over 9 days (last success {{ $value | humanizeDuration }} ago). Layer-2 is the hardware-contingency copy and is run by hand - plug in BULLPEN_BAK and run infra/backup/usb-backup.sh. Layer-1 snapshots + offsite R2 are unaffected; this is the air-gapped copy only."
+
+      # --- M1 task 6 additions ------------------------------------------------
+
+      # Disk: the WSL2 virtual disk filling is a slow-motion outage (ClickHouse parts, docker
+      # logs, releases). Warn at <15%, page at <5%.
+      - alert: DiskLow
+        expr: |
+          node_filesystem_avail_bytes{mountpoint="/"}
+            / node_filesystem_size_bytes{mountpoint="/"} < 0.15
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Root filesystem below 15% free"
+          description: "Root fs is {{ $value | humanizePercentage }} free. Prune docker logs/images, old releases, and ClickHouse parts before DiskFull pages."
+
+      - alert: DiskFull
+        expr: |
+          node_filesystem_avail_bytes{mountpoint="/"}
+            / node_filesystem_size_bytes{mountpoint="/"} < 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Root filesystem below 5% free"
+          description: "Root fs is {{ $value | humanizePercentage }} free. ClickHouse inserts and journal writes are about to start failing."
+
+      # ClickHouse's own liveness. The api deliberately stays UP when CH dies (Hikari
+      # initializationFailTimeout(-1)), so ApiDown never covers this - only a scrape of
+      # ClickHouse's native :9363 prometheus endpoint does.
+      - alert: ClickHouseDown
+        expr: up{job="clickhouse"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ClickHouse is down"
+          description: "The clickhouse:9363 native prometheus endpoint has not been scrapeable for 2m. Predictions still serve (payload features) but prediction_log/drift/live ingest are all failing. Check `docker ps` + container logs."
+
+      # The live poller stopped mid-window: a poll completed within the last 2h (so games WERE
+      # being watched - the self-gate that stands in for an explicit active-games gauge) but none
+      # in the last 5m. Quiet days never fire: the gauge goes stale past 2h and the gate closes.
+      - alert: LivePollerStuck
+        expr: |
+          (time() - bullpen_ingest_last_poll_timestamp_seconds > 300)
+            and (time() - bullpen_ingest_last_poll_timestamp_seconds < 7200)
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Live poller has stopped mid-window"
+          description: "Last successful game poll was {{ $value | humanizeDuration }} ago after recent activity - the poller is likely stuck while games are live. Check `journalctl -u bullpen-worker` and the MLB API."
+
+      # The feed schema moved under the parser: sustained nonzero anomaly rate (unknown status /
+      # missing gameDate / unknown pitch vocabulary). Rate only moves while games poll, so this is
+      # inherently live-game-gated.
+      - alert: ParserAnomalyRate
+        expr: sum(rate(bullpen_ingest_parse_anomalies_total[15m])) > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "MLB feed parse anomalies are sustained"
+          description: "Nonzero parse-anomaly rate for 30m ({{ $value }}/s). The GUMBO feed is handing back vocabulary/fields the parser degrades on - inspect the reason label breakdown before the drift dataset silently thins."
+
+      # GPU thermals during the 2-6 AM retrains (M1 task 7's textfile collector). CPU temperature
+      # is unreadable under WSL2; the box's shutdown risk IS the GPU under training load.
+      - alert: GpuTempHigh
+        expr: nvidia_gpu_temperature_celsius > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "GPU above 80C"
+          description: "GPU at {{ $value }}C for 5m. If a retrain is running, expect throttling; check case airflow."
+
+      - alert: GpuTempCritical
+        expr: nvidia_gpu_temperature_celsius > 90
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "GPU above 90C"
+          description: "GPU at {{ $value }}C for 1m - shutdown territory. Kill the running retrain (`systemctl stop bullpen-retrain`) and investigate cooling before the box hard-stops."
+
+      # --- Wave E / E-1 part 2b -----------------------------------------------
+
+      # A serving CHAMPION has no training-distribution baseline in its metadata.json, so the daily
+      # PSI job cannot compute drift for it - the model runs blind. This is the exact silent-starve
+      # that produced zero drift_metrics rows on 2026-07-04 (decision [175]); the PsiFeatureJob /
+      # PsiPredictionJob now bump this counter once per daily run per dark champion. Increase over a
+      # full daily cycle (25h) means the model has been PSI-dark since the last 2 AM ET run.
+      # Remediation: run scripts/backfill_training_distributions.py --model <model> against the
+      # champion bundle (the single baseline-emission mechanism; see the promotion runbook).
+      - alert: DriftBaselineMissing
+        expr: sum by (model, kind) (increase(bullpen_drift_baseline_missing_total[25h])) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Champion {{ $labels.model }} has no {{ $labels.kind }} drift baseline"
+          description: "The daily PSI-{{ $labels.kind }} job found serving champion {{ $labels.model }} with no training-distribution baseline - drift detection is dark for a production model. Run `scripts/backfill_training_distributions.py --model {{ $labels.model }}` against the champion bundle to restore it."
+
+      # --- [186] freshness watchdogs (2026-08-01 P1) ------------------------------------------
+      # Two-layer design, because the two failure modes need different signals:
+      #   JOB-DEAD: the nightly refresh stops completing. The age gauges CANNOT catch this - they
+      #     are set only on success, so a dead job freezes them at their last (fresh-looking)
+      #     value. Caught by the last-success stamps; year-round, no season gating (the job
+      #     should succeed daily regardless). Split into NeverRan vs Stale rather than an
+      #     or-disjunct: `stamp == 0 or time()-stamp > N` is vacuous (time()-0 is always > N)
+      #     and the or would surface the ==0 operand's VALUE, rendering "last succeeded 0s ago"
+      #     on the exact page describing never-ran. Two rules, each with an honest $value.
+      #     NeverRan gates on process age via process_start_time_seconds (Boot's UptimeMetrics):
+      #     the stamp is per-process and reads 0 from boot until the first 02:40/02:50 ET run,
+      #     so without the gate every deploy would page for up to a day. Stale needs no uptime
+      #     gate - a per-process stamp > 0 that is 26h stale implies the process is older.
+      #   CORPUS-STALE: the refresh completes but selects a stale corpus - the June failure [186]
+      #     fixed, and the one that recurs if a backfill is missed while ingest looks healthy.
+      #     The age gauges catch this; gated on live-poller activity within 3d (tighter than the
+      #     LivePollerStuck idiom's window ON PURPOSE: a 7d gate false-pages every All-Star
+      #     break - resumption Thursday reads age 4 with the last poll ~3.2d old - and burns a
+      #     ~3-day burst every season end. A 3d gate closes before age can cross 3 in any
+      #     no-games gap, while the [186] shape - games polling daily, corpus frozen - keeps it
+      #     open). A poller DEAD > 3d closes this gate too; that failure pages through
+      #     LivePollerStuck/WorkerDown when it happens, not through a corpus rule.
+      # The coverage gap gets a GROWTH rule, not a LEVEL rule (TD direction 2026-08-03,
+      # correcting this file's first version): a level threshold either pages permanently on the
+      # known backlog or is tuned above it to stay quiet - but the gap is NOT standing. The
+      # pitches_live TTL floor advances daily, so while the manual backfill has not run, the gap
+      # climbs ~1/day and each day of climb is history falling out of BOTH tables permanently.
+      # A monotonically growing gauge with no rule recreates the exact silent-degradation shape
+      # [186] fixed. Growth fires; the accepted level does not.
+      # Thresholds (3d age / 26h stamp) locked as decision [189]; five days of operation with zero false fires confirmed the All-Star-break poller gate and the 26h stamp/uptime alignment.
+      # the age gauges' own descriptions say the bound belongs there. The `< 0` never-ran state
+      # the descriptions warn about is owned by the NeverRan rules' `== 0` stamp lane.
+      # Semantics are PINNED BEHAVIORALLY by rules/tests/freshness-alerts.test.yml (promtool
+      # test rules, run in infra.yml) - check config alone proves only that the rules parse.
+
+      - alert: PitcherFormRefreshNeverRan
+        expr: |
+          (bullpen_pitcher_form_last_refresh_timestamp_seconds == 0)
+            and (time() - process_start_time_seconds{job="thebullpen-worker"} > 26 * 3600)
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pitcher_form refresh has never succeeded in this worker process"
+          description: "The worker has been up > 26h and the 02:40 ET pitcher_form refresh has not succeeded once since boot. Tier-3 form for the live pitch path is riding the last deploy's snapshot. Check `journalctl -u bullpen-worker | grep PitcherFormRefreshJob`."
+
+      - alert: PitcherFormRefreshStale
+        expr: |
+          (time() - bullpen_pitcher_form_last_refresh_timestamp_seconds > 26 * 3600)
+            and (bullpen_pitcher_form_last_refresh_timestamp_seconds > 0)
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pitcher_form nightly refresh has stopped succeeding"
+          description: "The 02:40 ET pitcher_form refresh last succeeded {{ $value | humanizeDuration }} ago in this worker process. Tier-3 form for the live pitch path is riding a stale snapshot. Check `journalctl -u bullpen-worker | grep PitcherFormRefreshJob`."
+
+      - alert: PitchTypePriorRefreshNeverRan
+        expr: |
+          (bullpen_pitchtype_prior_last_refresh_timestamp_seconds == 0)
+            and (time() - process_start_time_seconds{job="thebullpen-worker"} > 26 * 3600)
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pitch-type prior refresh has never succeeded in this worker process"
+          description: "The worker has been up > 26h and the 02:50 ET pitcher_pitchtype_prior refresh has not succeeded once since boot. The deriver refuses predictions past its staleness bound, so this precedes a serving refusal. Check `journalctl -u bullpen-worker | grep pitcher_pitchtype_prior_refresh`."
+
+      - alert: PitchTypePriorRefreshStale
+        expr: |
+          (time() - bullpen_pitchtype_prior_last_refresh_timestamp_seconds > 26 * 3600)
+            and (bullpen_pitchtype_prior_last_refresh_timestamp_seconds > 0)
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pitch-type prior nightly refresh has stopped succeeding"
+          description: "The 02:50 ET pitcher_pitchtype_prior refresh last succeeded {{ $value | humanizeDuration }} ago in this worker process. The deriver refuses predictions past its staleness bound, so this precedes a serving refusal. Check `journalctl -u bullpen-worker | grep pitcher_pitchtype_prior_refresh`."
+
+      - alert: PitcherFormCorpusStale
+        expr: |
+          (bullpen_pitcher_form_age_days > 3)
+            and (time() - bullpen_ingest_last_poll_timestamp_seconds < 3 * 24 * 3600)
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pitcher_form corpus is {{ $value }} days behind during the season"
+          description: "The form refresh is running but its source corpus (pitches UNION pitches_live) is {{ $value }} days old while games polled within the last 3d - the [186] failure shape. Past ~14 days, unbackfilled history starts falling out of the pitches_live TTL entirely. Check the live poller, then the manual backfill."
+
+      - alert: PitchTypePriorCorpusStale
+        expr: |
+          (bullpen_pitchtype_prior_age_days > 3)
+            and (time() - bullpen_ingest_last_poll_timestamp_seconds < 3 * 24 * 3600)
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pitch-type prior snapshot is {{ $value }} days behind during the season"
+          description: "The prior refresh is running but its as_of_date is {{ $value }} days old while games polled within the last 3d. The deriver's staleness bound turns this into 503s on the pitch-type endpoint if it keeps climbing. Check the live poller and pitches_live."
+
+      - alert: PitchTypePriorCoverageGapGrowing
+        expr: |
+          (delta(bullpen_pitchtype_prior_coverage_gap_days[3d]) >= 2)
+            and (min_over_time(bullpen_pitchtype_prior_coverage_gap_days[3d]) >= 0)
+        for: 6h
+        labels:
+          severity: warning
+        annotations:
+          summary: "pitch-type prior coverage gap grew {{ $value | printf \"%.1f\" }} days over the last 3d"
+          description: "The hole between the pitches corpus edge and the pitches_live TTL floor is GROWING - the manual backfill has not run and each day of growth is history leaving both tables permanently (prior_n biases lower for every pitcher active in the gap). The accepted standing level does not fire this; growth does. Run the pitch backfill. The min_over_time guard keeps the -1 boot state from reading as growth after a worker restart."
+
+  # ── prediction_log writer surface (issue 405) ──────────────────────────────────────────────────
+  #
+  # NOTE THE PREFIX. Every rule above targets `bullpen_*` (ingest + freshness). The rules below
+  # target `thebullpen_*`, which is the Micrometer-registered application surface. Before this
+  # group, ZERO rules referenced any `thebullpen_*` metric - so the writer for prediction_log, the
+  # table that drift PSI, promotion evidence (rule 5) and the truth-join all read, could fail
+  # silently. A rule written against a `thebullpen_*` metric using the `bullpen_*` prefix would
+  # never match anything, which is a rule that CANNOT FIRE - so check the prefix, not the shape.
+  - name: prediction-log-writer
+    rules:
+      - alert: PredictionLogDeadLettering
+        # ANY movement, not a rate threshold. Dead-lettering means rows ClickHouse permanently
+        # rejected were DISCARDED after MAX_WRITE_ATTEMPTS - evidence has been lost, and the
+        # up-to-499 innocent rows sharing that batch went with it. There is no acceptable
+        # background level, so `increase(...) > 0` is the threshold.
+        expr: |
+          increase(thebullpen_prediction_log_dead_lettered_total[15m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "prediction_log rows were dead-lettered - evidence has been lost"
+          description: "{{ $value | printf \"%.0f\" }} rows discarded in the last 15m after exhausting write attempts. The log line carries enough identity to reconstruct which rows were lost; drift baselines and rule-5 promotion evidence for that window are now incomplete. Check `journalctl -u bullpen-api | grep dead_letter`."
+
+      - alert: PredictionLogWriteFailuresSustained
+        # Sustained, not any: [30] makes logging best-effort and a transient ClickHouse blip is
+        # expected and self-healing via the backoff. What is NOT expected is failures continuing
+        # across the backoff's cap, which means the failure is not transient.
+        expr: |
+          rate(thebullpen_prediction_log_write_failures_total[5m]) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "prediction_log writes have been failing continuously for 15m"
+          description: "The async logger has failed every flush for 15m ({{ $value | printf \"%.2f\" }}/s). Backoff caps well inside this window, so this is not a transient blip. Predictions are still served - the write is off the request path by design - but nothing is being recorded, so the drift and evidence lanes are dark."
+
+      - alert: PredictionLogQueueSaturated
+        # The queue is ArrayBlockingQueue(bullpen.inference.log.queue-capacity, default 20000).
+        # Above 80% the flusher is not keeping up and enqueue() will start dropping - which is the
+        # documented [30] contract, so drops are not themselves a defect. Depth is the LEADING
+        # indicator; alerting here is what makes the drop contract observable BEFORE it engages.
+        expr: |
+          thebullpen_prediction_log_queue_depth > 16000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "prediction_log queue is above 80% of capacity"
+          description: "Depth {{ $value | printf \"%.0f\" }} of 20000 for 10m. The flusher drains in 500-row batches on a 1s cadence; sustained depth this high means writes are slower than arrivals, and enqueue() drops once it fills (decision [30] - best-effort by contract). Drops are silent by design, so this gauge is the warning that precedes them."
+
+  # ── SLO + watchdog (DR work order Part D) ──────────────────────────────────────────────────
+  #
+  # Before this group, ZERO rules referenced serving quality - latency or error rate. Every
+  # rule above detects WHETHER the system is running; these detect whether it is running WELL.
+  # The inference-specific metrics (thebullpen_inference_*) are the sharp signal; the HTTP-level
+  # rule is the broad backstop. Same prefix discipline as prediction-log-writer: these target
+  # thebullpen_* (app) and http_server_* (Boot observation); bullpen_* would match nothing.
+  # Behavioural semantics pinned by rules/tests/slo-alerts.test.yml.
+  - name: slo
+    rules:
+      # Prediction latency SLO. The inference timer (InferenceMetrics.java) declares a 50ms
+      # serviceLevelObjective and publishes a full histogram (.publishPercentileHistogram()),
+      # so histogram_quantile() over the _bucket series gives a fleet-aggregable p99. Alert at
+      # 2x the SLO (100ms) to give operational room before users notice. NaN when there is no
+      # traffic (histogram_quantile over empty rates), so no false fires during quiet periods.
+      - alert: PredictionLatencySLOBreach
+        expr: |
+          histogram_quantile(0.99,
+            sum by (le) (rate(thebullpen_inference_prediction_latency_seconds_bucket[5m]))
+          ) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Prediction p99 latency above 100ms (SLO: 50ms)"
+          description: "The p99 served prediction latency has exceeded 100ms (2x the 50ms SLO) for 5m. At least 1% of served predictions are slow. Check ONNX model load time, GC pauses, or CPU contention on the api profile."
+
+      # Inference error rate. Champion-role only: shadow errors (dropped timeout, model-load
+      # failure) don't affect users and have their own counter (shadow_dropped_total). Fires
+      # when > 5% of champion predictions error, gated on meaningful traffic (> 0.1 RPS, at
+      # least ~6 req/min). Without the traffic gate, a single error in a quiet window with
+      # 1 total request reads as 100% and pages for nothing.
+      - alert: InferenceErrorRateHigh
+        expr: |
+          (
+            sum(rate(thebullpen_inference_prediction_errors_total{role="champion"}[5m]))
+            / sum(rate(thebullpen_inference_prediction_total{role="champion"}[5m]))
+          ) > 0.05
+          and sum(rate(thebullpen_inference_prediction_total{role="champion"}[5m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Champion prediction error rate above 5% for 10m"
+          description: "{{ $value | humanizePercentage }} of champion predictions are failing (> 5% sustained). The error_class label on thebullpen_inference_prediction_errors_total identifies the failure type. Check the model load path and ONNX session health."
+
+      # HTTP-level backstop. The inference error counter covers the ONNX path; this catches
+      # 5xx from the controller layer that the inference metrics never see - an NPE in response
+      # mapping, a Spring security misconfiguration returning 500, a serialization failure.
+      # Same traffic gate. Excludes the worker profile (actuator-only traffic).
+      - alert: ApiServerErrorRate
+        expr: |
+          (
+            sum(rate(http_server_requests_seconds_count{job="thebullpen-api",outcome="SERVER_ERROR"}[5m]))
+            / sum(rate(http_server_requests_seconds_count{job="thebullpen-api"}[5m]))
+          ) > 0.05
+          and sum(rate(http_server_requests_seconds_count{job="thebullpen-api"}[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API 5xx rate above 5% for 5m"
+          description: "{{ $value | humanizePercentage }} of API requests are returning 5xx (> 5% sustained). This catches failures outside the inference path - controller bugs, security misconfig, serialization errors. Check the api journal for stack traces."
+
+      # Dead-man's switch. This alert ALWAYS fires. If it disappears from Alertmanager or
+      # the Discord channel, the alerting pipeline itself is broken: Prometheus stopped
+      # evaluating, Alertmanager stopped routing, or the webhook died. The external monitor
+      # (Healthchecks.io heartbeat) watches for periodic arrival and pages through its own
+      # channel if it stops.
+      - alert: Watchdog
+        expr: vector(1)
+        labels:
+          severity: none
+        annotations:
+          summary: "Alerting pipeline is healthy"
+          description: "This alert fires continuously by design. If it disappears, the Prometheus -> Alertmanager -> Discord pipeline is broken. The Healthchecks.io dead-man check watches for this alert's heartbeat."
+

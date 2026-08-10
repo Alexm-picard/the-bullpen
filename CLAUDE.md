@@ -5,8 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project state
 
 **Implemented and operating** — well past the planning stage. Backend, training, and
-frontend all carry real, tested code (≈180 Java / ≈181 Python / ≈141 TS·TSX files, 129
-commits as of 2026-05-30). The three planning docs under `docs/` remain the authoritative
+frontend all carry real, tested code (run `/status` or `git log` for current file and commit
+counts). The three planning docs under `docs/` remain the authoritative
 source of truth for **design rationale and locked decisions** — _not_ for current build
 status, which lives in `docs/phase-status.json` (read by `/status`):
 
@@ -34,27 +34,38 @@ session and most "obvious" alternatives have already been considered and rejecte
   player lookup + `/players/:id` profile, the `/parks` HR-probability-by-park heatmap, the home
   page's tonight slate, and the Ops dashboard's Model Fleet / latency / retrain queue / ops log
   (live via `/v1/ops/*`, with a fixture fallback when those return empty or the backend is
-  offline - so Ops is live-wired, not "fixtures"). Still pure fixtures from
-  `frontend/src/data/*-fixtures.ts`: the `/parks` factor table, the `/about` methodology page,
-  and the Ops drift-snapshot skeleton (no drift endpoint yet).
-- **Live game poller is enabled ingest-only; user-visible pitch predictions are held by design.**
+  offline - so Ops is live-wired, not "fixtures"). The Ops drift snapshot is ALSO live-wired
+  (`/v1/ops/drift` + a skeleton-overlay: the watched-surface rows render em-dashes until live
+  `drift_metrics` values land; E-4 keyed the watchlist by the real request-DTO feature names and
+  labels [175] induced-drill rows via the V027 tag). Still pure fixtures from
+  `frontend/src/data/*-fixtures.ts`: the `/parks` factor table and the `/about` methodology page.
+- **Live game poller is enabled ingest-only; no user-visible pitch prediction (POST is champion-stage but UI-held).**
   The full producer chain (MLB Stats API client + parser + per-game poll + `pitches_live` writer +
   the `prediction_log` truth-join) is merged, unit-tested, and enabled in prod behind
-  `BULLPEN_INGEST_LIVE_ENABLED` (flipped 2026-06-11, decision [157]). It serves NO user-visible
-  pitch prediction _by design_ ([154]/ADR-0011): promoting a pitch head on a failed primary would be
-  a threshold bypass. The POST head (the strong candidate) has now **PASSED its full-box gate**
-  (decision [164]; Brier 0.104 vs LR baseline 0.149, ECE 0.0013, 710k rows, no guardrails violated),
-  but going user-visible is intentionally **held** - promotion stays human-gated (rule 6) pending the
-  committed real-feed operating-trace evidence artifact (issue #1, `docs/runbooks/live-data-setup.md`)
-  and a box-side parity re-check. The PRE head's only evidence row still reads FAILED on its declared
-  primary.
-- **Coverage is measured everywhere; backend and training now gate, frontend does not.** Backend
-  JaCoCo (in `backend/build.gradle.kts` and `backend.yml`) gates on a regression floor (LINE >= 72%,
-  BRANCH >= 58%, a few points under the 2026-06-15 CI baseline of 77.85% / 65.67%), enforced only
+  `BULLPEN_INGEST_LIVE_ENABLED` (flipped 2026-06-11, decision [157]). The POST head PASSED its
+  full-box gate (Brier 0.104 vs LR baseline 0.149, ECE 0.0013, 710k rows) and was promoted
+  SHADOW->CHAMPION at the registry STAGE level on 2026-06-20 (box-verified: `ops_events` #18;
+  decisions [164] then corrected by [165]). It is still NOT user-visible: `POST /v1/predict/pitch?head=post`
+  WOULD serve post v1 to a direct API caller (in SHADOW routing the champion serves, exactly as
+  `/parks` serves the batted-ball champion). SUPERSEDED AS OF PHASE-1 A5/A6 (PRs #315/#316): the
+  live game page's NextPitchPanel now DOES call `POST /v1/predict/pitch?head=pre`
+  (`frontend/src/api/games.ts` -> `usePitchPrediction`), so the old "absent UI caller" argument no
+  longer holds. What holds the guarantee now is PROMOTION STATE: PRE has no champion, so that call
+  503s by design and the panel renders an explicit "model not yet promoted" state (rule 6,
+  human-gated). PRE's declared primary was re-aimed by [180]/ADR-0014 from a Brier edge to absolute
+  calibration (ECE < 0.02, passing at 0.0036), so "failed primary" no longer describes its gate
+  either. The post head is separately surfaced RETROSPECTIVELY on the same page ([177]): logged
+  champion predictions replayed against realized outcomes, which is a read of `prediction_log`, not
+  a live prediction call.
+- **Coverage is measured everywhere; backend, training, and frontend now gate.** Backend
+  JaCoCo (in `backend/build.gradle.kts` and `backend.yml`) gates on a regression floor (LINE >= 82%,
+  BRANCH >= 70%, re-baselined 2026-07-08 when F2.3 un-skipped the pitch + simulate web tests; a few
+  points under the CI baseline, which was 82.42% / 70.54% on 2026-07-04 and higher after), enforced only
   when the Docker ITs run (`-Dbullpen.it.docker=true`, i.e. CI) so local `./gradlew build` is
-  unaffected. Training coverage (~46%) is gated as a 40% regression floor, with 75% an aspirational
-  warning-only target (`training.yml`). Frontend vitest v8 (`frontend.yml` `npm run test:coverage`)
-  still publishes a line/branch baseline without gating. The README's earlier unbacked "~95%" has
+  unaffected. Training coverage (~57% blended TOTAL) is gated as a 55% regression floor, with 75% an
+  aspirational warning-only target (`training.yml`). Frontend vitest v8 (`frontend.yml`
+  `npm run test:coverage`) gates on a regression floor (lines >= 82%, statements >= 80%,
+  branches >= 62%, functions >= 75%, in `vite.config.ts`). The README's earlier unbacked "~95%" has
   been corrected to the measured figures. Rule still holds: do **not** cite a coverage percentage you
   cannot reproduce from CI.
 
@@ -64,9 +75,12 @@ The Bullpen (`thebullpen.net`) — a self-hosted baseball analytics platform wit
 ML systems wrapper (registry, A/B routing, drift detection, retraining triggers) around three
 calibrated models: a batted-ball champion serving live (a per-park calibrated PHYSICS ESTIMATE,
 honest about its reality gap - decision [163], surfaced as such on `/parks`), plus two pitch-outcome
-heads in shadow pending an honest promotion gate (no pitch champion promoted yet - [154]/ADR-0011). Solo
-developer, ~8–10 months calendar at 12–15h/week. Operated through at least one MLB season for a
-real drift postmortem.
+heads with no user-visible prediction yet (`pitch_outcome_post` is champion-STAGE since 2026-06-20
+but UI-held; `pitch_outcome_pre` stays shadow on a failed primary - [154]/ADR-0011/[165]). Solo
+developer, ~8–10 months calendar at 12–15h/week. Built to operate through at least one MLB
+season for a real drift postmortem (delivered 2026-07-16 as the honestly-labeled synthetic
+induced-drill write-up, `docs/postmortems/2026-07-16_induced-drift-drill.md`, per [175]; a
+confirmed natural in-season event would supersede it per [169]).
 
 It is **not** a SaaS product, not a betting tool, not a research contribution. Framing
 matters — see `design.md` §1.
@@ -82,7 +96,7 @@ matters — see `design.md` §1.
 | Analytical DB | **ClickHouse** (Docker) — pitches, drift metrics, prediction logs                                                                                                                                                  |
 | App state DB  | **SQLite** + Flyway — model registry, A/B config, retraining queue                                                                                                                                                 |
 | Frontend      | **React 19 + TypeScript + Vite**, pure SPA (React 19 in-repo; the "18" floor in early decisions was upgraded). **TanStack Query** for server state, plain React Context for client state. Polling, not WebSockets. |
-| UI            | **Mantine 9 + Tailwind 4**. Editorial-data identity (Inter / JetBrains Mono / Source Serif 4).                                                                                                                     |
+| UI            | **Mantine 9 + Tailwind 4** (Tailwind = `@theme` token layer, not utility classes). Broadcast-graphics identity (Barlow Condensed / Inter / JetBrains Mono, decision [160]).                                        |
 | Hosting       | Self-hosted in WSL2 (Ubuntu 24.04 LTS) on personal desktop. Cloudflare Tunnel for public access. Frontend on Vercel.                                                                                               |
 | Process mgmt  | systemd (bare-metal for app, Docker for stateful services)                                                                                                                                                         |
 | Observability | Prometheus + Grafana + Actuator (internal); Uptime Robot + Healthchecks.io + Discord webhook (external)                                                                                                            |
@@ -116,7 +130,7 @@ approval:
 
 Decisions live in two complementary places:
 
-1. **`docs/decisions.md`** — chronological append-only numbered log. Every locked decision lands here as a one-line entry: `[N] DATE — DECISION — RATIONALE`. Fast, low-ceremony. The `block-retro-decisions` git hook enforces append-only.
+1. **`docs/decisions.md`** — chronological append-only numbered log. Every locked decision lands here as a one-line entry: `[N] DATE — DECISION — RATIONALE`. Fast, low-ceremony. Append-only is reinforced by the `block-retro-decisions` Claude-Code PreToolUse hook, which blocks interior edits to `decisions.md` from within a Claude Code session (a plain `git commit` is not intercepted, so this is also a human rule).
 
 2. **`docs/adr/NNNN-{kebab-case-title}.md`** — full Architecture Decision Records for substantial decisions that need depth. Sections: Context, Decision, Consequences, Alternatives Considered, Revision History. Template at `docs/adr/TEMPLATE.md`. Roughly the top ~15% of decisions warrant an ADR — locked tech choices, architecture splits, anything where future-you needs to remember _why_ not just _what_.
 
@@ -125,7 +139,7 @@ When you lock a substantial decision: write the ADR first, then the `decisions.m
 **Reversals**:
 
 - In `decisions.md`: add a new numbered entry referencing the original (`[N] DATE — Reverse decision [M] (...) — REASON`). Never delete the original.
-- In an ADR: update Status to `Superseded by ADR-NNNN`, add a Revision History entry explaining what changed. The new ADR should reference what it replaces. ADRs _can_ be edited in place via Revision History (the git hook covers `decisions.md`, not `docs/adr/`).
+- In an ADR: update Status to `Superseded by ADR-NNNN`, add a Revision History entry explaining what changed. The new ADR should reference what it replaces. ADRs _can_ be edited in place via Revision History (the `block-retro-decisions` PreToolUse hook covers `decisions.md`, not `docs/adr/`).
 
 When `docs/design.md` or `docs/plan.md` change in response to a decision, update them in the same commit as the `decisions.md` entry (and the ADR, if one).
 
@@ -159,9 +173,17 @@ net.thebullpen.baseball/
 └── config/      # Spring configuration
 ```
 
-Domain models in `domain/` stay pure. JPA entities (if any) live in `data/` and map
-to/from domain types. This hexagonal-lite split lets `inference/` and `simulation/`
-reason about `Pitch` without coupling to SQL.
+Domain models in `domain/` stay pure (records, no JPA annotations), enforced by an ArchUnit
+JDK-only allowlist. Since C2 (PR #323) `domain/` holds 18 types: `GameMatchup` plus the 17
+row/value records the repositories actually return, moved out of `api/dto` and `ingest/` so
+`data/` no longer imports web types (that boundary rule is now STRICT, baseline drained to zero).
+NOTE the shape this took: C2 did NOT introduce boundary mappers - it moved shared types into a
+common core, so several `*Row` records are still returned directly as JSON by controllers. That is
+a shared-kernel choice rather than a mapping-at-the-boundary choice, and it is deliberate (17
+mapper pairs would be ceremony this codebase does not need), but it means SQL row shape and wire
+shape remain coupled for those types. The hexagonal-lite end state - a shared pure core (e.g. a
+`Pitch` record) that `inference/` and `simulation/` reason about without SQL coupling - is the
+intended direction, now substantially closer but not complete.
 
 ## Repository layout (monorepo)
 
@@ -174,7 +196,7 @@ thebullpen/
 │   ├── artifacts/      # Produced ONNX + metadata + Parquet snapshots
 │   ├── eval/           # Rolling-origin CV harness, results
 │   └── tests/leakage/  # Four CI-required leakage tests
-├── frontend/           # React 18 + TypeScript + Vite + Mantine + Tailwind
+├── frontend/           # React 19 + TypeScript + Vite + Mantine + Tailwind
 ├── contracts/          # Canonical Python↔Java file contracts (feature_pipeline.json
 │                       # schema, ONNX format notes, JSON metadata schema). Both
 │                       # /backend and /training depend on this directory.
@@ -191,13 +213,13 @@ Most commands assume the working directory is the project root unless noted.
 
 ### Backend (Java)
 
-- Build: `./gradlew -p backend build`
-- Test: `./gradlew -p backend test`
-- Format: `./gradlew -p backend spotlessApply`
-- Static analysis: `./gradlew -p backend spotbugsMain errorproneMain`
-- Run API profile: `./gradlew -p backend bootRun --args='--spring.profiles.active=api'`
-- Run worker profile: `./gradlew -p backend bootRun --args='--spring.profiles.active=worker'`
-- Migrate SQLite registry: `./gradlew -p backend flywayMigrate`
+- Build: `cd backend && ./gradlew build`
+- Test: `cd backend && ./gradlew test`
+- Format: `cd backend && ./gradlew spotlessApply`
+- Static analysis: `cd backend && ./gradlew spotbugsMain errorproneMain`
+- Run API profile: `cd backend && ./gradlew bootRun --args='--spring.profiles.active=api'`
+- Run worker profile: `cd backend && ./gradlew bootRun --args='--spring.profiles.active=worker'`
+- Migrate SQLite registry: `cd backend && ./gradlew flywayMigrate`
 
 ### Training (Python)
 
@@ -213,7 +235,7 @@ Most commands assume the working directory is the project root unless noted.
 
 - Install: `cd frontend && npm install`
 - Dev server: `cd frontend && npm run dev`
-- Type check: `cd frontend && npx tsc --noEmit`
+- Type check: `cd frontend && npx tsc -b` (`tsc --noEmit` is a silent no-op with this project's references config)
 - Lint: `cd frontend && npm run lint`
 - Unit tests: `cd frontend && npm test`
 - E2E (Playwright): `cd frontend && npx playwright test`
@@ -280,9 +302,9 @@ HTTP client).
 
 ## Hard "never" rules (additional to the discipline rules above)
 
-- **Never touch live ClickHouse without a backup snapshot first.** The `block-destructive-ch` hook enforces this on `DROP`/`TRUNCATE`/`ALTER`, but the rule applies to manual operations too. Recovery from a destructive op without a snapshot is unrecoverable.
+- **Never touch live ClickHouse without a backup snapshot first.** The `block-destructive-ch` Claude-Code PreToolUse hook blocks `DROP`/`TRUNCATE`/`ALTER` issued from within a Claude Code session, but it does NOT intercept a plain `clickhouse-client` / manual op, so this is primarily a human rule. Recovery from a destructive op without a snapshot is unrecoverable.
 - **Never commit a trained model artifact** — only metadata. Models live outside git (local-only or S3-compatible storage). The registry stores the path, not the bytes. `.gitignore` covers `training/artifacts/**/*.onnx`, `*.pt`, `*.parquet`.
-- **Never modify `docs/decisions.md` retroactively.** Append-only. The `block-retro-decisions` git hook blocks interior edits and line removals.
+- **Never modify `docs/decisions.md` retroactively.** Append-only. The `block-retro-decisions` Claude-Code PreToolUse hook blocks interior edits and line removals from within a Claude Code session (a plain `git commit` is not intercepted).
 - **Never use `random_state` on data splits.** Splits must be temporal (rolling-origin). The `ml-leakage-auditor` agent reinforces this; never override.
 
 ## Glossary (project-specific terminology)
@@ -298,6 +320,7 @@ HTTP client).
 - **Drift metrics** — population stability index (PSI) and calibration drift (ECE delta vs training baseline) computed per feature and per model output, written to ClickHouse on a worker-profile schedule.
 - **Retraining queue** — a SQLite table consumed by the worker profile. Triggers are automated (drift, schedule) but downstream promotion remains human-gated (rule 6).
 - **Experiment results row** — a SQLite row capturing the outcome of a rolling-CV evaluation, referenced by `promote-model` as the evidence gate.
+- **Tier-4 `_in` columns store FEET** - `pfx_x_in`/`pfx_z_in`/`release_pos_*_in` (and their camelCase request twins) are straight pass-throughs of Statcast's feet values; the `_in` suffix is a historical misnomer, consistent end-to-end (training, baseline, live derivation, serving). Never "fix" with a x12 - see `docs/postmortems/2026-07-16_first-organic-psi-triage.md`.
 
 ## Working with the user
 

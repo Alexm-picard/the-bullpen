@@ -1,8 +1,16 @@
 package net.thebullpen.baseball.ingest;
 
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import net.thebullpen.baseball.data.PitcherFormRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -13,38 +21,117 @@ import org.springframework.stereotype.Component;
  * null form features (documented skew, V007 / decision [143]).
  *
  * <p>Runs at 02:40 ET - after the feature/drift jobs (02:00-02:10) and before the 03:00 snapshot,
- * in the off-peak window outside any live game. Form lag is at most one day, which V007 accepts for
- * v1; within-game freshness is the intra-day-upsert follow-up.
+ * in the off-peak window outside any live game. FORM LAG IS NOT BOUNDED BY THE SCHEDULE: it equals
+ * today minus the corpus edge (max usable game_date in pitches), which grows without limit between
+ * manual backfills - the 2026-07-27 finding was that it had silently reached 63 days while this
+ * comment claimed "at most one day". The age gauge below is the exposure; the acceptable bound
+ * belongs to the open /decide.
  *
  * <p>Worker-profile. Failures are logged, not thrown: a missed refresh degrades to yesterday's form
  * (or NaN), it must not crash the worker.
  */
 @Component
 @Profile("worker")
+@ConditionalOnProperty(name = "bullpen.clickhouse.enabled", havingValue = "true")
 public class PitcherFormRefreshJob {
 
   private static final Logger log = LoggerFactory.getLogger(PitcherFormRefreshJob.class);
+  private static final ZoneId ET = ZoneId.of("America/New_York");
 
   private final PitcherFormRepository repo;
 
-  public PitcherFormRefreshJob(PitcherFormRepository repo) {
+  /** Days between today and max(game_date) in pitches; -1 until the first run this process sees. */
+  private final AtomicLong ageDays = new AtomicLong(-1);
+
+  /** Epoch seconds of the last SUCCESSFUL refresh in this process; 0 before the first one. */
+  private final AtomicLong lastRefreshEpochSeconds = new AtomicLong(0);
+
+  public PitcherFormRefreshJob(PitcherFormRepository repo, MeterRegistry meters) {
     this.repo = repo;
+    // THE HALF THAT WOULD HAVE MADE THIS VISIBLE IN JUNE. The 2026-07-27 finding: this job's
+    // windows read `pitches`, a manually-backfilled corpus (last backfill ran 2026-05-28, loading
+    // games through 2026-05-25), and for two months the nightly refresh selected nothing while
+    // its clock-anchored stamp said "fresh". An honest as_of_date alone is a truthful column
+    // nobody reads - this gauge is the alerting PRECONDITION, not yet an alert: no rule exists
+    // for either age gauge, and the threshold ("how far is too far") belongs to the open /decide.
+    // When the rule lands it MUST be `< 0 or > N`, because -1 means never-ran-this-process and
+    // passes a bare `> N` silently. Mirrors bullpen_pitchtype_prior_age_days (V030), whose
+    // data-anchored refusal is what surfaced the problem. Expressed in DAYS BEHIND so the
+    // threshold reads in the units the staleness is felt in.
+    Gauge.builder("bullpen_pitcher_form_age_days", ageDays, AtomicLong::doubleValue)
+        .description(
+            "Days between today and the newest usable game_date across pitches UNION"
+                + " pitches_live - the [186] source the Tier-3 28-day form windows read. Steady"
+                + " state is ~1 (the live leg keeps the union at yesterday); a climb means the"
+                + " live poller stopped AND the corpus is stale, and past ~14 (the pitches_live"
+                + " TTL) unbackfilled history is falling out of the window entirely. -1 before"
+                + " the first refresh this process ran, so any alert rule must be `< 0 or > N`"
+                + " (a bare `> N` reads -1 as fresher than fresh). Set only on a successful run:"
+                + " a DEAD job pins it at its last value, so it cannot distinguish source-stale"
+                + " from job-dead - bullpen_pitcher_form_last_refresh_timestamp_seconds below"
+                + " covers that half.")
+        .register(meters);
+    // THE OTHER HALF, promised by the description above. The age gauge freezes at its last value
+    // when the job dies (it is set only on success), so a dead job reads as eternally fresh -
+    // the same silent-degradation shape the age gauge exists to expose, one level up. This is
+    // the bullpen_ingest_last_poll idiom: an epoch-seconds stamp Prometheus can subtract from
+    // time(). 0 before the first success in this process, so the alert rule must gate on
+    // process age (see infra/prometheus/rules/bullpen-alerts.yml) or a restart pages instantly.
+    Gauge.builder(
+            "bullpen_pitcher_form_last_refresh_timestamp_seconds",
+            lastRefreshEpochSeconds,
+            AtomicLong::doubleValue)
+        .description(
+            "Epoch seconds of the last successful pitcher_form_current refresh IN THIS PROCESS;"
+                + " 0 until the first success after boot. Alert on time() - this > 26h, gated on"
+                + " process_start_time_seconds so a freshly restarted worker is not stale by"
+                + " definition. Distinguishes job-dead (this climbs stale) from corpus-stale"
+                + " (this is fresh while the age gauge climbs).")
+        .register(meters);
   }
 
   @Scheduled(cron = "0 40 2 * * *", zone = "America/New_York")
   public void run() {
+    long n;
     try {
-      long n = runOnce();
-      log.info("PitcherFormRefreshJob: refreshed current form for {} pitcher(s)", n);
+      n = repo.refreshCurrentForm();
     } catch (RuntimeException e) {
       log.error("PitcherFormRefreshJob: refresh failed", e);
+      return;
     }
+    lastRefreshEpochSeconds.set(Instant.now().getEpochSecond());
+    try {
+      updateAgeGauge();
+    } catch (RuntimeException e) {
+      // Named separately so a gauge failure is never logged as "refresh failed" - the refresh
+      // itself succeeded, and this PR is about log lines telling the truth.
+      log.error("PitcherFormRefreshJob: corpus-age gauge update failed (refresh succeeded)", e);
+    }
+    log.info(
+        "PitcherFormRefreshJob: {} pitcher(s) have a row at the corpus anchor; corpus is {} day(s)"
+            + " behind today",
+        n,
+        ageDays.get());
   }
 
   /**
-   * Visible-for-tests entry point. Returns the number of pitchers whose current form was refreshed.
+   * Visible-for-tests entry point. Returns the count of pitchers with a row AT the data anchor.
+   *
+   * <p>NOT a write count, and not always zero when the refresh writes nothing: once the corpus ages
+   * past the 28-day window, earlier nights' rows still sit at the same anchor and keep the count at
+   * cohort size (COUNT_AT_ANCHOR documents this). What the anchor-based count fixes is narrower and
+   * real: a live-leg stray stamped with a CURRENT date can no longer be reported as a refreshed
+   * pitcher, which is exactly the "refreshed 7" lie from the morning of the finding. The gauge, not
+   * this count, is the staleness signal.
    */
   public long runOnce() {
-    return repo.refreshCurrentForm();
+    long n = repo.refreshCurrentForm();
+    lastRefreshEpochSeconds.set(Instant.now().getEpochSecond());
+    updateAgeGauge();
+    return n;
+  }
+
+  private void updateAgeGauge() {
+    ageDays.set(ChronoUnit.DAYS.between(repo.windowSourceMaxGameDate(), LocalDate.now(ET)));
   }
 }

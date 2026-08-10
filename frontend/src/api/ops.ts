@@ -9,7 +9,7 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 
 import type { OpsLogEntry, OpsLogType } from "../data/ops-fixtures";
 
-import { API_BASE } from "./base";
+import { ApiError, apiGet } from "./base";
 
 export type ModelVersion = {
   id: number;
@@ -40,6 +40,12 @@ export type DriftMetric = {
   sampleSize: number;
   windowStart: string;
   windowEnd: string;
+  /**
+   * V027 drill tag (E-4): non-empty marks a [175] induced-drill evidence row
+   * (e.g. "induced-drill-2026-07"); "" = organic. The dashboard labels tagged
+   * rows instead of rendering a synthetic PSI spike as organic drift.
+   */
+  tag: string;
 };
 
 export type RoutingConfig = {
@@ -66,21 +72,10 @@ export type RetrainingTrigger = {
   errorMessage: string | null;
 };
 
-export class OpsApiError extends Error {
-  readonly status: number;
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
+export class OpsApiError extends ApiError {}
 
-async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`);
-  if (!res.ok) {
-    throw new OpsApiError(res.status, `${path} failed: HTTP ${res.status}`);
-  }
-  return (await res.json()) as T;
-}
+const get = <T>(path: string): Promise<T> =>
+  apiGet<T>(path, (s, m) => new OpsApiError(s, m));
 
 // --- 4e.1 ----------------------------------------------------------------
 
@@ -241,13 +236,21 @@ export type OpsEvent = {
   detail: string;
 };
 
-export const fetchOpsEvents = (limit = 20) =>
-  get<OpsEvent[]>(`/v1/ops/events?limit=${limit}`);
+/** A page of {@link OpsEvent} from `GET /v1/ops/events` (offset pagination, newest first). */
+export type OpsEventsPage = {
+  rows: OpsEvent[];
+  page: number;
+  size: number;
+  hasNext: boolean;
+};
 
-export function useOpsEvents(limit = 20) {
-  return useQuery<OpsEvent[], OpsApiError>({
-    queryKey: ["ops", "events", limit],
-    queryFn: () => fetchOpsEvents(limit),
+export const fetchOpsEvents = (page = 0, size = 20) =>
+  get<OpsEventsPage>(`/v1/ops/events?page=${page}&size=${size}`);
+
+export function useOpsEvents(page = 0, size = 20) {
+  return useQuery<OpsEventsPage, OpsApiError>({
+    queryKey: ["ops", "events", page, size],
+    queryFn: () => fetchOpsEvents(page, size),
     staleTime: 30_000,
     refetchInterval: 30_000,
   });

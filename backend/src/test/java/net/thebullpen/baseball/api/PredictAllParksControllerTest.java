@@ -75,13 +75,23 @@ class PredictAllParksControllerTest {
   @Autowired private RegistryService service;
   @Autowired private JdbcTemplate jdbc;
   @Autowired private ObjectMapper mapper;
+  @Autowired private org.springframework.cache.CacheManager cacheManager;
 
   @TempDir Path artifactDir;
 
   @BeforeEach
   void resetRegistry() {
     jdbc.update("DELETE FROM experiment_results");
+    // model_routing + its @Cacheable routing cache: promoting a champion writes a routing row, and
+    // a raw DELETE bypasses RoutingService's @CacheEvict - without clearing both, the no-champion
+    // 503 test would route to a now-deleted champion (latently method-order-dependent). Aligns with
+    // PredictBattedBallControllerTest.
+    jdbc.update("DELETE FROM model_routing");
     jdbc.update("DELETE FROM model_versions");
+    var routing = cacheManager.getCache("routing");
+    if (routing != null) {
+      routing.clear();
+    }
   }
 
   @Test
@@ -96,6 +106,10 @@ class PredictAllParksControllerTest {
         .andExpect(jsonPath("$.modelVersion").value("v1"))
         .andExpect(jsonPath("$.probHrByPark.length()").value(equalTo(N_PARKS)))
         .andExpect(jsonPath("$.probHrByPark.PARK00").isNumber())
+        // The fixture champion is probabilities-only (one ONNX output, no carry_target), so the
+        // carry map is null and JsonInclude.NON_NULL omits it - the response shape is unchanged
+        // for a carry-less champion (Phase 4 PR-4).
+        .andExpect(jsonPath("$.carryFtByPark").doesNotExist())
         .andExpect(jsonPath("$.latencyMicros").isNumber());
   }
 

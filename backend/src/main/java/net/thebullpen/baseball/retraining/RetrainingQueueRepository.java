@@ -11,6 +11,8 @@ import java.util.Optional;
 import net.thebullpen.baseball.retraining.dto.QueueStatus;
 import net.thebullpen.baseball.retraining.dto.RetrainingTrigger;
 import net.thebullpen.baseball.retraining.dto.TriggerType;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -23,10 +25,16 @@ import org.springframework.stereotype.Repository;
  * #claimNextQueued}: atomic "select the oldest queued row, flip it to running, return only if we
  * won." Backs {@link RetrainingQueueService}'s concurrent-safe claim semantics. The atomic
  * UPDATE-with-WHERE pattern serves where Postgres would use {@code SELECT ... FOR UPDATE SKIP
- * LOCKED}; SQLite's single-writer guarantee makes the race-free property fall out for free.
+ * LOCKED}; SQLite's single-writer guarantee makes the winner unique. When TWO worker instances race
+ * the claim (two connection pools on the one file), the loser either sees {@code updated==0} or
+ * gets an immediate {@code SQLITE_BUSY} on the write-lock upgrade - {@link #claimNextQueued} maps
+ * both to "lost the race, return empty" so a duplicated worker is safe (proven by {@code
+ * WorkerPairTwoInstanceIT}).
  */
 @Repository
 public class RetrainingQueueRepository {
+
+  private static final Logger log = LoggerFactory.getLogger(RetrainingQueueRepository.class);
 
   private static final String SELECT_ALL =
       "SELECT id, trigger_id, model_name, trigger_type, trigger_metadata, status,"
@@ -97,16 +105,53 @@ public class RetrainingQueueRepository {
       return Optional.empty();
     }
     long id = candidate.get().id();
-    int updated =
-        jdbc.update(
-            "UPDATE retraining_queue SET status = 'running', started_at = CURRENT_TIMESTAMP"
-                + " WHERE id = ? AND status = 'queued'",
+    int updated;
+    try {
+      updated =
+          jdbc.update(
+              "UPDATE retraining_queue SET status = 'running', started_at = CURRENT_TIMESTAMP"
+                  + " WHERE id = ? AND status = 'queued'",
+              id);
+    } catch (org.springframework.dao.DataAccessException e) {
+      if (isSqliteBusy(e)) {
+        // Two worker instances (two connection pools on the one SQLite file) can SELECT the same
+        // queued row and then race the UPDATE. The loser cannot get the write lock, and SQLite
+        // breaks the potential deadlock with an immediate SQLITE_BUSY that busy_timeout does not
+        // rescue. Treat that exactly like the updated==0 outcome below - we lost the race, the
+        // other instance is claiming this row, so return empty and let the scheduled consumer
+        // retry next tick. Any non-BUSY SQL fault still fails loud (rethrown).
+        log.warn(
+            "retraining: SQLITE_BUSY on claim for id={} - lost a lock race, queue may NOT be"
+                + " empty; next scheduled tick will retry",
             id);
+        return Optional.empty();
+      }
+      throw e;
+    }
     if (updated == 0) {
-      // Another worker beat us. Caller can retry; for simplicity we return empty here.
+      // Another worker beat us (its UPDATE flipped the row to running first). Caller can retry; for
+      // simplicity we return empty here.
       return Optional.empty();
     }
     return findById(id);
+  }
+
+  /**
+   * True if a {@link org.springframework.dao.DataAccessException} wraps a SQLite {@code
+   * SQLITE_BUSY} (primary result code 5) - the "database is locked" signal a second worker instance
+   * produces when it loses the claim-UPDATE write-lock race. Deliberately narrow: only BUSY is
+   * swallowed as a lost race in {@link #claimNextQueued}; every other SQL fault propagates.
+   */
+  private static boolean isSqliteBusy(org.springframework.dao.DataAccessException e) {
+    // getMostSpecificCause() never returns null - it returns the throwable itself when there is no
+    // deeper cause.
+    Throwable root = e.getMostSpecificCause();
+    if (root instanceof java.sql.SQLException sql && sql.getErrorCode() == 5) {
+      return true; // SQLITE_BUSY primary result code
+    }
+    // Message fallback catches the extended busy codes (517 / 773 / 261) whose getErrorCode() != 5.
+    String msg = root.getMessage();
+    return msg != null && msg.contains("SQLITE_BUSY");
   }
 
   /**

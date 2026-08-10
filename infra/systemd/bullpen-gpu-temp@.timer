@@ -1,0 +1,14 @@
+[Unit]
+Description=The Bullpen — 30s GPU thermal sample for %i
+
+[Timer]
+# 30s cadence: fast enough that GpuTempCritical's 1m `for` window sees two fresh samples,
+# cheap enough to be free. Template timer, operator username as the instance (%i), same
+# convention as the snapshot/offsite pairs.
+OnBootSec=30s
+OnUnitActiveSec=30s
+AccuracySec=5s
+Unit=bullpen-gpu-temp@%i.service
+
+[Install]
+WantedBy=timers.target

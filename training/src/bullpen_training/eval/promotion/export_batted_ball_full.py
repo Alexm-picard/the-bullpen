@@ -88,17 +88,29 @@ _RAW_COLS: tuple[str, ...] = (
     "prob_2b",
     "prob_3b",
     "prob_hr",
+    "carry_ft",
 )
 
 
-def build_year_query(year: int) -> str:
+def build_year_query(year: int, *, allow_holdout_eval: bool = False) -> str:
     """Per-year, all-parks pull. Mirrors ``mlp_per_park.dataset._query_park_bips`` (same in-play
     filter, same non-null gates, same home-park join), but selects every park's BIPs for one season
-    plus the realized ``observed_outcome`` the CV scores against."""
-    if year >= HOLDOUT_YEAR:
+    plus the realized ``observed_outcome`` the CV scores against.
+
+    ``allow_holdout_eval`` is the rule-13 carve-out: the 2026 holdout may be QUERIED only for a
+    post-training accuracy READ (the backfill-accuracy job sets it). The ``export_batted_ball_full``
+    producer and every training/validation caller leave it False, so they keep the hard refusal -
+    2026 never enters a training or validation split."""
+    if year >= HOLDOUT_YEAR and not allow_holdout_eval:
         raise ValueError(
             f"rule 13: refusing to export season {year} (>= {HOLDOUT_YEAR} is holdout)"
         )
+    # join_algorithm='partial_merge': the pitches-FINAL x bbip_retrodicted_labels-FINAL default hash
+    # join OOMs (ClickHouse exit 241, MEMORY_LIMIT_EXCEEDED) under the production box's 4 GiB
+    # container cap; partial_merge sort-merges and spills to disk, running the same join in seconds
+    # with a bounded footprint (proven on the box). It changes only HOW the join executes, never
+    # WHICH rows it returns, so every caller (backfill, backfill-accuracy, rolling-CV, carry-promo,
+    # full export) gets the identical result set - just memory-safe under the cap.
     return f"""
     SELECT
       toString(p.launch_speed_mph) AS launch_speed_mph,
@@ -115,7 +127,8 @@ def build_year_query(year: int) -> str:
       toString(r.prob_1b)          AS prob_1b,
       toString(r.prob_2b)          AS prob_2b,
       toString(r.prob_3b)          AS prob_3b,
-      toString(r.prob_hr)          AS prob_hr
+      toString(r.prob_hr)          AS prob_hr,
+      toString(r.carry_ft)         AS carry_ft
     FROM pitches AS p FINAL
     JOIN bbip_retrodicted_labels AS r FINAL
       ON r.game_id = p.game_id
@@ -130,6 +143,7 @@ def build_year_query(year: int) -> str:
       AND r.observed_outcome IS NOT NULL
       AND toYear(p.game_date) = {year}
     ORDER BY p.game_date, p.game_id, p.at_bat_index, p.pitch_number
+    SETTINGS join_algorithm = 'partial_merge'
     FORMAT TSV
     """
 
@@ -180,8 +194,14 @@ def rows_to_frame(tsv: str) -> pd.DataFrame:
     base_state = raw["base_state"].to_numpy(dtype="int64")
     for b in range(8):
         out[f"base_state_{b}"] = (base_state == b).astype("float32")
-    # Column order = FEATURE_NAMES features, label, park, then retro (matches the generator).
-    return cast(pd.DataFrame, out[[*BATTED_BALL_FEATURES, "label", "park", *RETRO_COLS]])
+    # Phase 4: the home-park mean carry (ft), an eval/reference column (NOT the per-park training
+    # target - that comes from the 30-park query in mlp/dataset). NULL ("\N") on unbackfilled rows
+    # coerces to NaN; consumers gate on notna().
+    out["carry_ft"] = np.asarray(pd.to_numeric(raw["carry_ft"], errors="coerce"), dtype="float32")
+    # Column order: FEATURE_NAMES, label, park, carry_ft, retro (matches the generator).
+    return cast(
+        pd.DataFrame, out[[*BATTED_BALL_FEATURES, "label", "park", "carry_ft", *RETRO_COLS]]
+    )
 
 
 def _empty_frame() -> pd.DataFrame:
@@ -189,10 +209,12 @@ def _empty_frame() -> pd.DataFrame:
     cols["outs"] = pd.Series([], dtype="int16")
     cols["label"] = pd.Series([], dtype="int64")
     cols["park"] = pd.Series([], dtype="string")
+    cols["carry_ft"] = pd.Series([], dtype="float32")
     for c in RETRO_COLS:
         cols[c] = pd.Series([], dtype="float32")
     return cast(
-        pd.DataFrame, pd.DataFrame(cols)[[*BATTED_BALL_FEATURES, "label", "park", *RETRO_COLS]]
+        pd.DataFrame,
+        pd.DataFrame(cols)[[*BATTED_BALL_FEATURES, "label", "park", "carry_ft", *RETRO_COLS]],
     )
 
 

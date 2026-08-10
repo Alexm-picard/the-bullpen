@@ -126,7 +126,7 @@ Uptime Robot and Healthchecks.io are picked because they're free at our usage le
 
 ## Alert templates (Discord)
 
-Three severities. Templates stored in `ops/runbooks/alert-templates.md`. Format:
+Three severities. Templates stored in `docs/runbooks/alert-templates.md`. Format:
 
 **Page** (red):
 
@@ -169,7 +169,7 @@ Runbook: <link>
 
 ## Runbooks
 
-Every alert template links to a runbook in `ops/runbooks/`. Required runbooks:
+Every alert template links to a runbook in `docs/runbooks/`. Required runbooks:
 
 - `restore-drill.md`
 - `reboot-drill.md`

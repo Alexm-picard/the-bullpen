@@ -1,7 +1,7 @@
 # Postmortems
 
 Drift incident postmortems live here. The reusable template is in
-[`ops/runbooks/drift-postmortem-template.md`](../../ops/runbooks/drift-postmortem-template.md);
+[`docs/runbooks/drift-postmortem-template.md`](../runbooks/drift-postmortem-template.md);
 copy it to `YYYY-MM-DD-<slug>.md` when the first drift alert fires.
 
 ## Process
@@ -14,7 +14,7 @@ copy it to `YYYY-MM-DD-<slug>.md` when the first drift alert fires.
    [`docs/decisions.md`](../decisions.md). Architecturally substantive
    → raise an ADR under [`docs/adr/`](../adr/).
 5. Operator update worth carrying forward → update the relevant
-   runbook in [`ops/runbooks/`](../../ops/runbooks/).
+   runbook in [`docs/runbooks/`](../runbooks/).
 
 ## Drill events
 

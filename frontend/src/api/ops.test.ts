@@ -107,15 +107,15 @@ describe("ops API client", () => {
     );
   });
 
-  it("fetchOpsEvents passes the limit param", async () => {
+  it("fetchOpsEvents passes the page + size params", async () => {
     (fetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       ok: true,
       status: 200,
-      json: async () => [],
+      json: async () => ({ rows: [], page: 1, size: 5, hasNext: false }),
     });
-    await fetchOpsEvents(5);
+    await fetchOpsEvents(1, 5);
     expect(fetch).toHaveBeenCalledWith(
-      expect.stringContaining("/v1/ops/events?limit=5"),
+      expect.stringContaining("/v1/ops/events?page=1&size=5"),
     );
   });
 

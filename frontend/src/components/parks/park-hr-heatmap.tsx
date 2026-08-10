@@ -1,8 +1,8 @@
 /**
  * <ParkHrHeatmap> - the 30-park home-run-probability heatmap (B1), the live face
  * of the parks page. Renders one row per park, sorted by P(HR) descending, with a
- * viridis-intensity bar (normalised across the 30 parks for THIS launch condition)
- * and the probability printed alongside.
+ * viridis-intensity bar keyed to the ABSOLUTE P(HR) (not normalised across the 30
+ * parks) and the probability printed alongside.
  *
  * Presentational only: the page owns the launch-condition inputs + the
  * useAllParksPrediction query and hands the resolved map down. Color is never the
@@ -17,14 +17,32 @@ import { viridis } from "./_viridis";
 export type ParkHrHeatmapProps = {
   /** Park id (3-letter abbrev) -> model P(HR) in [0, 1] for the chosen launch condition. */
   probHrByPark: Record<string, number>;
+  /**
+   * Phase 4 (optional): park id -> the model's predicted carry distance in feet. Present only when
+   * the serving champion has a carry head; when undefined the carry column is hidden and the layout
+   * is exactly as before (the current probabilities-only champion).
+   */
+  carryFtByPark?: Record<string, number>;
   /** Park metadata for the human-readable name; falls back to the id when absent. */
   parkRows: ParkRow[];
 };
 
-export function ParkHrHeatmap({ probHrByPark, parkRows }: ParkHrHeatmapProps) {
+export function ParkHrHeatmap({
+  probHrByPark,
+  carryFtByPark,
+  parkRows,
+}: ParkHrHeatmapProps) {
   const nameById = new Map(parkRows.map((p) => [p.id, p.parkName]));
+  const hasCarry = carryFtByPark != null;
+  // Carry column added only when the champion serves carry; otherwise the grid is unchanged.
+  const gridCols = hasCarry ? "28px 52px 1fr 64px 72px" : "28px 52px 1fr 64px";
   const entries = Object.entries(probHrByPark)
-    .map(([id, p]) => ({ id, p, name: nameById.get(id) ?? id }))
+    .map(([id, p]) => ({
+      id,
+      p,
+      name: nameById.get(id) ?? id,
+      carry: carryFtByPark?.[id],
+    }))
     .sort((a, b) => b.p - a.p);
 
   if (entries.length === 0) {
@@ -35,18 +53,16 @@ export function ParkHrHeatmap({ probHrByPark, parkRows }: ParkHrHeatmapProps) {
     );
   }
 
-  // Normalise the viridis intensity + bar width across the spread of THIS response,
-  // so the most and least HR-prone parks anchor the ramp regardless of the absolute
-  // level (a 110/28 scorcher and a 95/12 grounder both read clearly).
-  const probs = entries.map((e) => e.p);
-  const max = Math.max(...probs);
-  const min = Math.min(...probs);
-  const span = max - min || 1;
+  // Bar width + viridis intensity key to the ABSOLUTE P(HR), not the spread across the 30 parks.
+  // Relative normalisation made a ~1-point spread (50.0% vs 51.1%) read as empty-vs-full, which
+  // overstated tiny park differences (and the per-park signal is genuinely weak - decision [163]).
+  // Absolute scaling makes a flat distribution read as flat: each row's bar/color reflects its own
+  // probability, matching the absolute % printed alongside.
 
   return (
     <div role="table" aria-label="Home-run probability by park">
       {entries.map((e, i) => {
-        const norm = (e.p - min) / span; // 0..1 across the 30 parks
+        const norm = Math.min(Math.max(e.p, 0), 1); // absolute P(HR), clamped to 0..1
         return (
           <div
             key={e.id}
@@ -54,7 +70,7 @@ export function ParkHrHeatmap({ probHrByPark, parkRows }: ParkHrHeatmapProps) {
             id={`park-hr-row-${e.id}`}
             style={{
               display: "grid",
-              gridTemplateColumns: "28px 52px 1fr 64px",
+              gridTemplateColumns: gridCols,
               alignItems: "center",
               gap: 10,
               padding: "5px 8px",
@@ -96,7 +112,7 @@ export function ParkHrHeatmap({ probHrByPark, parkRows }: ParkHrHeatmapProps) {
                 aria-hidden="true"
                 style={{
                   height: 12,
-                  width: `${20 + norm * 80}%`,
+                  width: `${Math.max(3, norm * 100).toFixed(1)}%`,
                   backgroundColor: viridis(norm),
                   flexShrink: 0,
                   borderRadius: 1,
@@ -127,6 +143,20 @@ export function ParkHrHeatmap({ probHrByPark, parkRows }: ParkHrHeatmapProps) {
             >
               {(e.p * 100).toFixed(1)}%
             </span>
+            {hasCarry && (
+              <span
+                style={{
+                  fontFamily: typography.fonts.mono,
+                  fontFeatureSettings: '"tnum" 1',
+                  fontSize: 12,
+                  color: colors.textMuted,
+                  textAlign: "right",
+                }}
+                title="Model-predicted carry distance at this park"
+              >
+                {e.carry != null ? `${Math.round(e.carry)} ft` : "-"}
+              </span>
+            )}
           </div>
         );
       })}

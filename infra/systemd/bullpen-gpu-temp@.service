@@ -1,0 +1,8 @@
+[Unit]
+Description=The Bullpen — GPU thermal textfile collector for %i (feeds GpuTempHigh/Critical)
+
+[Service]
+Type=oneshot
+# Root: writes the node_exporter textfile dir (same posture as the snapshot units).
+ExecStart=/home/%i/code/the-bullpen/infra/metrics/gpu-temp-textfile.sh
+Nice=15

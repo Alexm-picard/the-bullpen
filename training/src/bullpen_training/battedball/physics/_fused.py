@@ -271,10 +271,15 @@ def _build_core(jit):  # - jit is a numba decorator factory
             vz = vz_n
 
         # --- classify (port of parks._classify.classify_outcome) -------------
+        # Returns (outcome_code, carry_ft). carry_ft is the XY ground landing distance (ft);
+        # it is 0.0 when the trajectory never landed (landed == 0), so the per-(BIP,park)
+        # reduction in labels.py means over draws with carry > 0 (i.e. that landed). A foul
+        # landing still carries a real distance; it is rare jitter on an already-fair BIP, so
+        # it is included rather than special-cased.
         if landed == 0:
-            return OUT_CODE
+            return OUT_CODE, landing_dist_ft
         if math.fabs(spray_deg) > _FOUL_DEG:
-            return OUT_CODE
+            return OUT_CODE, landing_dist_ft
 
         fence_dist_ft = interp_fence(fence_dist, fence_angle, fence_n, p, spray_deg)
         fence_h_ft = interp_fence(fence_height, fence_angle, fence_n, p, spray_deg)
@@ -284,23 +289,23 @@ def _build_core(jit):  # - jit is a numba decorator factory
                 and z_at_fence > fence_h_ft + _HR_MIN_HEIGHT
                 and landing_dist_ft >= fence_dist_ft + _HR_MIN_DIST
             ):
-                return HR_CODE
+                return HR_CODE, landing_dist_ft
             if has_zfence == 1 and z_at_fence > fence_h_ft:
                 if hang_time >= _WALL_HANG:
-                    return OUT_CODE
-                return DOUBLE_CODE
+                    return OUT_CODE, landing_dist_ft
+                return DOUBLE_CODE, landing_dist_ft
 
         # In-park heuristic. With the default sprint speed (27.0) the triple
         # gate (>=28.0) never fires in retrodiction — kept for fidelity.
         if landing_dist_ft >= 380.0 and hang_time < 5.0 and _SPRINT_SPEED >= 28.0:
-            return TRIPLE_CODE
+            return TRIPLE_CODE, landing_dist_ft
         if hang_time >= 4.0 and landing_dist_ft >= 250.0:
-            return OUT_CODE
+            return OUT_CODE, landing_dist_ft
         if landing_dist_ft >= 320.0:
-            return DOUBLE_CODE
+            return DOUBLE_CODE, landing_dist_ft
         if landing_dist_ft >= 150.0:
-            return SINGLE_CODE
-        return OUT_CODE
+            return SINGLE_CODE, landing_dist_ft
+        return OUT_CODE, landing_dist_ft
 
     return core
 
@@ -322,10 +327,11 @@ def _batch_cpu(
     fence_n,
     cd_scale,
     out,
+    out_carry,
 ):
     n = out.shape[0]
     for i in prange(n):
-        out[i] = _core_cpu(
+        code, carry = _core_cpu(
             traj_in,
             i,
             park_idx,
@@ -337,6 +343,8 @@ def _batch_cpu(
             fence_n,
             cd_scale,
         )
+        out[i] = code
+        out_carry[i] = carry
 
 
 # --- GPU target (built only when a CUDA device is present) ----------------
@@ -364,10 +372,11 @@ if cuda.is_available():  # pragma: no cover - desktop GPU only (ADR-0006)
         fence_n,
         cd_scale,
         out,
+        out_carry,
     ):
         i = cuda.grid(1)
         if i < out.shape[0]:
-            out[i] = _core_gpu(
+            code, carry = _core_gpu(
                 traj_in,
                 i,
                 park_idx,
@@ -379,6 +388,8 @@ if cuda.is_available():  # pragma: no cover - desktop GPU only (ADR-0006)
                 fence_n,
                 cd_scale,
             )
+            out[i] = code
+            out_carry[i] = carry
 
     _batch_gpu_kernel = _gpu_kernel
     _GPU_READY = True
@@ -403,9 +414,13 @@ def simulate_classify_cpu(
     dt: float,
     n_steps_max: int,
     cd_scale: float = 1.0,
-) -> np.ndarray:
-    """Integrate+classify N trajectories on the CPU (njit/prange). Returns int8[N]."""
+) -> tuple[np.ndarray, np.ndarray]:
+    """Integrate+classify N trajectories on the CPU (njit/prange).
+
+    Returns ``(codes int8[N], carry_ft float32[N])`` - the outcome code and the XY ground
+    landing distance (ft) per trajectory (0.0 for a trajectory that never landed)."""
     out = np.empty(traj_in.shape[0], dtype=np.int8)
+    out_carry = np.empty(traj_in.shape[0], dtype=np.float32)
     _batch_cpu(
         traj_in,
         park_idx,
@@ -417,8 +432,9 @@ def simulate_classify_cpu(
         fence_n,
         np.float32(cd_scale),
         out,
+        out_carry,
     )
-    return out
+    return out, out_carry
 
 
 def simulate_classify_gpu(
@@ -433,11 +449,12 @@ def simulate_classify_gpu(
     n_steps_max: int,
     cd_scale: float = 1.0,
     threads_per_block: int = 128,
-) -> np.ndarray:  # pragma: no cover - desktop GPU only (ADR-0006)
-    """Integrate+classify N trajectories on the GPU. Returns int8[N].
+) -> tuple[np.ndarray, np.ndarray]:  # pragma: no cover - desktop GPU only (ADR-0006)
+    """Integrate+classify N trajectories on the GPU.
 
-    Copies the (small) inputs up and only the int8[N] result back — the
-    trajectory history never leaves the device (it never materialises at all).
+    Returns ``(codes int8[N], carry_ft float32[N])``. Copies the (small) inputs up and only the
+    two result arrays back — the trajectory history never leaves the device (it never
+    materialises at all).
     """
     if not _GPU_READY or _batch_gpu_kernel is None:
         raise RuntimeError("GPU path requested but no CUDA device / kernel is available")
@@ -449,6 +466,7 @@ def simulate_classify_gpu(
     d_fh = cuda.to_device(fence_height)
     d_fn = cuda.to_device(fence_n)
     d_out = cuda.device_array(n, dtype=np.int8)  # type: ignore[arg-type]  # numba stub types dtype as float64-only
+    d_carry = cuda.device_array(n, dtype=np.float32)  # type: ignore[arg-type]  # numba stub types dtype as float64-only
     blocks = (n + threads_per_block - 1) // threads_per_block
     _batch_gpu_kernel[blocks, threads_per_block](  # type: ignore[index]  # numba cuda kernel launch syntax
         d_traj,
@@ -461,8 +479,9 @@ def simulate_classify_gpu(
         d_fn,
         np.float32(cd_scale),
         d_out,
+        d_carry,
     )
-    return d_out.copy_to_host()
+    return d_out.copy_to_host(), d_carry.copy_to_host()
 
 
 def simulate_classify_batch(
@@ -477,14 +496,15 @@ def simulate_classify_batch(
     n_steps_max: int = 2000,
     cd_scale: float = 1.0,
     device: str = "auto",
-) -> np.ndarray:
+) -> tuple[np.ndarray, np.ndarray]:
     """Dispatch the fused integrate+classify over the right target.
 
     ``device``: ``"auto"`` (GPU if available, else CPU), ``"cuda"`` (force GPU,
     error if unavailable), or ``"cpu"`` (force the njit/prange path — the
     macOS-dev fallback per ADR-0006). ``cd_scale`` is the calibrated global drag
-    multiplier (1.0 = raw CD). Returns an ``int8[N]`` array of outcome codes (see
-    ``OUT_CODE``..``HR_CODE``).
+    multiplier (1.0 = raw CD). Returns ``(codes int8[N], carry_ft float32[N])``: the outcome
+    code (see ``OUT_CODE``..``HR_CODE``) and the XY ground landing distance in feet per
+    trajectory (0.0 when the trajectory never landed).
     """
     traj_in = np.ascontiguousarray(traj_in, dtype=np.float32)
     park_idx = np.ascontiguousarray(park_idx, dtype=np.int32)

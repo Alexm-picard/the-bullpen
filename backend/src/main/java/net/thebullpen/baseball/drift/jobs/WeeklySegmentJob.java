@@ -3,9 +3,12 @@ package net.thebullpen.baseball.drift.jobs;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import net.thebullpen.baseball.data.JobLockRepository;
 import net.thebullpen.baseball.drift.DriftMetric;
 import net.thebullpen.baseball.drift.DriftMetricsRepository;
 import net.thebullpen.baseball.drift.MetricType;
@@ -14,7 +17,6 @@ import net.thebullpen.baseball.drift.TruthJoinedPredictionFetcher.TruthJoinedRow
 import net.thebullpen.baseball.drift.algorithms.Calibration;
 import net.thebullpen.baseball.registry.RegistryRepository;
 import net.thebullpen.baseball.registry.dto.ModelVersion;
-import net.thebullpen.baseball.registry.dto.Stage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Profile;
@@ -51,21 +53,32 @@ public class WeeklySegmentJob {
 
   static final long LOW_SAMPLE_THRESHOLD = 100L;
 
+  private static final String JOB_NAME = "weekly_segment";
+  private static final ZoneId ET = ZoneId.of("America/New_York");
+
   private final RegistryRepository registryRepo;
   private final SegmentedTruthJoinedPredictionFetcher fetcher;
   private final DriftMetricsRepository driftRepo;
+  private final JobLockRepository jobLocks;
 
   public WeeklySegmentJob(
       RegistryRepository registryRepo,
       SegmentedTruthJoinedPredictionFetcher fetcher,
-      DriftMetricsRepository driftRepo) {
+      DriftMetricsRepository driftRepo,
+      JobLockRepository jobLocks) {
     this.registryRepo = registryRepo;
     this.fetcher = fetcher;
     this.driftRepo = driftRepo;
+    this.jobLocks = jobLocks;
   }
 
   @Scheduled(cron = "0 30 23 * * SUN", zone = "America/New_York")
   public void run() {
+    LocalDate fireDate = LocalDate.now(ET);
+    if (!jobLocks.tryAcquire(JOB_NAME, fireDate)) {
+      log.info("{} already ran for {} on another instance; skipping", JOB_NAME, fireDate);
+      return;
+    }
     try {
       runOnce(Instant.now());
     } catch (RuntimeException e) {
@@ -75,7 +88,7 @@ public class WeeklySegmentJob {
 
   /** Visible-for-tests entry point. Returns the number of drift_metric rows written. */
   public int runOnce(Instant computedAt) {
-    List<ModelVersion> champions = activeChampions();
+    List<ModelVersion> champions = registryRepo.findActiveChampions();
     if (champions.isEmpty()) {
       log.info("WeeklySegmentJob: no active champions registered");
       return 0;
@@ -143,25 +156,6 @@ public class WeeklySegmentJob {
               rows.size(),
               windowStart,
               windowEnd));
-    }
-    return out;
-  }
-
-  private List<ModelVersion> activeChampions() {
-    List<String> seenNames = new ArrayList<>();
-    List<ModelVersion> out = new ArrayList<>();
-    for (String[] pair : registryRepo.findAllNameVersionPairs()) {
-      if (!seenNames.contains(pair[0])) {
-        seenNames.add(pair[0]);
-      }
-    }
-    for (String name : seenNames) {
-      for (ModelVersion v : registryRepo.findByName(name)) {
-        if (v.stage() == Stage.CHAMPION) {
-          out.add(v);
-          break;
-        }
-      }
     }
     return out;
   }

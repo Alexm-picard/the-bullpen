@@ -27,7 +27,7 @@ const gold: MantineColorsTuple = [
   "#F3AC0F",
   colors.gold, // 6 — canonical gold (#F2A900)
   "#C68A00",
-  "#9A6B00", // 8 — goldInk (text-safe on light)
+  "#8A5F00", // 8 — goldInk (text-safe on light)
   "#6E4C00",
 ];
 
@@ -74,6 +74,16 @@ export const theme = createTheme({
   fontFamilyMonospace: typography.fonts.mono,
   primaryColor: "gold",
   colors: { gold, chrome },
+  // D4 (AA contrast): Mantine's default InputWrapper description gray (#868e96) sits at 3.1:1 on
+  // the field background - retune to the broadcast textMuted token (5.3:1). Applied at the theme
+  // so every input description inherits it.
+  components: {
+    InputWrapper: {
+      styles: {
+        description: { color: colors.textMuted },
+      },
+    },
+  },
   // Spacing maps to the 8-point grid: [4, 8, 12, 16, 24, 32, 48, 64, 96].
   spacing: {
     xs: `${spacing[0]}px`, // 4

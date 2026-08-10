@@ -12,6 +12,7 @@ import static org.mockito.Mockito.when;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import net.thebullpen.baseball.data.JobLockRepository;
 import net.thebullpen.baseball.drift.DriftMetric;
 import net.thebullpen.baseball.drift.DriftMetricsRepository;
 import net.thebullpen.baseball.drift.MetricType;
@@ -36,7 +37,7 @@ class CalibrationJobTest {
     registryRepo = mock(RegistryRepository.class);
     fetcher = mock(TruthJoinedPredictionFetcher.class);
     driftRepo = mock(DriftMetricsRepository.class);
-    job = new CalibrationJob(registryRepo, fetcher, driftRepo);
+    job = new CalibrationJob(registryRepo, fetcher, driftRepo, mock(JobLockRepository.class));
   }
 
   @Test
