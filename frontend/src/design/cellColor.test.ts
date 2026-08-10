@@ -114,12 +114,16 @@ describe("cellColor — closer-to-target", () => {
   it("returns a bad color for extreme values far from median", () => {
     // value at min (0) → max distance from median (50) → bad
     const result = cellColor(0, metric);
-    expect([colors.condFormatDark.bad1, colors.condFormatDark.bad3]).toContain(result);
+    expect([colors.condFormatDark.bad1, colors.condFormatDark.bad3]).toContain(
+      result,
+    );
   });
 
   it("returns a bad color for values at the max (far from median)", () => {
     const result = cellColor(100, metric);
-    expect([colors.condFormatDark.bad1, colors.condFormatDark.bad3]).toContain(result);
+    expect([colors.condFormatDark.bad1, colors.condFormatDark.bad3]).toContain(
+      result,
+    );
   });
 
   it("returns neutral or good for values close to median", () => {
@@ -145,9 +149,10 @@ describe("cellColor — clamp option", () => {
     const resultHigh = cellColor(1000, metric);
     // Value -999 is below clamp.min (20); gets treated as 20 → below p25 → bad
     const resultLow = cellColor(-999, metric);
-    expect([colors.condFormatDark.good1, colors.condFormatDark.good3]).toContain(
-      resultHigh,
-    );
+    expect([
+      colors.condFormatDark.good1,
+      colors.condFormatDark.good3,
+    ]).toContain(resultHigh);
     expect([colors.condFormatDark.bad1, colors.condFormatDark.bad3]).toContain(
       resultLow,
     );
