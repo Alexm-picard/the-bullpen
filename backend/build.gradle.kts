@@ -75,7 +75,7 @@ dependencies {
     // A6 (ADR-0008): error tracking via the Sentry SDK, reporting to a self-hosted
     // GlitchTip (Sentry wire-compatible). BOM keeps the starter + logback appender
     // aligned. Disabled automatically when sentry.dsn is blank (dev/CI/tests).
-    implementation(platform("io.sentry:sentry-bom:7.18.0"))
+    implementation(platform("io.sentry:sentry-bom:8.52.0"))
     implementation("io.sentry:sentry-spring-boot-starter-jakarta")
     implementation("io.sentry:sentry-logback")
 
