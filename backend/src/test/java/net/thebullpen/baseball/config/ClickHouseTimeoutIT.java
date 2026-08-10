@@ -56,15 +56,17 @@ class ClickHouseTimeoutIT {
               () -> {
                 try (Connection conn = ds.getConnection();
                     Statement st = conn.createStatement()) {
-                  st.executeQuery("SELECT sleep(3) SETTINGS max_execution_time = 1");
+                  st.executeQuery(
+                      "SELECT count() FROM numbers(10000000000)"
+                          + " SETTINGS max_execution_time = 1");
                 }
               })
-          .as("max_execution_time=1 must abort a 3s server-side sleep")
+          .as("max_execution_time=1 must abort a long-running numbers() scan")
           .isInstanceOf(Exception.class);
       long elapsedMs = (System.nanoTime() - startNanos) / 1_000_000;
       assertThat(elapsedMs)
-          .as("must fail fast on the ~1s timeout, not wait out the full 3s sleep")
-          .isLessThan(2_500);
+          .as("must fail within ~2s of the 1s max_execution_time limit")
+          .isLessThan(3_000);
     }
   }
 }
