@@ -11,9 +11,10 @@
  * not used standalone in the page composition.
  */
 
-import { cellColor } from "../../design/cellColor";
+import { cellColorWith, rampFrom } from "../../design/cellColor";
 import { radii, colors, typography } from "../../design/broadcast";
 import { METRIC_META } from "../../data/matchup-fixtures";
+import { useTheme } from "../../design/theme-toggle";
 
 export type GradeBlockProps = {
   /** Short label, e.g. "Power", "FB", "Ctrl". */
@@ -26,6 +27,10 @@ const GRADE_MIN = 20;
 const GRADE_MAX = 80;
 
 export function GradeBlock({ label, value }: GradeBlockProps) {
+  const { theme } = useTheme();
+  const ramp = rampFrom(
+    theme === "dark" ? colors.condFormat : colors.condFormatLight,
+  );
   const numeric =
     typeof value === "number" && Number.isFinite(value) ? value : null;
   const pct =
@@ -35,8 +40,7 @@ export function GradeBlock({ label, value }: GradeBlockProps) {
           0,
           Math.min(1, (numeric - GRADE_MIN) / (GRADE_MAX - GRADE_MIN)),
         );
-  // "grade" is a canonical metric key declared in METRIC_META.
-  const fillBg = cellColor(numeric, METRIC_META.grade!);
+  const fillBg = cellColorWith(ramp, numeric, METRIC_META.grade!);
 
   return (
     <div
