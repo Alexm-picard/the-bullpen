@@ -94,7 +94,7 @@ services:
       start_period: 20s
 
   grafana:
-    image: grafana/grafana:11.4.0
+    image: grafana/grafana:13.1.1
     container_name: bullpen-grafana
     logging: *bullpen-logging
     restart: unless-stopped
