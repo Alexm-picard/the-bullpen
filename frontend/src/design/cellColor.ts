@@ -59,11 +59,11 @@ export type MetricMeta = {
 export type CondFormatRamp = [string, string, string, string, string];
 
 const RAMP: CondFormatRamp = [
-  colors.condFormat.bad3, // 0 — strongly unfavorable
-  colors.condFormat.bad1, // 1 — mildly unfavorable
-  colors.condFormat.neutral, // 2 — league-average
-  colors.condFormat.good1, // 3 — mildly favorable
-  colors.condFormat.good3, // 4 — strongly favorable
+  colors.condFormatDark.bad3, // 0 — strongly unfavorable
+  colors.condFormatDark.bad1, // 1 — mildly unfavorable
+  colors.condFormatDark.neutral, // 2 — league-average
+  colors.condFormatDark.good1, // 3 — mildly favorable
+  colors.condFormatDark.good3, // 4 — strongly favorable
 ];
 
 /**

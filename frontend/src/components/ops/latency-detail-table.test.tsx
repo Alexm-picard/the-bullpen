@@ -46,7 +46,7 @@ describe("LatencyDetailTable", () => {
   it("applies cellColor tints from the condFormat ramp", () => {
     const html = render(<LatencyDetailTable rows={LATENCY_BY_MODEL} />);
     const html_lower = html.toLowerCase();
-    const hasAnyCondFormat = Object.values(colors.condFormat).some((hex) =>
+    const hasAnyCondFormat = Object.values(colors.condFormatDark).some((hex) =>
       html_lower.includes(hex.toLowerCase()),
     );
     expect(hasAnyCondFormat).toBe(true);
