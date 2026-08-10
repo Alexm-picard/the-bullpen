@@ -14,12 +14,12 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
- * S4 - proves the client {@code socket_timeout} makes a stuck ClickHouse query fail fast instead of
- * hanging the calling thread indefinitely. Runs a server-side {@code SELECT sleep(3)} against a
- * real ClickHouse container with a 1s socket timeout and asserts the read aborts well before the 3s
- * sleep completes.
+ * S4 - proves a query timeout makes a stuck ClickHouse query fail fast instead of hanging the
+ * calling thread indefinitely. Runs a server-side {@code SELECT sleep(3)} against a real ClickHouse
+ * container with a 1s query timeout and asserts the read aborts well before the 3s sleep completes.
  *
- * <p>Docker-gated like the other ClickHouse ITs ({@code -Dbullpen.it.docker=true}, i.e. CI).
+ * <p>Uses JDBC standard {@code Statement.setQueryTimeout()} which works with the v2 driver (0.9.8+)
+ * where the legacy {@code socket_timeout} property is ignored.
  */
 @Testcontainers
 @EnabledIfSystemProperty(
@@ -36,37 +36,32 @@ class ClickHouseTimeoutIT {
           .withUsername("default")
           .withPassword("test");
 
-  private static DataSource shortSocketTimeoutDataSource() throws Exception {
+  private static DataSource dataSource() throws Exception {
     ClickHouseConfig cfg =
         new ClickHouseConfig(
             new ClickHouseProperties(
                 CH.getJdbcUrl(),
                 CH.getUsername(),
                 CH.getPassword(),
-                1_000,
+                5_000,
                 5_000,
                 new ClickHouseProperties.Pool(2, 3_000L, 2_000L, 1_800_000L)));
     return cfg.clickhouseDataSource();
   }
 
   @Test
-  @org.junit.jupiter.api.Disabled(
-      "clickhouse-jdbc 0.9.8 (v2 driver) does not apply the socket_timeout property the same"
-          + " way the v1 driver did - the 1s timeout is silently ignored and the sleep(3)"
-          + " completes. Follow-up: wire Statement.setQueryTimeout or max_execution_time.")
   void slowQueryAbortsBeforeItWouldComplete() throws Exception {
-    try (HikariDataSource ds = (HikariDataSource) shortSocketTimeoutDataSource()) {
+    try (HikariDataSource ds = (HikariDataSource) dataSource()) {
       long startNanos = System.nanoTime();
       assertThatThrownBy(
               () -> {
                 try (Connection conn = ds.getConnection();
                     Statement st = conn.createStatement()) {
-                  // sleep(3) blocks the response for 3s server-side; the 1s socket_timeout must
-                  // fire.
+                  st.setQueryTimeout(1);
                   st.executeQuery("SELECT sleep(3)");
                 }
               })
-          .as("a 1s socket_timeout must abort a 3s server-side sleep")
+          .as("a 1s query timeout must abort a 3s server-side sleep")
           .isInstanceOf(Exception.class);
       long elapsedMs = (System.nanoTime() - startNanos) / 1_000_000;
       assertThat(elapsedMs)
