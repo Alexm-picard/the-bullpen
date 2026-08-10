@@ -25,13 +25,13 @@ jobs:
         language: [java-kotlin, javascript-typescript]
     steps:
       - uses: actions/checkout@v4
-      - uses: github/codeql-action/init@v3
+      - uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
           # build-mode: none analyzes source without compiling - no Gradle/Java setup needed and no
           # build flakiness (CodeQL supports this for java-kotlin as well as interpreted languages).
           build-mode: none
-      - uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action/analyze@v4
         with:
           category: "/language:${{ matrix.language }}"
 
@@ -43,7 +43,7 @@ jobs:
         with:
           fetch-depth: 0 # full history so PRs scan the whole diff range
       # Free for public repos; a private org would need GITLEAKS_LICENSE.
-      - uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
