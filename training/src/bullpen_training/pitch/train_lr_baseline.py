@@ -136,7 +136,7 @@ class LRModelBundle:
 DESIGN_MATRIX_DTYPE = np.float32
 
 
-def _assert_float32_preserved(pipe: Pipeline, X_train: np.ndarray) -> None:
+def assert_float32_preserved(pipe: Pipeline, X_train: np.ndarray) -> None:
     """Guard the float32 memory win against a silent sklearn upcast.
 
     float32 is worthless if the sklearn chain upcasts it back to float64 internally
@@ -180,7 +180,7 @@ def fit_lr_from_arrays(
     """
     pipe = _build_pipeline(seed)
     pipe.fit(X_train, y_train)
-    _assert_float32_preserved(pipe, X_train)
+    assert_float32_preserved(pipe, X_train)
 
     fitted_classes = tuple(int(c) for c in pipe.named_steps["lr"].classes_)
 

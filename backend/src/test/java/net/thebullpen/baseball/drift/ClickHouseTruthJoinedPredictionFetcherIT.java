@@ -126,6 +126,29 @@ class ClickHouseTruthJoinedPredictionFetcherIT {
   }
 
   @Test
+  void dedups_a_restart_re_logged_pitch_to_the_latest_prediction() {
+    // prediction_log ACCUMULATES: a worker restart re-runs the poll and re-logs the SAME pitch for
+    // the same version at a later request_at. A raw read would score the pitch TWICE and bias the
+    // calibration Brier/ECE; the argMax-per-pitch-key collapse must return ONE row using the LATEST
+    // prediction, identical to the never-duplicated case.
+    Instant older = Instant.now().minus(3, ChronoUnit.HOURS);
+    Instant newer = Instant.now().minus(1, ChronoUnit.HOURS);
+    predictionAt(older, 1, 1, 1, pitchJson(0.90, 0.03, 0.03, 0.02, 0.02)); // stale re-log
+    predictionAt(newer, 1, 1, 1, pitchJson(0.10, 0.10, 0.10, 0.20, 0.50)); // latest
+    truth(1, 1, 1, "in_play");
+
+    List<TruthJoinedRow> rows =
+        fetcher.fetch(MODEL, V, Instant.now().minus(24, ChronoUnit.HOURS), Instant.now());
+
+    // ONE calibration row, not two: the duplicate was collapsed.
+    assertThat(rows).hasSize(1);
+    assertThat(rows.get(0).truthClass()).isEqualTo(4);
+    // The LATEST (newer request_at) prediction won, never the stale re-log.
+    assertThat(rows.get(0).probs())
+        .containsExactly(new double[] {0.10, 0.10, 0.10, 0.20, 0.50}, within(1e-9));
+  }
+
+  @Test
   void only_returns_the_requested_version() {
     prediction(2, 1, 1, pitchJson(0.2, 0.2, 0.2, 0.2, 0.2)); // version V
     truth(2, 1, 1, "ball");
@@ -145,7 +168,18 @@ class ClickHouseTruthJoinedPredictionFetcherIT {
     insert(V, gameId, atBat, pitch, predictionJson);
   }
 
+  private void predictionAt(
+      Instant requestAt, long gameId, int atBat, int pitch, String predictionJson) {
+    insertAt(requestAt, V, gameId, atBat, pitch, predictionJson);
+  }
+
   private void insert(long versionId, long gameId, int atBat, int pitch, String predictionJson) {
+    insertAt(
+        Instant.now().minus(1, ChronoUnit.HOURS), versionId, gameId, atBat, pitch, predictionJson);
+  }
+
+  private void insertAt(
+      Instant requestAt, long versionId, long gameId, int atBat, int pitch, String predictionJson) {
     // role bound as a parameter, not an inline literal: clickhouse-jdbc mishandles a literal
     // interleaved among ? placeholders in a VALUES list (it broke with 'shadow' mid-list).
     ch.update(
@@ -153,7 +187,7 @@ class ClickHouseTruthJoinedPredictionFetcherIT {
             + " (request_at, model_name, model_version, model_version_id, role, prediction,"
             + "  game_id, at_bat_index, pitch_number)"
             + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        Timestamp.from(Instant.now().minus(1, ChronoUnit.HOURS)),
+        Timestamp.from(requestAt),
         MODEL,
         "v1",
         versionId,

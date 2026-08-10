@@ -37,13 +37,12 @@ import org.springframework.web.server.ResponseStatusException;
  * by family and each meaning is a data contract:
  *
  * <ul>
- *   <li><b>Single-park toy</b> ({@code _toy_batted_ball}): the toy bean served - no registry row
- *       backs the serve. Identity = hardcoded {@code v0} + the ctor-cached toy pipeline schema hash
- *       + <b>null</b> FK. Reconciliation joins {@code prediction_log.model_version_id} against the
- *       registry and depends on legacy rows being NULL (never -1; the sentinel is never persisted).
- *   <li><b>All-parks</b> ({@code battedball_outcome}): the fallback served the registry LIVE
- *       champion (503 when none) - a real registry row DID serve. Identity = the re-resolved
- *       champion's real id/version/hash; the FK is never null on this family.
+ *   <li><b>Both batted-ball families</b> ({@code battedball_outcome}, single-park AND all-parks):
+ *       the fallback serves the registry LIVE champion (503 when none) - a real registry row DID
+ *       serve. Identity = the re-resolved champion's real id/version/hash; the FK is never null on
+ *       these families. Single-park used to be the toy bean (hardcoded {@code v0} + <b>null</b>
+ *       FK); "retire the toy" removed that leg, so single-park now mirrors all-parks and no null-FK
+ *       legacy row is written here anymore. The {@code -1L} sentinel itself is never persisted.
  * </ul>
  *
  * <p><b>Other preserved data-contract details</b> (do not "fix" without a /decide): the {@code
@@ -229,15 +228,28 @@ public class PredictionOrchestrator {
     }
   }
 
-  private static RuntimeException wrap(Exception e) {
+  // Package-private for the F1 regression test - the pass-through set IS the 503 contract.
+  static RuntimeException wrap(Exception e) {
     // Faithful union of the two originals' (different!) wrapping boundaries:
     // - ResponseStatusException passes through UNWRAPPED: the all-parks legacy leg's 503
     //   (requireChampionId) ran OUTSIDE its helper's try/catch, so its RSE always reached the
     //   carve-out bare (test-pinned: returns_503_when_no_champion_and_no_routing_config).
+    // - ModelUnavailableException ALSO passes through unwrapped (task #87 F1, a deliberate
+    //   change to the move-not-rewrite union): on the SYNCHRONOUS legacy-fallback leg nothing
+    //   wraps this path in a CompletionException, and ApiErrorAdvice's Exception handler matches
+    //   a bare RuntimeException directly without consulting its cause - so a wrapped MUE became
+    //   a generic 500 instead of the 503 its dedicated handler exists to produce. Registry-guard
+    //   proved the 500 empirically; passing MUE through bare restores the 503 on every leg.
     // - Everything else gets the unconditional fresh RuntimeException wrapper both originals
     //   applied to their predict bodies - the error-counter label (getClass().getSimpleName())
-    //   and router-side cause chains are shaped by it. Move-not-rewrite: preserve both exactly.
-    return e instanceof ResponseStatusException rse ? rse : new RuntimeException(e);
+    //   and router-side cause chains are shaped by it.
+    if (e instanceof ResponseStatusException rse) {
+      return rse;
+    }
+    if (e instanceof ModelUnavailableException mue) {
+      return mue;
+    }
+    return new RuntimeException(e);
   }
 
   private static PredictionLogEvent.Role toLogRole(Role role) {

@@ -28,6 +28,7 @@ dependencies = [
     "shap>=0.50.0",
     "nvidia-cuda-nvcc-cu12==12.9.86 ; sys_platform == 'linux'",
     "boto3>=1.43.27",
+    "joblib>=1.5.3",
 ]
 
 [dependency-groups]
@@ -81,7 +82,9 @@ strict = [
     "src/bullpen_training/logging_config.py",
     "src/bullpen_training/eval/metrics.py",
     "src/bullpen_training/eval/promotion/criteria.py",
+    "src/bullpen_training/eval/promotion/pitch_type_gate.py",
     "src/bullpen_training/registry_client/feature_hasher.py",
+    "src/bullpen_training/pitch_type/temperature.py",
 ]
 reportMissingTypeStubs = false
 reportMissingImports = "warning"

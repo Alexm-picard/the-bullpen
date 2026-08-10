@@ -114,6 +114,25 @@ sudo install -d -o "$SVC_USER" -g "$SVC_USER" -m 0755 "$INSTALL_DIR"
 sudo install -d -o "$SVC_USER" -g "$SVC_USER" -m 0755 "$INSTALL_DIR/data"
 sudo install -d -o "$SVC_USER" -g "$SVC_USER" -m 0755 "$INSTALL_DIR/logs"
 
+# journald policy: pin persistent storage and CAP it. The box's journal was persistent but
+# unbounded; a crash-looping container drove it to ~3.2 GB and forced corrupted rotations every
+# few minutes, destroying crash evidence (see docs/runbooks/wsl-vm-crash-triage.md). Restart
+# systemd-journald only if the drop-in actually changed, so a re-run is a no-op.
+JOURNALD_SRC="${UNIT_DIR}/journald.conf.d/10-bullpen-persistent.conf"
+JOURNALD_DST="/etc/systemd/journald.conf.d/10-bullpen-persistent.conf"
+if [[ -f "$JOURNALD_SRC" ]]; then
+  log "installing journald policy (${JOURNALD_DST})"
+  sudo install -d -o root -g root -m 0755 /etc/systemd/journald.conf.d
+  sudo install -d -g systemd-journal -m 2755 /var/log/journal
+  if ! sudo cmp -s "$JOURNALD_SRC" "$JOURNALD_DST" 2>/dev/null; then
+    sudo install -o root -g root -m 0644 "$JOURNALD_SRC" "$JOURNALD_DST"
+    sudo systemctl restart systemd-journald
+    log "  journald policy applied + restarted"
+  else
+    log "  journald policy already current (no restart)"
+  fi
+fi
+
 log "installing unit files"
 for u in "${UNITS[@]}"; do
   src="${UNIT_DIR}/${u}"

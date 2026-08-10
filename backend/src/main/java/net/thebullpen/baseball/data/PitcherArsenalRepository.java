@@ -20,6 +20,10 @@ import org.springframework.stereotype.Repository;
  * and keep the (non-hot, TanStack-cached) profile read responsive. Gated on {@code
  * bullpen.clickhouse.enabled} like the other analytical repos, {@code api} profile only (it backs a
  * read endpoint, not a worker job).
+ *
+ * <p>NOT the pitch-TYPE model's arsenal: the pre-pitch pitch-TYPE head's Tier-ARS features come
+ * from {@link PitcherPitchTypePriorRepository} (V030 snapshot + in-game delta, y7 classes, exact
+ * train/serve equivalence). This class is a display aggregate only.
  */
 @Repository
 @Profile("api")

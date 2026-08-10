@@ -8,7 +8,7 @@
  * gold link -> the live game).
  */
 
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 
 import type { MatchupSide } from "../../api/matchups-view";
 import type { FeaturedMatchupView } from "../../api/matchups-view";

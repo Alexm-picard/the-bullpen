@@ -202,6 +202,11 @@ public class PitchPredictionService {
       return head == Head.PRE
           ? model.predictPre(toPrePipelineRequest(req))
           : model.predictPost(toPostPipelineRequest(req));
+    } catch (ModelUnavailableException e) {
+      // Task #87 F1: pass through bare. Wrapped in RuntimeException, ApiErrorAdvice's generic
+      // Exception handler matches the wrapper directly (never consulting the cause) and the 503
+      // this exception exists to produce becomes a generic 500 on the synchronous legs.
+      throw e;
     } catch (Exception e) {
       throw new RuntimeException(e);
     }
@@ -249,7 +254,7 @@ public class PitchPredictionService {
             "post head not loaded - pitch_outcome_post/v1 artifacts missing on the server");
       }
       return bean.predictPost(toPostPipelineRequest(req));
-    } catch (ResponseStatusException e) {
+    } catch (ResponseStatusException | ModelUnavailableException e) {
       throw e;
     } catch (Exception e) {
       throw new RuntimeException(e);

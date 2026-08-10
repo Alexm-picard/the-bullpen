@@ -1,6 +1,7 @@
-package net.thebullpen.baseball.domain;
+package net.thebullpen.baseball.api.dto;
 
 import java.util.List;
+import net.thebullpen.baseball.domain.PostPredictionRow;
 
 /**
  * A page of {@link PostPredictionRow} for {@code GET /v1/games/{id}/post-predictions} (F2.1b).

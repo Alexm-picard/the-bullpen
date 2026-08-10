@@ -15,8 +15,9 @@ The prod-confirmed request-key config (``CHAMPIONS``) + the source-space decoder
 ``registry_client.distributions`` and are shared with the native trainer emission (E-1 part 2), so a
 backfill and a retrain produce byte-identical blocks. SOURCE modes: ``battedball_outcome`` derives
 from ClickHouse over 2015-2025 (build_year_query + rows_to_frame; ``stand``/``baseState``
-reconstructed from the model one-hots); ``pitch_outcome_post`` reads the on-box parquet and DECODES
-its ``_int`` categoricals back to request space. The served prediction distribution is computed
+reconstructed from the model one-hots); the pitch heads (``pitch_outcome_pre`` /
+``pitch_outcome_post``) read the on-box parquet and DECODE its ``_int`` categoricals back to request
+space (pre carries no Tier-4 pitch_type). The served prediction distribution is computed
 in-CLI via each family's real ONNX + calibrator (``--proba-npy`` is an escape hatch).
 """
 
@@ -32,9 +33,8 @@ import pandas as pd
 
 from bullpen_training.registry_client.distributions import (
     CHAMPIONS,
-    build_feature_block,
-    compute_prediction_distribution,
     decode_pitch_categoricals,
+    emit_distribution_blocks,
     reconstruct_battedball_categoricals,
 )
 
@@ -90,17 +90,60 @@ def _load_battedball_frame(seasons: range, container: str) -> pd.DataFrame:
 
 
 def _load_pitch_frame(parquet: Path, model_dir: Path) -> pd.DataFrame:
-    """Read the pitch-post parquet (already the 41-vector) and decode its _int categoricals.
+    """Read a pitch parquet (post = 41-vector, pre = 31-vector) and decode its _int categoricals.
 
     The operator MUST pass the champion's REGISTERED training snapshot (``training_data.parquet`` in
     the bundle dir), not an ad-hoc parquet: the parquet carries no season/date column, so rule-13 is
     enforced upstream at snapshot registration, not here.
+
+    pitch_type is a Tier-4 categorical the pre head does not carry, so its mapping file is absent
+    from a pre bundle - read it only when present; ``decode_pitch_categoricals`` skips the
+    pitch_type decode in step with that.
     """
     park = json.loads((model_dir / "park_id_mapping.json").read_text())["park_id"]
-    ptype = json.loads((model_dir / "pitch_type_mapping.json").read_text())["pitch_type"]
     park_by_int = {int(v): k for k, v in park.items()}
-    ptype_by_int = {int(v): k for k, v in ptype.items()}
+    ptype_path = model_dir / "pitch_type_mapping.json"
+    ptype_by_int: dict[int, str] = {}
+    if ptype_path.exists():
+        ptype = json.loads(ptype_path.read_text())["pitch_type"]
+        ptype_by_int = {int(v): k for k, v in ptype.items()}
     return decode_pitch_categoricals(pd.read_parquet(parquet), park_by_int, ptype_by_int)
+
+
+def _load_pitch_type_train_frame(model_dir: Path) -> pd.DataFrame:
+    """pitch_type_pre: the fold-4 TRAIN slice from the V029 store via local ClickHouse (box-only).
+
+    NOT the bundle's ``training_data.parquet``: for this family that snapshot is the TEST slice
+    (2025), and a reference built from the held-out year would re-aim what drift means - the PSI
+    comparison must be "live vs training", never "live vs 2025".
+
+    The loader is SEEDED with the bundle's registered ``park_id_mapping.json`` rather than left
+    to re-derive one from the live store: a park added or removed since the champion trained
+    would shift every later park's code by one, silently mis-encoding park_i for the served
+    inference below - the exact reproducibility hole the bundled mapping file exists to close
+    (the pitch-outcome branch of this file reads it for the same reason).
+    """
+    from bullpen_training.eval.cv_harness import FOLDS
+    from bullpen_training.ingest.clickhouse_client import make_client
+    from bullpen_training.pitch_type.train import PitchTypeFeatureLoaderClosure
+
+    mapping = json.loads((model_dir / "park_id_mapping.json").read_text())["park_id"]
+    prod_fold = FOLDS[-1]
+    loader = PitchTypeFeatureLoaderClosure(
+        make_client(), park_id_mapping={k: int(v) for k, v in mapping.items()}
+    )
+    return loader(prod_fold.train_start_year, prod_fold.train_end_year, prod_fold.fold_id)
+
+
+def _pitch_feature_cols(model: str) -> tuple[str, ...]:
+    """The ONNX input feature order for a pitch head: pre = 31-vector, post = 41-vector.
+
+    Pure (import-light: the pitch package's column tuples are plain constants, no torch/onnx), so
+    the 31-vs-41 selection is unit-testable without a real ONNX session.
+    """
+    from bullpen_training.pitch import PITCH_FEATURE_COLUMNS, PITCH_FEATURE_COLUMNS_POST
+
+    return PITCH_FEATURE_COLUMNS if model == "pitch_outcome_pre" else PITCH_FEATURE_COLUMNS_POST
 
 
 def _served_proba(model: str, model_dir: Path, frame: pd.DataFrame) -> np.ndarray:
@@ -110,14 +153,30 @@ def _served_proba(model: str, model_dir: Path, frame: pd.DataFrame) -> np.ndarra
 
         return OnnxMlpPredictor(model_dir).predict_proba(frame)
 
+    if model == "pitch_type_pre":
+        # This family's served chain is ONNX + TEMPERATURE (not isotonic - [183]'s log-loss
+        # guardrail compares models, not calibrators). Probabilities are the LAST ONNX output,
+        # per the export contract (export_onnx.onnx_raw_probabilities).
+        import onnxruntime as ort
+
+        from bullpen_training.pitch_type import PITCH_TYPE_FEATURE_COLUMNS
+        from bullpen_training.pitch_type.temperature import TemperatureCalibrator
+
+        session = ort.InferenceSession(str(model_dir / "model.onnx"))
+        mat = frame[list(PITCH_TYPE_FEATURE_COLUMNS)].to_numpy(np.float32)
+        raw = np.asarray(
+            session.run(None, {session.get_inputs()[0].name: mat})[-1], dtype=np.float64
+        )
+        return TemperatureCalibrator.from_json(model_dir / "calibrator.json").transform(raw)
+
     import onnxruntime as ort
 
-    from bullpen_training.pitch import PITCH_FEATURE_COLUMNS_POST
     from bullpen_training.pitch.eval._shared import onnx_probabilities
     from bullpen_training.pitch.isotonic import IsotonicCalibrator
 
+    # pre consumes the 31-vector, post the 41-vector; same served chain (LightGBM ONNX + isotonic).
     session = ort.InferenceSession(str(model_dir / "model.onnx"))
-    mat = frame[list(PITCH_FEATURE_COLUMNS_POST)].to_numpy(np.float32)
+    mat = frame[list(_pitch_feature_cols(model))].to_numpy(np.float32)
     raw = onnx_probabilities(session, mat, input_name=session.get_inputs()[0].name)
     return IsotonicCalibrator.from_json(model_dir / "calibrator.json").transform(raw)
 
@@ -135,7 +194,7 @@ def main(argv: list[str] | None = None) -> int:
         "--training-parquet",
         type=Path,
         default=None,
-        help="pitch_outcome_post: the on-box training_data.parquet (battedball uses ClickHouse)",
+        help="pitch heads (pre/post): on-box training_data.parquet (battedball uses ClickHouse)",
     )
     ap.add_argument(
         "--seasons", default="2015-2025", help="battedball CH training seasons, inclusive (<= 2025)"
@@ -172,42 +231,83 @@ def main(argv: list[str] | None = None) -> int:
         existing = json.loads(metadata_path.read_text())
         if "feature_distributions" in existing:
             split = existing.get("train_split_seasons")
+            overwrite_window = (
+                "2015-2023 (the pinned fold-4 train slice)"
+                if args.model == "pitch_type_pre"
+                else f"the {args.seasons} window"
+            )
+            advice = (
+                ""
+                if args.model == "pitch_type_pre"
+                else " If they differ, pass --seasons matching the champion's train slice."
+            )
             print(
                 "  WARNING: metadata.json already carries a feature_distributions block"
                 + (f" (native emission, train slice {split})" if split else "")
-                + f"; this run OVERWRITES it with the {args.seasons} window."
-                " If they differ, pass --seasons matching the champion's train slice."
+                + f"; this run OVERWRITES it with {overwrite_window}."
+                + advice
             )
 
     # 1. request-space frame (family source).
     if args.model == "battedball_outcome":
         frame = _load_battedball_frame(_parse_seasons(args.seasons), args.container)
+    elif args.model == "pitch_type_pre":
+        if args.training_parquet is not None:
+            ap.error(
+                "pitch_type_pre: the bundle's training_data.parquet is the TEST slice for this"
+                " family - baselines come from the V029 TRAIN slice via local ClickHouse, so"
+                " do not pass --training-parquet"
+            )
+        if args.seasons != "2015-2025":
+            ap.error(
+                "pitch_type_pre ignores --seasons: the window is pinned to the fold-4 train"
+                " slice (2015-2023). Refusing a value that would silently not apply."
+            )
+        frame = _load_pitch_type_train_frame(args.model_dir)
     else:
         if args.training_parquet is None:
-            ap.error("pitch_outcome_post requires --training-parquet")
+            ap.error(f"{args.model} requires --training-parquet")
         frame = _load_pitch_frame(args.training_parquet, args.model_dir)
 
-    # 2. feature_distributions (request keys) + 3. training_prediction_distribution (served probs).
+    # 2 + 3, through the ONE shared entry point (registry_client.emit_distribution_blocks) so a
+    # backfilled bundle and a natively-emitted one are byte-identical at the same max_sample.
+    # pitch_type's fold-4 train slice is ~5M rows; cap the served-inference pass with the SAME
+    # shared helper native emission uses (evenly-spaced, never random) so backfilled and native
+    # prediction blocks describe identical rows. The feature block always reads the FULL frame.
+    pred_frame = frame
+    if args.model == "pitch_type_pre":
+        from bullpen_training.pitch_type.baselines import PREDICTION_ROW_CAP, cap_rows
+
+        pred_frame = cap_rows(frame, PREDICTION_ROW_CAP)
+    proba = (
+        np.load(args.proba_npy)
+        if args.proba_npy is not None
+        else _served_proba(args.model, args.model_dir, pred_frame)
+    )
+    # Fence the --proba-npy escape hatch: the frame side is carefully sliced, and an
+    # operator-supplied array computed over some OTHER slice would silently become the
+    # prediction reference. Row-count equality is the cheap witness that they match.
+    if len(proba) != len(pred_frame):
+        raise SystemExit(
+            f"--proba-npy rows ({len(proba)}) != prediction frame rows ({len(pred_frame)}) -"
+            " the probabilities were not computed over this run's frame"
+        )
     try:
-        feature_block = build_feature_block(frame, cfg, args.max_sample)
+        feature_block, prediction_block = emit_distribution_blocks(
+            frame, cfg, proba, max_sample=args.max_sample
+        )
     except (
         ValueError
     ) as exc:  # clean operator message for a missing source column, not a traceback.
         raise SystemExit(str(exc)) from exc
-    # An all-null source column yields an empty continuous sample - the Java PSI quantile-edge step
-    # cannot bin an empty reference, so warn loudly (the operator should confirm the column is
-    # populated in this snapshot) rather than emit a degenerate block that silently skips.
+    # An all-null source column yields an empty continuous sample - the Java PSI quantile-edge
+    # step cannot bin an empty reference, so warn loudly (the operator should confirm the column
+    # is populated in this snapshot) rather than emit a degenerate block that silently skips.
     empty = [
         k for k, v in feature_block.items() if v.get("kind") == "continuous" and not v.get("sample")
     ]
     if empty:
         print(f"  WARNING: empty continuous sample (all-null source) for: {empty}")
-    proba = (
-        np.load(args.proba_npy)
-        if args.proba_npy is not None
-        else _served_proba(args.model, args.model_dir, frame)
-    )
-    prediction_block = compute_prediction_distribution(proba, cfg.class_labels, args.max_sample)
 
     print(
         f"[{cfg.model_name}] {len(frame)} rows -> feature_distributions {len(feature_block)} keys "
@@ -218,6 +318,18 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     meta = merge_into_metadata(metadata_path, feature_block, prediction_block)
+    if args.model == "pitch_type_pre":
+        # Make the backfilled state self-describing, mirroring native emission's stamp - a
+        # backfilled baseline should be distinguishable by content, not by a key's absence.
+        meta["train_split_seasons"] = "2015-2023"
+        meta["baseline_provenance"] = {
+            "source": "backfill_cli",
+            "slice": "train",
+            "predictions": "in-sample",
+            "prediction_rows": len(pred_frame),
+            "prediction_row_selection": "evenly-spaced positional (np.linspace), deterministic",
+            "max_sample": int(args.max_sample),
+        }
     metadata_path.write_text(json.dumps(meta, indent=2) + "\n")
     print(f"  wrote both blocks into {metadata_path}")
     return 0

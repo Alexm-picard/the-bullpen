@@ -83,6 +83,10 @@ CH_DB=${CH_DB:-default}
 #   ${REMOTE}/${NAME}/clickhouse/...          (the clickhouse-backup output)
 #   ${REMOTE}/${NAME}/sqlite/registry.sqlite  (the P1-irreplaceable registry capture)
 BULLPEN_OFFSITE_REMOTE="${BULLPEN_OFFSITE_REMOTE:-}"
+# R2 remote for model artifacts. Bundles live under snapshots/<name>/<version>/ in the
+# same bucket the backups live in (bullpen-prod). Default derives from the backup remote:
+#   bullpen-r2:bullpen-prod/backups -> bullpen-r2:bullpen-prod/snapshots
+MODELS_ARCHIVE_REMOTE="${MODELS_ARCHIVE_REMOTE:-}"
 RCLONE_BIN="${RCLONE_BIN:-rclone}"
 # The root/cron context cannot discover the dev user's rclone config on its own
 # (same failure class offsite-push.sh documents); pass it explicitly.
@@ -356,10 +360,90 @@ restore_registry() {
   log "registry restore verified (${scratch_models} model_versions rows)"
 }
 
+restore_model_artifacts() {
+  # Pull champion model artifacts from R2 snapshots/ into the local paths the
+  # registry points at. In a real DR the ClickHouse data and SQLite registry are
+  # restored from the offsite backup, but champion ONNX weights live separately in R2
+  # (snapshots/<model_name>/<version>/ per ADR-0007). Without this step the system has
+  # data but cannot serve predictions (the 2026-07-26 drill finding: "data-complete,
+  # not serving-capable").
+  log "models: restoring champion artifacts from R2 snapshots/"
+
+  # Derive archive remote if not set explicitly
+  local archive_remote="$MODELS_ARCHIVE_REMOTE"
+  if [[ -z "$archive_remote" ]]; then
+    archive_remote="${BULLPEN_OFFSITE_REMOTE%/backups}/snapshots"
+  fi
+
+  if [[ "$DRY_RUN" == "1" ]]; then
+    log "  [dry-run] would query scratch registry for champions, rclone from ${archive_remote}"
+    return 0
+  fi
+
+  # The registry stores stages lowercase (V001 CHECK constraint). A case mismatch
+  # here silently returns 0 rows and the restore stage looks like an empty registry.
+  local champions
+  champions=$(sqlite3 "$SCRATCH_REGISTRY" \
+    "SELECT model_name, version, artifact_path FROM model_versions WHERE stage='champion'" 2>/dev/null)
+
+  if [[ -z "$champions" ]]; then
+    # Fail loud when the registry HAS champion rows but the query missed them (case bug
+    # or schema change). An empty registry is the legitimate "nothing to restore" case;
+    # a registry with champions and a query returning none is a drill defect.
+    local total_champions
+    total_champions=$(sqlite3 "$SCRATCH_REGISTRY" \
+      "SELECT count(*) FROM model_versions WHERE stage='champion'" 2>/dev/null || echo 0)
+    if [[ "${total_champions:-0}" -gt 0 ]]; then
+      fail "scratch registry has ${total_champions} champion(s) but the restore query returned none - check the stage value and query"
+    fi
+    log "  no champion versions in scratch registry - model restore skipped (probe will 503)"
+    return 0
+  fi
+
+  local restored=0
+  while IFS='|' read -r model_name version artifact_path; do
+    [[ -n "$model_name" ]] || continue
+    local local_dir r2_prefix key_count onnx_size
+    local_dir=$(dirname "$artifact_path")
+    r2_prefix="${archive_remote}/${model_name}/${version}/"
+
+    log "  ${model_name}/${version}: listing ${r2_prefix}"
+    key_count=$(rclone_ lsf "$r2_prefix" 2>"${DRILL_TMP}/model-lsf-${model_name}.err" | wc -l || echo 0)
+    if [[ "${key_count:-0}" -eq 0 ]]; then
+      log "  WARNING: ${model_name}/${version} has 0 objects under ${r2_prefix}"
+      sed 's/^/    rclone: /' "${DRILL_TMP}/model-lsf-${model_name}.err" 2>/dev/null || true
+      continue
+    fi
+
+    mkdir -p "$local_dir"
+    rclone_ copy "$r2_prefix" "$local_dir" --multi-thread-streams 1 \
+      2>"${DRILL_TMP}/model-copy-${model_name}.err" \
+      || { sed 's/^/    rclone: /' "${DRILL_TMP}/model-copy-${model_name}.err" 2>/dev/null || true
+           fail "rclone copy failed for ${model_name}/${version}"; }
+
+    [[ -f "${local_dir}/model.onnx" ]] \
+      || fail "${model_name}/${version}: model.onnx missing after restore from R2"
+    onnx_size=$(stat -c%s "${local_dir}/model.onnx" 2>/dev/null || echo 0)
+    [[ "${onnx_size:-0}" -gt 0 ]] \
+      || fail "${model_name}/${version}: model.onnx is empty (0 bytes)"
+
+    local file_list
+    file_list=$(ls -1 "$local_dir" 2>/dev/null | tr '\n' ' ')
+    log "  ${model_name}/${version}: restored (model.onnx ${onnx_size}B, files: ${file_list})"
+    restored=$((restored + 1))
+  done <<< "$champions"
+
+  [[ "$restored" -ge 1 ]] \
+    || fail "no champion artifacts restored from R2 - snapshots/ prefix may be empty or misconfigured"
+  log "models: restored ${restored} champion(s) from R2 snapshots/"
+}
+
 boot_profile() {
-  # boot_profile <profile> <port>  -> 0 healthy / 1 not. Best-effort prediction on api.
-  local profile="$1" port="$2"
-  log "boot: ${profile} profile on :${port} (scratch CH + scratch registry, ingest off)"
+  # boot_profile <profile> <port> [gating]
+  # gating (third arg): when set, the prediction probe is FATAL (200=pass, else fail).
+  # Without it, the probe is informational (the DATA-restore mode).
+  local profile="$1" port="$2" probe_mode="${3:-informational}"
+  log "boot: ${profile} profile on :${port} (scratch CH + scratch registry, ingest off, probe=${probe_mode})"
   if [[ "$DRY_RUN" == "1" ]]; then
     log "  [dry-run] ${JAVA_BIN} -jar ${BULLPEN_JAR} --spring.profiles.active=${profile} --server.port=${port} --bullpen.inference.toy.artifacts-dir=${TOY_ARTIFACTS_DIR} ..."
     return 0
@@ -402,18 +486,21 @@ boot_profile() {
   [[ "$healthy" == "1" ]] || fail "${profile} did not reach actuator UP in ${BOOT_TIMEOUT}s"
 
   if [[ "$profile" == "api" ]]; then
-    # Best-effort: a prediction needs model artifacts, which are NOT part of the
-    # backup set (artifacts live in R2 snapshots/, gitignored locally). 404 here is
-    # acceptable - the hard gate is actuator UP, which proves DB connectivity to the
-    # restored scratch CH + registry. Logged for the report, never fatal.
-    # Expect a "warm-up failed; readiness stays DOWN" line in boot-api.log too: WarmupReadiness
-    # tries to warm the registry champion, whose artifact is absent in a DATA restore. That downs
-    # only the /actuator/health/readiness probe group, NOT the top-level /actuator/health gated above.
     local code
     code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:${port}/v1/predict/pitch" \
       -H 'content-type: application/json' \
       -d '{"countBalls":1,"countStrikes":2,"outs":1,"inning":5,"baseState":0,"scoreDiff":0,"dow":3,"pitcherThrows":"R","batterStand":"L","parkId":"BOS","pitcherId":1,"batterId":2}' 2>/dev/null || echo "000")
-    log "  api prediction probe: HTTP ${code} (200=artifact loaded, 404=artifact absent - both acceptable for a DATA restore)"
+    if [[ "$probe_mode" == "gating" ]]; then
+      # After model artifact restore: 200 proves the full recovery path (data + registry
+      # + model weights) produces a serving system. Anything else is a drill failure.
+      log "  api prediction probe: HTTP ${code} (GATING: 200=pass, else=fail)"
+      [[ "$code" == "200" ]] \
+        || fail "prediction probe returned HTTP ${code} after model restore - system is not serving (check ${DRILL_TMP}/boot-api.log)"
+    else
+      # Data-only restore: model artifacts are not part of the backup set (they live in
+      # R2 snapshots/). 404/503 is expected; actuator UP is the hard gate.
+      log "  api prediction probe: HTTP ${code} (informational: 200=artifact loaded, 404/503=artifact absent)"
+    fi
   else
     # The 2026-06-04 lesson: the worker hard-fails on a missing bean. A startup
     # hard-fail is caught by never-reaching-UP above; this catches a DELAYED crash.
@@ -452,13 +539,21 @@ run_r2_drill() {
   fi
   log "newest offsite snapshot: ${NAME}"
 
+  local DRILL_START_EPOCH
+  DRILL_START_EPOCH=$(date +%s)
+
   r2_fetch "$NAME"
   spin_scratch
   load_and_restore_ch "$NAME"
   verify_ch_scratch
   restore_registry
-  boot_profile api "$DRILL_API_PORT"
+  restore_model_artifacts
+  boot_profile api "$DRILL_API_PORT" gating
   boot_profile worker "$DRILL_WORKER_PORT"
+
+  local DRILL_END_EPOCH RTO_SECONDS
+  DRILL_END_EPOCH=$(date +%s)
+  RTO_SECONDS=$(( DRILL_END_EPOCH - DRILL_START_EPOCH ))
 
   echo
   echo "================================================================"
@@ -467,8 +562,10 @@ run_r2_drill() {
   echo "  source:           ${BULLPEN_OFFSITE_REMOTE%/}/${NAME}"
   echo "  clickhouse:        restored into scratch (core tables non-empty)"
   echo "  registry:          integrity ok, model_versions in range (1..live)"
-  echo "  api profile:       actuator UP against restored data"
+  echo "  models:            champion artifacts restored from R2 snapshots"
+  echo "  api profile:       actuator UP, prediction probe 200 (GATING)"
   echo "  worker profile:    actuator UP + stable ${WORKER_SETTLE}s (no crash-loop)"
+  echo "  RTO-to-serving:    ${RTO_SECONDS}s (drill start to first 200 on predict)"
   echo "================================================================"
   if [[ "$DRY_RUN" == "1" ]]; then echo "  RESULT: DRY-RUN OK (no execution)"; else echo "  RESULT: PASS"; fi
   exit 0

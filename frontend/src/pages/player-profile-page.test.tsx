@@ -7,7 +7,7 @@
 import { MantineProvider } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 
 import { theme } from "../design/theme";
@@ -32,7 +32,7 @@ describe("PlayerProfilePage", () => {
     const html = render(<PlayerProfilePage />);
     // The section scaffolds still render...
     expect(html).toContain("Recent Predictions");
-    expect(html).toContain("Calibration");
+    expect(html).toContain("Calibration · pitch_outcome_pre");
     // ...and each falls to its designed empty state, not an error or blank table.
     expect(html).toContain("No settled predictions for this player yet");
     expect(html).toContain("No calibration data yet");

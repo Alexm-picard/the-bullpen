@@ -34,6 +34,19 @@ def test_parse_seasons_and_rule13_holdout_refusal():
         backfill._parse_seasons("2025-2015")  # lo > hi
 
 
+def test_pitch_feature_cols_selects_pre_31_vs_post_41():
+    # The pre-vs-post ONNX input order is the load-bearing pre-specific decision in _served_proba;
+    # exercise it directly (the full _served_proba wants a real ONNX session, so it is box-only).
+    from bullpen_training.pitch import PITCH_FEATURE_COLUMNS, PITCH_FEATURE_COLUMNS_POST
+
+    pre = backfill._pitch_feature_cols("pitch_outcome_pre")
+    post = backfill._pitch_feature_cols("pitch_outcome_post")
+    assert pre == PITCH_FEATURE_COLUMNS and len(pre) == 31
+    assert post == PITCH_FEATURE_COLUMNS_POST and len(post) == 41
+    assert "pitch_type_int" not in pre  # Tier-4, pre-head absent
+    assert "pitch_type_int" in post
+
+
 def test_merge_preserves_existing_metadata_keys(tmp_path: Path):
     meta_path = tmp_path / "metadata.json"
     original = {
@@ -50,3 +63,31 @@ def test_merge_preserves_existing_metadata_keys(tmp_path: Path):
     for k, v in original.items():
         assert merged[k] == v  # every original key survives
     assert "feature_distributions" in merged and "training_prediction_distribution" in merged
+
+
+# --- the pitch_type_pre slice fences (reviewer A4: reachable with argparse alone) -----------
+
+
+def test_pitch_type_refuses_the_test_slice_parquet(tmp_path: Path) -> None:
+    """The refusal standing between an operator and a reference built from the held-out 2025
+    slice - the failure the module docstring exists to prevent."""
+    with pytest.raises(SystemExit):
+        backfill.main(
+            [
+                "--model",
+                "pitch_type_pre",
+                "--model-dir",
+                str(tmp_path),
+                "--training-parquet",
+                str(tmp_path / "training_data.parquet"),
+            ]
+        )
+
+
+def test_pitch_type_refuses_a_seasons_override(tmp_path: Path) -> None:
+    """--seasons silently not applying would be worse than refusing it: the window is pinned to
+    the fold-4 train slice."""
+    with pytest.raises(SystemExit):
+        backfill.main(
+            ["--model", "pitch_type_pre", "--model-dir", str(tmp_path), "--seasons", "2015-2024"]
+        )

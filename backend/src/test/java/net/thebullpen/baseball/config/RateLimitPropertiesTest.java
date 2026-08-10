@@ -31,6 +31,7 @@ class RateLimitPropertiesTest {
           assertThat(p.simulatePerMinute()).isEqualTo(15);
           assertThat(p.searchPerMinute()).isEqualTo(120);
           assertThat(p.adminPerMinute()).isEqualTo(20);
+          assertThat(p.readPerMinute()).isEqualTo(120);
           assertThat(p.trustedProxies()).containsExactly("127.0.0.0/8", "::1");
         });
   }
