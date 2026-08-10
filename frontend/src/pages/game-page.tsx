@@ -520,7 +520,18 @@ export function GamePage() {
         </div>
       </BroadcastPanel>
 
-      <section aria-labelledby="next-pitch-label">
+      <section
+        aria-labelledby="next-pitch-label"
+        style={
+          nextPitchEnabled
+            ? {
+                borderLeft: `3px solid ${colors.gold}`,
+                paddingLeft: 16,
+                marginLeft: -19,
+              }
+            : undefined
+        }
+      >
         <div
           style={{
             marginBottom: 12,
@@ -598,7 +609,18 @@ export function GamePage() {
         />
       </section>
 
-      <section aria-labelledby="batted-ball-label">
+      <section
+        aria-labelledby="batted-ball-label"
+        style={
+          battedBallLive
+            ? {
+                borderLeft: `3px solid ${colors.gold}`,
+                paddingLeft: 16,
+                marginLeft: -19,
+              }
+            : undefined
+        }
+      >
         <div
           style={{
             marginBottom: 12,

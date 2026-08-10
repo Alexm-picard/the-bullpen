@@ -87,9 +87,9 @@ export const colors = {
   // ── Conditional-format diverging ramp (the signature primitive survives) ───
   condFormat: {
     good3: "#39A568",
-    good1: "#BFE3C6",
-    neutral: "#EBEEF2",
-    bad1: "#F6C9C2",
+    good1: "#1F4D3A",
+    neutral: "#1C2A4A",
+    bad1: "#4D2A28",
     bad3: "#E05A4C",
   },
 
