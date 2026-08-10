@@ -111,6 +111,7 @@ class WorkerPairTwoInstanceIT {
             "--bullpen.clickhouse.user=" + CH.getUsername(),
             "--bullpen.clickhouse.password=" + CH.getPassword(),
             "--spring.datasource.url=" + sqliteUrl,
+            "--spring.flyway.enabled=true",
             "--spring.flyway.url=" + sqliteUrl,
             // No MLB-Stats-API startup backfill (PlayersRefreshJob @ApplicationReadyEvent). The
             // live

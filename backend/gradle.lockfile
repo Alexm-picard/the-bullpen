@@ -1,6 +1,7 @@
 # This is a Gradle generated file for dependency locking.
 # Manual edits can break the build and are not advised.
 # This file is expected to be part of source control.
+# To regenerate this file, run: ./gradlew :dependencies --write-locks
 at.yawk.lz4:lz4-java:1.10.4=compileClasspath,jmhCompileClasspath,jmhRuntimeClasspath,productionRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 ch.qos.logback:logback-classic:1.5.34=compileClasspath,jmhCompileClasspath,jmhRuntimeClasspath,productionRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 ch.qos.logback:logback-core:1.5.34=compileClasspath,jmhCompileClasspath,jmhRuntimeClasspath,productionRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
@@ -51,7 +52,7 @@ com.google.guava:listenablefuture:9999.0-empty-to-avoid-conflict-with-guava=anno
 com.google.j2objc:j2objc-annotations:3.0.0=compileClasspath,jmhCompileClasspath,jmhRuntimeClasspath,productionRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 com.google.protobuf:protobuf-java:3.25.5=annotationProcessor,jmhAnnotationProcessor,testAnnotationProcessor
 com.jayway.jsonpath:json-path:2.9.0=testCompileClasspath,testRuntimeClasspath
-com.microsoft.onnxruntime:onnxruntime:1.20.0=compileClasspath,jmhCompileClasspath,jmhRuntimeClasspath,productionRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+com.microsoft.onnxruntime:onnxruntime:1.28.0=compileClasspath,jmhCompileClasspath,jmhRuntimeClasspath,productionRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 com.tngtech.archunit:archunit-junit5-api:1.4.1=testCompileClasspath,testRuntimeClasspath
 com.tngtech.archunit:archunit-junit5-engine-api:1.4.1=testRuntimeClasspath
 com.tngtech.archunit:archunit-junit5-engine:1.4.1=testRuntimeClasspath
