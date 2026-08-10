@@ -3,7 +3,7 @@ import type { CSSProperties } from "react";
 import { colors, layouts, typography } from "../design/broadcast";
 
 const FIELD: CSSProperties = {
-  backgroundColor: colors.paper,
+  backgroundColor: colors.field,
   minHeight: "100%",
   padding: "48px 16px 72px",
 };
@@ -11,7 +11,7 @@ const FIELD: CSSProperties = {
 const COLUMN: CSSProperties = {
   maxWidth: layouts.editorialMaxWidth,
   margin: "0 auto",
-  color: colors.paperText,
+  color: colors.text,
 };
 
 const EYEBROW: CSSProperties = {
@@ -19,7 +19,7 @@ const EYEBROW: CSSProperties = {
   fontSize: 11,
   letterSpacing: "0.16em",
   textTransform: "uppercase",
-  color: colors.paperMuted,
+  color: colors.textMuted,
   marginBottom: 8,
 };
 
@@ -29,14 +29,14 @@ const H1: CSSProperties = {
   fontSize: 48,
   lineHeight: 1.05,
   textTransform: "uppercase",
-  color: colors.paperText,
+  color: colors.ink,
   margin: "0 0 8px",
 };
 
 const INTRO: CSSProperties = {
   fontSize: 16,
   lineHeight: 1.6,
-  color: colors.paperMuted,
+  color: colors.textMuted,
   maxWidth: "56ch",
   marginBottom: 48,
 };
@@ -51,25 +51,25 @@ const H2: CSSProperties = {
   fontSize: 24,
   textTransform: "uppercase",
   letterSpacing: "0.02em",
-  color: colors.paperText,
+  color: colors.ink,
   margin: "0 0 12px",
   paddingBottom: 8,
-  borderBottom: `2px solid ${colors.paperRule}`,
+  borderBottom: `2px solid ${colors.rule}`,
 };
 
 const BODY: CSSProperties = {
   fontSize: 15,
   lineHeight: 1.65,
-  color: colors.paperText,
+  color: colors.ink,
 };
 
 const CALLOUT: CSSProperties = {
-  backgroundColor: colors.paperRule,
-  border: `1px solid ${colors.paperRule}`,
+  backgroundColor: colors.rule,
+  border: `1px solid ${colors.rule}`,
   borderRadius: 2,
   padding: "12px 16px",
   fontSize: 14,
-  color: colors.paperMuted,
+  color: colors.textMuted,
   margin: "16px 0",
 };
 
@@ -195,9 +195,9 @@ export default function ModelGuidePage() {
           style={{
             fontFamily: typography.fonts.mono,
             fontSize: 11,
-            color: colors.paperMuted,
+            color: colors.textMuted,
             letterSpacing: "0.04em",
-            borderTop: `1px solid ${colors.paperRule}`,
+            borderTop: `1px solid ${colors.rule}`,
             paddingTop: 16,
             marginTop: 48,
           }}

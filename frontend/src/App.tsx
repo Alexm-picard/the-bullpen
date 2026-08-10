@@ -128,17 +128,16 @@ function ThemeToggleButton() {
       title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
       style={{
         background: "none",
-        border: `1px solid ${colors.panelEdge}`,
+        border: `1px solid ${colors.chromeEdge}`,
         borderRadius: 4,
-        padding: "6px 12px",
+        width: 40,
+        height: 32,
         cursor: "pointer",
-        fontFamily: typography.fonts.display,
-        fontWeight: typography.weights.semibold,
         fontSize: 18,
         color: colors.gold,
         display: "inline-flex",
         alignItems: "center",
-        gap: 6,
+        justifyContent: "center",
         transition: "border-color 0.15s",
       }}
     >
@@ -174,7 +173,7 @@ function Layout() {
                 fontSize: 21,
                 letterSpacing: "0.03em",
                 textTransform: "uppercase",
-                color: colors.ink,
+                color: colors.textOnChrome,
               }}
             >
               The <span style={{ color: colors.gold }}>Bullpen</span>
