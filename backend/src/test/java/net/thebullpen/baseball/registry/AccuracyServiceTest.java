@@ -53,10 +53,14 @@ class AccuracyServiceTest {
   }
 
   @Test
-  void pre_head_is_shown_with_its_failed_primary_verdict() {
+  void pre_head_is_shown_with_its_would_pass_verdict_under_the_ece_primary() {
+    // ADR-0014 / [180] re-aimed PRE's declared primary from Brier-edge (failed) to absolute
+    // calibration (ECE < 0.02). The regenerated full-data evidence flips the verdict accordingly.
+    // Still SHADOW - the gate PASSING is not the same as promotion (rule 6, human-gated).
     ModelAccuracyScorecard pre = scorecardsByModel().get("pitch_outcome_pre");
-    assertThat(pre.gateStatus()).isEqualTo("failed");
-    assertThat(pre.verdictOutcome()).isEqualTo("would_fail_primary");
+    assertThat(pre.gateStatus()).isEqualTo("passed");
+    assertThat(pre.verdictOutcome()).isEqualTo("would_pass");
+    assertThat(pre.primaryMetric()).isEqualTo("ece");
     assertThat(pre.brier()).isCloseTo(0.14764637722497043, within(1e-9));
     assertThat(pre.stage()).isEqualTo("SHADOW");
   }
@@ -79,7 +83,9 @@ class AccuracyServiceTest {
         .allSatisfy(
             row -> {
               assertThat(row.evaluation()).contains("offline").contains("not live");
-              assertThat(row.primaryMetric()).isEqualTo("brier");
+              // primaryMetric is head-specific now (PRE = ece since ADR-0014, others = brier);
+              // each head's exact value is pinned in its own test. Here just assert it is surfaced.
+              assertThat(row.primaryMetric()).isNotBlank();
             });
   }
 

@@ -3,10 +3,10 @@ package net.thebullpen.baseball.api;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
+import net.thebullpen.baseball.api.dto.PostPredictionsPage;
 import net.thebullpen.baseball.data.LivePitchesRepository;
 import net.thebullpen.baseball.domain.GameSummary;
 import net.thebullpen.baseball.domain.LivePitchRow;
-import net.thebullpen.baseball.domain.PostPredictionsPage;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
@@ -47,9 +47,14 @@ public class GameController {
   private static final int POST_PREDICTIONS_MIN_SIZE = 1;
   private static final int POST_PREDICTIONS_MAX_SIZE = 200;
 
-  private final LivePitchesRepository repo;
+  /** Balls per team behind each profile. Bounded so one page view is not a season-wide scan. */
+  private static final int TEAM_CONTACT_LIMIT = 250;
 
-  public GameController(LivePitchesRepository repo) {
+  private final LivePitchesRepository repo;
+  private final TeamContactAggregator aggregator;
+
+  public GameController(LivePitchesRepository repo, TeamContactAggregator aggregator) {
+    this.aggregator = aggregator;
     this.repo = repo;
   }
 
@@ -75,6 +80,48 @@ public class GameController {
     return repo.findPitchesSince(id, since);
   }
 
+  /**
+   * Season-to-date contact comparison for a game's two teams at this park - what the batted-ball
+   * card shows BEFORE any ball has been put in play.
+   *
+   * <p>Its own endpoint rather than a field on the game summary, because it is expensive (a
+   * season-wide scan plus N inferences per team) and the summary is read on every poll of every
+   * game. The card calls this only when it has no batted ball to show.
+   *
+   * <p>Per decision [188] / ADR-0016 this writes NOTHING to {@code prediction_log}: hundreds of
+   * evaluations collapse into two displayed numbers, so the individuals are intermediates. They are
+   * observable instead through the {@code thebullpen_inference_aggregate_*} metrics.
+   *
+   * <p>Returns 404 when the game is unknown. A team with no profileable contact yields a null
+   * profile rather than a zero - a team we cannot profile has no answer, and 0.0 would read as
+   * "never homers" on a card whose job is being honest about what it knows.
+   */
+  @GetMapping("/{id}/team-contact")
+  public TeamContactResponse teamContact(@PathVariable("id") long id) {
+    GameSummary game =
+        repo.findGame(id)
+            .orElseThrow(
+                () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "game not found: " + id));
+    LocalDate from = game.gameDate().withDayOfYear(1);
+    return new TeamContactResponse(
+        game.homeTeam(),
+        aggregator.profile(game.homeTeam(), game.homeTeam(), from, TEAM_CONTACT_LIMIT),
+        game.awayTeam(),
+        aggregator.profile(game.awayTeam(), game.homeTeam(), from, TEAM_CONTACT_LIMIT),
+        from);
+  }
+
+  /**
+   * @param parkTeam the HOME team, which is the park id by project convention - both profiles are
+   *     scored at the same park, since the comparison is about contact quality here.
+   */
+  public record TeamContactResponse(
+      String homeTeam,
+      TeamContactAggregator.TeamHrProfile home,
+      String awayTeam,
+      TeamContactAggregator.TeamHrProfile away,
+      LocalDate since) {}
+
   @GetMapping("/{id}/post-predictions")
   public PostPredictionsPage postPredictions(
       @PathVariable("id") long id,
@@ -91,6 +138,7 @@ public class GameController {
               + " and "
               + POST_PREDICTIONS_MAX_SIZE);
     }
-    return repo.findPostPredictions(id, page, size);
+    var preds = repo.findPostPredictions(id, page, size);
+    return new PostPredictionsPage(preds.rows(), page, size, preds.hasNext());
   }
 }

@@ -40,7 +40,9 @@ import org.springframework.test.web.servlet.MockMvc;
 /**
  * HTTP-layer tests for {@link RoutingAdminController}. Exercises the same auth boundary as {@link
  * RegistryControllerIT} plus the validation-rule → HTTP-status mapping for every {@link
- * net.thebullpen.baseball.inference.routing.RoutingException} subclass.
+ * net.thebullpen.baseball.inference.routing.RoutingException} subclass - including the
+ * corrupt-state 500 ({@code ChampionNotAtChampionStage}, task #94), whose body deliberately carries
+ * the precise message rather than the generic envelope (admin-authed; see the controller javadoc).
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -262,6 +264,31 @@ class RoutingAdminControllerIT {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(mapper.writeValueAsString(Map.of("mode", "live", "reason", "x"))))
         .andExpect(status().isBadRequest());
+  }
+
+  // --- corrupt stored state -> 500 (task #94) ---------------------------
+
+  /**
+   * What the four {@code ChampionNotAtChampionStage} catch blocks actually buy is the BODY: the
+   * status would be 500 either way (any escaping RuntimeException is), but the generic path returns
+   * {@code "an unexpected error occurred"} while this returns the version-id-carrying refusal. The
+   * corrupt state is created by a raw stage flip on model_versions (no trigger there, by design -
+   * V020's header), simulating a row stranded before the guard existed.
+   */
+  @Test
+  void write_against_a_corrupt_routing_row_returns_500_with_the_precise_message() throws Exception {
+    bootstrapRouting("corrupt_row_model");
+    jdbc.update(
+        "UPDATE model_versions SET stage = 'archived' WHERE model_name = ?", "corrupt_row_model");
+
+    mvc.perform(
+            post("/v1/admin/routing/corrupt_row_model/mode")
+                .header("Authorization", BASIC)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(Map.of("mode", "AB", "reason", "probe"))))
+        .andExpect(status().isInternalServerError())
+        .andExpect(jsonPath("$.error.message", containsString("not CHAMPION")))
+        .andExpect(jsonPath("$.error.message", containsString("rule 5/6")));
   }
 
   // --- helpers ----------------------------------------------------------

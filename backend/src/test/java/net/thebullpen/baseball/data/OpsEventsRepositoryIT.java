@@ -9,7 +9,7 @@ import java.util.TimeZone;
 import java.util.UUID;
 import net.thebullpen.baseball.domain.OpsEvent;
 import net.thebullpen.baseball.domain.OpsEventType;
-import net.thebullpen.baseball.domain.OpsEventsPage;
+import net.thebullpen.baseball.domain.PagedRows;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -104,17 +104,15 @@ class OpsEventsRepositoryIT {
 
     // Ordering is (occurred_at DESC, id DESC), so the id tiebreak keeps it deterministic even when
     // the five inserts share a CURRENT_TIMESTAMP second.
-    OpsEventsPage first = repo.findRecentPage(0, 2);
-    assertThat(first.page()).isZero();
-    assertThat(first.size()).isEqualTo(2);
+    PagedRows<OpsEvent> first = repo.findRecentPage(0, 2);
     assertThat(first.rows()).extracting(OpsEvent::detail).containsExactly("deploy 4", "deploy 3");
     assertThat(first.hasNext()).as("3 events remain past page 0").isTrue();
 
-    OpsEventsPage second = repo.findRecentPage(1, 2);
+    PagedRows<OpsEvent> second = repo.findRecentPage(1, 2);
     assertThat(second.rows()).extracting(OpsEvent::detail).containsExactly("deploy 2", "deploy 1");
     assertThat(second.hasNext()).as("deploy 0 remains past page 1").isTrue();
 
-    OpsEventsPage last = repo.findRecentPage(2, 2);
+    PagedRows<OpsEvent> last = repo.findRecentPage(2, 2);
     assertThat(last.rows()).extracting(OpsEvent::detail).containsExactly("deploy 0");
     assertThat(last.hasNext()).as("no events past the last page").isFalse();
   }

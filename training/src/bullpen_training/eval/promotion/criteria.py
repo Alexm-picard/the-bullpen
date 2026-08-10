@@ -383,6 +383,40 @@ _PITCH_POST = PromotionCriteria(
     "Calibration gated by a loose relative ECE guardrail + the absolute Phase-2 ECE bar.",
 )
 
+# Decision [183]: pitch-TYPE PRIOR (report candidate A). SAME calibration-first shape as
+# _PITCH_PRE / ADR-0014 - a well-calibrated y7 distribution is the deliverable, NOT a top-1
+# predictor (pitch selection is high-entropy; top-1 ~0.45, the low ceiling the report documents).
+# PRIMARY = absolute ECE < 0.02, made the gating primary by the -absolute_ece_bar threshold
+# (the [166] non-inferiority idiom leaves the relative ECE lane vacuous). GUARDRAIL = beat the
+# rule-9 co-registered pitch_type_lr_baseline on log-loss (max_delta 0). top-3 accuracy (~0.88)
+# is DELIBERATELY not a criteria metric - PrimaryMetric has no TOP3 and [183] scopes it as a
+# SUPPLEMENTARY, non-gating figure the trainer records in the evidence, never a promotion gate.
+_PITCH_TYPE_PRE = PromotionCriteria(
+    model_name="pitch_type_pre",
+    primary_metric=PrimaryMetric.ECE,
+    primary_threshold=-0.02,  # == -absolute_ece_bar; see the block comment above.
+    sample_size_target=2_000,
+    guardrails=(
+        GuardrailSpec(
+            metric=PrimaryMetric.LOG_LOSS,
+            max_delta=0.0,
+            rationale="pitch_type_pre multiclass log-loss may not regress vs the rule-9 "
+            "co-registered pitch_type_lr_baseline at all (decision [183] guardrail; the "
+            "bake-off's candidate A beats the LR baseline on log-loss).",
+        ),
+    ),
+    absolute_ece_bar=0.02,  # THE gating primary ([183]): the y7 distribution's ECE must be < 0.02.
+    rationale="pre-pitch pitch-TYPE PRIOR (decision [183], report candidate A): a "
+    "well-calibrated y7 distribution, NOT a top-1 predictor. PRIMARY = absolute calibration "
+    "ECE < 0.02 (the relative lane is vacuous by the -0.02 threshold idiom, so the absolute "
+    "bar gates, like pitch_outcome_pre / ADR-0014); GUARDRAIL = beat the LR baseline on "
+    "log-loss. top-3 accuracy (~0.88 in the bake-off) is a SUPPLEMENTARY, non-gating check "
+    "the trainer records - pitch selection is high-entropy (top-1 ~0.45), so the value is the "
+    "calibrated distribution, never accuracy. First champion via the [182] first-champion "
+    "offline-gate path. Public claim: calibrated pitch-type prior (ECE < 0.02), never 'we "
+    "predict the next pitch'.",
+)
+
 _BATTED_BALL_LR = PromotionCriteria(
     model_name="batted_ball_lr_baseline",
     primary_metric=PrimaryMetric.BRIER,
@@ -509,6 +543,7 @@ _BATTED_BALL_CARRY = PromotionCriteria(
 CRITERIA_BY_MODEL: Final[dict[str, PromotionCriteria]] = {
     _PITCH_PRE.model_name: _PITCH_PRE,
     _PITCH_POST.model_name: _PITCH_POST,
+    _PITCH_TYPE_PRE.model_name: _PITCH_TYPE_PRE,
     _BATTED_BALL_LR.model_name: _BATTED_BALL_LR,
     _BATTED_BALL_MLP.model_name: _BATTED_BALL_MLP,
     _BATTED_BALL_CARRY.model_name: _BATTED_BALL_CARRY,

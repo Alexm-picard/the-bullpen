@@ -1,66 +1,88 @@
 /**
- * BROADCAST-PACKAGE design tokens (decision [160]) - the v2 identity.
+ * BROADCAST-PACKAGE design tokens (decision [160], dark-field per [191]/ADR-0017).
  *
- * The scouting-report metaphor stays; the rendering moves from "printed advance
- * packet" to a telecast graphics package: a LIGHT analytical field under DARK
- * navy broadcast chrome (masthead, scorebug, lower-thirds), one broadcast-gold
- * accent, and per-team color confined to edge bars and fills (never text).
+ * [191] DARK-FIELD: the chrome palette is promoted to ground. The previous
+ * light-field values survive as `paper` for the Model Guide page's reading
+ * surface. This is a single committed look, NOT a dark-mode toggle (the rejected
+ * "dark mode v1" was a user-facing switch; this uses the broadcast-dark values
+ * the token layer already carried).
  *
- * The governing rule (resolves [101]'s restraint warning): broadcast energy in
- * the FRAME, analytical restraint in the CELLS. Telecast chrome never appears
- * inside data tables.
+ * The governing rule ([101]): broadcast energy in the FRAME, analytical restraint
+ * in the CELLS. On the dark field, data tables use --panel backgrounds with
+ * --text color; chrome appears in the nav, scorebug, and panel headers.
  *
- * MIGRATION NOTE: this module lives BESIDE `tokens.ts` ([133] identity) while
- * screens migrate one PR at a time; components import from exactly one of the
- * two. When the last screen lands on broadcast, `tokens.ts` is deleted.
+ * **No hex codes outside src/design/.** Same `npm run lint:hex-codes` discipline.
  *
- * **No hex codes outside src/design/.** Same `npm run lint:hex-codes`
- * discipline as v1.
+ * Values mirror tokens.css exactly. If you change one, change both.
  */
 
 export const colors = {
-  // ── The analytical field (light) ───────────────────────────────────────────
-  /** Cool off-white app base - the field the data lives on. NOT warm cream. */
-  field: "#F6F7F9",
-  /** White panels / cards sitting on the field. */
-  panel: "#FFFFFF",
-  /** Alternating rows, quiet section backgrounds. */
-  fieldSubtle: "#EDF0F4",
-  /** 1px rules and dividers - borders over shadows, as ever. */
-  rule: "#D9DEE7",
+  // ── Theme-switching ground ([192]) ─────────────────────────────────────────
+  // These return CSS var() references so every component responds to the
+  // light/dark toggle without individual changes. The actual values live in
+  // tokens.css :root[data-theme] blocks.
+  field: "var(--bp-field)",
+  fieldHi: "var(--bp-field-hi)",
+  panel: "var(--bp-panel)",
+  panelEdge: "var(--bp-panel-edge)",
+  rule: "var(--bp-rule)",
+  ink: "var(--bp-ink)",
+  text: "var(--bp-text)",
+  textMuted: "var(--bp-muted)",
+  goldInk: "var(--bp-gold-ink)",
 
-  // ── Broadcast chrome (dark) ────────────────────────────────────────────────
-  /** Primary chrome - masthead, scorebug, lower-third bars. Deep telecast navy. */
+  // ── Constant chrome (broadcast identity, same in both themes) ──────────────
   chrome: "#0E1B33",
-  /** Deepest chrome - footer, scorebug team wells. */
   chromeDeep: "#080F1F",
-  /** Hairlines + dividers ON chrome. */
   chromeEdge: "#26365C",
-  /** Neutral secondary; also the fallback "team" color (see teamColors). */
-  steel: "#8B95A7",
-
-  // ── Accent ─────────────────────────────────────────────────────────────────
-  /** Broadcast gold - LIVE states, emphasis FILLS, marks on chrome. */
-  gold: "#F2A900",
-  /** Darkened gold for TEXT/links on the light field (contrast-safe). */
-  goldInk: "#8A5F00",
-
-  // ── Text ───────────────────────────────────────────────────────────────────
-  /** Near-black ink - headlines, high-emphasis. */
-  ink: "#10141B",
-  /** Body copy and default UI text. */
-  text: "#272D38",
-  /** Labels, captions, secondary metadata. */
-  textMuted: "#5E6878",
-  /** Text on chrome surfaces. */
   textOnChrome: "#F4F6FA",
-  /** Muted text on chrome surfaces. */
   textOnChromeMuted: "#9DA9BF",
 
-  // ── Conditional-format diverging ramp (the signature primitive survives) ───
-  // Hues carried over from v1 so cellColor() reads identically; only the
-  // neutral retunes from warm cream to the cool field tone.
+  // ── Neutral ────────────────────────────────────────────────────────────────
+  steel: "#8B95A7",
+
+  // ── Accent (same in both themes) ───────────────────────────────────────────
+  gold: "#F2A900",
+  goldDeep: "#C98D00",
+
+  // ── Live state ─────────────────────────────────────────────────────────────
+  live: "#39D98A",
+
+  // ── Heat ramp ──────────────────────────────────────────────────────────────
+  heat: {
+    hi: "#FF5A4E",
+    mid: "#F2A900",
+    lo: "#3D4F78",
+  },
+
+  // ── Paper surface (Model Guide, always light) ──────────────────────────────
+  paper: "#F6F7F9",
+  paperText: "#272D38",
+  paperMuted: "#5E6878",
+  paperRule: "#D9DEE7",
+
+  // ── Legacy aliases ─────────────────────────────────────────────────────────
+  fieldSubtle: "var(--bp-field-hi)",
+
+  // ── Conditional-format (CSS var for direct backgrounds, static for cellColor) ──
+  // Components using these as direct backgrounds get theme-switching via CSS vars.
+  // cellColor (which needs RGB interpolation) uses condFormatHex instead.
   condFormat: {
+    good3: "var(--bp-cond-good3)",
+    good1: "var(--bp-cond-good1)",
+    neutral: "var(--bp-cond-neutral)",
+    bad1: "var(--bp-cond-bad1)",
+    bad3: "var(--bp-cond-bad3)",
+  },
+  // Static hex for cellColor's RGB interpolation (dark-field values).
+  condFormatDark: {
+    good3: "#39A568",
+    good1: "#1F4D3A",
+    neutral: "#1C2A4A",
+    bad1: "#4D2A28",
+    bad3: "#E05A4C",
+  },
+  condFormatLight: {
     good3: "#39A568",
     good1: "#BFE3C6",
     neutral: "#EBEEF2",
@@ -69,9 +91,7 @@ export const colors = {
   },
 
   // ── Sequential ramps (D3 / SVG) ────────────────────────────────────────────
-  /** Pitch-location KDE: warm yellow -> gold -> ember. Re-anchored on gold. */
   heatWarm: ["#FFF6E0", "#FFD37E", "#F2A900", "#C3491F"] as const,
-  /** Batted-ball density: green monochrome (unchanged). */
   spray: ["#EAF3E7", "#9CCB8E", "#4F9E55", "#1F5E32"] as const,
 
   // ── Colorblind-safe diverging alt (unchanged) ──────────────────────────────
@@ -82,9 +102,7 @@ export const colors = {
 
   // ── Data visualisation palettes ────────────────────────────────────────────
   viz: {
-    /** Viridis 5-stop (decision [106]) - length MUST stay 5. */
     viridis: ["#440154", "#3B528B", "#21908C", "#5DC863", "#FDE725"] as const,
-    /** Categorical 5-stop: chrome leads, gold second (scarlet retired). */
     categorical: [
       "#0E1B33",
       "#F2A900",
@@ -95,21 +113,53 @@ export const colors = {
   },
 } as const;
 
+/** Team-color data tokens (edge bars and fills, never text). */
+export const teamColors: Record<string, string> = {
+  AZ: "#A71930",
+  ATH: "#003831",
+  ATL: "#CE1141",
+  BAL: "#DF4601",
+  BOS: "#E0655F",
+  CHC: "#0E3386",
+  CIN: "#C6011F",
+  CLE: "#00385D",
+  COL: "#333366",
+  CWS: "#27251F",
+  DET: "#0C2340",
+  HOU: "#002D62",
+  KC: "#004687",
+  LAA: "#BA0021",
+  LAD: "#5B9BD5",
+  MIA: "#00A3E0",
+  MIL: "#FFC52F",
+  MIN: "#002B5C",
+  NYM: "#002D72",
+  NYY: "#7BA2D6",
+  PHI: "#E81828",
+  PIT: "#FDB827",
+  SD: "#2F241D",
+  SEA: "#2FBFA8",
+  SF: "#FD5A1E",
+  STL: "#C41E3A",
+  TB: "#8FBCE6",
+  TEX: "#003278",
+  TOR: "#134A8E",
+  WSH: "#AB0003",
+};
+
+export function teamColor(abbrev: string): string {
+  return teamColors[abbrev] ?? colors.steel;
+}
+
 export const typography = {
   fonts: {
-    /** Display voice - condensed broadcast insert type. ITALIC is the speed
-     *  read for live states; heavy weights (600-800), uppercase for labels. */
     display: '"Barlow Condensed", "Arial Narrow", sans-serif',
-    /** Body copy, UI text, long-form. Tabular figures globally via tnum. */
     body: '"Inter", system-ui, -apple-system, "Segoe UI", sans-serif',
-    /** Stat figures, data tables, scorebug numerals. Tabular by construction. */
     mono: '"JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace',
   },
-  // 1.25 modular scale, 16px base (unchanged): 12, 14, 16, 20, 24, 32, 48, 64.
   scale: [12, 14, 16, 20, 24, 32, 48, 64] as const,
   lineHeights: {
     body: 1.5,
-    /** Condensed display tightens further than v1. */
     display: 1.05,
   },
   weights: {
@@ -121,40 +171,29 @@ export const typography = {
   },
 } as const;
 
-// 8-point grid (unchanged): 4, 8, 12, 16, 24, 32, 48, 64, 96.
 export const spacing = [4, 8, 12, 16, 24, 32, 48, 64, 96] as const;
 
-// [112] holds: functional only, 150-300ms. The ticker is the one continuous
-// animation and it dies entirely under prefers-reduced-motion (broadcast.css).
 export const motion = {
   durationsMs: { fast: 150, base: 200, slow: 300 },
   easing: "cubic-bezier(0.4, 0, 0.2, 1)",
 } as const;
 
-/** Diagonal-cut clip-paths - the broadcast panel/lower-third edge language. */
 export const cuts = {
-  /** Top-right corner cut for panels. */
   panelCorner:
     "polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%)",
-  /** Slanted right edge for lower-third bars. */
   lowerThirdEdge: "polygon(0 0, 100% 0, calc(100% - 16px) 100%, 0 100%)",
-  /** Slanted both ends - scorebug center wedge. */
   wedge: "polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)",
+  /** Angled chip - gold tag with slanted right edge. */
+  chip: "polygon(0 0, 100% 0, calc(100% - 7px) 100%, 0 100%)",
 } as const;
 
 export const layouts = {
-  /** Long-form editorial content (About, methodology). */
   editorialMaxWidth: 680,
-  /** Analytical dashboards. */
   analyticalMaxWidth: 1200,
-  /** Broadcast page column - slightly wider than the old report sheet. */
   broadcastMaxWidth: 1140,
-  /** Left rail width (Ops, Park Explorer). */
   analyticalSidebar: 280,
 } as const;
 
-// Broadcast graphics are SHARP: square panels, tiny radii only where Mantine
-// needs one, pill reserved for dots/chips.
 export const radii = {
   none: 0,
   sm: 2,
@@ -162,6 +201,7 @@ export const radii = {
 } as const;
 
 export const shadows = {
-  /** Panels prefer 1px rules; this exists for Mantine popover compatibility. */
   popover: "0 6px 16px rgba(8, 15, 31, 0.14), 0 3px 6px rgba(8, 15, 31, 0.08)",
+  /** Deep shadow for canvas/card elevation on the dark field. */
+  canvas: "0 24px 60px rgba(0, 0, 0, 0.45)",
 } as const;

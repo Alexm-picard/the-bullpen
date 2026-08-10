@@ -75,13 +75,23 @@ class PredictAllParksControllerTest {
   @Autowired private RegistryService service;
   @Autowired private JdbcTemplate jdbc;
   @Autowired private ObjectMapper mapper;
+  @Autowired private org.springframework.cache.CacheManager cacheManager;
 
   @TempDir Path artifactDir;
 
   @BeforeEach
   void resetRegistry() {
     jdbc.update("DELETE FROM experiment_results");
+    // model_routing + its @Cacheable routing cache: promoting a champion writes a routing row, and
+    // a raw DELETE bypasses RoutingService's @CacheEvict - without clearing both, the no-champion
+    // 503 test would route to a now-deleted champion (latently method-order-dependent). Aligns with
+    // PredictBattedBallControllerTest.
+    jdbc.update("DELETE FROM model_routing");
     jdbc.update("DELETE FROM model_versions");
+    var routing = cacheManager.getCache("routing");
+    if (routing != null) {
+      routing.clear();
+    }
   }
 
   @Test

@@ -1,6 +1,7 @@
 package net.thebullpen.baseball.inference.routing;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.file.Files;
@@ -53,6 +54,7 @@ class RoutingServiceIT {
 
   @Autowired private RegistryService registry;
   @Autowired private RoutingService routing;
+  @Autowired private RoutingIntegrityCheck integrityCheck;
   @Autowired private JdbcTemplate jdbc;
   @Autowired private CacheManager cacheManager;
 
@@ -246,6 +248,300 @@ class RoutingServiceIT {
     RoutingConfig second = routing.getRouting("cache_hit_model");
     // Cached returns the same reference (Caffeine doesn't copy).
     assertThat(second).isSameAs(first);
+  }
+
+  // --- champion-stage invariant (task #94, V011 bypass) -------------------
+
+  /**
+   * The carry-forward refusal: an admin write that merely preserves the current champion must still
+   * refuse if that champion is no longer at CHAMPION stage. The stranded state is created by a RAW
+   * stage flip on model_versions (which has no trigger, by design - see V020's header) - simulating
+   * a row stranded before this guard existed, since every in-code path that archives a serving
+   * champion now removes the routing row in the same transaction.
+   */
+  @Test
+  void setMode_refuses_to_perpetuate_a_non_champion_reference() throws Exception {
+    ModelVersion v1 = registry.register(sampleRequest("stale_champ_model", "v1"));
+    registry.transitionStage(v1.id(), Stage.CHAMPION);
+    jdbc.update("UPDATE model_versions SET stage = 'archived' WHERE id = ?", v1.id());
+
+    assertThatThrownBy(() -> routing.setMode("stale_champ_model", RoutingMode.AB))
+        .isInstanceOf(RoutingException.ChampionNotAtChampionStage.class)
+        .hasMessageContaining("ARCHIVED");
+  }
+
+  @Test
+  void setChallenger_refuses_to_perpetuate_a_non_champion_reference() throws Exception {
+    ModelVersion v1 = registry.register(sampleRequest("stale_champ_sc_model", "v1"));
+    registry.transitionStage(v1.id(), Stage.CHAMPION);
+    ModelVersion v2 = registry.register(sampleRequest("stale_champ_sc_model", "v2"));
+    registry.transitionStage(v2.id(), Stage.SHADOW);
+    jdbc.update("UPDATE model_versions SET stage = 'archived' WHERE id = ?", v1.id());
+
+    assertThatThrownBy(() -> routing.setChallenger("stale_champ_sc_model", v2.id()))
+        .isInstanceOf(RoutingException.ChampionNotAtChampionStage.class);
+  }
+
+  @Test
+  void setTrafficPct_refuses_to_perpetuate_a_non_champion_reference() throws Exception {
+    ModelVersion v1 = registry.register(sampleRequest("stale_champ_tp_model", "v1"));
+    registry.transitionStage(v1.id(), Stage.CHAMPION);
+    routing.setMode("stale_champ_tp_model", RoutingMode.AB);
+    jdbc.update("UPDATE model_versions SET stage = 'archived' WHERE id = ?", v1.id());
+
+    assertThatThrownBy(() -> routing.setTrafficPct("stale_champ_tp_model", 10.0))
+        .isInstanceOf(RoutingException.ChampionNotAtChampionStage.class);
+  }
+
+  @Test
+  void clearChallenger_refuses_to_perpetuate_a_non_champion_reference() throws Exception {
+    ModelVersion v1 = registry.register(sampleRequest("stale_champ_cc_model", "v1"));
+    registry.transitionStage(v1.id(), Stage.CHAMPION);
+    jdbc.update("UPDATE model_versions SET stage = 'archived' WHERE id = ?", v1.id());
+
+    assertThatThrownBy(() -> routing.clearChallenger("stale_champ_cc_model"))
+        .isInstanceOf(RoutingException.ChampionNotAtChampionStage.class);
+  }
+
+  /** Direct call with a never-promoted version: refused, and no row is written. */
+  @Test
+  void ensureRoutingForChampion_refuses_a_candidate_version() throws Exception {
+    ModelVersion v1 = registry.register(sampleRequest("ensure_cand_model", "v1"));
+    // v1 stays at CANDIDATE.
+
+    assertThatThrownBy(() -> routing.ensureRoutingForChampion("ensure_cand_model", v1.id()))
+        .isInstanceOf(RoutingException.ChampionNotAtChampionStage.class)
+        .hasMessageContaining("CANDIDATE");
+    Integer rows =
+        jdbc.queryForObject(
+            "SELECT count(*) FROM model_routing WHERE model_name = ?",
+            Integer.class,
+            "ensure_cand_model");
+    assertThat(rows).isZero();
+  }
+
+  /**
+   * The V011 bypass in its most reachable form: archiving a SERVING champion. Both in-code paths
+   * that do this must drop the routing row in the same transaction - a surviving row would keep the
+   * router serving a version outside the rule-5/rule-6 gates.
+   */
+  @Test
+  void champion_to_archived_transition_removes_routing_row() throws Exception {
+    ModelVersion v1 = registry.register(sampleRequest("arch_champ_model", "v1"));
+    registry.transitionStage(v1.id(), Stage.CHAMPION);
+    assertThat(routingRowCount("arch_champ_model")).isEqualTo(1); // anti-vacuity
+
+    registry.transitionStage(v1.id(), Stage.ARCHIVED);
+    assertThat(routingRowCount("arch_champ_model")).isZero();
+  }
+
+  @Test
+  void bootstrap_reset_removes_routing_row() throws Exception {
+    ModelVersion v1 = registry.register(sampleRequest("bootstrap_reset_model", "v1"));
+    registry.transitionStage(v1.id(), Stage.CHAMPION);
+    assertThat(routingRowCount("bootstrap_reset_model")).isEqualTo(1); // anti-vacuity
+
+    registry.registerWithBootstrap(
+        sampleRequest("bootstrap_reset_model", "v2"),
+        new net.thebullpen.baseball.registry.dto.ResetFeatureSchemaConfirmation(
+            "bootstrap_reset_model", "RoutingServiceIT: proving bootstrap drops routing"));
+    assertThat(routingRowCount("bootstrap_reset_model")).isZero();
+  }
+
+  /**
+   * Boot-time half of the invariant. The bean's throw-on-violation is what fails the boot
+   * (SmartInitializingSingleton failures abort context refresh - framework contract, not re-proven
+   * here); these tests pin the detection itself, both directions.
+   */
+  @Test
+  void integrity_check_passes_on_a_legitimate_routing_row() throws Exception {
+    bootstrapRouting("integrity_ok_model");
+    assertThat(routingRowCount("integrity_ok_model")).isEqualTo(1); // the pass is not vacuous
+    assertThatCode(() -> integrityCheck.afterSingletonsInstantiated()).doesNotThrowAnyException();
+  }
+
+  // --- cross-model references (rule 9) ------------------------------------
+
+  /** A champion of the WRONG MODEL is refused even though its stage IS champion. */
+  @Test
+  void ensureRoutingForChampion_refuses_another_models_champion() throws Exception {
+    ModelVersion owner = registry.register(sampleRequest("xm_owner_model", "v1"));
+    registry.transitionStage(owner.id(), Stage.CHAMPION);
+
+    assertThatThrownBy(() -> routing.ensureRoutingForChampion("xm_other_model", owner.id()))
+        .isInstanceOf(RoutingException.ChampionNotAtChampionStage.class)
+        .hasMessageContaining("belongs to model")
+        .hasMessageContaining("xm_owner_model");
+    assertThat(routingRowCount("xm_other_model")).isZero();
+  }
+
+  @Test
+  void setChallenger_refuses_another_models_shadow_version() throws Exception {
+    bootstrapRouting("xm_ch_model");
+    ModelVersion other = registry.register(sampleRequest("xm_ch_other", "v1"));
+    registry.transitionStage(other.id(), Stage.SHADOW);
+
+    assertThatThrownBy(() -> routing.setChallenger("xm_ch_model", other.id()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("rule 9");
+  }
+
+  /**
+   * The boot scan must flag a routing row referencing another model's version. The state is created
+   * by RAW re-homing the version on model_versions (no trigger there, by design) - the routing-side
+   * triggers make the row itself impossible to WRITE cross-model, so drift on the versions side is
+   * the only way this state can exist.
+   */
+  @Test
+  void integrity_check_flags_a_cross_model_reference() throws Exception {
+    ModelVersion v1 = registry.register(sampleRequest("xm_int_model", "v1"));
+    registry.transitionStage(v1.id(), Stage.CHAMPION);
+    jdbc.update("UPDATE model_versions SET model_name = 'xm_int_other' WHERE id = ?", v1.id());
+
+    assertThatThrownBy(() -> integrityCheck.afterSingletonsInstantiated())
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("xm_int_model")
+        .hasMessageContaining("<no matching model_versions row>");
+  }
+
+  // --- challenger-slot invariant (issue #374) -----------------------------
+
+  /**
+   * Archiving a version that occupies its model's challenger slot clears the slot in the same
+   * transaction - the in-code path that used to strand an archived challenger (shadow legs kept
+   * loading it; mode=AB would have routed it real traffic).
+   */
+  @Test
+  void archiving_a_routed_challenger_clears_the_slot() throws Exception {
+    ModelVersion v1 = registry.register(sampleRequest("chal_arch_model", "v1"));
+    registry.transitionStage(v1.id(), Stage.CHAMPION);
+    ModelVersion v2 = registry.register(sampleRequest("chal_arch_model", "v2"));
+    registry.transitionStage(v2.id(), Stage.SHADOW);
+    routing.setChallenger("chal_arch_model", v2.id());
+    assertThat(routing.getRouting("chal_arch_model").challengerVersionId())
+        .isEqualTo(v2.id()); // anti-vacuity: the slot is genuinely occupied
+
+    registry.transitionStage(v2.id(), Stage.ARCHIVED);
+
+    RoutingConfig after = routing.getRouting("chal_arch_model");
+    assertThat(after.challengerVersionId()).isNull();
+    assertThat(after.challengerTrafficPct()).isEqualTo(0.0);
+    assertThat(after.mode()).isEqualTo(RoutingMode.SHADOW);
+    assertThat(after.championVersionId()).isEqualTo(v1.id()); // champion untouched
+  }
+
+  @Test
+  void archiving_an_unrouted_shadow_version_leaves_routing_untouched() throws Exception {
+    ModelVersion v1 = registry.register(sampleRequest("chal_noop_model", "v1"));
+    registry.transitionStage(v1.id(), Stage.CHAMPION);
+    ModelVersion v2 = registry.register(sampleRequest("chal_noop_model", "v2"));
+    registry.transitionStage(v2.id(), Stage.SHADOW);
+    // v2 never enters the challenger slot.
+
+    registry.transitionStage(v2.id(), Stage.ARCHIVED);
+
+    RoutingConfig after = routing.getRouting("chal_noop_model");
+    assertThat(after.championVersionId()).isEqualTo(v1.id());
+    assertThat(after.challengerVersionId()).isNull();
+  }
+
+  /**
+   * The boot scan flags an occupied challenger slot referencing a non-SHADOW version. The state is
+   * created by a RAW stage flip (no model_versions trigger, by design) - simulating a row stranded
+   * before the #374 clearing existed, since the in-code archive path now clears it.
+   */
+  @Test
+  void integrity_check_flags_a_stale_challenger() throws Exception {
+    ModelVersion v1 = registry.register(sampleRequest("chal_int_model", "v1"));
+    registry.transitionStage(v1.id(), Stage.CHAMPION);
+    ModelVersion v2 = registry.register(sampleRequest("chal_int_model", "v2"));
+    registry.transitionStage(v2.id(), Stage.SHADOW);
+    routing.setChallenger("chal_int_model", v2.id());
+    jdbc.update("UPDATE model_versions SET stage = 'archived' WHERE id = ?", v2.id());
+
+    assertThatThrownBy(() -> integrityCheck.afterSingletonsInstantiated())
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("chal_int_model")
+        .hasMessageContaining("archived");
+  }
+
+  /**
+   * Cross-model completeness for the challenger scan (mirrors the champion-side test above): a
+   * challenger re-homed to another model must read as a violation via the model-bound JOIN, even
+   * though its stage is still 'shadow' - the V021 trigger refuses WRITING such a row, so raw
+   * versions-side drift is the only way the state can exist.
+   */
+  @Test
+  void integrity_check_flags_a_cross_model_challenger() throws Exception {
+    ModelVersion v1 = registry.register(sampleRequest("chal_xm_model", "v1"));
+    registry.transitionStage(v1.id(), Stage.CHAMPION);
+    ModelVersion v2 = registry.register(sampleRequest("chal_xm_model", "v2"));
+    registry.transitionStage(v2.id(), Stage.SHADOW);
+    routing.setChallenger("chal_xm_model", v2.id());
+    jdbc.update("UPDATE model_versions SET model_name = 'chal_xm_other' WHERE id = ?", v2.id());
+
+    assertThatThrownBy(() -> integrityCheck.afterSingletonsInstantiated())
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("chal_xm_model")
+        .hasMessageContaining("<no matching model_versions row>");
+  }
+
+  @Test
+  void integrity_check_throws_on_a_stranded_routing_row() throws Exception {
+    ModelVersion v1 = registry.register(sampleRequest("integrity_bad_model", "v1"));
+    registry.transitionStage(v1.id(), Stage.CHAMPION);
+    jdbc.update("UPDATE model_versions SET stage = 'archived' WHERE id = ?", v1.id());
+
+    assertThatThrownBy(() -> integrityCheck.afterSingletonsInstantiated())
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("integrity_bad_model")
+        .hasMessageContaining("archived");
+  }
+
+  // --- champion swap resets AB traffic (#379) ----------------------------
+
+  @Test
+  void champion_swap_resets_challenger_traffic_when_experiment_was_bound_to_old_champion()
+      throws Exception {
+    // v1 champion, v2 shadow challenger at AB/30%, then v3 promoted to champion.
+    // The AB experiment was bound to v1; carrying mode/pct forward would silently rebind it to v3.
+    ModelVersion v1 = registry.register(sampleRequest("swap_model", "v1"));
+    registry.transitionStage(v1.id(), Stage.CHAMPION);
+    ModelVersion v2 = registry.register(sampleRequest("swap_model", "v2"));
+    registry.transitionStage(v2.id(), Stage.SHADOW);
+    routing.setChallenger("swap_model", v2.id());
+    routing.setMode("swap_model", RoutingMode.AB);
+    routing.setTrafficPct("swap_model", 0.30);
+
+    RoutingConfig before = routing.getRouting("swap_model");
+    assertThat(before.challengerVersionId()).isEqualTo(v2.id());
+    assertThat(before.challengerTrafficPct()).isEqualTo(0.30);
+    assertThat(before.mode()).isEqualTo(RoutingMode.AB);
+
+    // Promote v3 to champion (requires passing evidence against v1).
+    ModelVersion v3 = registry.register(sampleRequest("swap_model", "v3"));
+    registry.transitionStage(v3.id(), Stage.SHADOW);
+    seedPassingExperiment("swap_model", v1.id(), v3.id());
+    registry.transitionStage(v3.id(), Stage.CHAMPION);
+
+    RoutingConfig after = routing.getRouting("swap_model");
+    assertThat(after.championVersionId()).isEqualTo(v3.id());
+    assertThat(after.challengerVersionId())
+        .as("challenger survives the swap (it is not the new champion)")
+        .isEqualTo(v2.id());
+    assertThat(after.challengerTrafficPct())
+        .as("traffic must reset to 0 - the AB experiment was bound to v1, not v3")
+        .isEqualTo(0.0);
+    assertThat(after.mode())
+        .as("mode must reset to SHADOW - re-enablement is a deliberate admin action")
+        .isEqualTo(RoutingMode.SHADOW);
+  }
+
+  private int routingRowCount(String modelName) {
+    Integer rows =
+        jdbc.queryForObject(
+            "SELECT count(*) FROM model_routing WHERE model_name = ?", Integer.class, modelName);
+    return rows == null ? 0 : rows;
   }
 
   // --- helpers ----------------------------------------------------------

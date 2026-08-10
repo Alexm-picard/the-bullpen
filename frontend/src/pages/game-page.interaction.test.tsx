@@ -14,7 +14,7 @@ import "@testing-library/jest-dom/vitest";
 import { MantineProvider } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import type { GameSummary, LivePitchRow } from "../api/games";
@@ -38,6 +38,8 @@ const GAME: GameSummary = {
   inning: 5,
   status: "IN_PROGRESS",
   detailedState: "In Progress",
+  currentMatchup: null,
+  mostRecentBattedBall: null,
 };
 
 function pitch(over: Partial<LivePitchRow> = {}): LivePitchRow {
@@ -72,6 +74,7 @@ function pitch(over: Partial<LivePitchRow> = {}): LivePitchRow {
     hitDistanceFt: null,
     bbType: null,
     event: null,
+    sprayAngleDeg: null,
     ...over,
   };
 }

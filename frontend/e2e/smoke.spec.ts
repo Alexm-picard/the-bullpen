@@ -65,6 +65,10 @@ const SLATE_GAME = {
   inning: 6,
   status: "IN_PROGRESS",
   detailedState: "In Progress",
+  // V031: the slate carries the same nullable field; null is the honest pre-first-pitch shape.
+  currentMatchup: null,
+  // Untyped route mock - tsc cannot force this field the way it forces the vitest fixtures.
+  mostRecentBattedBall: null,
 };
 
 test("games slate degrades to the showcase slate when the live API is empty", async ({
@@ -109,6 +113,19 @@ test("games slate renders a row and its numeric link opens the live game page", 
       body: JSON.stringify(SLATE_GAME),
     }),
   );
+  await page.route("**/v1/games/745804/team-contact", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        homeTeam: "TOR",
+        home: null,
+        awayTeam: "BOS",
+        away: null,
+        since: "2026-01-01",
+      }),
+    }),
+  );
   await page.route("**/v1/games/745804/pitches*", (route) =>
     route.fulfill({
       status: 200,
@@ -130,4 +147,41 @@ test("games slate renders a row and its numeric link opens the live game page", 
   await expect(page.getByText("Invalid game id")).toHaveCount(0);
   await expect(page.locator("h1").first()).toBeVisible();
   expect(errors, "uncaught errors navigating the live slate").toEqual([]);
+});
+
+test("browser back/forward re-renders routes cleanly (BrowserRouter history)", async ({
+  page,
+}) => {
+  // The unit suite mounts every page under MemoryRouter, so real history behaviour
+  // (pushState/popState) is only ever exercised here - and it is the surface a router
+  // major-version bump is most likely to regress. Walk the stack in both directions.
+  //
+  // Each landing asserts the h1 TEXT, not merely that some h1 is visible: a
+  // visibility-only check still passes if two routes render each other's page, which
+  // makes it blind to exactly the mis-resolution a routing change would cause.
+  // Scoping clicks to <header> matters too - the mobile Drawer portals links with the
+  // same accessible names outside the header, which would trip strict mode.
+  const errors = trackPageErrors(page);
+
+  await page.goto("/");
+  const header = page.locator("header");
+  await header.getByRole("link", { name: "parks", exact: true }).click();
+  await expect(page).toHaveURL(/\/parks$/);
+  await header.getByRole("link", { name: "about", exact: true }).click();
+  await expect(page).toHaveURL(/\/about$/);
+  await expect(page.locator("h1").first()).toHaveText(/about/i);
+
+  await page.goBack();
+  await expect(page).toHaveURL(/\/parks$/);
+  await expect(page.locator("h1").first()).toHaveText(/park/i);
+
+  await page.goBack();
+  await expect(page).toHaveURL(/localhost:\d+\/$/);
+  await expect(page.locator("h1").first()).toHaveText(/slate/i);
+
+  await page.goForward();
+  await expect(page).toHaveURL(/\/parks$/);
+  await expect(page.locator("h1").first()).toHaveText(/park/i);
+
+  expect(errors, "uncaught errors traversing history").toEqual([]);
 });

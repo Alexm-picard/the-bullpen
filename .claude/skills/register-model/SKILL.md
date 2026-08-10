@@ -14,6 +14,14 @@ Standard intake for new models. Every model entering the registry must pass thes
   metadata lacks the head discriminator the serving loaders need and the registry returns
   a 422 (L2 lesson, 2026-06-10). Typically `/training/artifacts/<run_id>/model.onnx` for
   models without an assembly step.
+- **pitch_type has NO assembly step and its own driver.** `pitch_type.persist` writes the
+  canonical bundle in place under `artifacts/<model>/<version>/` and `pitch_type.export_onnx`
+  re-stamps it, so there is nothing to assemble. Use
+  `uv run python -m bullpen_training.pitch_type.register_pitch_type` (dry run by default; add
+  `--register`, plus `--server-artifacts-dir` for a remote registry because the payload's paths
+  are resolved on the SERVER's filesystem). It gates both rule-9 rows, baseline first, and
+  refuses a bundle whose `metadata.json` omits `model_kind` per decision [184] - the same
+  refusal `RegistryService.doInsert` now enforces server-side.
 - Path to the metadata JSON (typically alongside the ONNX file). **Timestamp-key gotcha**: the
   ASSEMBLED snapshot's `metadata.json` (`write_snapshot`) stamps `registered_at` (assembly time)
   only; the upstream training-artifact metadata (persist) uses `trained_at`. A parser reading the

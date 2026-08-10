@@ -7,6 +7,8 @@ import com.github.benmanes.caffeine.cache.RemovalCause;
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.function.Function;
+import java.util.function.Predicate;
 import net.thebullpen.baseball.registry.RegistryService;
 import net.thebullpen.baseball.registry.SnapshotStorage;
 import net.thebullpen.baseball.registry.dto.ModelVersion;
@@ -16,11 +18,23 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
- * Loads {@link LoadedBattedBallModel} (and, later, pre/post pitch heads) by registry {@code
- * version_id}. Caches loaded bundles in memory (Caffeine, default 4 per model — covers champion +
- * shadow + one in-flight rollback + one warm-up slot). On eviction the bundle is {@link
+ * Loads {@link LoadedBattedBallModel} (pre/post pitch heads, and the pitch-type family) by registry
+ * {@code version_id}. Caches loaded bundles in memory (Caffeine, default 4 per model — covers
+ * champion + shadow + one in-flight rollback + one warm-up slot; the pitch-type cache gets DOUBLE
+ * that because two registry families share it). On eviction the bundle is {@link
  * AutoCloseable#close() closed} so ORT sessions get released — the Caffeine {@code removalListener}
- * is the discipline.
+ * starts the close, and the bundle's {@code SessionGuard} (task #87 / H2) makes it SAFE: close
+ * retires the bundle, waits for in-flight native runs to drain, and closes exactly once. A caller
+ * holding a just-evicted bundle gets a typed {@link ModelUnavailableException} instead of a native
+ * close-under-use, and the {@code getLive} recheck reloads a retired bundle before it ever reaches
+ * the caller in the common case.
+ *
+ * <p>Executor note: removal notifications run on Caffeine's default executor (the common pool), and
+ * a guarded close can now occupy that thread for up to the drain bound when a run is in flight.
+ * Typical cost is one forward pass (~p99 14ms); the pathological case (evictions over STUCK runs
+ * pinning several common-pool workers for 5s each) is accepted rather than given a dedicated
+ * executor - graceful shutdown means the {@code @PreDestroy} sweep normally finds nothing in
+ * flight, and eviction churn at that rate is a cache-sizing defect to fix, not to absorb.
  *
  * <p>Loading reads the registry row for the {@code versionId}, derives the snapshot directory from
  * the row's {@code artifact_path}, and constructs the bundle. {@code s3://}-prefixed paths are
@@ -41,10 +55,12 @@ public class ModelLoader {
   private static final Logger log = LoggerFactory.getLogger(ModelLoader.class);
 
   private final RegistryService registry;
+  private volatile boolean closed;
   private final Cache<Long, LoadedBattedBallModel> battedBallCache;
   private final Cache<Long, LoadedAllParksModel> allParksCache;
   private final Cache<Long, LoadedPitchModel> pitchPreCache;
   private final Cache<Long, LoadedPitchModel> pitchPostCache;
+  private final Cache<Long, LoadedPitchTypeModel> pitchTypeCache;
 
   public ModelLoader(
       RegistryService registry, @Value("${bullpen.model-loader.cache-size:4}") int cacheSize) {
@@ -68,7 +84,9 @@ public class ModelLoader {
             .build();
     this.allParksCache =
         Caffeine.newBuilder()
-            .maximumSize(cacheSize)
+            // 2x: serves TWO registry families (battedball_outcome + lr_baseline_batted_ball) -
+            // see the family-per-cache map comment below.
+            .maximumSize(2L * cacheSize)
             .removalListener(
                 (Long key, LoadedAllParksModel value, RemovalCause cause) -> {
                   if (value == null) {
@@ -84,9 +102,25 @@ public class ModelLoader {
             .build();
     // Two pitch caches keyed by version_id (rule 9: pre + post are separate registry models, so a
     // given version_id loads into exactly one cache; the two never hold the same key).
-    this.pitchPreCache = buildPitchCache("pre", cacheSize);
+    // A5 (task #87): every cache that serves TWO registry families gets BOTH families' budgets -
+    // a single budget halves the champion+shadow+rollback+warmup policy the class javadoc states
+    // and churns under it. The family-per-cache map, verified against RegistryBaselines +
+    // ModelLoadValidator's dispatch: pitchPre serves pitch_outcome_pre + the SHARED
+    // pitch_outcome_lr_baseline (the baseline row both heads declare dispatches by its
+    // metadata head=pre into THIS cache, so pitchPost holds only pitch_outcome_post - 1x);
+    // allParks serves battedball_outcome + lr_baseline_batted_ball (both take the park_order
+    // branch); pitchType serves pitch_type_pre + pitch_type_lr_baseline. The toy single-float
+    // battedBallCache is one family. This map is a snapshot of TODAY's fleet, not a closed set:
+    // battedball_lgbm_per_park also exports park_order and would become allParks' THIRD family if
+    // it ever registers - re-derive the map (and the multipliers) when the fleet changes.
+    this.pitchPreCache = buildPitchCache("pre", 2 * cacheSize);
     this.pitchPostCache = buildPitchCache("post", cacheSize);
-    log.info("ModelLoader ready: per-model cache size={}", cacheSize);
+    this.pitchTypeCache = buildPitchTypeCache(2 * cacheSize);
+    log.info(
+        "ModelLoader ready: per-family cache size={} (two-family caches allParks/pitchPre/"
+            + "pitchType sized {})",
+        cacheSize,
+        2 * cacheSize);
   }
 
   private static Cache<Long, LoadedPitchModel> buildPitchCache(String head, int cacheSize) {
@@ -118,7 +152,8 @@ public class ModelLoader {
     // so two concurrent cold-cache misses can't each open an ORT session - the get-then-put it
     // replaces let the loser's bundle never reach the cache, so the removalListener never fired for
     // it and its native ORT session leaked (plus a wasted double-load).
-    return battedBallCache.get(versionId, this::loadBattedBallFresh);
+    return getLive(
+        battedBallCache, versionId, this::loadBattedBallFresh, LoadedBattedBallModel::isRetired);
   }
 
   private LoadedBattedBallModel loadBattedBallFresh(long versionId) {
@@ -157,7 +192,8 @@ public class ModelLoader {
    * two caches never hold the same key.
    */
   public LoadedAllParksModel loadAllParks(long versionId) {
-    return allParksCache.get(versionId, this::loadAllParksFresh);
+    return getLive(
+        allParksCache, versionId, this::loadAllParksFresh, LoadedAllParksModel::isRetired);
   }
 
   private LoadedAllParksModel loadAllParksFresh(long versionId) {
@@ -185,7 +221,7 @@ public class ModelLoader {
    * Rule 9: pre + post are separate registry models loaded through separate caches.
    */
   public LoadedPitchModel loadPitchPre(long versionId) {
-    return pitchPreCache.get(versionId, this::loadPitchPreFresh);
+    return getLive(pitchPreCache, versionId, this::loadPitchPreFresh, LoadedPitchModel::isRetired);
   }
 
   private LoadedPitchModel loadPitchPreFresh(long versionId) {
@@ -213,7 +249,8 @@ public class ModelLoader {
    * registry model, separate cache.
    */
   public LoadedPitchModel loadPitchPost(long versionId) {
-    return pitchPostCache.get(versionId, this::loadPitchPostFresh);
+    return getLive(
+        pitchPostCache, versionId, this::loadPitchPostFresh, LoadedPitchModel::isRetired);
   }
 
   private LoadedPitchModel loadPitchPostFresh(long versionId) {
@@ -267,7 +304,85 @@ public class ModelLoader {
     return new ResolvedSnapshot(mv, snapshotDir);
   }
 
+  private static Cache<Long, LoadedPitchTypeModel> buildPitchTypeCache(int cacheSize) {
+    return Caffeine.newBuilder()
+        .maximumSize(cacheSize)
+        .removalListener(
+            (Long key, LoadedPitchTypeModel value, RemovalCause cause) -> {
+              if (value == null) {
+                return;
+              }
+              try {
+                value.close();
+                log.info("ModelLoader: evicted pitch-type version_id={} (cause={})", key, cause);
+              } catch (OrtException e) {
+                log.warn("ModelLoader: failed to close evicted pitch-type model_id={}", key, e);
+              }
+            })
+        .build();
+  }
+
+  /**
+   * Get (or load) a pitch-TYPE model ({@code pitch_type_pre} or its rule-9 {@code
+   * pitch_type_lr_baseline}) for {@code versionId} (decision [183]).
+   *
+   * <p>One cache serves both rows: they share a contract and a serving shape, and keying by
+   * versionId already keeps distinct registry rows distinct. Rule 9 is about separate REGISTRY
+   * rows, which they have - it does not require a duplicated cache.
+   */
+  public LoadedPitchTypeModel loadPitchType(long versionId) {
+    return getLive(
+        pitchTypeCache, versionId, this::loadPitchTypeFresh, LoadedPitchTypeModel::isRetired);
+  }
+
+  private LoadedPitchTypeModel loadPitchTypeFresh(long versionId) {
+    ResolvedSnapshot r = resolveSnapshot(versionId);
+    try {
+      return LoadedPitchTypeModel.load(
+          versionId,
+          r.mv().modelName(),
+          r.mv().version(),
+          r.mv().featureSchemaHash(),
+          r.snapshotDir());
+    } catch (IOException | OrtException e) {
+      throw new ModelUnavailableException(
+          "ModelLoader: failed to load pitch-type model "
+              + r.mv().naturalKey()
+              + " from "
+              + r.snapshotDir(),
+          e);
+    }
+  }
+
   private record ResolvedSnapshot(ModelVersion mv, Path snapshotDir) {}
+
+  /**
+   * Cache read with a retired-recheck (task #87 / H2): between the cache's internal get and the
+   * caller's native call, the entry can be evicted and its guard retired. The recheck shrinks that
+   * window to near-zero by reloading ONCE when the returned bundle is already retired; the residual
+   * race is closed by the SessionGuard itself, whose typed refusal callers already map to a 503.
+   * Deliberately no retry loop: a second retired hit within one request means eviction is churning
+   * faster than a request, which is a cache-sizing problem to surface loudly, not to spin on.
+   */
+  private <M> M getLive(
+      Cache<Long, M> cache, long versionId, Function<Long, M> fresh, Predicate<M> retired) {
+    if (closed) {
+      // Without this, a load racing the @PreDestroy sweep would repopulate the cache with a
+      // fresh session nothing ever closes - in a many-context test JVM that is exactly the
+      // accumulation the direct-close shutdown exists to stop.
+      throw new IllegalStateException("ModelLoader is closed - no loads after shutdown began");
+    }
+    M m = cache.get(versionId, fresh);
+    if (retired.test(m)) {
+      // CONDITIONAL removal (remove-if-still-this-instance), not invalidate: an unconditional
+      // invalidate could evict a FRESH bundle another thread just reloaded under the same key,
+      // whose removal listener would retire it - self-inflicting exactly the stale-reference
+      // refusal this recheck exists to eliminate.
+      cache.asMap().remove(versionId, m);
+      m = cache.get(versionId, fresh);
+    }
+    return m;
+  }
 
   /** Visible for tests + warm-up: hint that {@code versionId} is no longer needed in cache. */
   public void invalidate(long versionId) {
@@ -275,18 +390,37 @@ public class ModelLoader {
     allParksCache.invalidate(versionId);
     pitchPreCache.invalidate(versionId);
     pitchPostCache.invalidate(versionId);
+    pitchTypeCache.invalidate(versionId);
   }
 
   @PreDestroy
   public void close() {
-    battedBallCache.invalidateAll();
-    battedBallCache.cleanUp(); // synchronously fires the removalListener for closed sessions
-    allParksCache.invalidateAll();
-    allParksCache.cleanUp();
-    pitchPreCache.invalidateAll();
-    pitchPreCache.cleanUp();
-    pitchPostCache.invalidateAll();
-    pitchPostCache.cleanUp();
+    closed = true;
+    // Close bundles DIRECTLY rather than relying on the removalListener: Caffeine delivers
+    // removal notifications ASYNCHRONOUSLY on its executor (the previous comment here claimed
+    // cleanUp() fires them synchronously - it does not), so a shutdown that only invalidates can
+    // exit before any session is closed - and in a many-context test JVM those native sessions
+    // accumulate across contexts. Guarded close is idempotent, so the listener's own later close
+    // attempt for the same bundle is a harmless no-op.
+    closeAll(battedBallCache, "batted-ball");
+    closeAll(allParksCache, "all-parks");
+    closeAll(pitchPreCache, "pitch pre");
+    closeAll(pitchPostCache, "pitch post");
+    closeAll(pitchTypeCache, "pitch-type");
     log.info("ModelLoader: shut down, all cached sessions released");
+  }
+
+  private static void closeAll(Cache<Long, ? extends AutoCloseable> cache, String what) {
+    cache
+        .asMap()
+        .forEach(
+            (id, bundle) -> {
+              try {
+                bundle.close();
+              } catch (Exception e) {
+                log.warn("ModelLoader: failed to close {} version_id={} at shutdown", what, id, e);
+              }
+            });
+    cache.invalidateAll();
   }
 }

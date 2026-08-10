@@ -51,6 +51,20 @@ training/data/eval/promotion/*
 # this raw-softmax v2-vs-v1 row (model_name=battedball_outcome) would collide with the served
 # champion's calibrated row. So it gets its own explicit negation here instead of the glob.
 !training/data/eval/promotion/battedball_outcome_carry_promotion_gate.json
+# Same reasoning for the pitch_outcome_pre FIRST-CHAMPION gate row (decision [181]/[145]): an
+# import-shaped OfflineGateEvidence artifact read by import-offline + promote, deliberately NOT the
+# *_experiment_results_full*.json scorecard glob (which /accuracy bundles). Explicit negation.
+!training/data/eval/promotion/pitch_outcome_pre_promotion_gate.json
+# Same reasoning for the battedball_outcome v3-vs-v2 NON-INFERIORITY gate ([166]/[178], produced by
+# battedball.mlp.compare_versions): an OfflineGateEvidence artifact read by import-offline + promote,
+# a *_promotion_gate.json (bundled) but NOT the *_experiment_results_full*.json scorecard glob.
+!training/data/eval/promotion/battedball_outcome_v3_promotion_gate.json
+# Same reasoning for the pitch_type_pre FIRST-CHAMPION gate ([183], produced by
+# scripts/emit_pitch_type_promotion_gate.py from the two co-trained bundles): an
+# OfflineGateEvidence artifact read by import-offline + promote, a *_promotion_gate.json
+# (bundled to offline-gate-evidence/, admin-only) and deliberately NOT the
+# *_experiment_results_full*.json glob, which /accuracy publishes.
+!training/data/eval/promotion/pitch_type_pre_promotion_gate.json
 # ...but keep the exploratory temperature calibrations box-local (superseded
 # side-quests). The versioned record is isotonic (the standing best) +
 # per_park_isotonic (the gate-gaming negative); the *_temperature* runs were
@@ -132,3 +146,4 @@ nohup.out
 
 # Schemathesis run cache (contract fuzzing)
 .schemathesis/
+docs/design/screenshots/

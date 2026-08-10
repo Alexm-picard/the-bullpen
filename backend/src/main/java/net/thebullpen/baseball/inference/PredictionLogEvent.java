@@ -23,7 +23,8 @@ public record PredictionLogEvent(
     float latencyMs,
     String correlationId,
     // Live-game truth-join key (issue #1 step 3 / decision [143]). Nullable: only the
-    // predict-on-live-pitch path (step 4) sets these; HTTP-path and shadow predictions leave them
+    // predict-on-live-pitch path (step 4) sets these FOR EVERY ROLE including shadow (W1b);
+    // HTTP-path predictions leave them
     // null, so they never match a pitches_live row in the step-5 LEFT JOIN.
     Long gameId,
     Integer atBatIndex,
@@ -41,8 +42,9 @@ public record PredictionLogEvent(
 
   /**
    * Router-path constructor with a resolved registry FK but no live-game key - the prior canonical
-   * shape. HTTP-path and shadow predictions use this; the {@code (game_id, at_bat_index,
-   * pitch_number)} key stays null until the live poller assembles a keyed event (issue #1 step 3).
+   * shape. HTTP-path predictions use this (poller-leg rows, shadow included, carry real keys since
+   * W1b); the {@code (game_id, at_bat_index, pitch_number)} key stays null until the live poller
+   * assembles a keyed event (issue #1 step 3).
    */
   public PredictionLogEvent(
       UUID requestId,

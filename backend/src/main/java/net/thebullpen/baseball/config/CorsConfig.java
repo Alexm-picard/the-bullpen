@@ -31,10 +31,12 @@ public class CorsConfig {
             // DELETE added for the admin routing UI's clear-challenger
             // (DELETE /v1/admin/routing/{name}/challenger).
             .allowedMethods("GET", "POST", "DELETE", "OPTIONS")
-            // Explicit allow-list (was "*"): the browser client only ever sends Content-Type (JSON
-            // bodies) and Authorization (HTTP Basic on the admin routing UI). Origins are already
-            // scoped above; an explicit header list keeps the preflight surface tight.
-            .allowedHeaders("Content-Type", "Authorization")
+            // Explicit allow-list: Content-Type (JSON bodies), Authorization (admin UI),
+            // X-Bullpen-Game-Id + X-Bullpen-Park-Id (park attribution per #424/ADR-0016).
+            // If you add a custom header on the frontend, add it here too or the browser's
+            // CORS preflight will reject the request (see frontend/src/api/parks.ts).
+            .allowedHeaders(
+                "Content-Type", "Authorization", "X-Bullpen-Game-Id", "X-Bullpen-Park-Id")
             .exposedHeaders("X-Correlation-Id")
             .maxAge(3600);
       }

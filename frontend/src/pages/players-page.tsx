@@ -11,7 +11,7 @@
  * `player-profile-page.tsx`.
  */
 
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 
 import { BroadcastPanel } from "../components/broadcast/broadcast-panel";
 import { LowerThird } from "../components/broadcast/lower-third";

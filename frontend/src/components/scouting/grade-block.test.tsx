@@ -38,7 +38,7 @@ describe("GradeBlock", () => {
 
   it("applies a condFormat ramp color to the fill bar", () => {
     const html = render(<GradeBlock label="Power" value={80} />);
-    const hit = Object.values(colors.condFormat).some((hex) =>
+    const hit = Object.values(colors.condFormatDark).some((hex) =>
       html.toLowerCase().includes(hex.toLowerCase()),
     );
     expect(hit).toBe(true);

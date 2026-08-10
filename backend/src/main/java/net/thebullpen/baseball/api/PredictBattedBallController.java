@@ -7,32 +7,37 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
+import java.util.List;
+import java.util.Map;
 import net.thebullpen.baseball.api.dto.BattedBallRequest;
 import net.thebullpen.baseball.api.dto.PredictionResponse;
 import net.thebullpen.baseball.inference.AsyncPredictionLogger;
+import net.thebullpen.baseball.inference.FeaturePipelineBattedBall;
 import net.thebullpen.baseball.inference.InferenceRouter;
+import net.thebullpen.baseball.inference.LoadedAllParksModel;
 import net.thebullpen.baseball.inference.ModelLoader;
-import net.thebullpen.baseball.inference.PredictionLogEvent;
 import net.thebullpen.baseball.inference.PredictionOrchestrator;
-import net.thebullpen.baseball.inference.ToyBattedBallInference;
+import net.thebullpen.baseball.registry.RegistryService;
+import net.thebullpen.baseball.registry.dto.ModelVersion;
 import org.slf4j.MDC;
 import org.springframework.context.annotation.Profile;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
- * POST /v1/predict/batted-ball - Phase 1.5 + 1.7, slimmed onto {@link PredictionOrchestrator} (M5):
- * the controller keeps only the web layer (annotations, body/header binding, the MDC correlation
- * read, response mapping); the shared skeleton (router dispatch, metrics, the champion +
- * fire-and-forget shadow {@link PredictionLogEvent} rows, error accounting) lives in the
- * orchestrator, exactly as the pitch side's #185 extraction did.
+ * POST /v1/predict/batted-ball - the SINGLE-park view of the registered per-park outcome champion
+ * {@code battedball_outcome}, on {@link PredictionOrchestrator} (M5).
  *
- * <p>The family's {@code -1L} policy (see the orchestrator's class javadoc): no routing row means
- * the legacy TOY bean served - identity is the hardcoded {@code v0} + the ctor-cached toy pipeline
- * schema hash + a <b>null</b> registry FK (reconciliation depends on legacy rows being NULL).
+ * <p>"Retire the toy": this endpoint used to serve {@code ToyBattedBallInference} as a hardcoded
+ * legacy fallback (audit "toy-as-live" surface). It now serves the SAME champion {@code /all-parks}
+ * serves - one inference over all 30 parks, from which the requested {@code parkId} is extracted -
+ * and returns a {@code 503} when no champion is registered, exactly like {@code /all-parks}. There
+ * is no toy fallback: with no champion it fails loud everywhere rather than silently serving a toy.
  *
  * <p>Returns the prediction synchronously and enqueues the log rows for the async batch logger.
  * Dropping on overload is the contract - see {@link AsyncPredictionLogger}.
@@ -42,28 +47,32 @@ import org.springframework.web.bind.annotation.RestController;
 @Profile("api")
 public class PredictBattedBallController {
 
+  /** Same registry family {@code /all-parks} serves - single-park is one park of its output. */
+  static final String MODEL_NAME = "battedball_outcome";
+
+  private static final String HR_OUTCOME = "hr";
+
   private final ObjectMapper objectMapper;
-  private final ToyBattedBallInference inference;
   private final ModelLoader modelLoader;
   private final PredictionOrchestrator orchestrator;
-  private final String legacyFeatureSchemaHash;
+  private final RegistryService registry;
 
   public PredictBattedBallController(
-      ToyBattedBallInference inference,
       ModelLoader modelLoader,
       PredictionOrchestrator orchestrator,
+      RegistryService registry,
       ObjectMapper objectMapper) {
-    this.inference = inference;
     this.modelLoader = modelLoader;
     this.orchestrator = orchestrator;
+    this.registry = registry;
     this.objectMapper = objectMapper;
-    this.legacyFeatureSchemaHash = inference.pipelineSpec().schemaHash();
   }
 
   /**
-   * Predict + dispatch via {@link InferenceRouter} (leaf 3b.3), through the orchestrator. When no
-   * routing row exists for {@code _toy_batted_ball}, the legacy supplier is invoked - preserves the
-   * pre-router behavior exactly so unregistered-model environments stay green.
+   * Predict + dispatch via {@link InferenceRouter} (leaf 3b.3), through the orchestrator. Serves
+   * the {@code battedball_outcome} champion (or 503 when none); the requested {@code parkId} is
+   * extracted from the champion's per-park output. The {@code -1L} no-routing-config path
+   * re-resolves the LIVE champion (never a toy), mirroring {@code /all-parks}.
    *
    * <p>{@code X-Bullpen-Game-Id} request header drives the Murmur3 bucket assignment. When absent
    * (Park Explorer / dev curl), a random long is used - assignment is then per-request, not
@@ -72,9 +81,10 @@ public class PredictBattedBallController {
   @Operation(
       summary = "Predict P(home run) for a batted ball at one park",
       description =
-          "Runs the batted-ball model for the given launch parameters at the requested park and"
-              + " logs the prediction asynchronously. Routing fans out to champion + any shadow"
-              + " via the A/B router.")
+          "Runs the registered per-park outcome champion for the given batted-ball inputs and"
+              + " returns the home-run probability at the requested park, logging the prediction"
+              + " asynchronously. Routing fans out to champion + any shadow via the A/B router."
+              + " Returns 503 when no champion is registered.")
   @ApiResponse(
       responseCode = "200",
       description = "Predicted home-run probability with the serving model identity.",
@@ -92,76 +102,128 @@ public class PredictBattedBallController {
             ? gameIdHeader
             : java.util.concurrent.ThreadLocalRandom.current().nextLong();
     String correlationId = MDC.get("correlation_id");
+    FeaturePipelineBattedBall.Request pipeReq = toPipelineRequest(req);
 
-    PredictionOrchestrator.Served<Float> served =
-        orchestrator.predict(new SingleParkFamily(req), gameId, correlationId);
+    PredictionOrchestrator.Served<Map<String, float[]>> served =
+        orchestrator.predict(new SingleParkFamily(req, pipeReq), gameId, correlationId);
+
+    // Extract the requested park HERE, after the orchestrator returns - NOT inside the family. A
+    // bad parkId is a client error (400); thrown from inside predictByVersionId it runs in the
+    // champion future and the orchestrator's wrap() would surface it as a 500. The FK is never null
+    // on this family (the -1L policy re-resolves the champion), so this loadAllParks is a cache
+    // hit.
+    LoadedAllParksModel servingModel = modelLoader.loadAllParks(served.identity().versionFk());
+    float probHr = hrForPark(served.response(), servingModel.outcomeOrder(), req.parkId());
 
     return new PredictionResponse(
-        served.response(),
-        ToyBattedBallInference.MODEL_NAME,
+        probHr,
+        MODEL_NAME,
         served.identity().versionLabel(),
         served.elapsedNanos() / 1_000L,
         correlationId);
   }
 
-  /** The single-park family: toy-bean legacy leg, registry-routed leg via {@link ModelLoader}. */
-  private final class SingleParkFamily implements PredictionOrchestrator.Family<Float> {
-    private final BattedBallRequest req;
+  private static FeaturePipelineBattedBall.Request toPipelineRequest(BattedBallRequest req) {
+    return new FeaturePipelineBattedBall.Request(
+        req.launchSpeedMph(),
+        req.launchAngleDeg(),
+        req.sprayAngleDeg(),
+        req.hitDistanceFt(),
+        req.stand(),
+        req.baseState(),
+        req.outs());
+  }
 
-    private SingleParkFamily(BattedBallRequest req) {
+  /**
+   * The single-park family: registry-routed legs only. Each leg runs the all-parks champion once
+   * and extracts {@code req.parkId()}'s HR probability - single-park and {@code /all-parks} serve
+   * the identical champion with no divergence.
+   */
+  private final class SingleParkFamily
+      implements PredictionOrchestrator.Family<Map<String, float[]>> {
+    private final BattedBallRequest req;
+    private final FeaturePipelineBattedBall.Request pipeReq;
+
+    private SingleParkFamily(BattedBallRequest req, FeaturePipelineBattedBall.Request pipeReq) {
       this.req = req;
+      this.pipeReq = pipeReq;
     }
 
     @Override
     public String modelName() {
-      return ToyBattedBallInference.MODEL_NAME;
+      return MODEL_NAME;
     }
 
     @Override
     public Object featurePayload() {
-      return req; // the raw request DTO - the drift observed side reads its field names
+      // The RAW request DTO, never the transformed pipeReq - the drift observed side JSONExtracts
+      // by request-field name (launchSpeedMph etc.).
+      return req;
     }
 
     @Override
-    public Float predictByVersionId(long versionId) throws Exception {
-      return modelLoader
-          .loadBattedBall(versionId)
-          .predict(
-              req.launchSpeedMph(),
-              req.launchAngleDeg(),
-              req.releaseSpeedMph(),
-              req.parkId(),
-              req.stand());
+    public Map<String, float[]> predictByVersionId(long versionId) throws Exception {
+      return modelLoader.loadAllParks(versionId).predict(pipeReq);
     }
 
     @Override
-    public Float legacyFallback() throws Exception {
-      return inference.predict(
-          req.launchSpeedMph(),
-          req.launchAngleDeg(),
-          req.releaseSpeedMph(),
-          req.parkId(),
-          req.stand());
+    public Map<String, float[]> legacyFallback() throws Exception {
+      // No routing row: serve the LIVE champion (503 when none). NEVER a toy - the -1L policy
+      // re-resolves the champion exactly as /all-parks does.
+      return modelLoader.loadAllParks(requireChampionId()).predict(pipeReq);
     }
 
     @Override
     public PredictionOrchestrator.Identity legacyIdentity() {
-      // Toy bean served: hardcoded v0 + ctor-cached toy schema hash + NULL FK (3b.5:
-      // reconciliation joins prediction_log.model_version_id against the registry and depends
-      // on legacy rows being null - the -1L sentinel is never persisted).
-      return new PredictionOrchestrator.Identity(
-          ToyBattedBallInference.MODEL_VERSION, legacyFeatureSchemaHash, null);
+      // The fallback served the registry champion, so re-resolve it for its identity.
+      return identityFor(requireChampionId());
     }
 
     @Override
     public PredictionOrchestrator.Identity identityFor(long versionId) {
-      var model = modelLoader.loadBattedBall(versionId);
+      LoadedAllParksModel model = modelLoader.loadAllParks(versionId);
       return new PredictionOrchestrator.Identity(model.version(), model.schemaHash(), versionId);
     }
 
     @Override
-    public String serializePrediction(Float prob) throws JsonProcessingException {
-      return objectMapper.writeValueAsString(java.util.Map.of("prob_hr", prob));
+    public String serializePrediction(Map<String, float[]> distribution)
+        throws JsonProcessingException {
+      // The full park -> 5-outcome distribution is the logged payload; the response is HR-only.
+      return objectMapper.writeValueAsString(distribution);
     }
+  }
+
+  /** Pull the requested park's HR probability out of the champion's per-park distribution. */
+  private static float hrForPark(
+      Map<String, float[]> dist, List<String> outcomeOrder, String parkId) {
+    float[] parkVec = dist.get(parkId);
+    if (parkVec == null) {
+      throw new ResponseStatusException(
+          HttpStatus.BAD_REQUEST,
+          "unknown parkId '" + parkId + "'; the model serves parks " + dist.keySet());
+    }
+    int hrIdx = outcomeOrder.indexOf(HR_OUTCOME);
+    if (hrIdx < 0) {
+      throw new IllegalStateException(
+          "serving model outcome order has no '" + HR_OUTCOME + "': " + outcomeOrder);
+    }
+    return parkVec[hrIdx];
+  }
+
+  /**
+   * The registry's LIVE champion id for {@link #MODEL_NAME}, or a 503 when none is live - used by
+   * the no-routing-config fallback (serve-live-champion-else-503, mirroring {@code /all-parks}).
+   */
+  private long requireChampionId() {
+    return registry
+        .findChampion(MODEL_NAME)
+        .map(ModelVersion::id)
+        .orElseThrow(
+            () ->
+                new ResponseStatusException(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    MODEL_NAME
+                        + " has no LIVE champion and no A/B routing config; register + promote a"
+                        + " model first"));
   }
 }

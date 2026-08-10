@@ -107,6 +107,13 @@ public final class LoadedBattedBallModel implements AutoCloseable {
     return pipeline.spec();
   }
 
+  /**
+   * True once this bundle's close has begun (evicted or shutting down) - reload for a fresh one.
+   */
+  public boolean isRetired() {
+    return onnx.isRetired();
+  }
+
   @Override
   public void close() throws OrtException {
     onnx.close();

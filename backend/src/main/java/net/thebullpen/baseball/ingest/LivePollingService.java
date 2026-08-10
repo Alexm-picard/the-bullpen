@@ -12,6 +12,7 @@ import net.thebullpen.baseball.config.IngestProperties;
 import net.thebullpen.baseball.data.JobLeaseRepository;
 import net.thebullpen.baseball.data.LivePitchesRepository;
 import net.thebullpen.baseball.data.PitcherFormRepository;
+import net.thebullpen.baseball.domain.CurrentMatchup;
 import net.thebullpen.baseball.domain.GameStatus;
 import net.thebullpen.baseball.domain.LivePitch;
 import net.thebullpen.baseball.domain.ScheduledGame;
@@ -72,6 +73,28 @@ public class LivePollingService {
   // first write (restart mid-game left the game invisible to /v1/games/today until its next
   // transition).
   private final java.util.Set<Long> statusPersisted = ConcurrentHashMap.newKeySet();
+  // The matchup key (at-bat index + batter id) last WRITTEN to live_game_status for a game, so the
+  // status row is re-upserted when the matchup moves - not only when the game's STATUS transitions.
+  // Without this the matchup would be written once (at the first transition of a game) and then sit
+  // frozen for nine innings, which is the very staleness this feature exists to remove. Keyed on
+  // BOTH fields because a pinch hitter keeps the at-bat index and changes the batter. The empty
+  // string encodes "no current play", so the null transition is written too and the row stops
+  // naming a batter who has finished hitting.
+  private final Map<Long, String> lastMatchupKey = new ConcurrentHashMap<>();
+
+  /**
+   * BIP cursors already written WITH batted-ball physics, per game.
+   *
+   * <p>This exists because {@link #writeNewPitches} writes each pitch EXACTLY ONCE - it filters on
+   * {@code cursor(p) > since}, so a pitch never gets a second look. That is fine for pitch data,
+   * which is complete when the pitch lands, but batted-ball physics is not: hitData populates while
+   * the play is still in flight and the parser declines it until the play completes.
+   *
+   * <p>See {@link #writtenSet} for why this is a SET rather than a high-water mark - the earlier
+   * version was a max, and the reasoning that justified it was wrong.
+   */
+  private final Map<Long, java.util.Set<Long>> battedBallWritten = new ConcurrentHashMap<>();
+
   private final Map<Long, Instant> lastPollAt = new ConcurrentHashMap<>();
   private final Map<Long, Long> lastCursorByGame = new ConcurrentHashMap<>();
   private final Map<Long, Long> lastPredictedKeyByGame = new ConcurrentHashMap<>();
@@ -80,6 +103,7 @@ public class LivePollingService {
   // across polls (belt-and-suspenders alongside the cursor high-water that gates the fresh list).
   private final Map<Long, Long> lastPostPredictedKeyByGame = new ConcurrentHashMap<>();
   private final Map<Long, Long> lastFailedKeyByGame = new ConcurrentHashMap<>();
+  private final java.util.Set<String> seenUnknownStates = ConcurrentHashMap.newKeySet();
   private volatile List<ScheduledGame> schedule = List.of();
   private volatile Instant scheduleFetchedAt = Instant.EPOCH;
   private long lastApiCallMs;
@@ -125,9 +149,35 @@ public class LivePollingService {
           }
         }
       }
+      evictStaleGames();
     } catch (Exception e) {
       log.warn("live poll tick failed", e);
     }
+  }
+
+  /**
+   * The feed's live current-play matchup, or null when it carries no usable one.
+   *
+   * <p>{@code parseNextPitch} already yields null between plays and once the game is final; the
+   * extra {@link CurrentMatchup#isPopulated()} guard catches the OTHER absence shape - the parser's
+   * {@code asLong()} yields {@code 0L}, not null, for a missing id, so an early-GUMBO tick produces
+   * a matchup naming batter 0. Both collapse to "no matchup", which is WRITTEN - as the V031 0/''
+   * sentinels - rather than skipped, so the row stops advertising a finished batter.
+   */
+  private static CurrentMatchup currentMatchupOf(LiveGameFeed feed) {
+    LiveNextPitch next = feed.nextPitch();
+    if (next == null) {
+      return null;
+    }
+    CurrentMatchup m =
+        new CurrentMatchup(
+            next.batterId(), next.pitcherId(), next.batSide(), next.pitchHand(), next.atBatIndex());
+    return m.isPopulated() ? m : null;
+  }
+
+  /** Change key for the write gate; {@code ""} means "no current play" so null transitions fire. */
+  private static String matchupKeyOf(CurrentMatchup m) {
+    return m == null ? "" : m.atBatIndex() + ":" + m.batterId();
   }
 
   /** Poll one game: fetch the feed, adopt its status, write new pitches, predict the next pitch. */
@@ -147,30 +197,105 @@ public class LivePollingService {
     lastPollAt.put(gamePk, polledAt);
     metrics.markPollCompleted(polledAt);
     if (feed.status() == GameStatus.UNKNOWN) {
-      // Schema-drift tripwire: the feed's detailedState matched nothing we know.
       metrics.incrementParseAnomaly("unknown_game_status");
+      String raw = feed.rawDetailedState() != null ? feed.rawDetailedState() : "<null>";
+      if (seenUnknownStates.size() < 64 && seenUnknownStates.add(raw)) {
+        log.warn("ingest: unrecognised detailedState '{}' for gamePk={}", raw, gamePk);
+      }
     }
-    // Persist status on a transition (step 7b) OR on this process's first poll of the game (L1:
-    // restart-robustness - the schedule prime makes prev == current after a mid-game restart, so
-    // transition-only persistence left the game invisible to /v1/games/today until its next
-    // transition). The ReplacingMergeTree dedups the re-write.
-    if (prev == null || prev != current || !statusPersisted.contains(gamePk)) {
+    // Persist when ANY of four things is true: first-ever observation of the game, a status
+    // transition (step 7b), this process's first poll of it (L1: restart-robustness - the schedule
+    // prime makes prev == current after a mid-game restart, so transition-only persistence left
+    // the game invisible to /v1/games/today until its next transition), OR the MATCHUP MOVED.
+    // That last disjunct is what makes the current batter dynamic (V031): the matchup changes
+    // roughly once per at-bat while the status changes a handful of times per game, so a
+    // transition-only cadence would freeze the batter at whatever he was on the last transition.
+    // The ReplacingMergeTree dedups the re-writes.
+    CurrentMatchup matchup = currentMatchupOf(feed);
+    String matchupKey = matchupKeyOf(matchup);
+    boolean matchupMoved = !matchupKey.equals(lastMatchupKey.get(gamePk));
+    if (prev == null || prev != current || !statusPersisted.contains(gamePk) || matchupMoved) {
       if (feed.gameDate() != null) {
-        repo.upsertGameStatus(gamePk, feed.gameDate(), current.name());
+        repo.upsertGameStatus(gamePk, feed.gameDate(), current.name(), matchup);
         statusPersisted.add(gamePk);
+        lastMatchupKey.put(gamePk, matchupKey);
       } else {
         // No parseable gameData.datetime in the feed: the row cannot key into live_game_status,
         // so /v1/games/today will not surface this game (C-3 replay finding, 2026-06-11).
         metrics.incrementParseAnomaly("missing_game_date");
+        // This branch also fires on a MATCHUP move with prev == current, so it must not describe
+        // what was dropped as a "status transition".
         log.debug(
-            "game {} status transition {} -> {} not persisted: feed carried no gameDate",
+            "game {} status/matchup row not persisted (status {} -> {}): feed carried no gameDate",
             gamePk,
             prev,
             current);
       }
     }
-    writeNewPitches(gamePk, feed);
-    predictNextPitch(gamePk, feed);
+    if (feed.gameDate() != null) {
+      writeNewPitches(gamePk, feed);
+      backfillCompletedBattedBalls(gamePk, feed);
+      predictNextPitch(gamePk, feed);
+    }
+  }
+
+  /**
+   * Re-write balls in play that have GAINED physics since their pitch was first stored.
+   *
+   * <p>Ordered AFTER {@link #writeNewPitches} on purpose: that call may have just written this BIP
+   * complete on its first sighting, in which case it has already bumped the key and there is
+   * nothing here to do. What remains is the case the cursor gate cannot serve - a pitch stored
+   * while its play was in flight, whose hitData only became complete on a later poll.
+   *
+   * <p>Targeted rather than a rolling re-write window: roughly ONE extra insert per ball in play
+   * (~50 per game) instead of re-writing the last N pitches every 5s tick, which would be ~80x
+   * write amplification into a 14-day TTL table. The ReplacingMergeTree supersedes on (game_id,
+   * at_bat_index, pitch_number), so the re-insert replaces the physics-less row rather than
+   * duplicating it - the capability V015's header always claimed and nothing exercised.
+   */
+  private void backfillCompletedBattedBalls(long gamePk, LiveGameFeed feed) {
+    java.util.Set<Long> written = writtenSet(gamePk);
+    List<LivePitch> completed =
+        feed.pitches().stream()
+            .filter(p -> p.battedBall() != null && !written.contains(cursor(p)))
+            .toList();
+    if (completed.isEmpty()) {
+      return;
+    }
+    repo.insertPitches(withPitches(feed, completed));
+    metrics.incrementBipBackfills(completed.size());
+    completed.forEach(p -> written.add(cursor(p)));
+  }
+
+  /**
+   * The set of BIP cursors already written WITH physics, for this game.
+   *
+   * <p>A SET, not a high-water mark. The first version tracked a single max and its javadoc claimed
+   * "at-bats are monotonic, so above-the-highest means not-yet-written" - which is true of the
+   * order PLAYS occur and false of the order PHYSICS ARRIVES. If at-bat 4's hitData landed before
+   * at-bat 3's, the mark jumped past 3 and that ball kept empty physics forever. Reachable on a
+   * failed feed fetch, an insert throw, a Statcast late correction, and above all a WORKER RESTART,
+   * where the first poll processes the whole game at once. The equivalence needed an unstated
+   * second assumption - that hitData arrives in cursor order - which is a claim about a third
+   * party's behaviour, exactly the kind V032's own header warns has a shelf life.
+   *
+   * <p>Bounded by balls in play per game (order 80), which is the thing that actually needs
+   * tracking. Per-game map growth across a season is issue 399, covering all of this class's maps.
+   *
+   * <p>ConcurrentHashMap.newKeySet + computeIfAbsent is the atomic idiom for the declared
+   * concurrent type: single-writer today under @Scheduled. Precisely: it makes the CONTAINER safe,
+   * not the SEQUENCE - filter, insert, add is a check-then-act, so two threads on the same game
+   * could both insert (benign under the ReplacingMergeTree) and double-count the backfill counter.
+   * A single-threaded test cannot exercise any of that, so a mutation to a plain HashSet reddening
+   * nothing is expected rather than evidence the choice is idle.
+   *
+   * <p>SCOPE: this fixes "physics for ball X arrives after ball Y was already written". It does NOT
+   * re-apply a REVISED measurement for a ball already in the set - first physics wins, because
+   * membership is the whole test. A Statcast late correction to an already-stored ball is therefore
+   * out of scope here and lands via the overnight handoff into `pitches`.
+   */
+  private java.util.Set<Long> writtenSet(long gamePk) {
+    return battedBallWritten.computeIfAbsent(gamePk, k -> ConcurrentHashMap.newKeySet());
   }
 
   private void writeNewPitches(long gamePk, LiveGameFeed feed) {
@@ -188,6 +313,9 @@ public class LivePollingService {
         fresh.stream().filter(p -> "unknown".equals(p.description())).count());
     lastCursorByGame.put(
         gamePk, fresh.stream().mapToLong(LivePollingService::cursor).max().orElse(since));
+    // A pitch that ALREADY carried physics on its first sighting needs no backfill later.
+    java.util.Set<Long> written = writtenSet(gamePk);
+    fresh.stream().filter(p -> p.battedBall() != null).forEach(p -> written.add(cursor(p)));
     refreshIntraDayForm(gamePk, fresh);
     predictPostForCompletedPitches(gamePk, feed, fresh);
   }
@@ -312,6 +440,24 @@ public class LivePollingService {
     }
   }
 
+  int trackedGameCount() {
+    return statusByGame.size();
+  }
+
+  private void evictStaleGames() {
+    java.util.Set<Long> active =
+        schedule.stream().map(ScheduledGame::gamePk).collect(java.util.stream.Collectors.toSet());
+    statusByGame.keySet().retainAll(active);
+    statusPersisted.retainAll(active);
+    lastMatchupKey.keySet().retainAll(active);
+    lastPollAt.keySet().retainAll(active);
+    lastCursorByGame.keySet().retainAll(active);
+    lastPredictedKeyByGame.keySet().retainAll(active);
+    lastPostPredictedKeyByGame.keySet().retainAll(active);
+    lastFailedKeyByGame.keySet().retainAll(active);
+    battedBallWritten.keySet().retainAll(active);
+  }
+
   private boolean isDue(long gamePk, GameStatus status) {
     Instant last = lastPollAt.get(gamePk);
     return last == null
@@ -351,6 +497,7 @@ public class LivePollingService {
     return new LiveGameFeed(
         f.gamePk(),
         f.status(),
+        f.rawDetailedState(),
         f.gameDate(),
         f.homeTeamId(),
         f.awayTeamId(),

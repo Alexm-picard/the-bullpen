@@ -8,7 +8,7 @@
  * text). Cards use the panel corner-cut.
  */
 
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 
 import type {
   FeaturedReport,

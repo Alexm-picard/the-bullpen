@@ -56,15 +56,28 @@ public class ClickHouseTruthJoinedPredictionFetcher implements TruthJoinedPredic
   static final List<String> OUTCOME_CLASSES =
       List.of("ball", "called_strike", "swinging_strike", "foul", "in_play");
 
+  // prediction_log is a plain MergeTree that ACCUMULATES rows: a worker restart re-runs the poll
+  // and
+  // re-logs the same (game_id, at_bat_index, pitch_number) for a version, so a raw read
+  // double-counts
+  // a pitch and biases the calibration Brier/ECE. Collapse to one row per pitch via
+  // argMax(prediction, request_at) GROUP BY the pitch key - the exact idiom the display path
+  // (PredictionLogRepository.SELECT_TRUTH_JOIN) uses, and the paired sibling now uses. This fetches
+  // a
+  // single model_version_id across roles; the pitch prediction is role-independent (the model
+  // output
+  // does not depend on serving role), so the latest request_at is the one calibration point.
   private static final String SELECT_TRUTH_JOINED =
       "SELECT p.prediction AS prediction, t.description AS truth_description"
           + " FROM ("
-          + "   SELECT game_id, at_bat_index, pitch_number, prediction"
+          + "   SELECT game_id, at_bat_index, pitch_number, argMax(prediction, request_at) AS"
+          + "          prediction"
           + "   FROM prediction_log"
           + "   WHERE model_name = ? AND model_version_id = ?"
           + "     AND game_id IS NOT NULL"
           + "     AND request_at >= fromUnixTimestamp64Milli(?, 'UTC')"
           + "     AND request_at <= fromUnixTimestamp64Milli(?, 'UTC')"
+          + "   GROUP BY game_id, at_bat_index, pitch_number"
           + " ) AS p"
           + " LEFT JOIN ("
           + "   SELECT game_id, at_bat_index, pitch_number, description"

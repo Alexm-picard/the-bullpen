@@ -24,39 +24,39 @@ describe("cellColor — higher-is-better", () => {
   };
 
   it("returns neutral for null", () => {
-    expect(cellColor(null, metric)).toBe(colors.condFormat.neutral);
+    expect(cellColor(null, metric)).toBe(colors.condFormatDark.neutral);
   });
 
   it("returns neutral for NaN", () => {
-    expect(cellColor(NaN, metric)).toBe(colors.condFormat.neutral);
+    expect(cellColor(NaN, metric)).toBe(colors.condFormatDark.neutral);
   });
 
   it("returns bad3 for values at the minimum (0th percentile)", () => {
-    expect(cellColor(0, metric)).toBe(colors.condFormat.bad3);
+    expect(cellColor(0, metric)).toBe(colors.condFormatDark.bad3);
   });
 
   it("returns bad1 for values around the p25 mark", () => {
     // p25 → raw percentile 0.25 → falls in [0.15, 0.35) → bad1
-    expect(cellColor(25, metric)).toBe(colors.condFormat.bad1);
+    expect(cellColor(25, metric)).toBe(colors.condFormatDark.bad1);
   });
 
   it("returns neutral for values at the median", () => {
     // median → raw percentile 0.5 → falls in [0.35, 0.65) → neutral
-    expect(cellColor(50, metric)).toBe(colors.condFormat.neutral);
+    expect(cellColor(50, metric)).toBe(colors.condFormatDark.neutral);
   });
 
   it("returns good1 for values around the p75 mark", () => {
     // p75 → raw percentile 0.75 → falls in [0.65, 0.85) → good1
-    expect(cellColor(75, metric)).toBe(colors.condFormat.good1);
+    expect(cellColor(75, metric)).toBe(colors.condFormatDark.good1);
   });
 
   it("returns good3 for values at the maximum (100th percentile)", () => {
     // max → raw percentile 1.0 → falls in [0.85, 1.0] → good3
-    expect(cellColor(100, metric)).toBe(colors.condFormat.good3);
+    expect(cellColor(100, metric)).toBe(colors.condFormatDark.good3);
   });
 
   it("returns good3 for values above the maximum (clamped at 100th pct)", () => {
-    expect(cellColor(200, metric)).toBe(colors.condFormat.good3);
+    expect(cellColor(200, metric)).toBe(colors.condFormatDark.good3);
   });
 });
 
@@ -68,30 +68,30 @@ describe("cellColor — lower-is-better", () => {
   };
 
   it("returns neutral for null", () => {
-    expect(cellColor(null, metric)).toBe(colors.condFormat.neutral);
+    expect(cellColor(null, metric)).toBe(colors.condFormatDark.neutral);
   });
 
   it("returns good3 for values at the minimum (low = good for this direction)", () => {
-    expect(cellColor(0, metric)).toBe(colors.condFormat.good3);
+    expect(cellColor(0, metric)).toBe(colors.condFormatDark.good3);
   });
 
   it("returns good1 for values around the p25 mark (still good side)", () => {
     // p25 → raw 0.25 → inverted 0.75 → good1
-    expect(cellColor(25, metric)).toBe(colors.condFormat.good1);
+    expect(cellColor(25, metric)).toBe(colors.condFormatDark.good1);
   });
 
   it("returns neutral for values at the median", () => {
     // median → raw 0.5 → inverted 0.5 → neutral
-    expect(cellColor(50, metric)).toBe(colors.condFormat.neutral);
+    expect(cellColor(50, metric)).toBe(colors.condFormatDark.neutral);
   });
 
   it("returns bad1 for values around the p75 mark", () => {
     // p75 → raw 0.75 → inverted 0.25 → bad1
-    expect(cellColor(75, metric)).toBe(colors.condFormat.bad1);
+    expect(cellColor(75, metric)).toBe(colors.condFormatDark.bad1);
   });
 
   it("returns bad3 for values at the maximum (high = bad for this direction)", () => {
-    expect(cellColor(100, metric)).toBe(colors.condFormat.bad3);
+    expect(cellColor(100, metric)).toBe(colors.condFormatDark.bad3);
   });
 });
 
@@ -103,32 +103,36 @@ describe("cellColor — closer-to-target", () => {
   };
 
   it("returns neutral for null", () => {
-    expect(cellColor(null, metric)).toBe(colors.condFormat.neutral);
+    expect(cellColor(null, metric)).toBe(colors.condFormatDark.neutral);
   });
 
   it("returns good3 for a value exactly at the median (peak good)", () => {
     // distance 0 → inverted percentile 1.0 → good3
-    expect(cellColor(50, metric)).toBe(colors.condFormat.good3);
+    expect(cellColor(50, metric)).toBe(colors.condFormatDark.good3);
   });
 
   it("returns a bad color for extreme values far from median", () => {
     // value at min (0) → max distance from median (50) → bad
     const result = cellColor(0, metric);
-    expect([colors.condFormat.bad1, colors.condFormat.bad3]).toContain(result);
+    expect([colors.condFormatDark.bad1, colors.condFormatDark.bad3]).toContain(
+      result,
+    );
   });
 
   it("returns a bad color for values at the max (far from median)", () => {
     const result = cellColor(100, metric);
-    expect([colors.condFormat.bad1, colors.condFormat.bad3]).toContain(result);
+    expect([colors.condFormatDark.bad1, colors.condFormatDark.bad3]).toContain(
+      result,
+    );
   });
 
   it("returns neutral or good for values close to median", () => {
     // value slightly off median — should land neutral or good side
     const result = cellColor(52, metric);
     expect([
-      colors.condFormat.neutral,
-      colors.condFormat.good1,
-      colors.condFormat.good3,
+      colors.condFormatDark.neutral,
+      colors.condFormatDark.good1,
+      colors.condFormatDark.good3,
     ]).toContain(result);
   });
 });
@@ -145,10 +149,11 @@ describe("cellColor — clamp option", () => {
     const resultHigh = cellColor(1000, metric);
     // Value -999 is below clamp.min (20); gets treated as 20 → below p25 → bad
     const resultLow = cellColor(-999, metric);
-    expect([colors.condFormat.good1, colors.condFormat.good3]).toContain(
-      resultHigh,
-    );
-    expect([colors.condFormat.bad1, colors.condFormat.bad3]).toContain(
+    expect([
+      colors.condFormatDark.good1,
+      colors.condFormatDark.good3,
+    ]).toContain(resultHigh);
+    expect([colors.condFormatDark.bad1, colors.condFormatDark.bad3]).toContain(
       resultLow,
     );
   });

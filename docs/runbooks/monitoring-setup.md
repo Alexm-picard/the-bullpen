@@ -11,7 +11,7 @@ being discovered by accident.
 | --------------------------------------------------------------------------------------------- | ------------------------------------------- |
 | `node-exporter` (host RAM/CPU/disk) + `alertmanager`, behind the `monitoring` compose profile | `infra/docker-compose.yml`                  |
 | Prometheus `alerting` + `rule_files` + the `node` scrape job                                  | `infra/prometheus/prometheus.yml`           |
-| 5 alert rules (WorkerDown, ApiDown, HostMemoryLow, JvmHeapHigh, SnapshotStale)                | `infra/prometheus/rules/bullpen-alerts.yml` |
+| the alert rules in `infra/prometheus/rules/bullpen-alerts.yml` (WorkerDown/ApiDown, host + JVM resource watchdogs, backup + ingest + [186]-freshness staleness; the file is the source of truth for the current set)                | `infra/prometheus/rules/bullpen-alerts.yml` |
 | Alertmanager -> Discord (native `discord_configs` receiver)                                   | `infra/alertmanager/alertmanager.yml`       |
 | Worker `:8081` smoke + rollback on a half-up deploy                                           | `deploy.sh`                                 |
 | Snapshot freshness: node_exporter textfile metric + Healthchecks.io ping                      | `infra/backup/clickhouse-snapshot.sh`       |

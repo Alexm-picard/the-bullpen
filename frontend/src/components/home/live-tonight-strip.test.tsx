@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 
 import type { GameSummary } from "../../api/games";
@@ -17,6 +17,8 @@ function game(over: Partial<GameSummary>): GameSummary {
     inning: 1,
     status: "SCHEDULED",
     detailedState: "Scheduled",
+    currentMatchup: null,
+    mostRecentBattedBall: null,
     ...over,
   };
 }

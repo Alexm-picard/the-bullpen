@@ -79,6 +79,9 @@ jobs:
         working-directory: training
         # Covers:
         #   tests/pitch/             - W1/W4b pitch ORT fixture, register_snapshot (new)
+        #   tests/pitch_type/        - pitch_type_pre ([183]): temperature calibrator, y7
+        #     trainer, ONNX parity. LightGBM-based, so it lives on THIS (lgbm) path, not the
+        #     torch path, to keep the OpenMP-co-load segfault split intact.
         #   tests/battedball/lgbm_per_park/ and lr_baseline/ - both now have __init__.py
         #     to resolve the test_export_onnx.py basename collision that breaks default
         #     (prepend) pytest collection.
@@ -91,7 +94,7 @@ jobs:
         run: |
           uv run python -m pytest -x --ignore=tests/leakage \
             --cov=src/bullpen_training --cov-branch --cov-append --cov-fail-under=0 \
-            tests/pitch tests/eval/test_artifact.py \
+            tests/pitch tests/pitch_type tests/eval/test_artifact.py \
             tests/eval/test_calibration.py \
             tests/eval/test_ece_reconciliation.py \
             tests/battedball/test_train_toy.py \
@@ -240,10 +243,13 @@ jobs:
           CLICKHOUSE_PORT: "9000"
           CLICKHOUSE_PASSWORD: thebullpen
         # uv run python -m pytest avoids the stale-PYTHONPATH quirk (see unit-tests job).
-        # Both drive REAL queries against the CH service (BULLPEN_REQUIRE_CH=1 = a skip is a failure):
-        # the SQL-path leakage test (DEF-H2/H3) + the batted-ball full-data export query (auditor
-        # NOTE 2 on #112) so a schema/join/FINAL bug in the export fails here, not on the box's CV.
+        # All drive REAL queries against the CH service (BULLPEN_REQUIRE_CH=1 = a skip is a failure):
+        # the SQL-path leakage test (DEF-H2/H3), the pitch-type window-SQL leakage gate + the V029
+        # materialisation round-trip (pitch_type_pre, [183]), and the batted-ball full-data export
+        # query (auditor NOTE 2 on #112) so a schema/join/FINAL bug fails here, not on the box's CV.
         run: >
           uv run python -m pytest
           tests/leakage/test_sql_path_contamination.py
+          tests/leakage/test_pitch_type_sql_leakage.py
+          tests/pitch_type/test_materialize_ch.py
           tests/eval/promotion/test_batted_ball_export_ch.py -v

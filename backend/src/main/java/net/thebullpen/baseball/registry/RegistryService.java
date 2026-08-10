@@ -1,9 +1,11 @@
 package net.thebullpen.baseball.registry;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import net.thebullpen.baseball.registry.dto.ModelVersion;
 import net.thebullpen.baseball.registry.dto.RegisterRequest;
@@ -52,19 +54,8 @@ public class RegistryService {
    */
   static final java.time.Duration PROMOTION_EVIDENCE_MAX_AGE = java.time.Duration.ofDays(30);
 
-  /**
-   * B4 / rule 9: each primary head's partner LR baseline. Promotion of a key to CHAMPION requires
-   * at least one non-archived registered version of the value. Hardcoded (vs a baseline_model_name
-   * column) deliberately: the pairing is a design-time fact from decision [37]/[46], the map is
-   * tiny, and it avoids a migration into the L5-noted duplicate-numbering minefield. Baseline model
-   * names themselves are absent from the map, so baselines promote without self-reference.
-   */
-  private static final Map<String, String> BASELINE_FOR_PRIMARY =
-      Map.of(
-          "pitch_outcome_pre", "pitch_outcome_lr_baseline",
-          "pitch_outcome_post", "pitch_outcome_lr_baseline",
-          "battedball_outcome", "lr_baseline_batted_ball",
-          "battedball_lgbm_per_park", "lr_baseline_batted_ball");
+  // B4 / rule 9 primary -> LR baseline mapping now lives in RegistryBaselines (single source of
+  // truth, shared with OfflineGateImportService's first-champion binding).
 
   private final RegistryRepository repo;
   private final FeatureSchemaHasher hasher;
@@ -194,6 +185,14 @@ public class RegistryService {
 
     String candidateHash = hasher.compute(Path.of(req.featurePipelinePath()));
     int archived = repo.archiveAllForModel(req.modelName());
+    // Task #94: archiveAllForModel just flipped every version - including a serving champion - to
+    // ARCHIVED, but until this line nothing touched model_routing. A surviving routing row would
+    // keep the router serving the archived champion, which is the V011 bypass in its most
+    // reachable form (no hand-edit needed, just this escape hatch). Remove it in the same
+    // transaction, mirroring the INC-1 rollback branch: no champion means no routing row, and the
+    // legacy fallback (or a 503) serves until a new champion is promoted through the gates.
+    routingService.removeRouting(
+        req.modelName(), "bootstrap reset archived all versions including any champion");
     log.warn(
         "registry: bootstrap reset for {} — archived {} prior version(s); new pinned hash={};"
             + " reason: {}",
@@ -206,7 +205,24 @@ public class RegistryService {
     return doInsert(reqWithReason, candidateHash);
   }
 
+  private static final ObjectMapper METADATA_MAPPER = new ObjectMapper();
+
   private ModelVersion doInsert(RegisterRequest req, String featureSchemaHash) {
+    // Decision [184], and it lives HERE rather than in register() deliberately:
+    // registerWithBootstrap
+    // does not call register(), so a check placed there would leave the bootstrap path - the very
+    // path a first registration takes from the box - an open door. doInsert is the single funnel
+    // both public entry points cross.
+    //
+    // [184] put model_kind in the artifact's metadata.json rather than a model_versions column, and
+    // says in its own text that a metadata-only field is a convention unless the registration path
+    // hard-fails a model that lacks it. The Python register_gate is the fast local twin; a
+    // hand-rolled curl bypasses that and cannot bypass this. Same posture as the rule-7 hash check.
+    //
+    // Runs BEFORE stageForRegistration because placeArtifacts copies files to disk that a
+    // rolled-back transaction does not un-copy: refuse first, touch disk second.
+    assertDeclaredModelKind(req);
+
     // Assemble the copy-list, place the snapshot, and derive the canonical registered paths. The
     // "what goes in the snapshot" policy (calibrator + external-data sidecars + pipeline-declared
     // Tier-2 lookups) lives in SnapshotRestoreService; this runs inside register()'s transaction
@@ -295,6 +311,52 @@ public class RegistryService {
     return repo.findChallenger(modelName);
   }
 
+  /**
+   * Decision [184]: a family whose serving loader is resolved by an explicit metadata {@code
+   * model_kind} must declare it, or {@link net.thebullpen.baseball.inference.ModelLoadValidator}
+   * routes the snapshot to the batted-ball loader and every promotion 422s about the wrong model.
+   *
+   * <p>SCOPED, NOT UNIVERSAL, and that is a correctness requirement rather than politeness: the
+   * requirement is derived from {@link CanonicalContracts}' family table, so families registered
+   * before [184] - batted-ball and pitch-outcome pre/post, none of whose metadata carries the field
+   * - keep registering untouched. An unconditional check would refuse every re-registration of the
+   * existing fleet: automated retraining registers new versions of those same models across this
+   * endpoint, and {@code docs/runbooks/registry-snapshot-recovery.md} tells the operator to
+   * "register a fresh version from the Python training artifacts" when a snapshot is unrecoverable.
+   * (It would NOT break the restore drill - that restores registry.sqlite with {@code sqlite3
+   * .restore} and never crosses this path. Decision [185] records that correction.)
+   *
+   * <p>A caller cannot exploit the scoping. The arming is keyed off the model NAME, which {@code
+   * RegisterRequest}'s compact constructor has already fenced to {@code ^[a-z0-9_]+$}, and never
+   * off anything the payload declares about itself. An UNMAPPED novel name registers unarmed but
+   * dead-ends: serving dispatch is by hardcoded model-name constants, and the promote load gate
+   * still sniffs metadata, so a kind-less bundle falls to the batted-ball loader and 422s before it
+   * can reach any serving stage.
+   */
+  private void assertDeclaredModelKind(RegisterRequest req) {
+    Optional<String> expected = CanonicalContracts.requiredModelKindFor(req.modelName());
+    if (expected.isEmpty()) {
+      // Do not even OPEN metadata.json for a field-sniffed family. Pre-[184] artifacts are not
+      // required to be parseable JSON at this point, so parsing unconditionally and validating
+      // only when armed would be a silent behaviour change for every existing model.
+      return;
+    }
+    String declared;
+    try {
+      JsonNode md = METADATA_MAPPER.readTree(Files.readAllBytes(Path.of(req.metadataPath())));
+      declared = md.path("model_kind").asText("");
+    } catch (IOException e) {
+      // Fail closed. Metadata the registry cannot read is metadata it cannot trust, and the serving
+      // loader reads these same bytes later.
+      throw new RegistryException.ModelKindMismatch(
+          req.modelName(), expected.get(), "<unreadable metadata.json: " + e.getMessage() + ">");
+    }
+    if (!expected.get().equals(declared)) {
+      throw new RegistryException.ModelKindMismatch(
+          req.modelName(), expected.get(), declared.isEmpty() ? "<absent>" : declared);
+    }
+  }
+
   // --- state transitions --------------------------------------------------
 
   /**
@@ -328,6 +390,7 @@ public class RegistryService {
       assertBaselineRegistered(current);
       assertPromotionCriteriaMet(current);
       promoteToChampionAtomically(current);
+      pushChampionToR2(current);
     } else if (current.stage() == Stage.CHAMPION && newStage == Stage.SHADOW) {
       // INC-1 (decision [150]) controlled rollback. champion_version_id is NOT NULL, so the routing
       // row can't be emptied - remove it so InferenceRouter finds none and the legacy fallback
@@ -338,14 +401,36 @@ public class RegistryService {
       // recovers:
       // demote, fix the snapshot, re-promote the same version.
       repo.updateStage(id, Stage.SHADOW);
-      routingService.removeRouting(current.modelName());
+      routingService.removeRouting(
+          current.modelName(), "champion rolled back to SHADOW (INC-1 / decision [150])");
       log.warn(
           "registry: ROLLBACK {}/{} (id={}) CHAMPION->SHADOW, routing row removed",
           current.modelName(),
           current.version(),
           id);
+    } else if (current.stage() == Stage.CHAMPION && newStage == Stage.ARCHIVED) {
+      // Task #94: archiving a SERVING champion must drop its routing row in the same transaction,
+      // for the same reason the INC-1 rollback branch above does - a routing row referencing an
+      // ARCHIVED version keeps the router serving a version outside the rule-5/rule-6 gates. This
+      // branch only fires for a direct CHAMPION->ARCHIVED transition; the promote path archives
+      // the prior champion via repo.updateStage directly and repoints (not removes) the row.
+      repo.updateStage(id, Stage.ARCHIVED);
+      routingService.removeRouting(
+          current.modelName(), "serving champion archived via direct CHAMPION->ARCHIVED");
+      log.warn(
+          "registry: ARCHIVED serving champion {}/{} (id={}), routing row removed",
+          current.modelName(),
+          current.version(),
+          id);
     } else {
       repo.updateStage(id, newStage);
+      if (newStage == Stage.ARCHIVED) {
+        // Issue #374, the challenger-side mirror of the task-#94 branches above: archiving a
+        // version that currently occupies its model's challenger slot must clear that slot in
+        // the same transaction, or shadow legs keep hitting an archived version (and mode=AB
+        // would route it real traffic). No-op for versions not in a slot.
+        routingService.clearChallengerIfRouted(current.modelName(), id);
+      }
     }
     return repo.findById(id)
         .orElseThrow(
@@ -425,12 +510,12 @@ public class RegistryService {
 
   /**
    * B4 / rule 9: a primary head cannot reach CHAMPION while its partner LR baseline (decision
-   * [37]/[46], {@link #BASELINE_FOR_PRIMARY}) has never been registered. Any non-archived stage
-   * counts - the baseline only has to EXIST in the registry, not serve. Until now this rule lived
-   * only in the Python dry-run gate; nothing in the JVM enforced it.
+   * [37]/[46], {@link RegistryBaselines}) has never been registered. Any non-archived stage counts
+   * - the baseline only has to EXIST in the registry, not serve. Until now this rule lived only in
+   * the Python dry-run gate; nothing in the JVM enforced it.
    */
   private void assertBaselineRegistered(ModelVersion incoming) {
-    String baseline = BASELINE_FOR_PRIMARY.get(incoming.modelName());
+    String baseline = RegistryBaselines.baselineFor(incoming.modelName()).orElse(null);
     if (baseline == null) {
       return; // not a mapped primary (baselines themselves land here)
     }
@@ -465,6 +550,29 @@ public class RegistryService {
     // promotion auto-creates with SHADOW mode + 0 traffic; subsequent promotions just update
     // the champion_version_id. Same enclosing transaction as the stage update.
     routingService.ensureRoutingForChampion(incoming.modelName(), incoming.id());
+  }
+
+  /**
+   * Post-promotion: push the champion's bundle to R2 so a DR restore can recover it. A champion you
+   * can't recover is a promotion that shouldn't finalize silently. Runs AFTER the human gate and
+   * the atomic promote, so the promotion is committed regardless; the push failure surfaces as a
+   * 500 so the operator knows the R2 copy is missing and can retry or push manually.
+   */
+  private void pushChampionToR2(ModelVersion mv) {
+    try {
+      if (!snapshotStorage.pushChampionBundle(mv)) {
+        return;
+      }
+    } catch (SnapshotStorageException e) {
+      log.error(
+          "registry: champion {}/{} (id={}) promoted but R2 push FAILED - the champion is"
+              + " serving but NOT recoverable from R2 until manually pushed",
+          mv.modelName(),
+          mv.version(),
+          mv.id(),
+          e);
+      throw new RegistryException.R2PushFailed(mv, e);
+    }
   }
 
   // --- helpers ------------------------------------------------------------

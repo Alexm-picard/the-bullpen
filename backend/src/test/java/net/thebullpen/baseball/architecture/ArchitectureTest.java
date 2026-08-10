@@ -15,7 +15,9 @@ import com.tngtech.archunit.library.freeze.FreezingArchRule;
  * while any NEW violation fails immediately. C2 removed the baselined violations - NOT by adding
  * boundary mappers, but by moving the 17 row/value records those repositories return into {@code
  * domain/}, where they always belonged - which drained that store to empty and let the rule
- * graduate to strict.
+ * graduate to strict. That shared-kernel shape is the RATIFIED decision (ADR-0015 / [181]): {@code
+ * domain/} is a shared kernel for read-side query projections, with transport types (the two paging
+ * envelopes) kept in {@code api/dto} and repositories returning a {@code domain/PagedRows} carrier.
  *
  * <p><b>Strict rules</b> (no baseline): {@code domain/} purity - the hexagonal-lite core must stay
  * a plain-records module (18 types since C2; keeping the rule strict stops the first impurity from
@@ -25,6 +27,41 @@ import com.tngtech.archunit.library.freeze.FreezingArchRule;
     packages = "net.thebullpen.baseball",
     importOptions = ImportOption.DoNotIncludeTests.class)
 class ArchitectureTest {
+
+  /**
+   * Decision [188] / ADR-0016, enforced STRUCTURALLY rather than by convention.
+   *
+   * <p>An internal aggregate evaluates the champion many times to produce ONE displayed number, so
+   * the individual evaluations are intermediates and must not reach {@code prediction_log}. Logging
+   * them would not merely add volume - it would redefine the population the drift PSI,
+   * promotion-evidence and truth-join consumers all measure.
+   *
+   * <p>A behavioural test ("assert no rows were written") is the obvious pin and the weaker one: it
+   * passes only for the inputs it exercises. This asserts the aggregator does not DIRECTLY DEPEND
+   * on the logging path - deliberately the precise claim, because {@code dependOnClassesThat} is
+   * direct-only: an Aggregator -&gt; Helper -&gt; AsyncPredictionLogger chain would pass. The
+   * transitive closure was verified by hand at review time (RegistryService, ModelLoader,
+   * LoadedAllParksModel and LivePitchesRepository reach no logging path), and re-checking it is
+   * part of adding a dependency here.
+   *
+   * <p>It reds the moment someone wires the orchestrator in "just to reuse the routing", which is
+   * the plausible regression - the two paths are the same model and differ only in obligation.
+   */
+  @ArchTest
+  static final ArchRule aggregatesMustNotReachThePredictionLog =
+      ArchRuleDefinition.noClasses()
+          .that()
+          .haveSimpleNameEndingWith("Aggregator")
+          .should()
+          .dependOnClassesThat()
+          .haveSimpleNameEndingWith("AsyncPredictionLogger")
+          .orShould()
+          .dependOnClassesThat()
+          .haveSimpleNameEndingWith("PredictionOrchestrator")
+          .because(
+              "decision [188]: an internal aggregate's evaluations are intermediates, not served"
+                  + " predictions - logging them redefines the population drift and promotion"
+                  + " evidence measure");
 
   /**
    * The persistence boundary, STRICT since C2. Repositories under {@code data/} must not depend on
@@ -133,7 +170,8 @@ class ArchitectureTest {
    * multi-slice cycles, and ArchUnit's cycle descriptions render path-dependently, so a frozen
    * cycles rule fails line-matching on re-run (non-deterministic baseline). Per-dependency
    * violations freeze stably; full cycle-freedom is the C2+/Phase-3 target once the api leaf rule
-   * and the dto mappers drain the biggest back-edges.
+   * and the read-side shared kernel (ADR-0015: repos return {@code domain/} projections or a {@code
+   * PagedRows} carrier, never {@code api/dto}) drain the biggest back-edges.
    */
   @ArchTest
   static final ArchRule apiLayerMustBeALeaf =

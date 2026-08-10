@@ -39,8 +39,11 @@ jobs:
         with:
           enable-cache: true
 
-      # The toy batted-ball model must exist so POST /v1/predict/batted-ball serves
-      # (200) instead of 503 — ToyBattedBallInference loads ../training/artifacts/_toy/v0.
+      # The toy ONNX must exist for the api context to BOOT: the ToyBattedBallInference bean still
+      # warms up (@PostConstruct loads ../training/artifacts/_toy/v0), even though it no longer
+      # SERVES. POST /v1/predict/batted-ball now serves the registry champion or 503s (no toy
+      # fallback); with no champion in this fuzz stack it returns the declared 503, same as
+      # /all-parks and /predict/pitch - schemathesis accepts it (503 is a declared response).
       - name: Sync training deps
         working-directory: training
         run: uv sync --frozen

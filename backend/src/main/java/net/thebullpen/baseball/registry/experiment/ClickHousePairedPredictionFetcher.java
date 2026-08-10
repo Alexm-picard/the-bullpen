@@ -67,25 +67,42 @@ public class ClickHousePairedPredictionFetcher implements PairedPredictionFetche
   static final List<String> OUTCOME_CLASSES =
       List.of("ball", "called_strike", "swinging_strike", "foul", "in_play");
 
+  // prediction_log is a plain MergeTree that ACCUMULATES rows: a worker restart re-runs the poll
+  // and
+  // re-logs the same (game_id, at_bat_index, pitch_number) for a version, so a raw read
+  // double-counts
+  // a pitch and biases the paired Brier/ECE the promotion gate reads. Collapse to one row per pitch
+  // via argMax(prediction, request_at) GROUP BY the pitch key - the exact idiom the display path
+  // (PredictionLogRepository.SELECT_TRUTH_JOIN) uses. model_name / model_version_id / role stay
+  // WHERE
+  // filters (each subquery is already scoped to one version + one role-set), NOT group keys:
+  // grouping
+  // the challenger side by role would keep a shadow->challenger transition of the SAME pitch as two
+  // rows and re-introduce the double-count, so the pitch key alone is the correct dedup key and the
+  // latest request_at wins.
   private static final String SELECT_PAIRS =
       "SELECT c.prediction AS champion_prediction,"
           + "       h.prediction AS challenger_prediction,"
           + "       t.description AS truth_description"
           + " FROM ("
-          + "   SELECT game_id, at_bat_index, pitch_number, prediction"
+          + "   SELECT game_id, at_bat_index, pitch_number, argMax(prediction, request_at) AS"
+          + "          prediction"
           + "   FROM prediction_log"
           + "   WHERE model_name = ? AND model_version_id = ? AND role = 'champion'"
           + "     AND game_id IS NOT NULL"
           + "     AND request_at >= fromUnixTimestamp64Milli(?, 'UTC')"
           + "     AND request_at <  fromUnixTimestamp64Milli(?, 'UTC')"
+          + "   GROUP BY game_id, at_bat_index, pitch_number"
           + " ) AS c"
           + " INNER JOIN ("
-          + "   SELECT game_id, at_bat_index, pitch_number, prediction"
+          + "   SELECT game_id, at_bat_index, pitch_number, argMax(prediction, request_at) AS"
+          + "          prediction"
           + "   FROM prediction_log"
           + "   WHERE model_name = ? AND model_version_id = ? AND role IN ('challenger', 'shadow')"
           + "     AND game_id IS NOT NULL"
           + "     AND request_at >= fromUnixTimestamp64Milli(?, 'UTC')"
           + "     AND request_at <  fromUnixTimestamp64Milli(?, 'UTC')"
+          + "   GROUP BY game_id, at_bat_index, pitch_number"
           + " ) AS h"
           + "   ON c.game_id = h.game_id"
           + "      AND c.at_bat_index = h.at_bat_index"

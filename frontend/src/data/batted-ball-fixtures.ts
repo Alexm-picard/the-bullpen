@@ -23,7 +23,8 @@ export type ParkOutcome = {
   outcome: string; // "HR" | "2B" | "OUT"
   tone: ParkOutcomeTone;
   dist: number;
-  err: number;
+  /** Nominal band, illustration only. Null on the live path: the model reports no uncertainty. */
+  err: number | null;
   /** The park the game is actually being played at - pinned, non-removable. */
   here?: boolean;
 };
@@ -31,6 +32,12 @@ export type ParkOutcome = {
 export type BattedBall = {
   batter: string;
   description: string;
+  /**
+   * The batted-ball class shown on the distance metric AND inside `description`. ONE field, so the
+   * card cannot classify the same ball two ways - the sub-line and the metric render the same
+   * string by construction rather than by two functions agreeing.
+   */
+  band: string;
   result: string;
   exitVeloMph: number;
   launchDeg: number;
@@ -60,6 +67,7 @@ export type BattedBall = {
 export const SHOWCASE_BATTED_BALL: BattedBall = {
   batter: "Giancarlo Stanton",
   description: "Fly ball to center · 2 out",
+  band: "Fly ball",
   result: "Fly Out",
   exitVeloMph: 108.1,
   launchDeg: 31,
