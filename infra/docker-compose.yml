@@ -191,7 +191,7 @@ services:
   #     -f infra/docker-compose.yml --profile errortracking up -d
   # See docs/runbooks/error-tracking.md for first-user setup + the DSN wiring.
   glitchtip-postgres:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     container_name: bullpen-glitchtip-postgres
     logging: *bullpen-logging
     profiles: ["errortracking"]
