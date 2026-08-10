@@ -65,6 +65,10 @@ const SLATE_GAME = {
   inning: 6,
   status: "IN_PROGRESS",
   detailedState: "In Progress",
+  // V031: the slate carries the same nullable field; null is the honest pre-first-pitch shape.
+  currentMatchup: null,
+  // Untyped route mock - tsc cannot force this field the way it forces the vitest fixtures.
+  mostRecentBattedBall: null,
 };
 
 test("games slate degrades to the showcase slate when the live API is empty", async ({
@@ -107,6 +111,19 @@ test("games slate renders a row and its numeric link opens the live game page", 
       status: 200,
       contentType: "application/json",
       body: JSON.stringify(SLATE_GAME),
+    }),
+  );
+  await page.route("**/v1/games/745804/team-contact", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        homeTeam: "TOR",
+        home: null,
+        awayTeam: "BOS",
+        away: null,
+        since: "2026-01-01",
+      }),
     }),
   );
   await page.route("**/v1/games/745804/pitches*", (route) =>

@@ -66,10 +66,15 @@ public final class LoadedAllParksModel implements AutoCloseable {
         FeaturePipelineBattedBall.load(
             snapshotDir.resolve(SnapshotStorage.FEATURE_PIPELINE_FILE),
             snapshotDir.resolve(SnapshotStorage.METADATA_FILE));
-    BattedBallOnnxModel onnx =
-        new BattedBallOnnxModel(snapshotDir.resolve(SnapshotStorage.ARTIFACT_FILE));
     BattedBallCalibrators calibrators =
         BattedBallCalibrators.load(snapshotDir.resolve(SnapshotStorage.CALIBRATOR_FILE));
+    // SESSION LAST (task #87): the native session is created only after every fallible parse
+    // above. A throw past a live session leaks the native handle - the Caffeine removalListener
+    // never fires for a load that threw (no entry was stored), and before this reorder a broken
+    // calibrator.json leaked one session PER REQUEST LEG until traffic stopped. Anything fallible
+    // added to this method goes ABOVE this line.
+    BattedBallOnnxModel onnx =
+        new BattedBallOnnxModel(snapshotDir.resolve(SnapshotStorage.ARTIFACT_FILE));
     log.info(
         "loaded all-parks model {}/{} (id={}) from {}", modelName, version, versionId, snapshotDir);
     return new LoadedAllParksModel(
@@ -178,6 +183,13 @@ public final class LoadedAllParksModel implements AutoCloseable {
   /** Park identifiers in the order {@link #predict} emits them (the calibrator's order). */
   public List<String> parkOrder() {
     return calibrators.parkOrder();
+  }
+
+  /**
+   * True once this bundle's close has begun (evicted or shutting down) - reload for a fresh one.
+   */
+  public boolean isRetired() {
+    return onnx.isRetired();
   }
 
   @Override

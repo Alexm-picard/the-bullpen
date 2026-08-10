@@ -49,9 +49,9 @@ export const ABOUT_META = {
 // ── Facts ribbon (4 cells) ───────────────────────────────────────────────────
 
 export const FACTS_RIBBON: FactCell[] = [
-  { figure: "133", eyebrow: "Locked", unit: "Decisions" },
-  { figure: "7", eyebrow: "Architecture", unit: "ADRs" },
-  { figure: "3", eyebrow: "Calibrated", unit: "Models" },
+  { figure: "191", eyebrow: "Locked", unit: "Decisions" },
+  { figure: "17", eyebrow: "Architecture", unit: "ADRs" },
+  { figure: "4", eyebrow: "Calibrated", unit: "Models" },
   { figure: "4", eyebrow: "Rolling-Origin", unit: "CV Folds" },
 ];
 

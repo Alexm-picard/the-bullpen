@@ -54,7 +54,8 @@ public record LivePitch(
     Double spinAxisDeg,
     Double releasePosXIn,
     Double releasePosZIn,
-    boolean terminal) {
+    boolean terminal,
+    BattedBall battedBall) {
 
   /** Base-occupancy bitmask (1=first, 2=second, 4=third), matching {@code pitches.base_state}. */
   public int baseState() {

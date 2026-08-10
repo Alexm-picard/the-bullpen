@@ -24,7 +24,7 @@ export const broadcastStatTablePalette: StatTablePalette = {
   displayFont: typography.fonts.display,
   bodyFont: typography.fonts.body,
   monoFont: typography.fonts.mono,
-  ramp: rampFrom(colors.condFormat),
+  ramp: rampFrom(colors.condFormatDark),
 };
 
 export const broadcastKeyNotesPalette: KeyNotesPalette = {

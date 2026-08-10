@@ -1,0 +1,155 @@
+# Behavioural tests for the SLO + watchdog alert group (DR work order Part D).
+#
+# `promtool check config` proves they PARSE; these prove they FIRE and stay SILENT on the
+# expected inputs. The prefix trap (thebullpen_* vs bullpen_*) is tested explicitly, same
+# as in prediction-log-writer.test.yml - a rule written by pattern-matching the bullpen_*
+# rules above would silently match nothing.
+#
+# Run (CI does this in infra.yml; locally):
+#   docker run --rm -v "$PWD/infra/prometheus/rules:/rules:ro" \
+#     --entrypoint promtool prom/prometheus:v3.0.1 test rules /rules/tests/slo-alerts.test.yml
+rule_files:
+  - ../bullpen-alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  # ── PredictionLatencySLOBreach ──────────────────────────────────────────────────────────────
+  # Healthy: all observations below 50ms (le=0.05 bucket). p99 ~ 0.99*50ms = 49.5ms < 100ms.
+  - interval: 1m
+    input_series:
+      - series: 'thebullpen_inference_prediction_latency_seconds_bucket{model_name="pitch_outcome_pre",le="0.05"}'
+        values: '0+100x30'
+      - series: 'thebullpen_inference_prediction_latency_seconds_bucket{model_name="pitch_outcome_pre",le="0.1"}'
+        values: '0+100x30'
+      - series: 'thebullpen_inference_prediction_latency_seconds_bucket{model_name="pitch_outcome_pre",le="0.25"}'
+        values: '0+100x30'
+      - series: 'thebullpen_inference_prediction_latency_seconds_bucket{model_name="pitch_outcome_pre",le="+Inf"}'
+        values: '0+100x30'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: PredictionLatencySLOBreach
+        exp_alerts: []
+
+  # Breached: all observations between 100ms and 250ms. p99 ~ 0.1 + 0.99*0.15 ~ 249ms > 100ms.
+  - interval: 1m
+    input_series:
+      - series: 'thebullpen_inference_prediction_latency_seconds_bucket{model_name="pitch_outcome_pre",le="0.05"}'
+        values: '0+0x30'
+      - series: 'thebullpen_inference_prediction_latency_seconds_bucket{model_name="pitch_outcome_pre",le="0.1"}'
+        values: '0+0x30'
+      - series: 'thebullpen_inference_prediction_latency_seconds_bucket{model_name="pitch_outcome_pre",le="0.25"}'
+        values: '0+100x30'
+      - series: 'thebullpen_inference_prediction_latency_seconds_bucket{model_name="pitch_outcome_pre",le="+Inf"}'
+        values: '0+100x30'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: PredictionLatencySLOBreach
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Prediction p99 latency above 100ms (SLO: 50ms)"
+              description: "The p99 served prediction latency has exceeded 100ms (2x the 50ms SLO) for 5m. At least 1% of served predictions are slow. Check ONNX model load time, GC pauses, or CPU contention on the api profile."
+
+  # ── InferenceErrorRateHigh ──────────────────────────────────────────────────────────────────
+  # Healthy: 10 predictions/min, 0 errors. Must stay silent.
+  - interval: 1m
+    input_series:
+      - series: 'thebullpen_inference_prediction_total{model_name="pitch_outcome_pre",role="champion"}'
+        values: '0+10x30'
+      - series: 'thebullpen_inference_prediction_errors_total{model_name="pitch_outcome_pre",role="champion",error_class="ModelLoadException"}'
+        values: '0+0x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: InferenceErrorRateHigh
+        exp_alerts: []
+
+  # Low traffic with errors: 100% error rate but only 1 req/min (0.017 RPS < 0.1 gate).
+  # The traffic gate MUST suppress this - without it, one error in a quiet window pages.
+  - interval: 1m
+    input_series:
+      - series: 'thebullpen_inference_prediction_total{model_name="pitch_outcome_pre",role="champion"}'
+        values: '0+1x30'
+      - series: 'thebullpen_inference_prediction_errors_total{model_name="pitch_outcome_pre",role="champion",error_class="ModelLoadException"}'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: InferenceErrorRateHigh
+        exp_alerts: []
+
+  # Breached: 10 predictions/min, 1 error/min = 10% error rate (> 5%, traffic gate open).
+  - interval: 1m
+    input_series:
+      - series: 'thebullpen_inference_prediction_total{model_name="pitch_outcome_pre",role="champion"}'
+        values: '0+10x30'
+      - series: 'thebullpen_inference_prediction_errors_total{model_name="pitch_outcome_pre",role="champion",error_class="ModelLoadException"}'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: InferenceErrorRateHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Champion prediction error rate above 5% for 10m"
+              description: "10% of champion predictions are failing (> 5% sustained). The error_class label on thebullpen_inference_prediction_errors_total identifies the failure type. Check the model load path and ONNX session health."
+
+  # ── ApiServerErrorRate ──────────────────────────────────────────────────────────────────────
+  # Healthy: all 200s, no 5xx. Must stay silent.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="thebullpen-api",outcome="SUCCESS",method="POST",uri="/v1/predict/pitch",status="200"}'
+        values: '0+10x30'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: ApiServerErrorRate
+        exp_alerts: []
+
+  # Breached: 9 success + 1 server-error per minute = 10% 5xx rate (> 5%, traffic gate open).
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="thebullpen-api",outcome="SUCCESS",method="POST",uri="/v1/predict/pitch",status="200"}'
+        values: '0+9x30'
+      - series: 'http_server_requests_seconds_count{job="thebullpen-api",outcome="SERVER_ERROR",method="POST",uri="/v1/predict/pitch",status="500"}'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: ApiServerErrorRate
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "API 5xx rate above 5% for 5m"
+              description: "10% of API requests are returning 5xx (> 5% sustained). This catches failures outside the inference path - controller bugs, security misconfig, serialization errors. Check the api journal for stack traces."
+
+  # ── Watchdog ────────────────────────────────────────────────────────────────────────────────
+  # Always fires. vector(1) references no series, but the test block needs input_series.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="thebullpen-api"}'
+        values: '1x5'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: Watchdog
+        exp_alerts:
+          - exp_labels:
+              severity: none
+            exp_annotations:
+              summary: "Alerting pipeline is healthy"
+              description: "This alert fires continuously by design. If it disappears, the Prometheus -> Alertmanager -> Discord pipeline is broken. The Healthchecks.io dead-man check watches for this alert's heartbeat."
+
+  # ── Prefix trap ─────────────────────────────────────────────────────────────────────────────
+  # Wrong prefix (bullpen_ instead of thebullpen_) must NOT fire InferenceErrorRateHigh. This
+  # is the same silent-mismatch shape from the prediction-log-writer test: a rule written by
+  # copying the bullpen_* operational rules would use the wrong prefix and match nothing forever.
+  - interval: 1m
+    input_series:
+      - series: 'bullpen_inference_prediction_total{model_name="pitch_outcome_pre",role="champion"}'
+        values: '0+10x30'
+      - series: 'bullpen_inference_prediction_errors_total{model_name="pitch_outcome_pre",role="champion",error_class="ModelLoadException"}'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: InferenceErrorRateHigh
+        exp_alerts: []

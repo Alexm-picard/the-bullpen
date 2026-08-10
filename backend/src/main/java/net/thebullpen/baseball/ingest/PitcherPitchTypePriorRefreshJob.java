@@ -1,6 +1,7 @@
 package net.thebullpen.baseball.ingest;
 
 import io.micrometer.core.instrument.MeterRegistry;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
@@ -61,6 +62,12 @@ public class PitcherPitchTypePriorRefreshJob {
   /** Days since the snapshot's as_of_date; -1 until the first successful run this process sees. */
   private final AtomicLong ageDays = new AtomicLong(-1);
 
+  /** Days of history covered by NEITHER table; -1 until the first successful run. */
+  private final AtomicLong coverageGapDays = new AtomicLong(-1);
+
+  /** Epoch seconds of the last SUCCESSFUL refresh in this process; 0 before the first one. */
+  private final AtomicLong lastRefreshEpochSeconds = new AtomicLong(0);
+
   public PitcherPitchTypePriorRefreshJob(
       PitcherPitchTypePriorRepository repo,
       JobLockRepository jobLocks,
@@ -82,8 +89,44 @@ public class PitcherPitchTypePriorRefreshJob {
                 + " first refresh, so any alert rule must be `< 0 or > N`. Climbs while the corpus"
                 + " ages between backfills - and is set only on a SUCCESSFUL run, so a dead job"
                 + " pins it at its last value rather than climbing; it cannot distinguish"
-                + " corpus-stale from job-dead. The climb precedes the deriver refusing"
-                + " predictions at its staleness bound.")
+                + " corpus-stale from job-dead -"
+                + " bullpen_pitchtype_prior_last_refresh_timestamp_seconds covers that half. The"
+                + " climb precedes the deriver refusing predictions at its staleness bound.")
+        .register(meters);
+    // The job-dead half, mirroring bullpen_pitcher_form_last_refresh_timestamp_seconds: the age
+    // gauge freezes at its last value when the job dies, so a dead job reads as eternally fresh.
+    // Epoch-seconds stamp, the bullpen_ingest_last_poll idiom; 0 before the first success in
+    // this process, so the alert rule gates on process age (bullpen-alerts.yml).
+    io.micrometer.core.instrument.Gauge.builder(
+            "bullpen_pitchtype_prior_last_refresh_timestamp_seconds",
+            lastRefreshEpochSeconds,
+            AtomicLong::doubleValue)
+        .description(
+            "Epoch seconds of the last successful pitcher_pitchtype_prior_current refresh IN"
+                + " THIS PROCESS; 0 until the first success after boot. Alert on time() - this"
+                + " > 26h, gated on process_start_time_seconds so a restart is not stale by"
+                + " definition. Distinguishes job-dead (this climbs stale) from corpus-stale"
+                + " (this fresh while age/coverage-gap climb).")
+        .register(meters);
+    // THE SECOND HALF, and the one [186]'s union made necessary. The age gauge above now reads
+    // ~1 in steady state because the live leg dominates the anchor - which means it reads ~1
+    // EVEN WHEN weeks of history are missing from both tables, the exact condition that used to
+    // make the age gauge scream. Age answers "is the newest data recent"; this answers "is the
+    // history contiguous". Shipping the union without this would have traded a loud refusal for
+    // a silent undercount on a career-expanding feature the model reads directly.
+    io.micrometer.core.instrument.Gauge.builder(
+            "bullpen_pitchtype_prior_coverage_gap_days", coverageGapDays, AtomicLong::doubleValue)
+        .description(
+            "Days of history in NEITHER pitches (manually backfilled) nor pitches_live (14-day"
+                + " TTL) - the hole between the corpus edge and the live floor. 0 when the two"
+                + " ranges touch. -1 before the first successful refresh, so an alert rule must"
+                + " be `< 0 or > N` like its sibling. A positive value means the career priors"
+                + " are computed over an incomplete history and prior_n - itself a model feature"
+                + " - is biased low for every pitcher active in the gap; it is fixed by running"
+                + " the backfill, not by waiting, because this window is career-expanding rather"
+                + " than rolling and never ages out. A reading in the tens of thousands is the"
+                + " empty-corpus state (a fresh or just-restored box before the first backfill),"
+                + " not a broken gauge - everything before the live floor is genuinely missing.")
         .register(meters);
   }
 
@@ -111,7 +154,16 @@ public class PitcherPitchTypePriorRefreshJob {
               + " fold produces a plausible snapshot rather than an obviously broken one.");
     }
     LocalDate asOf = repo.refreshSnapshot(y7Expression);
-    ageDays.set(ChronoUnit.DAYS.between(asOf, LocalDate.now(ET)));
+    lastRefreshEpochSeconds.set(Instant.now().getEpochSecond());
+    // Separate failure domain, mirroring PitcherFormRefreshJob: the refresh SUCCEEDED (and the
+    // stamp above says so), so a failure in the follow-up gauge queries must not be logged as
+    // "refresh failed" - the log and the metric have to agree.
+    try {
+      ageDays.set(ChronoUnit.DAYS.between(asOf, LocalDate.now(ET)));
+      coverageGapDays.set(repo.coverageGapDays());
+    } catch (RuntimeException e) {
+      log.error("{}: freshness gauges update failed (refresh succeeded)", JOB_NAME, e);
+    }
     return asOf;
   }
 }

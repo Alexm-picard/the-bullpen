@@ -214,4 +214,55 @@ public class RegistryAdminController {
       throw new ResponseStatusException(HttpStatus.CONFLICT, e.getMessage(), e);
     }
   }
+
+  /**
+   * Pull an archived version's snapshot back from S3 to local disk. Wires the primary recovery
+   * method documented in {@code docs/runbooks/registry-snapshot-recovery.md} (the HTTP route was
+   * deferred at 3a.5 and is now implemented for the DR drill).
+   *
+   * <p>The endpoint delegates to {@link RegistryService#restoreVersion(long)} which downloads every
+   * key under {@code snapshots/<model_name>/<version>/} from R2 to the local snapshot directory,
+   * then flips the registry's {@code artifact_path} and {@code metadata_path} to the local copies.
+   * Requires {@code S3_ENDPOINT_URL} to be set (the {@code R2ArchiveClient} bean must be present).
+   *
+   * <p>Returns the refreshed {@link ModelVersion} row so the caller can verify the paths changed.
+   * Throws 404 if the version doesn't exist, 400 if the path's model name doesn't match, and 503 if
+   * the restore itself fails (S3 unreachable, object not found, disk full).
+   */
+  @PostMapping("/{modelName}/restore/{versionId}")
+  public ModelVersion restore(@PathVariable String modelName, @PathVariable long versionId) {
+    ModelVersion current =
+        registry
+            .getById(versionId)
+            .orElseThrow(
+                () ->
+                    new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "no model_version with id " + versionId));
+    if (!current.modelName().equals(modelName)) {
+      throw new ResponseStatusException(
+          HttpStatus.BAD_REQUEST,
+          "path modelName="
+              + modelName
+              + " does not match registered modelName="
+              + current.modelName()
+              + " for id="
+              + versionId);
+    }
+    try {
+      java.nio.file.Path restored = registry.restoreVersion(versionId);
+      log.info(
+          "admin: restored {}/{} (id={}) to {}",
+          current.modelName(),
+          current.version(),
+          versionId,
+          restored);
+      emit(
+          OpsEventType.REGISTER,
+          current.modelName() + " " + current.version() + " restored from archive to " + restored);
+    } catch (net.thebullpen.baseball.registry.SnapshotStorageException e) {
+      throw new ResponseStatusException(
+          HttpStatus.SERVICE_UNAVAILABLE, "restore failed: " + e.getMessage(), e);
+    }
+    return registry.getById(versionId).orElseThrow();
+  }
 }

@@ -52,6 +52,11 @@ public class CacheControlAdvice implements ResponseBodyAdvice<Object> {
   static final String NO_STORE = "no-store";
   static final int OPS_MAX_AGE_SECONDS = 20;
   static final int GAMES_MAX_AGE_SECONDS = 8;
+  // The rolling-accuracy truth join is the heaviest ops read (a prediction_log scan + join per
+  // cold request) and its data moves on a games cadence, not a polling one - a 5-minute shared
+  // TTL keeps the endpoint one query per edge node per window instead of one per viewer.
+  static final String ROLLING_ACCURACY_PATH = "/v1/ops/rolling-accuracy";
+  static final int ROLLING_ACCURACY_MAX_AGE_SECONDS = 300;
 
   @Override
   public boolean supports(
@@ -77,7 +82,11 @@ public class CacheControlAdvice implements ResponseBodyAdvice<Object> {
     if (!HttpMethod.GET.equals(request.getMethod()) || statusOf(response) != 200) {
       return body;
     }
-    if (path.startsWith(OPS_PREFIX)) {
+    if (path.equals(ROLLING_ACCURACY_PATH)) {
+      // Must precede the generic ops branch - this advice runs AFTER the controller, so a
+      // controller-set header would be overwritten by the 20s ops default.
+      headers.setCacheControl("public, max-age=" + ROLLING_ACCURACY_MAX_AGE_SECONDS);
+    } else if (path.startsWith(OPS_PREFIX)) {
       headers.setCacheControl("public, max-age=" + OPS_MAX_AGE_SECONDS);
     } else if (path.startsWith(GAMES_PREFIX)) {
       headers.setCacheControl("public, max-age=" + GAMES_MAX_AGE_SECONDS);

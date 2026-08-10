@@ -43,6 +43,11 @@ class CacheControlAdviceTest {
       return "ok";
     }
 
+    @GetMapping("/v1/ops/rolling-accuracy")
+    String rollingAccuracy() {
+      return "ok";
+    }
+
     @GetMapping("/v1/games/today")
     String games() {
       return "ok";
@@ -85,6 +90,16 @@ class CacheControlAdviceTest {
     mvc.perform(get("/v1/ops/routing"))
         .andExpect(status().isOk())
         .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "public, max-age=20"));
+  }
+
+  @Test
+  void rollingAccuracyGetsTheLongSharedTtl_notTheOpsDefault() throws Exception {
+    // The advice runs AFTER the controller, so a controller-set header would be overwritten by
+    // the generic 20s ops branch - the specific branch must win, and this reds if the branch
+    // order flips.
+    mvc.perform(get("/v1/ops/rolling-accuracy"))
+        .andExpect(status().isOk())
+        .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "public, max-age=300"));
   }
 
   @Test
