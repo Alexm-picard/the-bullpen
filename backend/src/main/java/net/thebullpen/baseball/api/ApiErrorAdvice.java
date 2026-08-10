@@ -124,6 +124,17 @@ public class ApiErrorAdvice {
   }
 
   /**
+   * A 503 (or other status) with a caller-specified stable code (#401). Handled BEFORE {@link
+   * #handleResponseStatus} so the code survives instead of being overwritten by the HTTP status
+   * name.
+   */
+  @ExceptionHandler(CodedServiceException.class)
+  public ResponseEntity<ApiError> handleCoded(CodedServiceException ex) {
+    ApiError body = ApiError.of(ex.code(), ex.getMessage(), correlationId());
+    return ResponseEntity.status(ex.status()).body(body);
+  }
+
+  /**
    * Map {@link ResponseStatusException} (thrown by controllers for non-validation client errors
    * like "missing required field for this dispatch path" or "post head not loaded") through our
    * envelope instead of Spring's default ProblemDetail. Status code is preserved; {@code

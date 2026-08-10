@@ -25,7 +25,7 @@ export function PageChrome({
   topPad?: number;
 }) {
   const fieldStyle: CSSProperties = {
-    backgroundColor: colors.field,
+    backgroundColor: "var(--bp-field)",
     minHeight: "100%",
     padding: `24px 16px ${bottomPad}px`,
   };

@@ -81,9 +81,7 @@ describe("InfraRibbon", () => {
     };
     const html = render(<InfraRibbon services={[degradedService]} />);
     expect(html).toContain("DEGRADED");
-    expect(html.toLowerCase()).toContain(
-      colors.gold.toLowerCase(),
-    );
+    expect(html.toLowerCase()).toContain(colors.gold.toLowerCase());
   });
 
   it("has a nav landmark with an aria-label", () => {

@@ -389,7 +389,9 @@ export function LiveScorecard({
   // contracted four renders through the generic pitch-outcome shape (its own
   // status/reason/note) rather than silently vanishing.
   const extras = models
-    .filter((m) => !(EXPECTED_MODELS as readonly string[]).includes(m.modelName))
+    .filter(
+      (m) => !(EXPECTED_MODELS as readonly string[]).includes(m.modelName),
+    )
     .map((m) => pitchOutcomeCard(m, windowDays));
 
   return (

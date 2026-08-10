@@ -26,7 +26,7 @@ public class ExperimentResultsRepository {
       "SELECT id, model_name, champion_version_id, challenger_version_id, started_at, ended_at,"
           + " primary_metric, primary_threshold, guardrails, sample_size_target,"
           + " sample_size_observed, champion_metric, challenger_metric, guardrails_observed,"
-          + " status, notes, created_at FROM experiment_results";
+          + " status, notes, created_at, dead_lettered_at_start FROM experiment_results";
 
   private final JdbcTemplate jdbc;
 
@@ -138,7 +138,8 @@ public class ExperimentResultsRepository {
       double primaryThreshold,
       String guardrailsJson,
       long sampleSizeTarget,
-      String notes) {
+      String notes,
+      Double deadLetteredAtStart) {
     org.springframework.jdbc.support.KeyHolder keyHolder =
         new org.springframework.jdbc.support.GeneratedKeyHolder();
     jdbc.update(
@@ -147,8 +148,8 @@ public class ExperimentResultsRepository {
               connection.prepareStatement(
                   "INSERT INTO experiment_results (model_name, champion_version_id,"
                       + " challenger_version_id, started_at, primary_metric, primary_threshold,"
-                      + " guardrails, sample_size_target, status, notes)"
-                      + " VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, 'running', ?)",
+                      + " guardrails, sample_size_target, status, notes, dead_lettered_at_start)"
+                      + " VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, 'running', ?, ?)",
                   java.sql.Statement.RETURN_GENERATED_KEYS);
           ps.setString(1, modelName);
           ps.setLong(2, championVersionId);
@@ -158,6 +159,11 @@ public class ExperimentResultsRepository {
           ps.setString(6, guardrailsJson);
           ps.setLong(7, sampleSizeTarget);
           ps.setString(8, notes);
+          if (deadLetteredAtStart != null) {
+            ps.setDouble(9, deadLetteredAtStart);
+          } else {
+            ps.setNull(9, java.sql.Types.REAL);
+          }
           return ps;
         },
         keyHolder);
@@ -228,7 +234,8 @@ public class ExperimentResultsRepository {
               rs.getString("notes"),
               // started_at/ended_at/created_at are UTC (CURRENT_TIMESTAMP); read tz-explicitly so
               // the box's ET JVM does not shift them +4h.
-              JdbcTimes.utcInstant(rs, "created_at"));
+              JdbcTimes.utcInstant(rs, "created_at"),
+              getNullableDouble(rs, "dead_lettered_at_start"));
 
   private static Long getNullableLong(ResultSet rs, String col) throws java.sql.SQLException {
     long v = rs.getLong(col);

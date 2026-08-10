@@ -49,9 +49,8 @@ class PitcherFormRepositoryIT {
       new ClickHouseContainer("clickhouse/clickhouse-server:24.12-alpine")
           .withUsername("default")
           .withPassword("test")
-          // Pin the server TZ so CH today() matches the JVM's LocalDate.now(UTC) the fixture dates
-          // use (the days_since_last_appearance == 3 assertion depends on it); removes the reliance
-          // on the base image's undocumented UTC default and the midnight-crossing flake.
+          // Pin the server TZ to UTC so CH today() is deterministic; fixture dates use
+          // LocalDate.now(ET) (line 578), so this pin is belt-and-suspenders, not load-bearing.
           .withEnv("TZ", "UTC");
 
   @DynamicPropertySource

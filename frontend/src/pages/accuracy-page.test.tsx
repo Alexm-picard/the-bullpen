@@ -162,8 +162,13 @@ describe("AccuracyPage", () => {
     // letter-spacing 0.06em and rgba opacities that are not page data), then
     // strip remaining tags. The empty state must never invent metric values, so
     // no metric-shaped decimal (Brier/ECE 0.xxx) and no percentage may survive.
-    const text = html
-      .replace(/<style[\s\S]*?<\/style>/g, "")
+    let stripped = html;
+    let prev: string;
+    do {
+      prev = stripped;
+      stripped = stripped.replace(/<style[\s\S]*?<\/style>/gi, "");
+    } while (stripped !== prev);
+    const text = stripped
       .replace(/style="[^"]*"/g, "")
       .replace(/<[^>]+>/g, " ");
     expect(text).not.toMatch(/\b0\.\d{2,3}\b/);

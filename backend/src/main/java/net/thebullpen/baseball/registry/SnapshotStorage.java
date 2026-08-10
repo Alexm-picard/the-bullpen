@@ -80,7 +80,7 @@ public class SnapshotStorage {
       Optional<R2ArchiveClient> archive,
       @Value("${bullpen.snapshot.local-base-path:./data/models}") String localBase,
       @Value("${bullpen.snapshot.keep-locally:5}") int keepLocally,
-      @Value("${bullpen.snapshot.archive-prefix:models-archive}") String archivePrefix) {
+      @Value("${bullpen.snapshot.archive-prefix:snapshots}") String archivePrefix) {
     this.repo = repo;
     this.archive = archive;
     this.localBase = Path.of(localBase);
@@ -247,6 +247,43 @@ public class SnapshotStorage {
         keyPrefix,
         localDir);
     return localDir;
+  }
+
+  // --- champion push (DR recoverability) ----------------------------------
+
+  /**
+   * Push the champion's local bundle to R2 so a DR restore can recover it. Unlike {@link
+   * #archiveSingle}, this does NOT flip the registry paths or delete the local copy: champions stay
+   * local for serving AND in R2 for recovery.
+   *
+   * @return true if pushed, false if no R2 client is configured (local dev / tests). Throws on
+   *     actual upload failure so the promotion caller can surface it.
+   */
+  public boolean pushChampionBundle(ModelVersion mv) {
+    if (archive.isEmpty()) {
+      log.warn(
+          "snapshot: champion {}/{} (id={}) NOT pushed to R2 - no S3_ENDPOINT_URL configured",
+          mv.modelName(),
+          mv.version(),
+          mv.id());
+      return false;
+    }
+    R2ArchiveClient client = archive.get();
+    Path localDir = localBase.resolve(mv.modelName()).resolve(mv.version());
+    if (!Files.isDirectory(localDir)) {
+      throw new SnapshotStorageException(
+          "champion bundle missing at " + localDir + " for " + mv.modelName() + "/" + mv.version());
+    }
+    String keyPrefix = archivePrefix + "/" + mv.modelName() + "/" + mv.version();
+    client.uploadDirectory(localDir, keyPrefix);
+    log.info(
+        "snapshot: pushed champion {}/{} (id={}) to s3://{}/{}",
+        mv.modelName(),
+        mv.version(),
+        mv.id(),
+        client.bucket(),
+        keyPrefix);
+    return true;
   }
 
   // --- helpers ------------------------------------------------------------

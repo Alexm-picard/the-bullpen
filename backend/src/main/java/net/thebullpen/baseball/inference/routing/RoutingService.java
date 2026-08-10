@@ -251,8 +251,12 @@ public class RoutingService {
         current.challengerVersionId() != null && current.challengerVersionId() == championVersionId
             ? null
             : current.challengerVersionId();
-    double pct = challenger == null ? 0.0 : current.challengerTrafficPct();
-    RoutingMode mode = challenger == null ? RoutingMode.SHADOW : current.mode();
+    // #379: if the champion changed and a challenger survives, its AB experiment was bound to the
+    // OLD champion. Carrying mode/pct forward would silently rebind the experiment to a different
+    // baseline. Reset to SHADOW/0 so traffic re-enablement is a deliberate admin action.
+    boolean championChanged = current.championVersionId() != championVersionId;
+    double pct = challenger == null || championChanged ? 0.0 : current.challengerTrafficPct();
+    RoutingMode mode = challenger == null || championChanged ? RoutingMode.SHADOW : current.mode();
     RoutingConfig updated = repo.upsert(modelName, championVersionId, challenger, pct, mode);
     log.info(
         "routing: {} champion updated to {} (challenger={}, mode={})",

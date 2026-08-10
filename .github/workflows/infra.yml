@@ -46,6 +46,11 @@ jobs:
             -v "$RUNNER_TEMP/secrets:/etc/prometheus/secrets:ro" \
             --entrypoint promtool prom/prometheus:v3.0.1 \
             check config /etc/prometheus/prometheus.yml
+      # NOTE: test files are named INDIVIDUALLY here, not globbed. A new .test.yml that is not added
+      # to this list simply never runs, and its rules go untested while the lane stays green - the
+      # same "gate that appears to exist" shape the prediction-log rules were added to fix. If you
+      # add a fixture file, add it here in the same commit.
+      #
       # `check config` proves the rules PARSE; `test rules` proves they FIRE (and stay silent)
       # in the pinned scenarios - it caught two real semantic bugs (a $value-hijacking
       # or-disjunct and a gate that false-paged every All-Star break) that check config
@@ -57,7 +62,10 @@ jobs:
           docker run --rm \
             -v "$PWD/infra/prometheus/rules:/rules:ro" \
             --entrypoint promtool prom/prometheus:v3.0.1 \
-            test rules /rules/tests/freshness-alerts.test.yml
+            test rules \
+              /rules/tests/freshness-alerts.test.yml \
+              /rules/tests/prediction-log-writer.test.yml \
+              /rules/tests/slo-alerts.test.yml
 
   compose-config:
     name: docker compose config (fail-closed env contract)

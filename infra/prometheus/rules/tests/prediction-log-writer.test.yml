@@ -1,0 +1,96 @@
+# Behavioural tests for the prediction_log writer alerts (issue 405).
+#
+# `promtool check rules` proves they PARSE. It does not prove they fire, and it does not prove they
+# stay quiet - a rule whose prefix is wrong parses perfectly and matches nothing forever. That is the
+# defect 405 is about, so each rule here is tested in BOTH directions.
+rule_files:
+  - ../bullpen-alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  # ── PredictionLogDeadLettering ────────────────────────────────────────────────────────────────
+  - interval: 1m
+    input_series:
+      # Flat for 20m, then a single batch is dead-lettered.
+      - series: 'thebullpen_prediction_log_dead_lettered_total'
+        values: '0+0x20 500+0x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: PredictionLogDeadLettering
+        exp_alerts: []          # SILENT while nothing is lost - the half a wrong rule would pass
+      - eval_time: 25m
+        alertname: PredictionLogDeadLettering
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "prediction_log rows were dead-lettered - evidence has been lost"
+              description: "500 rows discarded in the last 15m after exhausting write attempts. The log line carries enough identity to reconstruct which rows were lost; drift baselines and rule-5 promotion evidence for that window are now incomplete. Check `journalctl -u bullpen-api | grep dead_letter`."
+
+  # ── PredictionLogWriteFailuresSustained ───────────────────────────────────────────────────────
+  - interval: 1m
+    input_series:
+      # A 5-minute blip, then recovery. Must NOT page: [30] makes logging best-effort and the
+      # backoff exists precisely so a transient ClickHouse wobble is not an incident.
+      - series: 'thebullpen_prediction_log_write_failures_total'
+        values: '0+1x5 6+0x40'
+    alert_rule_test:
+      # DURING the blip. This is the eval that actually tests `for: 15m` - at 25m the rate has
+      # already decayed to zero, so silence there holds whatever `for:` says. The first version of
+      # this test only had the 25m eval and passed with `for: 0m`, i.e. it asserted silence for the
+      # wrong reason.
+      - eval_time: 6m
+        alertname: PredictionLogWriteFailuresSustained
+        exp_alerts: []
+      # And after recovery, still silent.
+      - eval_time: 25m
+        alertname: PredictionLogWriteFailuresSustained
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      # Continuous failure well past the backoff cap. Must page.
+      - series: 'thebullpen_prediction_log_write_failures_total'
+        values: '0+1x40'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: PredictionLogWriteFailuresSustained
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "prediction_log writes have been failing continuously for 15m"
+              description: "The async logger has failed every flush for 15m (0.02/s). Backoff caps well inside this window, so this is not a transient blip. Predictions are still served - the write is off the request path by design - but nothing is being recorded, so the drift and evidence lanes are dark."
+
+  # ── PredictionLogQueueSaturated ───────────────────────────────────────────────────────────────
+  - interval: 1m
+    input_series:
+      # Healthy depth, then saturation above the 80%-of-20000 mark.
+      - series: 'thebullpen_prediction_log_queue_depth'
+        values: '120+0x20 17000+0x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: PredictionLogQueueSaturated
+        exp_alerts: []
+      - eval_time: 35m
+        alertname: PredictionLogQueueSaturated
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "prediction_log queue is above 80% of capacity"
+              description: "Depth 17000 of 20000 for 10m. The flusher drains in 500-row batches on a 1s cadence; sustained depth this high means writes are slower than arrivals, and enqueue() drops once it fills (decision [30] - best-effort by contract). Drops are silent by design, so this gauge is the warning that precedes them."
+
+  # ── The prefix trap, made explicit ────────────────────────────────────────────────────────────
+  - interval: 1m
+    input_series:
+      # A series under the WRONG prefix. Every one of the 20 pre-existing rules targets `bullpen_*`,
+      # so anyone writing a new rule by pattern-matching them writes this name. It must alert on
+      # nothing - which is the whole hazard: silent, permanent, and green.
+      - series: 'bullpen_prediction_log_dead_lettered_total'
+        values: '0+500x20'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: PredictionLogDeadLettering
+        exp_alerts: []

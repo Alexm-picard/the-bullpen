@@ -18,14 +18,19 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.OptionalDouble;
 import javax.sql.DataSource;
+import net.thebullpen.baseball.domain.BattedBall;
+import net.thebullpen.baseball.domain.CurrentMatchup;
 import net.thebullpen.baseball.domain.GameStatus;
 import net.thebullpen.baseball.domain.GameSummary;
 import net.thebullpen.baseball.domain.LivePitch;
 import net.thebullpen.baseball.domain.LivePitchRow;
 import net.thebullpen.baseball.domain.PagedRows;
 import net.thebullpen.baseball.domain.PostPredictionRow;
+import net.thebullpen.baseball.domain.RecentBattedBall;
 import net.thebullpen.baseball.domain.ScheduledGame;
+import net.thebullpen.baseball.domain.TeamContactBall;
 import net.thebullpen.baseball.ingest.LiveGameFeed;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -70,13 +75,33 @@ public class LivePitchesRepository {
           // pre-V028 row - unknown occupancy, never a false bases-empty 0).
           + " pl.pitch_hand AS pitch_hand, pl.bat_side AS bat_side, pl.base_state AS base_state,"
           + " pl.home_team AS park_id,"
-          // Realized batted-ball outcome (Phase 1.2). pitches_live carries no such columns (the
-          // live feed is pre-Statcast), so LEFT JOIN the canonical pitches table (V003) on the
-          // natural pitch key. Null on non-in-play pitches and on any pitch the overnight handoff
-          // job has not yet moved into pitches (the LEFT JOIN miss); the mapper maps '' -> null for
-          // the LowCardinality(String) columns.
-          + " ph.launch_speed_mph AS launch_speed_mph, ph.launch_angle_deg AS launch_angle_deg,"
-          + " ph.hit_distance_ft AS hit_distance_ft, ph.bb_type AS bb_type, ph.events AS events,"
+          // Realized batted-ball outcome. TWO sources, live preferred:
+          //
+          //   pitches_live (V032) - populated during the game, the moment a play completes. This
+          //     is what makes the card work for a game in progress, which is the whole point.
+          //   pitches (V003)      - the canonical table, populated by the overnight handoff. Still
+          //     needed: it is the ONLY source for a game whose live rows have aged past the
+          //     14-day TTL, and for anything ingested before V032 shipped.
+          //
+          // The live side is gated on its GROUP-level presence predicate, not on any single
+          // column, because 0 is a real launch angle and 1 ft a real distance - only
+          // launch_speed_mph and events can carry absence (see V032's header). A live row that
+          // fails the predicate falls through to the historical value rather than masking it with
+          // a sentinel, so an old backfilled game reads exactly as it did before this change.
+          + " if(pl.launch_speed_mph > 0 AND pl.events != '', pl.launch_speed_mph,"
+          + "    ph.launch_speed_mph) AS launch_speed_mph,"
+          + " if(pl.launch_speed_mph > 0 AND pl.events != '', pl.launch_angle_deg,"
+          + "    ph.launch_angle_deg) AS launch_angle_deg,"
+          + " if(pl.launch_speed_mph > 0 AND pl.events != '', pl.hit_distance_ft,"
+          + "    ph.hit_distance_ft) AS hit_distance_ft,"
+          + " if(pl.launch_speed_mph > 0 AND pl.events != '', pl.bb_type, ph.bb_type) AS bb_type,"
+          + " if(pl.launch_speed_mph > 0 AND pl.events != '', pl.events, ph.events) AS events,"
+          // Coordinates are selected but NOT surfaced raw: the mapper turns them into a spray
+          // angle via BattedBall, so the derivation (and its two degeneracy gates) lives in ONE
+          // place rather than being reimplemented in TypeScript. `pitches` has hc_x/hc_y too, but
+          // only the live side is coalesced here - a backfilled game already reaches the model
+          // through the historical path and gains nothing from a second spray source.
+          + " pl.hc_x AS hc_x, pl.hc_y AS hc_y,"
           + " pred.prediction AS prediction_json"
           + " FROM pitches_live AS pl FINAL"
           // One champion prediction per pitch: predict-next re-logs the same upcoming pitch on
@@ -169,10 +194,40 @@ public class LivePitchesRepository {
           + " ORDER BY pred.at_bat_index ASC, pred.pitch_number ASC"
           + " LIMIT ? OFFSET ?";
 
+  // V031's live current-play matchup, read as ONE argMax over a TUPLE rather than five parallel
+  // argMax calls. WHAT THE TUPLE BUYS, stated in the present tense because a future editor will
+  // judge it on that and not on history: five independent argMax aggregate states can each
+  // resolve a TIED updated_at to a different row, which would tear the record - a batter from one
+  // row paired with an at-bat index from another. One tuple state cannot tear. (The historical
+  // reason this shape arrived - argMax skipping NULL args under the pre-fix Nullable columns - is
+  // recorded in V031's header, and no longer applies: the columns are non-Nullable, verified by
+  // mutating this read back to per-column argMax and watching the ITs still pass.)
+  //
+  // status stays OUTSIDE the tuple. Not because it is non-NULL - that prevents a row being
+  // SKIPPED, not two aggregate states disagreeing on a tie - but because a tie needs two writes
+  // for one game inside one second, and the per-game poll gate makes that unreachable short of a
+  // D-37 lease handover, where both rows would carry the same status anyway.
+  private static final String MATCHUP_SUBQUERY_COLS =
+      ", argMax(tuple(current_batter_id, current_pitcher_id, current_bat_side,"
+          + " current_pitch_hand, current_at_bat_index), updated_at) AS matchup";
+
+  // The tuple unpacked from the joined status alias. A LEFT JOIN miss yields the tuple type's
+  // default - (0, 0, '', '', 0), verified against the V031 types, NOT nulls - which isPopulated()
+  // rejects, so a game with no status row reports NO matchup rather than a matchup of zeroes.
+  // Naming the mechanism precisely matters here more than usual: NULL-vs-0 on this exact read
+  // path is what made the first version of this feature silently wrong.
+  private static final String MATCHUP_SELECT_COLS =
+      ", tupleElement(s.matchup, 1) AS current_batter_id,"
+          + " tupleElement(s.matchup, 2) AS current_pitcher_id,"
+          + " tupleElement(s.matchup, 3) AS current_bat_side,"
+          + " tupleElement(s.matchup, 4) AS current_pitch_hand,"
+          + " tupleElement(s.matchup, 5) AS current_at_bat_index";
+
   // Latest status per game from the poller (step 7b). argMax over the ReplacingMergeTree gives the
   // current status; a LEFT JOIN miss yields '' -> 'UNKNOWN' (the honest pre-poll answer).
   private static final String LATEST_STATUS_SUBQUERY =
       " LEFT JOIN ( SELECT game_id, argMax(status, updated_at) AS status"
+          + MATCHUP_SUBQUERY_COLS
           + " FROM live_game_status GROUP BY game_id ) AS s ON s.game_id = g.game_id";
 
   // The slate UNIONs both sources so a game appears whether it is pre-game (in scheduled_games,
@@ -192,7 +247,8 @@ public class LivePitchesRepository {
           + " if(p.away_team != '', p.away_team,"
           + "    if(sg.away_team != '', sg.away_team, sg.away_name)) AS away_team,"
           + " p.home_score AS home_score, p.away_score AS away_score, p.inning AS inning,"
-          + " if(s.status != '', s.status, if(sg.status != '', sg.status, 'UNKNOWN')) AS status";
+          + " if(s.status != '', s.status, if(sg.status != '', sg.status, 'UNKNOWN')) AS status"
+          + MATCHUP_SELECT_COLS;
 
   private static final String SLATE_SCHEDULED_JOIN =
       " LEFT JOIN ( SELECT game_id, game_date, home_team, away_team, home_name, away_name, status"
@@ -208,6 +264,7 @@ public class LivePitchesRepository {
 
   private static final String SLATE_STATUS_JOIN =
       " LEFT JOIN ( SELECT game_id, argMax(status, updated_at) AS status"
+          + MATCHUP_SUBQUERY_COLS
           + "   FROM live_game_status GROUP BY game_id ) AS s ON s.game_id = ids.game_id";
 
   private static final String FIND_GAMES_FOR_DATE =
@@ -229,15 +286,18 @@ public class LivePitchesRepository {
           + " if(sg.away_team != '', sg.away_team, sg.away_name) AS away_team,"
           + " 0 AS home_score, 0 AS away_score, 0 AS inning,"
           + " if(s.status != '', s.status, if(sg.status != '', sg.status, 'SCHEDULED')) AS status"
+          + MATCHUP_SELECT_COLS
           + " FROM ( SELECT game_id, game_date, home_team, away_team, home_name, away_name, status"
           + "        FROM scheduled_games FINAL WHERE game_id = ? ) AS sg"
           + " LEFT JOIN ( SELECT game_id, argMax(status, updated_at) AS status"
+          + MATCHUP_SUBQUERY_COLS
           + "   FROM live_game_status GROUP BY game_id ) AS s ON s.game_id = sg.game_id";
 
   private static final String FIND_GAME =
       "SELECT g.game_id AS game_id, g.game_date AS game_date, g.home_team AS home_team,"
           + " g.away_team AS away_team, g.home_score AS home_score, g.away_score AS away_score,"
           + " g.inning AS inning, if(s.status = '', 'UNKNOWN', s.status) AS status"
+          + MATCHUP_SELECT_COLS
           + " FROM ("
           + "   SELECT game_id, game_date, home_team, away_team,"
           + "          max(home_score) AS home_score, max(away_score) AS away_score,"
@@ -248,7 +308,9 @@ public class LivePitchesRepository {
           + LATEST_STATUS_SUBQUERY;
 
   private static final String INSERT_GAME_STATUS =
-      "INSERT INTO live_game_status (game_id, game_date, status) VALUES (?, ?, ?)";
+      "INSERT INTO live_game_status (game_id, game_date, status, current_batter_id,"
+          + " current_pitcher_id, current_bat_side, current_pitch_hand, current_at_bat_index)"
+          + " VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
 
   private static final String INSERT_SCHEDULED_GAME =
       "INSERT INTO scheduled_games"
@@ -267,8 +329,13 @@ public class LivePitchesRepository {
           + " balls, strikes, outs, inning, home_score, away_score, home_team, away_team,"
           + " pfx_x_in, pfx_z_in, spin_rate_rpm, spin_axis_deg, release_pos_x_in, release_pos_z_in,"
           // A5 (V028): the pre-pitch context the frontend forwards into the A6 next-pitch request.
-          + " pitch_hand, bat_side, base_state)"
-          + " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+          + " pitch_hand, bat_side, base_state,"
+          // V032: the measured physics of a COMPLETED ball in play. Non-Nullable with sentinels,
+          // and absence is decided at the GROUP level (launch_speed_mph > 0 AND events != '')
+          // rather than per column - 0 is a real launch angle, 1 ft a real distance, and 0,0 a
+          // coordinate origin, so none of those three can carry absence on its own.
+          + " launch_speed_mph, launch_angle_deg, hit_distance_ft, hc_x, hc_y, bb_type, events)"
+          + " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
 
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -337,6 +404,17 @@ public class LivePitchesRepository {
             ps.setString(26, p.pitchHand() == null ? "" : p.pitchHand());
             ps.setString(27, p.batSide() == null ? "" : p.batSide());
             ps.setInt(28, p.baseState());
+            // A null BattedBall writes the sentinels across the whole group, never a partial row:
+            // the record's own contract is that it is entirely real or entirely absent, and the
+            // storage shape has to preserve that or a read could see physics without a result.
+            BattedBall bb = p.battedBall();
+            ps.setDouble(29, bb == null ? 0d : bb.launchSpeedMph());
+            ps.setDouble(30, bb == null ? 0d : bb.launchAngleDeg());
+            ps.setDouble(31, bb == null ? 0d : bb.hitDistanceFt());
+            ps.setDouble(32, bb == null ? 0d : bb.hcX());
+            ps.setDouble(33, bb == null ? 0d : bb.hcY());
+            ps.setString(34, bb == null ? "" : bb.bbType());
+            ps.setString(35, bb == null ? "" : bb.event());
           }
 
           @Override
@@ -384,13 +462,34 @@ public class LivePitchesRepository {
   }
 
   /**
-   * Upsert a game's current status; the poller (worker) calls this on a transition. The
-   * ReplacingMergeTree supersedes the prior row and findGamesForDate / findGame surface the latest
-   * via argMax. {@code game_date} is bound as an ISO-8601 String (clickhouse-jdbc inlines a bare
-   * date as arithmetic - same lesson as the pitches insert).
+   * Upsert a game's status row together with the LIVE current-play matchup (V031).
+   *
+   * <p>Called by the poller (worker) on a status transition, on its first poll of a game, or when
+   * the matchup moves. The ReplacingMergeTree supersedes the prior row and findGamesForDate /
+   * findGame surface the latest. {@code game_date} is bound as an ISO-8601 String (clickhouse-jdbc
+   * inlines a bare date as arithmetic - same lesson as the pitches insert).
+   *
+   * <p>The two travel in one row on purpose: they are read back with a single {@code
+   * argMax(tuple(..), updated_at)} off that row, so writing them separately could pair a batter
+   * from one tick with an at-bat index from another. {@code matchup} is null whenever the feed
+   * carries no current play (pre-game, between plays, final) - and that absence is WRITTEN, as the
+   * 0/'' sentinels, so the row stops advertising a batter who has already finished hitting. The
+   * sentinels are not a choice made here: the V031 columns are non-Nullable, so absence has exactly
+   * one storage shape, and {@code isPopulated()} is what rejects it on the way back out.
    */
-  public void upsertGameStatus(long gameId, LocalDate gameDate, String status) {
-    jdbc.update(INSERT_GAME_STATUS, gameId, gameDate.toString(), status);
+  public void upsertGameStatus(
+      long gameId, LocalDate gameDate, String status, CurrentMatchup matchup) {
+    boolean usable = matchup != null && matchup.isPopulated();
+    jdbc.update(
+        INSERT_GAME_STATUS,
+        gameId,
+        gameDate.toString(),
+        status,
+        usable ? matchup.batterId() : 0L,
+        usable ? matchup.pitcherId() : 0L,
+        usable ? nz(matchup.batSide()) : "",
+        usable ? nz(matchup.pitchHand()) : "",
+        usable ? matchup.atBatIndex() : 0);
   }
 
   /**
@@ -455,7 +554,11 @@ public class LivePitchesRepository {
     // no pitches yet, so fall back to the schedule (FIND_SCHEDULED_GAME) - both game_id binds.
     List<GameSummary> hits = jdbc.query(FIND_GAME, GAME_SUMMARY_MAPPER, gameId);
     if (!hits.isEmpty()) {
-      return java.util.Optional.of(hits.get(0));
+      // Second query rather than a join: the summary query is keyed on the status row and joining a
+      // pitch-level lookup into it would make every slate read pay for a per-game scan. A scheduled
+      // game skips this entirely - it has no pitches, so there is nothing to find.
+      return java.util.Optional.of(
+          hits.get(0).withMostRecentBattedBall(findMostRecentBattedBall(gameId)));
     }
     List<GameSummary> scheduled = jdbc.query(FIND_SCHEDULED_GAME, GAME_SUMMARY_MAPPER, gameId);
     return scheduled.isEmpty()
@@ -505,6 +608,128 @@ public class LivePitchesRepository {
     }
   }
 
+  /**
+   * SQL for the most recent COMPLETED ball in play of a game.
+   *
+   * <p>Gated on V032's GROUP-level presence predicate, so a pitch whose physics is absent (the
+   * sentinels) is not mistaken for a batted ball measured at 0 mph. Ordered by the natural pitch
+   * key rather than by ingestion time, because a re-written row (the BIP backfill supersedes a
+   * pitch once its play completes) has a LATER ingested_at than pitches thrown after it - ordering
+   * by time would surface a stale ball whenever a backfill landed out of order.
+   */
+  private static final String FIND_RECENT_BATTED_BALL =
+      "SELECT batter_id, at_bat_index, pitch_number, ingested_at, events, bb_type,"
+          + " launch_speed_mph, launch_angle_deg, hit_distance_ft, hc_x, hc_y,"
+          + " bat_side, pitch_hand, base_state, home_team AS park_id, outs"
+          + " FROM pitches_live FINAL"
+          + " WHERE game_id = ? AND launch_speed_mph > 0 AND events != ''"
+          + " ORDER BY at_bat_index DESC, pitch_number DESC"
+          + " LIMIT 1";
+
+  /** The most recent completed ball in play, or null when the game has had none yet. */
+  public RecentBattedBall findMostRecentBattedBall(long gameId) {
+    List<RecentBattedBall> hits =
+        jdbc.query(
+            FIND_RECENT_BATTED_BALL,
+            (ResultSet rs, int n) -> {
+              // Switch hitters resolve against the pitcher HERE, so the served model input and the
+              // page agree on which side a batter hit from - the same resolution nextPitchRequest
+              // performs, done once at the source rather than twice downstream.
+              String stand = rs.getString("bat_side");
+              String throws_ = rs.getString("pitch_hand");
+              if ("S".equals(stand)) {
+                stand = "R".equals(throws_) ? "L" : "L".equals(throws_) ? "R" : "";
+              }
+              // nullableInt, not a cast: clickhouse-jdbc returns Nullable(UInt8) as an
+              // UnsignedByte, so (Integer) throws ClassCastException. The existing row mapper
+              // already had this helper - reusing it rather than re-solving it.
+              Integer baseState = nullableInt(rs, "base_state");
+              return new RecentBattedBall(
+                  rs.getLong("batter_id"),
+                  rs.getInt("at_bat_index"),
+                  rs.getInt("pitch_number"),
+                  rs.getObject("ingested_at", java.time.LocalDateTime.class)
+                      .toInstant(java.time.ZoneOffset.UTC),
+                  rs.getString("events"),
+                  rs.getString("bb_type"),
+                  rs.getDouble("launch_speed_mph"),
+                  rs.getDouble("launch_angle_deg"),
+                  rs.getDouble("hit_distance_ft"),
+                  sprayAngleOrNull(rs),
+                  stand,
+                  baseState,
+                  rs.getString("park_id"),
+                  rs.getInt("outs"));
+            },
+            gameId);
+    return hits.isEmpty() ? null : hits.get(0);
+  }
+
+  /**
+   * A team's most recent REAL balls in play, season-to-date.
+   *
+   * <p>Team attribution is via {@code players.team}, which is CURRENT team rather than
+   * team-at-time-of-contact, so a mid-season trade misattributes that batter's earlier balls.
+   * Acceptable for a season profile and stated in the card's copy; it would not be acceptable for
+   * anything the model is promoted on.
+   *
+   * <p>Ordered newest-first and capped, so this is "recent contact" rather than a full-season scan.
+   * Rows lacking any measurement are excluded here rather than defaulted, and rows whose spray
+   * cannot be honestly derived are dropped in the mapper - the profile is built only from balls
+   * where every model input is a real observation.
+   */
+  private static final String FIND_TEAM_CONTACT =
+      "SELECT p.launch_speed_mph AS launch_speed_mph, p.launch_angle_deg AS launch_angle_deg,"
+          + " p.hit_distance_ft AS hit_distance_ft, p.hc_x AS hc_x, p.hc_y AS hc_y,"
+          + " p.stand AS stand, p.p_throws AS p_throws"
+          + " FROM pitches AS p"
+          + " INNER JOIN ("
+          + "   SELECT id AS player_id, argMax(team, updated_at) AS team"
+          + "   FROM players GROUP BY id"
+          + " ) AS pl ON pl.player_id = p.batter_id"
+          + " WHERE pl.team = ? AND p.game_date >= ?"
+          + "   AND p.launch_speed_mph > 0 AND p.launch_angle_deg IS NOT NULL"
+          + "   AND p.hit_distance_ft IS NOT NULL AND p.hc_x IS NOT NULL AND p.hc_y IS NOT NULL"
+          + " ORDER BY p.game_date DESC, p.game_id DESC, p.at_bat_index DESC"
+          + " LIMIT ?";
+
+  /**
+   * Recent real batted balls for a team, for the pre-first-pitch comparison.
+   *
+   * <p>Returns fewer than {@code limit} when spray declines on some rows; that is intended, and the
+   * caller reports the surviving n rather than padding.
+   */
+  public List<TeamContactBall> findTeamContact(String team, LocalDate from, int limit) {
+    List<TeamContactBall> rows =
+        jdbc.query(
+            FIND_TEAM_CONTACT,
+            (ResultSet rs, int n) -> {
+              OptionalDouble spray =
+                  BattedBall.sprayAngleDeg(rs.getDouble("hc_x"), rs.getDouble("hc_y"));
+              if (spray.isEmpty()) {
+                return null; // degenerate geometry - dropped below rather than fabricated
+              }
+              String stand = rs.getString("stand").trim();
+              String throws_ = rs.getString("p_throws").trim();
+              if ("S".equals(stand)) {
+                stand = "R".equals(throws_) ? "L" : "L".equals(throws_) ? "R" : "";
+              }
+              if (!"L".equals(stand) && !"R".equals(stand)) {
+                return null; // the model requires L|R; an unresolvable side is not guessed
+              }
+              return new TeamContactBall(
+                  rs.getDouble("launch_speed_mph"),
+                  rs.getDouble("launch_angle_deg"),
+                  rs.getDouble("hit_distance_ft"),
+                  spray.getAsDouble(),
+                  stand);
+            },
+            team,
+            from.toString(),
+            limit);
+    return rows.stream().filter(java.util.Objects::nonNull).toList();
+  }
+
   private static final RowMapper<GameSummary> GAME_SUMMARY_MAPPER =
       (ResultSet rs, int n) -> {
         String status = rs.getString("status");
@@ -517,8 +742,32 @@ public class LivePitchesRepository {
             rs.getInt("away_score"),
             rs.getInt("inning"),
             status,
-            humanizeStatus(status));
+            humanizeStatus(status),
+            readMatchup(rs),
+            // Composed by findGame from a second query - the summary query is keyed on the status
+            // row and has no pitch join.
+            null);
       };
+
+  /**
+   * The V031 matchup columns, or NULL when they do not describe a usable matchup.
+   *
+   * <p>Returns null - not a half-empty record - when the ids are absent, so the api omits the whole
+   * object rather than publishing a matchup a consumer would reasonably half-trust. Absent is ONE
+   * shape now that the columns are non-Nullable: 0, which covers a pre-V031 row, an early-GUMBO
+   * tick (the parser's missing-id value), a cleared matchup between plays, and a LEFT JOIN miss
+   * alike. {@link CurrentMatchup#isPopulated()} is the single place that decision lives.
+   */
+  private static CurrentMatchup readMatchup(ResultSet rs) throws SQLException {
+    CurrentMatchup m =
+        new CurrentMatchup(
+            rs.getLong("current_batter_id"),
+            rs.getLong("current_pitcher_id"),
+            nz(rs.getString("current_bat_side")),
+            nz(rs.getString("current_pitch_hand")),
+            rs.getInt("current_at_bat_index"));
+    return m.isPopulated() ? m : null;
+  }
 
   /** GameStatus enum name -> display label: IN_PROGRESS -> "In Progress", UNKNOWN -> "Unknown". */
   static String humanizeStatus(String status) {
@@ -575,6 +824,7 @@ public class LivePitchesRepository {
             nullable(rs, "hit_distance_ft"),
             emptyToNull(rs.getString("bb_type")),
             emptyToNull(rs.getString("events")),
+            sprayAngleOrNull(rs),
             // A5 pre-pitch context (V028). pitch_hand/bat_side are LowCardinality(String) DEFAULT
             // '' -> '' (NOT null) on a pre-V028 row; the frontend forwards them verbatim ('S'
             // resolves L|R downstream). base_state is Nullable(UInt8) -> null on a pre-V028 row
@@ -609,6 +859,36 @@ public class LivePitchesRepository {
             pred.winner(),
             rs.getString("model_version"));
       };
+
+  /**
+   * Spray angle for a live batted ball, or null when it cannot honestly be derived.
+   *
+   * <p>Derived HERE rather than on the client so the formula and its two degeneracy gates exist
+   * once. {@link BattedBall#sprayAngleDeg()} declines a ball tracked at or behind the plate (where
+   * atan2 flips quadrant, and where the ORIGIN would otherwise yield a confident 0 degrees) and any
+   * result outside the foul lines. A declined spray must reach the caller as null, never as 0: the
+   * per-park model treats a spray angle as observed, so a fabricated 0 would score a ball pulled
+   * down the line as though it were hit to dead centre.
+   *
+   * <p>The {@code (0,0)} check is the STORAGE-SENTINEL case, and it is a DIFFERENT degeneracy from
+   * the plate-origin one {@link BattedBall#sprayAngleDeg} documents - do not read them as
+   * duplicates and delete one. At the plate origin atan2(0,0) is 0, a false dead-centre. At the
+   * storage sentinel (0,0) the derivation is atan2(125.42, 198.27) = +32.32 degrees, which is
+   * comfortably INSIDE the foul lines and so passes the invariant gate: without this check every
+   * non-batted-ball row would carry a confident fabricated spray. (The figure was -32.15 while the
+   * plate constant and sign were wrong; the CONCLUSION is unchanged, which is why a stale number
+   * here would have gone unnoticed.) Null also when the row carries no live coordinates at all - a
+   * historical-only row reaches the model through its own path.
+   */
+  private static Double sprayAngleOrNull(ResultSet rs) throws SQLException {
+    double hcX = rs.getDouble("hc_x");
+    double hcY = rs.getDouble("hc_y");
+    if (hcX == 0 && hcY == 0) {
+      return null;
+    }
+    OptionalDouble spray = BattedBall.sprayAngleDeg(hcX, hcY);
+    return spray.isPresent() ? spray.getAsDouble() : null;
+  }
 
   private static Double nullable(ResultSet rs, String col) throws java.sql.SQLException {
     double v = rs.getDouble(col);

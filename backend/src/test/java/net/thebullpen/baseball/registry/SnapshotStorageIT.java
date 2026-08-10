@@ -78,7 +78,7 @@ class SnapshotStorageIT {
     registry.add("bullpen.snapshot.local-base-path", snapshotBase::toString);
     // Keep only 2 locally so the retention sweep is exercised quickly with a small fixture set.
     registry.add("bullpen.snapshot.keep-locally", () -> "2");
-    registry.add("bullpen.snapshot.archive-prefix", () -> "models-archive");
+    registry.add("bullpen.snapshot.archive-prefix", () -> "snapshots");
 
     // S3 wiring → MinIO container. Bucket is created in @BeforeEach (per-class context but each
     // test resets the registry; the bucket exists for the JVM lifetime).
@@ -158,10 +158,10 @@ class SnapshotStorageIT {
     assertThat(Files.exists(Path.of(v4After.artifactPath()))).isTrue();
 
     // S3 must hold the archived objects.
-    assertThat(archiveClient.listKeys("models-archive/retain_model/v1"))
+    assertThat(archiveClient.listKeys("snapshots/retain_model/v1"))
         .as("v1 must have keys under its archive prefix")
         .isNotEmpty();
-    assertThat(archiveClient.listKeys("models-archive/retain_model/v2")).isNotEmpty();
+    assertThat(archiveClient.listKeys("snapshots/retain_model/v2")).isNotEmpty();
   }
 
   @Test
