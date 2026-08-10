@@ -128,7 +128,7 @@ services:
   #   docker compose -f infra/docker-compose.yml --profile monitoring up -d
   # (after creating infra/alertmanager/secrets/discord_url from the .example).
   node-exporter:
-    image: prom/node-exporter:v1.8.2
+    image: prom/node-exporter:v1.12.1
     container_name: bullpen-node-exporter
     logging: *bullpen-logging
     profiles: ["monitoring"]
