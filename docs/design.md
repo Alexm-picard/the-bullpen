@@ -2,7 +2,7 @@
 
 > **Project**: The Bullpen (`thebullpen.net`) — A baseball analytics + ML systems platform
 > **Author**: Alex Picard
-> **Status**: Pre-implementation; all decisions locked through planning session
+> **Status**: Planning-era document (locked 2026-05). Authoritative for design rationale and locked decisions; it deliberately does NOT track build status - that lives in `docs/phase-status.json` (read by `/status`).
 > **Last updated**: 2026-05-29 (frontend identity re-pitched from editorial-data → scouting-report; see §7, §8, §10)
 
 ---
@@ -265,7 +265,10 @@ Before any experiment, write down:
 
 - Primary metric (e.g., Brier score on shadow predictions)
 - Sample size (e.g., 50,000 paired predictions)
-- Threshold (e.g., challenger must beat champion by ≥ 0.005 Brier)
+- Threshold (e.g., challenger must beat champion by ≥ 0.005 Brier). The threshold can also be a
+  NON-INFERIORITY margin (a negative threshold: "may not regress by more than X") for an
+  additive-capability upgrade of an already-serving model - i.e. a model whose honest claim over the
+  champion is a new capability, not a metric win (see ADR-0012 / decision [166], the carry champion).
 - Guardrails (no regression on calibration error, per-class log loss, p99 latency)
 
 Promotion requires a row in `experiment_results` showing criteria were
@@ -279,10 +282,14 @@ declared primary (or an honestly re-aimed primary it genuinely passes).
 The exemption never waves a model through a primary it failed (see
 ADR-0011 / decision [154]).
 
-**Logging**: every prediction (champion + shadow + challenger) logged to
-ClickHouse `prediction_log`, partitioned by month, joined to outcomes
-table at query time (NOT updated in place — ClickHouse mutations are
-expensive).
+**Logging**: every DELIVERED prediction logged to ClickHouse
+`prediction_log` (the champion + shadow + challenger legs of the same
+input all log), partitioned by month, joined to outcomes table at query
+time (NOT updated in place — ClickHouse mutations are expensive). Model
+evaluations that are only intermediates in computing something else are
+NOT logged - when N evaluations collapse into 1 delivered value, the N
+are intermediates - and emit their own metrics instead. See decision
+[188] / ADR-0016.
 
 ```sql
 CREATE TABLE prediction_log (
@@ -590,6 +597,22 @@ transition probabilities. Two implementations:
 Both implemented; convergence test (MC mean → analytical) catches bugs
 in either.
 
+**Serving posture (unrouted by design)**: both `/v1/simulate` endpoints are
+deliberately UNROUTED diagnostics, not served-prediction surfaces. The
+simulator PINS one model artifact (`PitchInferenceService`, `pitch_outcome_pre`
+/v1) and calls it directly rather than through the A/B `InferenceRouter`,
+because the ~12 per-state pitch calls behind a single solve must all come from
+the same model version - routing per probe could stitch the transition matrix
+from two distributions across a mid-request promotion or bucketing flip, an
+incoherent chain with no way to detect it. The response reports
+`servingMode="unrouted-diagnostic"` plus the pinned artifact's registry stage;
+simulate latency lands on a dedicated
+`thebullpen_inference_simulate_latency_seconds` metric under `role="simulator"`,
+never the served-prediction histogram. See decision [176].
+It also writes no `prediction_log` rows at all: its ~12 per-state probes are
+intermediates in one delivered answer, making it the first instance of the
+delivered-vs-internal rule in decision [188] / ADR-0016.
+
 **Half-inning extension** deferred to v1.5: continue the chain through
 outs to compute "P(scoring this inning)." Useful, low marginal effort,
 but not v1.
@@ -789,9 +812,17 @@ net.thebullpen.baseball/
 └── config/      # Spring configuration
 ```
 
-Domain models in `domain/` are pure data (records). JPA entities (if
-any) live in `data/` and map to/from domain types. Hexagonal-lite — lets
-inference and simulation reason about `Pitch` without coupling to SQL.
+Domain models in `domain/` stay pure (records, no JPA annotations), enforced by an ArchUnit
+JDK-only allowlist. Since C2 (PR #323) `domain/` holds 18 types: `GameMatchup` plus the 17
+row/value records the repositories actually return, moved out of `api/dto` and `ingest/` so
+`data/` no longer imports web types (that boundary rule is now STRICT, baseline drained to zero).
+NOTE the shape this took: C2 did NOT introduce boundary mappers - it moved shared types into a
+common core, so several `*Row` records are still returned directly as JSON by controllers. That is
+a shared-kernel choice rather than a mapping-at-the-boundary choice, and it is deliberate (17
+mapper pairs would be ceremony this codebase does not need), but it means SQL row shape and wire
+shape remain coupled for those types. The hexagonal-lite end state - a shared pure core (e.g. a
+`Pitch` record) that inference and simulation reason about without SQL coupling - is the
+intended direction, now substantially closer but not complete.
 
 ### Python ↔ Java contract
 

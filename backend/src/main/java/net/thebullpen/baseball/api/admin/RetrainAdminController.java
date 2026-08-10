@@ -1,5 +1,6 @@
 package net.thebullpen.baseball.api.admin;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
 import net.thebullpen.baseball.api.admin.dto.ManualRetrainRequest;
@@ -44,6 +45,12 @@ import org.springframework.web.server.ResponseStatusException;
  *   <li>{@link RetrainingException.InvalidStateTransition} → 409
  * </ul>
  */
+@Tag(
+    name = "Admin: Retraining",
+    description =
+        "ADMIN-authed retraining queue: manual enqueue, list/fetch/cancel triggers, and the"
+            + " worker claim/complete/reap-stale lifecycle. Requires HTTP Basic (SecurityConfig"
+            + " /v1/admin/**).")
 @RestController
 @RequestMapping("/v1/admin/retrain")
 @Profile("api")

@@ -14,11 +14,13 @@ Three flows, one per `--model`:
 
 All three write the 5 canonical files + an `eval/` directory.
 
-For the strict "train on 2015-2024 + val on 2025" production model the
-leaf plan calls out, see the `--use-extended-fold` flag which builds an
-ad-hoc fold (train=2015-2024, val=2025, no test). The default uses
-fold 4 (train 2015-2023, val 2024, test 2025) so the persisted bundle
-has a real held-out test set whose metrics we can publish.
+The strict "train on 2015-2024 + val on 2025" production fold the leaf
+plan calls out is NOT implemented (a `--use-extended-fold` flag was once
+sketched here but never built - stale reference removed, #188). The flow
+uses fold 4 (train 2015-2023, val 2024, test 2025) so the persisted
+bundle has a real held-out test set whose metrics we can publish. If
+ad-hoc fold plumbing is ever added, it must pass `refuse_holdout` (rule
+13) exactly as main() fences the hardcoded FOLDS today.
 """
 
 from __future__ import annotations
@@ -34,6 +36,7 @@ import pandas as pd
 
 from bullpen_training.eval.cv_harness import FOLDS, FoldSpec
 from bullpen_training.eval.cv_harness import run as cv_run
+from bullpen_training.eval.leakage_guards import refuse_holdout
 from bullpen_training.eval.metrics import (
     expected_calibration_error,
     multiclass_brier,
@@ -215,6 +218,13 @@ def main(
     if log_format.lower() == "json":
         os.environ["LOG_FORMAT"] = "json"
     configure_logging(level=logging.INFO)
+
+    # Rule-13 defense-in-depth (#188): every season below comes from the hardcoded 2015-2025
+    # FOLDS, so this can only fire if someone edits FOLDS or adds season plumbing - which is
+    # exactly the future mistake it exists to catch (the batted-ball trainers carry the same
+    # fence per [170]). season_to=test_year covers the fold's maximum year.
+    for fold in FOLDS:
+        refuse_holdout(season_from=fold.train_start_year, season_to=fold.test_year)
 
     # LightGBM's default Python logger uses bare `print(msg)`. When stdout is
     # piped (e.g. `... 2>&1 | tee log`), Python defaults to block-buffered

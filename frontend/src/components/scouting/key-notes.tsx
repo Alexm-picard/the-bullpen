@@ -13,7 +13,7 @@
  * but the visual cadence will tighten — the page caps at 3 by convention.
  */
 
-import { broadcastKeyNotesPalette } from "../broadcast/palettes";
+import { useKeyNotesPalette } from "../broadcast/use-palette";
 import { typography } from "../../design/broadcast";
 
 export type KeyNotesPalette = {
@@ -37,10 +37,9 @@ export type KeyNotesProps = {
   palette?: KeyNotesPalette;
 };
 
-export function KeyNotes({
-  notes,
-  palette = broadcastKeyNotesPalette,
-}: KeyNotesProps) {
+export function KeyNotes({ notes, palette: paletteProp }: KeyNotesProps) {
+  const themePalette = useKeyNotesPalette();
+  const palette = paletteProp ?? themePalette;
   return (
     <section
       style={{

@@ -49,7 +49,9 @@ export function ParkFieldSvg({
       width={width}
       height={height}
       viewBox={`0 0 ${width} ${height}`}
-      style={{ display: "block" }}
+      // D2: width/height stay as the intrinsic aspect anchor, but the rendered box scales down
+      // inside a narrow column - a fixed 360px canvas pushed the document sideways at 375px.
+      style={{ display: "block", maxWidth: "100%", height: "auto" }}
     >
       <title>{ariaLabel}</title>
       {/* Outfield arc — navy stroke, no fill */}

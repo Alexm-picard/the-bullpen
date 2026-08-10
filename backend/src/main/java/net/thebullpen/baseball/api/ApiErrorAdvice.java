@@ -13,6 +13,7 @@ import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.web.firewall.RequestRejectedException;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -91,9 +92,20 @@ public class ApiErrorAdvice {
     return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
   }
 
+  /**
+   * A raw {@link IllegalArgumentException} reaching the global advice is an internal precondition
+   * or a library-thrown argument error (a missing calibrator, an unknown feature class, etc.), NOT
+   * curated client feedback - bean validation surfaces as {@link MethodArgumentNotValidException}
+   * above, and a controller doing intentional client validation throws a {@link
+   * ResponseStatusException} with a reason (which IS echoed, see {@link #handleResponseStatus}).
+   * Per the class contract, do NOT leak {@code ex.getMessage()} to the client (it can carry
+   * internal detail): return a generic 400 and log the real message under the correlation id.
+   */
   @ExceptionHandler(IllegalArgumentException.class)
   public ResponseEntity<ApiError> handleIllegalArgument(IllegalArgumentException ex) {
-    ApiError body = ApiError.of("invalid_input", ex.getMessage(), correlationId());
+    String cid = correlationId();
+    log.warn("illegal argument correlation_id={} message={}", cid, ex.getMessage(), ex);
+    ApiError body = ApiError.of("invalid_input", "the request contained an invalid value", cid);
     return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
   }
 
@@ -109,6 +121,17 @@ public class ApiErrorAdvice {
         "path or query parameter '" + ex.getName() + "' has an invalid value for its type";
     ApiError body = ApiError.of("invalid_input", message, correlationId());
     return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+  }
+
+  /**
+   * A 503 (or other status) with a caller-specified stable code (#401). Handled BEFORE {@link
+   * #handleResponseStatus} so the code survives instead of being overwritten by the HTTP status
+   * name.
+   */
+  @ExceptionHandler(CodedServiceException.class)
+  public ResponseEntity<ApiError> handleCoded(CodedServiceException ex) {
+    ApiError body = ApiError.of(ex.code(), ex.getMessage(), correlationId());
+    return ResponseEntity.status(ex.status()).body(body);
   }
 
   /**
@@ -161,6 +184,24 @@ public class ApiErrorAdvice {
       }
     }
     return handleAnyOther(ex);
+  }
+
+  /**
+   * Spring Security's {@code StrictHttpFirewall} rejects malformed requests (control chars / a
+   * non-ASCII header value, an illegal path, etc.). The {@code RequestRejectedHandler} bean in
+   * {@code SecurityConfig} catches rejections at the {@code FilterChainProxy} entry point, but a
+   * header VALUE is validated lazily - when a component first reads it, here during MVC
+   * handler-mapping - so that rejection surfaces INSIDE MVC dispatch and would otherwise fall
+   * through to {@link #handleAnyOther} as a 500. A rejected request is a client error, so map it to
+   * 400. This is the deterministic fix for the recurring Schemathesis rare-500 on {@code POST
+   * /v1/predict/batted-ball} (a fuzzed non-ASCII header value); the message is generic (no echo of
+   * the offending header) to avoid reflecting attacker-controlled bytes.
+   */
+  @ExceptionHandler(RequestRejectedException.class)
+  public ResponseEntity<ApiError> handleRequestRejected(RequestRejectedException ex) {
+    ApiError body =
+        ApiError.of("bad_request", "the request was rejected as malformed", correlationId());
+    return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
   }
 
   @ExceptionHandler(Exception.class)

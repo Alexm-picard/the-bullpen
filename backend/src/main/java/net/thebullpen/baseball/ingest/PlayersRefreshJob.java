@@ -6,10 +6,10 @@ import java.time.ZoneId;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import net.thebullpen.baseball.config.IngestProperties;
 import net.thebullpen.baseball.data.PlayersRefreshRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.annotation.Profile;
@@ -59,12 +59,10 @@ public class PlayersRefreshJob {
   private final boolean forceRefreshOnBoot;
 
   public PlayersRefreshJob(
-      MlbStatsApiClient client,
-      PlayersRefreshRepository repo,
-      @Value("${bullpen.ingest.players.force-refresh-on-boot:false}") boolean forceRefreshOnBoot) {
+      MlbStatsApiClient client, PlayersRefreshRepository repo, IngestProperties props) {
     this.client = client;
     this.repo = repo;
-    this.forceRefreshOnBoot = forceRefreshOnBoot;
+    this.forceRefreshOnBoot = props.players().forceRefreshOnBoot();
   }
 
   /**

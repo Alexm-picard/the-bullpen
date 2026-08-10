@@ -7,7 +7,7 @@
  */
 import { useQuery } from "@tanstack/react-query";
 
-import { API_BASE } from "./base";
+import { API_BASE, ApiError } from "./base";
 
 /**
  * Mirrors the backend `AllParksOutcomeRequest` (decision [146], the post-contact
@@ -27,26 +27,34 @@ export type AllParksRequest = {
 
 export type AllParksResponse = {
   probHrByPark: Record<string, number>;
+  /**
+   * Phase 4: park id -> the model's predicted carry distance in FEET for the chosen launch
+   * condition at that park. Present only when the serving champion has a carry head; OMITTED
+   * (undefined) for a probabilities-only champion - the backend leaves the field off the JSON via
+   * @JsonInclude(NON_NULL), so callers must treat it as optional and fall back accordingly.
+   */
+  carryFtByPark?: Record<string, number>;
   modelName: string;
   modelVersion: string;
   latencyMicros: number;
   correlationId: string;
 };
 
-export class ParksApiError extends Error {
-  readonly status: number;
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
+export class ParksApiError extends ApiError {}
 
 export async function predictAllParks(
   req: AllParksRequest,
+  context?: { gameId?: number; parkId?: string },
 ): Promise<AllParksResponse> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (context?.gameId != null)
+    headers["X-Bullpen-Game-Id"] = String(context.gameId);
+  if (context?.parkId) headers["X-Bullpen-Park-Id"] = context.parkId;
   const res = await fetch(`${API_BASE}/v1/predict/batted-ball/all-parks`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(req),
   });
   if (!res.ok) {
@@ -62,6 +70,21 @@ export async function predictAllParks(
  * Canonical batted ball: 110 mph / 28° straightaway (~400 ft carry) off a RHB,
  * bases empty, 0 outs - the reference scorcher for the all-parks HR surface.
  */
+/**
+ * Spray-input range in degrees, matching the API's own validation bounds (the request DTO allows
+ * -90..90). Previously the /parks control clamped to 45, which excluded about 9.8% of the training
+ * corpus - including 195 home runs, whose spray reaches 52.7 degrees. A control built for exploring
+ * spray could not reach the values the model was trained on.
+ */
+export const SPRAY_LIMIT_DEG = 90;
+
+/**
+ * Widest spray observed on a 2026 HOME RUN. Home runs are fair by definition, so this is a hard
+ * empirical floor for how far the input must reach: any limit below it excludes real home runs
+ * from a home-run surface. Sourced from the corpus, not chosen.
+ */
+export const OBSERVED_HOME_RUN_SPRAY_MAX_DEG = 52.7;
+
 export const CANONICAL_BBE_INPUT: AllParksRequest = {
   launchSpeedMph: 110,
   launchAngleDeg: 28,
@@ -72,10 +95,32 @@ export const CANONICAL_BBE_INPUT: AllParksRequest = {
   outs: 0,
 };
 
-export function useAllParksPrediction(req: AllParksRequest) {
+export function useAllParksPrediction(
+  req: AllParksRequest | null,
+  opts: {
+    enabled?: boolean;
+    context?: { gameId?: number; parkId?: string };
+  } = {},
+) {
   return useQuery<AllParksResponse, ParksApiError>({
+    // NULL-KEYED when the caller has no request, mirroring usePitchPrediction. `enabled: false`
+    // suppresses FETCHING, not cache reads, and this key hashes STRUCTURALLY - so a gated caller
+    // passing a placeholder request still subscribes to that placeholder's cache entry and will
+    // render whatever another page put there. /parks fires exactly CANONICAL_BBE_INPUT on mount
+    // (110/28/0, estimateLandingDistanceFt(110,28) = 400, R, 0, 0), so a game page gated off with
+    // that placeholder would read /parks' prediction out of cache and render a REAL batted ball
+    // scored as a 110 mph 28-degree straightaway one, under a LIVE chip. Passing null removes the
+    // key, so there is nothing to collide with.
     queryKey: ["parks", "all-parks", req],
-    queryFn: () => predictAllParks(req),
+    queryFn: () => {
+      if (req == null) throw new Error("request required");
+      return predictAllParks(req, opts.context);
+    },
     staleTime: 30_000,
+    // POST /v1/predict/batted-ball/all-parks logs EVERY request to prediction_log (the drift
+    // baseline source). /parks shows the prediction, so it always fetches; callers that would
+    // otherwise fire a throwaway prediction (e.g. the game page with no live BIP) must pass
+    // enabled:false so they don't pollute the drift baselines with never-shown predictions.
+    enabled: (opts.enabled ?? true) && req != null,
   });
 }

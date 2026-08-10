@@ -45,6 +45,26 @@ training/*.egg-info/
 # CONTENTS (not the dir) so the negation can re-include the full-data file.
 training/data/eval/promotion/*
 !training/data/eval/promotion/*_experiment_results_full*.json
+# The carry-promotion NON-INFERIORITY gate row ([166]/ADR-0012) is ALSO a durable audit record read
+# by promote-model, but it deliberately does NOT match the *_experiment_results_full*.json glob above:
+# that same glob is what backend/build.gradle.kts bundles into the public /accuracy scorecard, where
+# this raw-softmax v2-vs-v1 row (model_name=battedball_outcome) would collide with the served
+# champion's calibrated row. So it gets its own explicit negation here instead of the glob.
+!training/data/eval/promotion/battedball_outcome_carry_promotion_gate.json
+# Same reasoning for the pitch_outcome_pre FIRST-CHAMPION gate row (decision [181]/[145]): an
+# import-shaped OfflineGateEvidence artifact read by import-offline + promote, deliberately NOT the
+# *_experiment_results_full*.json scorecard glob (which /accuracy bundles). Explicit negation.
+!training/data/eval/promotion/pitch_outcome_pre_promotion_gate.json
+# Same reasoning for the battedball_outcome v3-vs-v2 NON-INFERIORITY gate ([166]/[178], produced by
+# battedball.mlp.compare_versions): an OfflineGateEvidence artifact read by import-offline + promote,
+# a *_promotion_gate.json (bundled) but NOT the *_experiment_results_full*.json scorecard glob.
+!training/data/eval/promotion/battedball_outcome_v3_promotion_gate.json
+# Same reasoning for the pitch_type_pre FIRST-CHAMPION gate ([183], produced by
+# scripts/emit_pitch_type_promotion_gate.py from the two co-trained bundles): an
+# OfflineGateEvidence artifact read by import-offline + promote, a *_promotion_gate.json
+# (bundled to offline-gate-evidence/, admin-only) and deliberately NOT the
+# *_experiment_results_full*.json glob, which /accuracy publishes.
+!training/data/eval/promotion/pitch_type_pre_promotion_gate.json
 # ...but keep the exploratory temperature calibrations box-local (superseded
 # side-quests). The versioned record is isotonic (the standing best) +
 # per_park_isotonic (the gate-gaming negative); the *_temperature* runs were
@@ -53,11 +73,32 @@ training/data/eval/promotion/*
 training/data/eval/promotion/*_temperature*.json
 training/data/samples/
 
+# Local fold-export caches: the v2-clean parquet folds + their manifest/mappings json (~730MB each)
+# produced on the box / fetched from R2 for off-box training (production.py --folds-dir). Data
+# artifacts, never committed (CLAUDE.md) - the only thing forcing the box deploy to pass
+# --allow-dirty. Layout differs by machine: training/data/fold_export/ (box), training/data/folds/
+# and data/fold_export/ (Mac fetch) - ignore all of them.
+training/data/fold_export/
+training/data/folds/
+/data/
+
+# Top-level training/data JSONs are box-emitted run products (pf_* factor dumps, retrodict /
+# physics diagnostic reports) - ignored by default so they stop forcing --allow-dirty deploys
+# on the box. Two committed exceptions, both load-bearing per docs/decisions:
+#   - observed_norm_factors.json: the frozen [140] gate anchor (sanity.py FAILS LOUD without it)
+#   - weather_backfill_2015_2025.json: the [138] backfill evidence (runbooks/weather-backfill.md)
+training/data/*.json
+!training/data/observed_norm_factors.json
+!training/data/weather_backfill_2015_2025.json
+# Box-local eval render products (e.g. battedball_backfill_accuracy_v1.html).
+training/data/eval/*.html
+
 # Model artifacts NEVER go in git (CLAUDE.md hard never-rule)
 training/artifacts/**
 !training/artifacts/.gitkeep
 
 # --- Frontend / Node ---
+node_modules/
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
@@ -74,7 +115,14 @@ infra/prometheus-data/
 infra/alertmanager/secrets/discord_url
 
 # --- M5: Prometheus scrape credentials for the ADMIN-gated /actuator/prometheus (.example committed) ---
-infra/prometheus/secrets/metrics_authz
+# Ignore every real secret in the dir (metrics_pw, the stale metrics_authz, anything future) but keep
+# the committed *.example templates.
+infra/prometheus/secrets/*
+!infra/prometheus/secrets/*.example
+
+# --- M2-A1: the RENDERED ClickHouse app user (carries a sha256 of the real secret - offline
+# brute-forceable, so never committed; the .example template is). render-users.sh recreates it.
+infra/clickhouse/users.d/bullpen.xml
 
 # --- M2: real box configs reconstructed from the committed .example templates (never committed) ---
 infra/default-bullpen.env
@@ -95,3 +143,7 @@ logs/
 docs/deploys/*.md
 !docs/deploys/.gitkeep
 nohup.out
+
+# Schemathesis run cache (contract fuzzing)
+.schemathesis/
+docs/design/screenshots/

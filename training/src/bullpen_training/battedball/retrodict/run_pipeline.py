@@ -241,6 +241,8 @@ def _result_to_tsv_row(r: RetrodictionResult) -> str:
             f"{r.prob_hr:.4f}",
             observed,
             str(r.n_mc),
+            # Phase 4: per-park mean carry (ft); NULL ("\\N") when no MC draw landed at this park.
+            "\\N" if r.carry_ft is None else f"{r.carry_ft:.2f}",
         )
     )
 
@@ -259,6 +261,7 @@ _INSERT_COLUMNS: tuple[str, ...] = (
     "prob_hr",
     "observed_outcome",
     "n_mc",
+    "carry_ft",
 )
 
 

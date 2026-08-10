@@ -7,7 +7,7 @@ import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.List;
 import javax.sql.DataSource;
-import net.thebullpen.baseball.api.dto.CalibrationBin;
+import net.thebullpen.baseball.domain.CalibrationBin;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -96,11 +96,13 @@ public class CalibrationRepository {
       double binStart = i / (double) BIN_COUNT;
       double binEnd = (i + 1) / (double) BIN_COUNT;
       double predicted = sumPredicted[i] / counts[i];
-      // `actual` stays at NaN-but-rendered-as-the-bin-midpoint until truth-joining lands;
-      // serializing NaN to JSON breaks Jackson defaults, so we surface bin midpoint and let the
-      // caller (or the UI's "actual" column tooltip) know this is a placeholder.
-      double actualPlaceholder = (binStart + binEnd) / 2.0;
-      bins.add(new CalibrationBin(binStart, binEnd, predicted, actualPlaceholder, counts[i]));
+      // No truth-join behind this endpoint yet (it bins predicted probabilities from prediction_log
+      // only), so `actual` is genuinely absent: emit null. Earlier this surfaced the bin MIDPOINT
+      // as
+      // a placeholder, which the reliability diagram then plotted as a perfect on-diagonal point -
+      // a fabricated "perfectly calibrated" lie over un-truth-joined data. null serializes cleanly
+      // to JSON (no NaN problem) and the UI renders it as a predicted-only view.
+      bins.add(new CalibrationBin(binStart, binEnd, predicted, null, counts[i]));
     }
     return bins;
   }

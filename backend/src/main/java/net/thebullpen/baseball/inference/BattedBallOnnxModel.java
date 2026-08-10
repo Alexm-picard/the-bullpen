@@ -40,16 +40,65 @@ public final class BattedBallOnnxModel implements AutoCloseable {
    */
   private final String inputName;
 
+  /**
+   * The exporter's name for the per-park carry output (Phase 4): {@code _ProbaExport}'s output 1.
+   */
+  private static final String CARRY_OUTPUT_NAME = "carry";
+
+  /**
+   * Whether the loaded graph exposes the per-park carry output (Phase 4 PR-4). Resolved by NAME
+   * from the session, never by output count/position: a {@code carry}-named second output means a
+   * carry-capable champion; its absence (an older probabilities-only champion) serves carry-free.
+   * Resolving by name - not {@code outputs.size() >= 2} + a positional {@code get(1)} - mirrors how
+   * {@link #inputName} is resolved (decision [152]) so a future graph that grows a different second
+   * head can't be silently mis-read as carry. Carry is an additive model output, NOT part of the
+   * hashed feature contract (the input pipeline + the primary distribution output are unchanged),
+   * so the same reader serves both kinds.
+   */
+  private final boolean hasCarry;
+
+  private final SessionGuard guard;
+
   public BattedBallOnnxModel(Path modelPath) throws OrtException {
     this.env = OrtEnvironment.getEnvironment();
     this.session = env.createSession(modelPath.toString(), new OrtSession.SessionOptions());
     var inputNames = session.getInputNames();
     if (inputNames.size() != 1) {
-      throw new IllegalStateException(
-          "batted-ball ONNX must declare exactly one input tensor, got " + inputNames);
+      // The session is live here; close it before propagating or the native handle leaks (the
+      // same construct-order discipline task #87 imposes on the Loaded* bundle classes). A failing
+      // close must not EAT the arity diagnostic - suppress it onto the real error instead.
+      // ModelUnavailableException, not bare ISE: this is a snapshot-integrity refusal like the
+      // rest, and an ISE would escape ModelLoader's IOException|OrtException wrap unframed.
+      ModelUnavailableException arity =
+          new ModelUnavailableException(
+              "batted-ball ONNX must declare exactly one input tensor, got " + inputNames);
+      try {
+        session.close();
+      } catch (OrtException closeEx) {
+        arity.addSuppressed(closeEx);
+      }
+      throw arity;
     }
     this.inputName = inputNames.iterator().next();
+    this.hasCarry = session.getOutputNames().contains(CARRY_OUTPUT_NAME);
+    this.guard = new SessionGuard("batted-ball onnx session " + modelPath.getFileName());
   }
+
+  /** True when the graph exposes the second (carry) output (Phase 4). */
+  public boolean hasCarry() {
+    return hasCarry;
+  }
+
+  /**
+   * One batted ball's per-park raw softmax distribution plus, when the graph exposes it, the
+   * per-park STANDARDISED carry (output index 1). {@code carry} is {@code null} for a
+   * probabilities-only model; otherwise it is a {@code nParks}-long vector the caller
+   * un-standardises to feet.
+   */
+  // Transient inference carrier - never compared/hashed/serialized, so the array-component
+  // equals/hashCode caveat ArrayRecordComponent warns about does not apply here.
+  @SuppressWarnings("ArrayRecordComponent")
+  public record Prediction(float[][] distribution, float[] carry) {}
 
   /**
    * Score one batted ball.
@@ -64,22 +113,76 @@ public final class BattedBallOnnxModel implements AutoCloseable {
 
   /** Batched variant: {@code [N][nFeatures]} in, {@code [N][nParks][nOutcomes]} out. */
   public float[][][] predictBatch(float[][] features) throws OrtException {
-    try (OnnxTensor tensor = OnnxTensor.createTensor(env, features);
-        OrtSession.Result result = session.run(Map.of(inputName, tensor))) {
-      // The batted-ball contract pins the per-park distribution at output index 0.
-      Object value = result.get(0).getValue();
-      if (!(value instanceof float[][][] dist)) {
-        throw new IllegalStateException(
-            "batted-ball ONNX output[0] must be a float[N][nParks][nOutcomes] tensor, got "
-                + (value == null ? "null" : value.getClass().getSimpleName()));
-      }
-      return dist;
+    // Every native touch goes through the guard (task #87 / H2): close waits for this run.
+    return guard.withSession(
+        () -> {
+          try (OnnxTensor tensor = OnnxTensor.createTensor(env, features);
+              OrtSession.Result result = session.run(Map.of(inputName, tensor))) {
+            return readDistribution(result);
+          }
+        });
+  }
+
+  /**
+   * Score one batted ball, returning the per-park distribution AND - when {@link #hasCarry()} - the
+   * per-park STANDARDISED carry, in ONE inference. {@code carry} is {@code null} for a
+   * probabilities-only model. The distribution is read at output index 0 (contract-pinned); carry
+   * is read by NAME ({@value #CARRY_OUTPUT_NAME}), not by position. The export squeezes carry's
+   * trailing dim, so the carry tensor is {@code [N][nParks]}; we read row 0.
+   */
+  public Prediction predictWithCarry(float[] features) throws OrtException {
+    // Every native touch goes through the guard (task #87 / H2): close waits for this run.
+    return guard.withSession(
+        () -> {
+          try (OnnxTensor tensor = OnnxTensor.createTensor(env, new float[][] {features});
+              OrtSession.Result result = session.run(Map.of(inputName, tensor))) {
+            float[][] dist = readDistribution(result)[0];
+            if (!hasCarry) {
+              return new Prediction(dist, null);
+            }
+            Object carryValue =
+                result
+                    .get(CARRY_OUTPUT_NAME)
+                    .orElseThrow(
+                        () ->
+                            new IllegalStateException(
+                                "hasCarry set but session has no '"
+                                    + CARRY_OUTPUT_NAME
+                                    + "' output"))
+                    .getValue();
+            if (!(carryValue instanceof float[][] carry)) {
+              throw new IllegalStateException(
+                  "batted-ball ONNX '"
+                      + CARRY_OUTPUT_NAME
+                      + "' output must be a float[N][nParks] tensor, got "
+                      + (carryValue == null ? "null" : carryValue.getClass().getSimpleName()));
+            }
+            return new Prediction(dist, carry[0]);
+          }
+        });
+  }
+
+  /** True once {@link #close()} has begun: the bundle is stale and a fresh load should serve. */
+  public boolean isRetired() {
+    return guard.isRetired();
+  }
+
+  /** Read + type-check output 0 - the per-park distribution the contract pins at index 0. */
+  private static float[][][] readDistribution(OrtSession.Result result) throws OrtException {
+    Object value = result.get(0).getValue();
+    if (!(value instanceof float[][][] dist)) {
+      throw new IllegalStateException(
+          "batted-ball ONNX output[0] must be a float[N][nParks][nOutcomes] tensor, got "
+              + (value == null ? "null" : value.getClass().getSimpleName()));
     }
+    return dist;
   }
 
   @Override
   public void close() throws OrtException {
-    session.close();
+    // Retire-drain-close via the guard: safe against in-flight runs, idempotent across the
+    // Caffeine removalListener and the ModelLoader shutdown sweep both reaching this bundle.
+    guard.closeWhenIdle(session::close);
     // env is the process-wide ORT singleton owned by ORT; do not close it.
   }
 }

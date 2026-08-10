@@ -1,0 +1,663 @@
+#!/usr/bin/env bash
+# Restore drill - proves a clickhouse-backup snapshot can be restored end-to-end
+# into a scratch ClickHouse instance, with data integrity verified.
+#
+# TWO MODES:
+#
+#   (default, local)  Create a fresh backup on the LIVE container, restore it into
+#                     scratch, verify a seeded marker round-trips. Proves the
+#                     backup/restore MECHANICS. Fast, no network, no registry/app.
+#
+#   --from-r2         The real disaster-recovery drill (CLAUDE.md rule 8, ADR-0007
+#                     P2 leg). Fetch the LATEST offsite set from Cloudflare R2 - the
+#                     copy that survives an SSD failure - restore BOTH ClickHouse and
+#                     the SQLite registry into scratch, then boot BOTH app profiles
+#                     against the restored data. The 2026-05-23 local-only drill was
+#                     retired as INVALID: it never restored the registry and never
+#                     booted the worker (the profile that hard-fails on a missing
+#                     bean - the 2026-06-04 crash-loop that went undetected for 4
+#                     days because the drill only ever booted api). This mode fixes
+#                     both. See .claude/agents/drill-runner.md.
+#
+#   --dry-run         Resolve + print the plan and config without executing any
+#                     docker / rclone / java / restore step. Safe to run anywhere
+#                     (incl. the Mac) to sanity-check wiring before the box runs it.
+#
+# WHERE: the box (ADR-0006). It needs the live docker stack, the rclone config, the
+# deployed JAR, and the live registry. Authoring is on the Mac; this script is RUN on
+# the box. The box captures evidence; the Mac writes docs/drills/{date}_restore.md.
+#
+# Exit codes: 0 PASS / 1 FAIL / 2 bad usage.
+#
+# Idempotent: cleans up prior scratch container/network/files on entry and on exit.
+
+set -uo pipefail
+
+# --- args ------------------------------------------------------------------
+
+MODE=local
+DRY_RUN=0
+for arg in "$@"; do
+  case "$arg" in
+    --from-r2) MODE=r2 ;;
+    --dry-run) DRY_RUN=1 ;;
+    -h|--help)
+      sed -n '2,40p' "$0"; exit 0 ;;
+    *) echo "unknown arg: $arg (try --from-r2, --dry-run, --help)" >&2; exit 2 ;;
+  esac
+done
+
+# --- config (shared) -------------------------------------------------------
+
+LIVE_CONTAINER=bullpen-clickhouse
+SCRATCH_CONTAINER=bullpen-clickhouse-scratch
+SCRATCH_NETWORK=bullpen-drill-net
+SCRATCH_HTTP_PORT=18123
+SCRATCH_NATIVE_PORT=19000
+CH_IMAGE=clickhouse/clickhouse-server:24.12
+CB_BINARY=${CB_BINARY:-/usr/bin/clickhouse-backup}
+# Required, no default credential. Resolves from CH_PASSWORD or the rotated BULLPEN_CLICKHOUSE_PASSWORD
+# (the app's secret, e.g. from /etc/default/bullpen). Real runs preflight-check it; --dry-run is exempt.
+CH_PASSWORD="${CH_PASSWORD:-${BULLPEN_CLICKHOUSE_PASSWORD:-}}"
+# LIVE ClickHouse user. The drill is BACKUP tooling, so it authenticates as `default`, the same
+# identity the snapshot uses - NOT the least-privilege `bullpen` app user (M2-B6). The Path B
+# cutover gave the app a `bullpen` user granted only SELECT/INSERT/CREATE TABLE on default.*; the
+# drill's live legs issue OPTIMIZE, clickhouse-backup FREEZE (ALTER), TRUNCATE, and write into the
+# `bullpen` DB - all outside that grant - so inheriting BULLPEN_CLICKHOUSE_USER=bullpen (which
+# sourcing /etc/default/bullpen for the password preflight would set) would deny them. Both users
+# share the one rotated BULLPEN_CLICKHOUSE_PASSWORD, so CH_PASSWORD is correct either way. Honor an
+# explicit CH_USER override (e.g. for a non-default admin), else default to `default`; do NOT read
+# BULLPEN_CLICKHOUSE_USER. The throwaway r2 scratch is created + read as `default` too.
+CH_USER="${CH_USER:-default}"
+# The app connects to the `default` ClickHouse DB (bullpen.clickhouse.url ends in
+# /default and the user is `default`); the `bullpen` DB is empty on the box. Verify
+# + boot against `default` - the old `bullpen` default made verify query empty
+# tables and report a hollow restore even on a perfect one (2026-06-14 drill finding).
+CH_DB=${CH_DB:-default}
+
+# --- config (r2 mode) ------------------------------------------------------
+
+# REMOTE base, e.g. bullpen-r2:bullpen-prod/backups (same value as
+# BULLPEN_OFFSITE_REMOTE that offsite-push.sh writes to). The R2 layout per snapshot
+# NAME (offsite-push.sh is the authority) is:
+#   ${REMOTE}/${NAME}/clickhouse/...          (the clickhouse-backup output)
+#   ${REMOTE}/${NAME}/sqlite/registry.sqlite  (the P1-irreplaceable registry capture)
+BULLPEN_OFFSITE_REMOTE="${BULLPEN_OFFSITE_REMOTE:-}"
+# R2 remote for model artifacts. Bundles live under snapshots/<name>/<version>/ in the
+# same bucket the backups live in (bullpen-prod). Default derives from the backup remote:
+#   bullpen-r2:bullpen-prod/backups -> bullpen-r2:bullpen-prod/snapshots
+MODELS_ARCHIVE_REMOTE="${MODELS_ARCHIVE_REMOTE:-}"
+RCLONE_BIN="${RCLONE_BIN:-rclone}"
+# The root/cron context cannot discover the dev user's rclone config on its own
+# (same failure class offsite-push.sh documents); pass it explicitly.
+RCLONE_CONFIG="${RCLONE_CONFIG:-/home/alepic/.config/rclone/rclone.conf}"
+LIVE_REGISTRY="${LIVE_REGISTRY:-/opt/bullpen/data/registry.sqlite}"
+EXPECTED_MODELS="${EXPECTED_MODELS:-6}"   # fallback when the live registry is unreadable
+BULLPEN_JAR="${BULLPEN_JAR:-/opt/bullpen/app.jar}"
+JAVA_BIN="${JAVA_BIN:-java}"
+DRILL_API_PORT="${DRILL_API_PORT:-18080}"
+DRILL_WORKER_PORT="${DRILL_WORKER_PORT:-18081}"
+BOOT_TIMEOUT="${BOOT_TIMEOUT:-120}"       # seconds to reach actuator UP
+WORKER_SETTLE="${WORKER_SETTLE:-10}"      # seconds to confirm worker doesn't crash-loop post-UP
+
+# The api profile eager-loads the toy batted-ball ONNX (ToyBattedBallInference, @Profile("api"),
+# @PostConstruct) as a serving fallback. Its artifacts-dir + contract-path DEFAULT to paths relative
+# to the JVM CWD (../training/artifacts/_toy/v0, ../contracts/feature_pipeline_toy.json), assuming
+# CWD=backend/. The drill launches the scratch JVM from an arbitrary CWD, so those relatives resolve
+# one level too high and the api context crashes at boot on a missing toy model - even when the DATA
+# restored perfectly (the 2026-06-15 drill finding: the restore PASSED, only this boot step crashed).
+# Pass ABSOLUTE paths the way the systemd unit does (BULLPEN_INFERENCE_TOY_ARTIFACTS_DIR). Defaults
+# derive from this script's own location, so they hold regardless of CWD; override either to point at
+# a deployed artifact location.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+TOY_ARTIFACTS_DIR="${BULLPEN_INFERENCE_TOY_ARTIFACTS_DIR:-${REPO_ROOT}/training/artifacts/_toy/v0}"
+TOY_CONTRACT_PATH="${BULLPEN_INFERENCE_CONTRACT_PATH:-${REPO_ROOT}/contracts/feature_pipeline_toy.json}"
+# SecurityConfig.adminUser fail-closes on a blank bullpen.admin.basicauth (prod supplies it via
+# /etc/default/bullpen's THEBULLPEN_ADMIN_BASIC_AUTH; the bundled yml default is empty). The scratch
+# boot serves no real admin traffic, so a throwaway "user:password" satisfies the bean - same class of
+# fix as the toy path. This is the LAST api fail-closed env gap: an audit of every @Value-without-
+# default + IllegalStateException-on-blank in the api profile found only clickhouse.password (already
+# passed) and this; R2ArchiveClient is @ConditionalOnExpression-gated off when S3_ENDPOINT_URL is
+# unset, and WarmupReadiness's missing-champion failure only downs the /readiness probe group, not the
+# top-level /actuator/health the boot gate checks.
+DRILL_ADMIN_BASICAUTH="${DRILL_ADMIN_BASICAUTH:-drill:drill}"
+
+# One per-run temp dir on a DISK-backed fs (NOT tmpfs). Two drill findings drive this:
+#   - /tmp is tmpfs on the box (~5.8G); r2 mode stages a multi-GB clickhouse.tar AND
+#     its extraction, which truncates as the dataset grows (the hollow-extract FAIL).
+#   - fs.protected_regular=2: a fixed /tmp/restore-drill-*.{err,log} left by a prior
+#     run under a different uid becomes unwritable even by root, and a failed redirect
+#     silently aborts its command (the false "no snapshot"). A fresh mktemp -d dodges both.
+# Override the base with DRILL_TMPDIR if /var/tmp is unsuitable.
+DRILL_TMP="$(mktemp -d "${DRILL_TMPDIR:-/var/tmp}/restore-drill.XXXXXX")" \
+  || { echo "fatal: mktemp -d under ${DRILL_TMPDIR:-/var/tmp} failed" >&2; exit 1; }
+FETCH_DIR="${FETCH_DIR:-${DRILL_TMP}/r2-fetch}"
+SCRATCH_REGISTRY="${SCRATCH_REGISTRY:-${DRILL_TMP}/scratch-registry.sqlite}"
+
+DRILL_ID=$(date -u +%s)
+DRILL_NOTE="restore-drill-${DRILL_ID}"
+APP_PIDS=()
+
+ts()   { printf '[%s] ' "$(date -u +%FT%TZ)"; }
+log()  { printf '%s%s\n' "$(ts)" "$*"; }
+fail() { log "FAIL: $*"; cleanup; exit 1; }
+# run: execute, or in --dry-run just print. Use for every side-effecting command.
+run()  { if [[ "$DRY_RUN" == "1" ]]; then printf '%s  [dry-run] %s\n' "$(ts)" "$*"; else eval "$@"; fi; }
+
+cleanup() {
+  log "cleanup: scratch container/network + drill app pids + fetched files"
+  for pid in "${APP_PIDS[@]:-}"; do [[ -n "$pid" ]] && kill "$pid" >/dev/null 2>&1 || true; done
+  docker rm -f "$SCRATCH_CONTAINER" >/dev/null 2>&1 || true
+  docker network rm "$SCRATCH_NETWORK" >/dev/null 2>&1 || true
+  rm -rf "$DRILL_TMP" "$FETCH_DIR" "$SCRATCH_REGISTRY" "${SCRATCH_REGISTRY}-wal" "${SCRATCH_REGISTRY}-shm" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+# --- shared scratch lifecycle ----------------------------------------------
+
+cb_config() {  # emit the local-only clickhouse-backup config for a container; $1 = CH username
+  local user="${1:-default}"
+  cat <<EOF
+general:
+  remote_storage: none
+clickhouse:
+  username: ${user}
+  password: ${CH_PASSWORD}
+  host: localhost
+  port: 9000
+  data_path: /var/lib/clickhouse
+EOF
+}
+
+install_cb() {  # install clickhouse-backup binary + config into a container; $2 = CH username
+  local container="$1" user="${2:-default}"
+  if ! docker exec "$container" test -x /usr/bin/clickhouse-backup 2>/dev/null; then
+    docker cp "$CB_BINARY" "$container:/usr/bin/clickhouse-backup" >/dev/null
+  fi
+  docker exec "$container" /usr/bin/clickhouse-backup --version >/dev/null \
+    || fail "$container: clickhouse-backup not executable"
+  docker exec "$container" mkdir -p /etc/clickhouse-backup
+  cb_config "$user" | docker exec -i "$container" bash -c 'cat > /etc/clickhouse-backup/config.yml'
+}
+
+spin_scratch() {
+  if [[ "$DRY_RUN" == "1" ]]; then
+    log "spin: [dry-run] would create network ${SCRATCH_NETWORK} + run ${CH_IMAGE} (http=${SCRATCH_HTTP_PORT}, native=${SCRATCH_NATIVE_PORT}), wait ready, install clickhouse-backup"
+    return 0
+  fi
+  log "spin: scratch ClickHouse on ${SCRATCH_NETWORK} (http=${SCRATCH_HTTP_PORT}, native=${SCRATCH_NATIVE_PORT})"
+  docker network create "$SCRATCH_NETWORK" >/dev/null || fail "network create failed"
+  docker run -d \
+    --name "$SCRATCH_CONTAINER" \
+    --network "$SCRATCH_NETWORK" \
+    -p ${SCRATCH_HTTP_PORT}:8123 \
+    -p ${SCRATCH_NATIVE_PORT}:9000 \
+    -e CLICKHOUSE_USER=default \
+    -e CLICKHOUSE_PASSWORD="$CH_PASSWORD" \
+    -e CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1 \
+    "$CH_IMAGE" >/dev/null || fail "scratch run failed"
+  for i in $(seq 1 60); do
+    if docker exec "$SCRATCH_CONTAINER" clickhouse-client --password "$CH_PASSWORD" \
+         --query "SELECT 1" >/dev/null 2>&1; then
+      log "scratch ready after ${i}s"; break
+    fi
+    sleep 1
+    [[ "$i" -eq 60 ]] && fail "scratch did not become ready in 60s"
+  done
+  install_cb "$SCRATCH_CONTAINER" default
+}
+
+scratch_q() {  # query scratch
+  docker exec "$SCRATCH_CONTAINER" clickhouse-client --password "$CH_PASSWORD" --query "$1"
+}
+
+# ===========================================================================
+# R2 (disaster-recovery) MODE
+# ===========================================================================
+
+rclone_() { "$RCLONE_BIN" --config "$RCLONE_CONFIG" "$@"; }
+
+r2_find_newest() {
+  # NAME = auto_<TS> where TS is date -u +%Y%m%dT%H%M%SZ - lexically sortable.
+  # The token is bucket-scoped: `rclone lsd <remote>:` at the account root 403s by
+  # design (no ListBuckets). Bucket-prefixed paths work - that is not a failure.
+  # Key off rclone's EXIT CODE (streams captured to fresh mktemp-d files), not a
+  # redirect or an empty result: a failed `2>` onto a stale fixed /tmp path under
+  # fs.protected_regular=2 used to abort the lsf silently and masquerade as "no
+  # snapshot" (2026-06-14 drill finding).
+  local rc newest
+  rclone_ lsf "${BULLPEN_OFFSITE_REMOTE%/}/" --dirs-only \
+    >"${DRILL_TMP}/lsf.out" 2>"${DRILL_TMP}/lsf.err"
+  rc=$?
+  if [[ "$rc" -ne 0 ]]; then
+    sed 's/^/  rclone: /' "${DRILL_TMP}/lsf.err" >&2 2>/dev/null || true
+    fail "rclone lsf failed (rc=${rc}) under ${BULLPEN_OFFSITE_REMOTE} (config/remote/creds?)"
+  fi
+  newest=$(sed 's:/$::' "${DRILL_TMP}/lsf.out" | grep -E '^auto_' | sort | tail -1 || true)
+  [[ -n "$newest" ]] || fail "no auto_* snapshot under ${BULLPEN_OFFSITE_REMOTE} (lsf ok but no auto_* dirs)"
+  printf '%s' "$newest"
+}
+
+r2_fetch() {
+  local name="$1" base="${BULLPEN_OFFSITE_REMOTE%/}"
+  log "fetch: ${base}/${name} -> ${FETCH_DIR}"
+  run "mkdir -p '${FETCH_DIR}/clickhouse' '${FETCH_DIR}/sqlite'"
+  # ClickHouse backup is ONE tar object (offsite-push.sh, post-2026-06-13): the 64k-tiny-object
+  # layout did not reliably round-trip on fetch (the 2026-06-13 drill finding). One object download
+  # + an EXACT size check is the fail-loud completeness gate the old `find data.bin` heuristic
+  # lacked - it could not tell an incomplete fetch from a hollow backup. rclone retries transient R2
+  # 5xx on its own - do not treat a single 5xx in the log as fatal.
+  # --multi-thread-streams 1: rclone's default multi-threaded download of a large object produced a
+  # right-SIZE but CORRUPT file (0 .bin on untar) the size check could not catch. 2026-06-14
+  # confirmation: a single-stream re-download of the same object listed 29,497 .bin and was a valid
+  # tar; the multi-thread copy listed 0. Force one stream for the big object.
+  run "rclone_ copy '${base}/${name}/clickhouse.tar' '${FETCH_DIR}' --multi-thread-streams 1" \
+    || fail "rclone copy of clickhouse.tar failed"
+  run "rclone_ copy '${base}/${name}/sqlite/registry.sqlite' '${FETCH_DIR}/sqlite'" \
+    || fail "rclone copy of registry.sqlite failed"
+  [[ "$DRY_RUN" == "1" ]] && return 0
+
+  [[ -f "${FETCH_DIR}/clickhouse.tar" ]] || fail "clickhouse.tar not present after fetch"
+  local remote_bytes local_bytes
+  remote_bytes=$(rclone_ size --json "${base}/${name}/clickhouse.tar" 2>/dev/null \
+    | sed -n 's/.*"bytes":[[:space:]]*\([0-9][0-9]*\).*/\1/p')
+  local_bytes=$(stat -c%s "${FETCH_DIR}/clickhouse.tar" 2>/dev/null || echo 0)
+  [[ -n "$remote_bytes" && "$remote_bytes" == "$local_bytes" ]] \
+    || fail "incomplete fetch: clickhouse.tar local=${local_bytes}B != remote=${remote_bytes:-?}B"
+  # CONTENT gate (size alone cannot catch a corrupt-but-right-size download - the multi-thread bug):
+  # the tar must LIST as a valid archive WITH data parts. Fails at "download integrity" with a clear
+  # message instead of later as a confusing "hollow restore".
+  tar -tf "${FETCH_DIR}/clickhouse.tar" >"${DRILL_TMP}/tar-listing.txt" 2>/dev/null \
+    || fail "clickhouse.tar is not a readable tar (corrupt download?) - re-fetch"
+  local bin_count
+  bin_count=$(grep -c '\.bin$' "${DRILL_TMP}/tar-listing.txt" || true)
+  [[ "${bin_count:-0}" -gt 0 ]] \
+    || fail "clickhouse.tar lists 0 data part files (*.bin) - corrupt download or hollow backup; re-fetch"
+  log "fetch verified: clickhouse.tar ${local_bytes}B == remote, ${bin_count} data parts in archive"
+  tar -xf "${FETCH_DIR}/clickhouse.tar" -C "${FETCH_DIR}/clickhouse" --strip-components=1 \
+    || fail "untar of clickhouse.tar failed"
+  # Drop the tar now the extract succeeded - halves peak staging (load_and_restore_ch
+  # re-tars the EXTRACTED tree, not this object, so the tar is no longer needed).
+  rm -f "${FETCH_DIR}/clickhouse.tar"
+  [[ -f "${FETCH_DIR}/sqlite/registry.sqlite" ]] || fail "registry.sqlite not present after fetch"
+  # Format-agnostic non-hollow check: compact parts use data.bin, wide parts use per-column *.bin.
+  # `-print -quit` (find stops itself after the first match) + a command substitution instead of
+  # `find | grep -q`: under `set -o pipefail`, grep -q closing the pipe on its first match killed a
+  # still-streaming find (29k+ lines) with SIGPIPE (141), which pipefail propagated as a FALSE
+  # "hollow restore" - the actual recurring rule-8 failure (only large result sets tripped it).
+  [[ -n "$(find "${FETCH_DIR}/clickhouse" -name '*.bin' -print -quit)" ]] \
+    || fail "restored backup has 0 data part files (*.bin) - hollow restore"
+}
+
+load_and_restore_ch() {
+  local name="$1"
+  log "load: fetched clickhouse backup -> scratch /var/lib/clickhouse/backup/${name}"
+  run "docker exec '$SCRATCH_CONTAINER' mkdir -p '/var/lib/clickhouse/backup/${name}'"
+  run "tar -C '${FETCH_DIR}/clickhouse' -cf - . | docker exec -i '$SCRATCH_CONTAINER' tar -C '/var/lib/clickhouse/backup/${name}' -xf -" \
+    || fail "loading backup into scratch failed"
+  run "docker exec -u 0 '$SCRATCH_CONTAINER' chown -R clickhouse:clickhouse '/var/lib/clickhouse/backup/${name}'" \
+    || fail "chown failed"
+  log "restore: clickhouse-backup restore ${name} (inside scratch)"
+  run "docker exec '$SCRATCH_CONTAINER' /usr/bin/clickhouse-backup restore '${name}' >${DRILL_TMP}/restore.log 2>&1" \
+    || { [[ "$DRY_RUN" == "1" ]] || cat "${DRILL_TMP}/restore.log"; fail "restore command failed"; }
+}
+
+verify_ch_scratch() {
+  # The offsite backup is from last night, so live row counts will have GROWN since -
+  # an exact count match (the local-mode check) is wrong here. The DR assertion is:
+  # the core tables came back AND a substantive table is non-empty (a restored-but-
+  # empty table is the silent failure this guards against).
+  [[ "$DRY_RUN" == "1" ]] && { log "verify-ch: [dry-run] skipped"; return 0; }
+  local tables core_non_empty=0
+  tables=$(scratch_q "SELECT name FROM system.tables WHERE database='${CH_DB}' ORDER BY name FORMAT TSV")
+  log "scratch ${CH_DB} tables restored: $(echo "$tables" | tr '\n' ' ')"
+  for t in prediction_log pitches pitches_live drift_metrics; do
+    if echo "$tables" | grep -qx "$t"; then
+      local c; c=$(scratch_q "SELECT count() FROM ${CH_DB}.${t}" 2>/dev/null || echo 0)
+      log "  ${CH_DB}.${t}: ${c} rows"
+      [[ "${c:-0}" -gt 0 ]] && core_non_empty=1
+    fi
+  done
+  [[ "$core_non_empty" == "1" ]] || fail "no core ClickHouse table is non-empty after restore - restore is hollow"
+}
+
+restore_registry() {
+  log "registry: .restore -> ${SCRATCH_REGISTRY}, integrity_check, count vs live"
+  run "rm -f '${SCRATCH_REGISTRY}'"
+  # .restore reads the fetched DB into the scratch file - proves the restore path,
+  # not just a file copy.
+  run "sqlite3 '${SCRATCH_REGISTRY}' \".restore '${FETCH_DIR}/sqlite/registry.sqlite'\"" \
+    || fail "sqlite3 .restore failed"
+  [[ "$DRY_RUN" == "1" ]] && { log "registry: [dry-run] skipped checks"; return 0; }
+
+  local integ; integ=$(sqlite3 "$SCRATCH_REGISTRY" 'PRAGMA integrity_check;' 2>/dev/null || echo "error")
+  [[ "$integ" == "ok" ]] || fail "restored registry failed integrity_check: ${integ}"
+  log "registry integrity_check: ok"
+
+  local scratch_models
+  scratch_models=$(sqlite3 "$SCRATCH_REGISTRY" "SELECT count(*) FROM model_versions;" 2>/dev/null || echo "-1")
+  [[ "$scratch_models" -ge 0 ]] || fail "restored registry missing model_versions table - wrong DB?"
+
+  if [[ -r "$LIVE_REGISTRY" ]]; then
+    local live_models
+    live_models=$(sqlite3 "$LIVE_REGISTRY" "SELECT count(*) FROM model_versions;" 2>/dev/null || echo "-1")
+    log "model_versions: scratch=${scratch_models} live=${live_models}"
+    # The offsite set lags live (captured before later registrations), so the DR
+    # assertion is a RANGE not an exact match: rows restored (>=1) and not MORE than
+    # live (a backup newer than live would be the real anomaly). The old exact ==
+    # failed by design whenever a model was registered after the backup (2026-06-14:
+    # live grew to 7, the backup held 6).
+    [[ "$scratch_models" -ge 1 && "$scratch_models" -le "$live_models" ]] \
+      || fail "model_versions out of range (scratch=${scratch_models}, expected 1..live=${live_models})"
+  else
+    log "model_versions: scratch=${scratch_models} (live registry ${LIVE_REGISTRY} unreadable; EXPECTED_MODELS=${EXPECTED_MODELS} for reference)"
+    [[ "$scratch_models" -ge 1 ]] \
+      || fail "model_versions count ${scratch_models} < 1 - registry restored empty"
+    [[ "$scratch_models" == "$EXPECTED_MODELS" ]] \
+      || log "NOTE: model_versions ${scratch_models} != EXPECTED_MODELS ${EXPECTED_MODELS} (informational; live registry unreadable)"
+  fi
+  log "registry restore verified (${scratch_models} model_versions rows)"
+}
+
+restore_model_artifacts() {
+  # Pull champion model artifacts from R2 snapshots/ into the local paths the
+  # registry points at. In a real DR the ClickHouse data and SQLite registry are
+  # restored from the offsite backup, but champion ONNX weights live separately in R2
+  # (snapshots/<model_name>/<version>/ per ADR-0007). Without this step the system has
+  # data but cannot serve predictions (the 2026-07-26 drill finding: "data-complete,
+  # not serving-capable").
+  log "models: restoring champion artifacts from R2 snapshots/"
+
+  # Derive archive remote if not set explicitly
+  local archive_remote="$MODELS_ARCHIVE_REMOTE"
+  if [[ -z "$archive_remote" ]]; then
+    archive_remote="${BULLPEN_OFFSITE_REMOTE%/backups}/snapshots"
+  fi
+
+  if [[ "$DRY_RUN" == "1" ]]; then
+    log "  [dry-run] would query scratch registry for champions, rclone from ${archive_remote}"
+    return 0
+  fi
+
+  # The registry stores stages lowercase (V001 CHECK constraint). A case mismatch
+  # here silently returns 0 rows and the restore stage looks like an empty registry.
+  local champions
+  champions=$(sqlite3 "$SCRATCH_REGISTRY" \
+    "SELECT model_name, version, artifact_path FROM model_versions WHERE stage='champion'" 2>/dev/null)
+
+  if [[ -z "$champions" ]]; then
+    # Fail loud when the registry HAS champion rows but the query missed them (case bug
+    # or schema change). An empty registry is the legitimate "nothing to restore" case;
+    # a registry with champions and a query returning none is a drill defect.
+    local total_champions
+    total_champions=$(sqlite3 "$SCRATCH_REGISTRY" \
+      "SELECT count(*) FROM model_versions WHERE stage='champion'" 2>/dev/null || echo 0)
+    if [[ "${total_champions:-0}" -gt 0 ]]; then
+      fail "scratch registry has ${total_champions} champion(s) but the restore query returned none - check the stage value and query"
+    fi
+    log "  no champion versions in scratch registry - model restore skipped (probe will 503)"
+    return 0
+  fi
+
+  local restored=0
+  while IFS='|' read -r model_name version artifact_path; do
+    [[ -n "$model_name" ]] || continue
+    local local_dir r2_prefix key_count onnx_size
+    local_dir=$(dirname "$artifact_path")
+    r2_prefix="${archive_remote}/${model_name}/${version}/"
+
+    log "  ${model_name}/${version}: listing ${r2_prefix}"
+    key_count=$(rclone_ lsf "$r2_prefix" 2>"${DRILL_TMP}/model-lsf-${model_name}.err" | wc -l || echo 0)
+    if [[ "${key_count:-0}" -eq 0 ]]; then
+      log "  WARNING: ${model_name}/${version} has 0 objects under ${r2_prefix}"
+      sed 's/^/    rclone: /' "${DRILL_TMP}/model-lsf-${model_name}.err" 2>/dev/null || true
+      continue
+    fi
+
+    mkdir -p "$local_dir"
+    rclone_ copy "$r2_prefix" "$local_dir" --multi-thread-streams 1 \
+      2>"${DRILL_TMP}/model-copy-${model_name}.err" \
+      || { sed 's/^/    rclone: /' "${DRILL_TMP}/model-copy-${model_name}.err" 2>/dev/null || true
+           fail "rclone copy failed for ${model_name}/${version}"; }
+
+    [[ -f "${local_dir}/model.onnx" ]] \
+      || fail "${model_name}/${version}: model.onnx missing after restore from R2"
+    onnx_size=$(stat -c%s "${local_dir}/model.onnx" 2>/dev/null || echo 0)
+    [[ "${onnx_size:-0}" -gt 0 ]] \
+      || fail "${model_name}/${version}: model.onnx is empty (0 bytes)"
+
+    local file_list
+    file_list=$(ls -1 "$local_dir" 2>/dev/null | tr '\n' ' ')
+    log "  ${model_name}/${version}: restored (model.onnx ${onnx_size}B, files: ${file_list})"
+    restored=$((restored + 1))
+  done <<< "$champions"
+
+  [[ "$restored" -ge 1 ]] \
+    || fail "no champion artifacts restored from R2 - snapshots/ prefix may be empty or misconfigured"
+  log "models: restored ${restored} champion(s) from R2 snapshots/"
+}
+
+boot_profile() {
+  # boot_profile <profile> <port> [gating]
+  # gating (third arg): when set, the prediction probe is FATAL (200=pass, else fail).
+  # Without it, the probe is informational (the DATA-restore mode).
+  local profile="$1" port="$2" probe_mode="${3:-informational}"
+  log "boot: ${profile} profile on :${port} (scratch CH + scratch registry, ingest off, probe=${probe_mode})"
+  if [[ "$DRY_RUN" == "1" ]]; then
+    log "  [dry-run] ${JAVA_BIN} -jar ${BULLPEN_JAR} --spring.profiles.active=${profile} --server.port=${port} --bullpen.inference.toy.artifacts-dir=${TOY_ARTIFACTS_DIR} ..."
+    return 0
+  fi
+  [[ -f "$BULLPEN_JAR" ]] || fail "JAR not found at ${BULLPEN_JAR} (set BULLPEN_JAR)"
+  # api eager-loads the toy ONNX at boot; a missing artifact crashes the context (not a DATA failure).
+  # Fail here with an actionable message instead of a cryptic "process exited during startup".
+  if [[ "$profile" == "api" && ! -f "${TOY_ARTIFACTS_DIR}/model.onnx" ]]; then
+    fail "toy ONNX missing at ${TOY_ARTIFACTS_DIR}/model.onnx (api eager-loads it via ToyBattedBallInference); run 'uv run python -m bullpen_training.battedball.export_toy_onnx' in ${REPO_ROOT}, or set BULLPEN_INFERENCE_TOY_ARTIFACTS_DIR"
+  fi
+  "$JAVA_BIN" -jar "$BULLPEN_JAR" \
+    --spring.profiles.active="$profile" \
+    --server.port="$port" \
+    --bullpen.clickhouse.enabled=true \
+    --bullpen.clickhouse.url="jdbc:ch:http://localhost:${SCRATCH_HTTP_PORT}/${CH_DB}" \
+    --bullpen.clickhouse.user=default \
+    --bullpen.clickhouse.password="$CH_PASSWORD" \
+    --spring.datasource.url="jdbc:sqlite:${SCRATCH_REGISTRY}" \
+    --spring.flyway.url="jdbc:sqlite:${SCRATCH_REGISTRY}" \
+    --bullpen.ingest.live.enabled=false \
+    --bullpen.ingest.players.enabled=false \
+    --bullpen.inference.toy.artifacts-dir="$TOY_ARTIFACTS_DIR" \
+    --bullpen.inference.contract-path="$TOY_CONTRACT_PATH" \
+    --bullpen.admin.basicauth="$DRILL_ADMIN_BASICAUTH" \
+    >"${DRILL_TMP}/boot-${profile}.log" 2>&1 &
+  local pid=$!
+  APP_PIDS+=("$pid")
+
+  local healthy=0
+  for i in $(seq 1 "$BOOT_TIMEOUT"); do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      tail -30 "${DRILL_TMP}/boot-${profile}.log"
+      fail "${profile} process exited during startup (crash) - see ${DRILL_TMP}/boot-${profile}.log"
+    fi
+    if curl -fsS "http://localhost:${port}/actuator/health" 2>/dev/null | grep -q '"status":"UP"'; then
+      healthy=1; log "  ${profile} actuator UP after ${i}s"; break
+    fi
+    sleep 1
+  done
+  [[ "$healthy" == "1" ]] || fail "${profile} did not reach actuator UP in ${BOOT_TIMEOUT}s"
+
+  if [[ "$profile" == "api" ]]; then
+    local code
+    code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:${port}/v1/predict/pitch" \
+      -H 'content-type: application/json' \
+      -d '{"countBalls":1,"countStrikes":2,"outs":1,"inning":5,"baseState":0,"scoreDiff":0,"dow":3,"pitcherThrows":"R","batterStand":"L","parkId":"BOS","pitcherId":1,"batterId":2}' 2>/dev/null || echo "000")
+    if [[ "$probe_mode" == "gating" ]]; then
+      # After model artifact restore: 200 proves the full recovery path (data + registry
+      # + model weights) produces a serving system. Anything else is a drill failure.
+      log "  api prediction probe: HTTP ${code} (GATING: 200=pass, else=fail)"
+      [[ "$code" == "200" ]] \
+        || fail "prediction probe returned HTTP ${code} after model restore - system is not serving (check ${DRILL_TMP}/boot-api.log)"
+    else
+      # Data-only restore: model artifacts are not part of the backup set (they live in
+      # R2 snapshots/). 404/503 is expected; actuator UP is the hard gate.
+      log "  api prediction probe: HTTP ${code} (informational: 200=artifact loaded, 404/503=artifact absent)"
+    fi
+  else
+    # The 2026-06-04 lesson: the worker hard-fails on a missing bean. A startup
+    # hard-fail is caught by never-reaching-UP above; this catches a DELAYED crash.
+    sleep "$WORKER_SETTLE"
+    kill -0 "$pid" 2>/dev/null || fail "worker crashed within ${WORKER_SETTLE}s of UP (crash-loop) - see ${DRILL_TMP}/boot-worker.log"
+    curl -fsS "http://localhost:${port}/actuator/health" 2>/dev/null | grep -q '"status":"UP"' \
+      || fail "worker health regressed within ${WORKER_SETTLE}s of UP"
+    log "  worker stable for ${WORKER_SETTLE}s after UP"
+  fi
+
+  kill "$pid" >/dev/null 2>&1 || true
+  wait "$pid" 2>/dev/null || true
+  log "  ${profile} profile shut down"
+}
+
+run_r2_drill() {
+  log "=== RESTORE DRILL (--from-r2): disaster-recovery from Cloudflare R2 ==="
+  # preflight
+  command -v docker >/dev/null || fail "docker not installed"
+  [[ -n "$BULLPEN_OFFSITE_REMOTE" ]] || fail "BULLPEN_OFFSITE_REMOTE unset (e.g. bullpen-r2:bullpen-prod/backups)"
+  command -v "$RCLONE_BIN" >/dev/null || fail "rclone not installed"
+  [[ -f "$RCLONE_CONFIG" || "$DRY_RUN" == "1" ]] || fail "rclone config not found at ${RCLONE_CONFIG} (set RCLONE_CONFIG)"
+  command -v sqlite3 >/dev/null || fail "sqlite3 not installed"
+  [[ -x "$CB_BINARY" || "$DRY_RUN" == "1" ]] || fail "$CB_BINARY not executable"
+  [[ -n "$CH_PASSWORD" || "$DRY_RUN" == "1" ]] || fail "CH_PASSWORD unset - set BULLPEN_CLICKHOUSE_PASSWORD (the rotated ClickHouse secret, e.g. from /etc/default/bullpen)"
+
+  cleanup  # stale prior runs
+  mkdir -p "$DRILL_TMP"  # cleanup rm'd the fresh mktemp dir; r2_find_newest writes lsf.out here
+
+  local NAME
+  if [[ "$DRY_RUN" == "1" ]]; then
+    NAME="auto_<newest-from-r2>"
+    log "would resolve newest snapshot via: rclone lsf ${BULLPEN_OFFSITE_REMOTE%/}/ --dirs-only | grep auto_ | sort | tail -1"
+  else
+    NAME=$(r2_find_newest)
+  fi
+  log "newest offsite snapshot: ${NAME}"
+
+  local DRILL_START_EPOCH
+  DRILL_START_EPOCH=$(date +%s)
+
+  r2_fetch "$NAME"
+  spin_scratch
+  load_and_restore_ch "$NAME"
+  verify_ch_scratch
+  restore_registry
+  restore_model_artifacts
+  boot_profile api "$DRILL_API_PORT" gating
+  boot_profile worker "$DRILL_WORKER_PORT"
+
+  local DRILL_END_EPOCH RTO_SECONDS
+  DRILL_END_EPOCH=$(date +%s)
+  RTO_SECONDS=$(( DRILL_END_EPOCH - DRILL_START_EPOCH ))
+
+  echo
+  echo "================================================================"
+  echo "RESTORE DRILL RESULT (--from-r2)"
+  echo "================================================================"
+  echo "  source:           ${BULLPEN_OFFSITE_REMOTE%/}/${NAME}"
+  echo "  clickhouse:        restored into scratch (core tables non-empty)"
+  echo "  registry:          integrity ok, model_versions in range (1..live)"
+  echo "  models:            champion artifacts restored from R2 snapshots"
+  echo "  api profile:       actuator UP, prediction probe 200 (GATING)"
+  echo "  worker profile:    actuator UP + stable ${WORKER_SETTLE}s (no crash-loop)"
+  echo "  RTO-to-serving:    ${RTO_SECONDS}s (drill start to first 200 on predict)"
+  echo "================================================================"
+  if [[ "$DRY_RUN" == "1" ]]; then echo "  RESULT: DRY-RUN OK (no execution)"; else echo "  RESULT: PASS"; fi
+  exit 0
+}
+
+# ===========================================================================
+# LOCAL (mechanics) MODE - the original drill, unchanged in substance
+# ===========================================================================
+
+run_local_drill() {
+  local BACKUP_NAME="drill_$(date -u +%Y%m%dT%H%M%SZ)"
+  log "=== RESTORE DRILL (local): backup/restore mechanics ==="
+  log "preflight: tools + live state"
+  command -v docker >/dev/null || fail "docker not installed"
+  [[ -x "$CB_BINARY" ]] || fail "$CB_BINARY not executable"
+  [[ -n "$CH_PASSWORD" ]] || fail "CH_PASSWORD unset - set BULLPEN_CLICKHOUSE_PASSWORD (the rotated ClickHouse secret, e.g. from /etc/default/bullpen)"
+  docker ps --format '{{.Names}}' | grep -qx "$LIVE_CONTAINER" || fail "$LIVE_CONTAINER not running"
+
+  cleanup
+  mkdir -p "$DRILL_TMP"  # cleanup rm'd the fresh mktemp dir; local mode writes create/restore logs here
+  install_cb "$LIVE_CONTAINER" "$CH_USER"
+
+  log "seed: insert drill marker (id=${DRILL_ID}, note='${DRILL_NOTE}')"
+  docker exec "$LIVE_CONTAINER" clickhouse-client --user "$CH_USER" --password "$CH_PASSWORD" --query "
+    INSERT INTO bullpen._drill_marker (id, note) VALUES (${DRILL_ID}, '${DRILL_NOTE}')" \
+    || fail "marker insert failed"
+  docker exec "$LIVE_CONTAINER" clickhouse-client --user "$CH_USER" --password "$CH_PASSWORD" --query "
+    OPTIMIZE TABLE bullpen._drill_marker FINAL" || fail "optimize failed"
+
+  local LIVE_COUNT
+  LIVE_COUNT=$(docker exec "$LIVE_CONTAINER" clickhouse-client --user "$CH_USER" --password "$CH_PASSWORD" \
+    --query "SELECT count() FROM bullpen._drill_marker")
+  log "live row count: ${LIVE_COUNT}"
+  [[ "$LIVE_COUNT" -ge 1 ]] || fail "live row count is zero - drill cannot prove restore"
+
+  log "snapshot: clickhouse-backup create ${BACKUP_NAME} (inside ${LIVE_CONTAINER})"
+  docker exec "$LIVE_CONTAINER" /usr/bin/clickhouse-backup create "$BACKUP_NAME" \
+    >"${DRILL_TMP}/create.log" 2>&1 || { cat "${DRILL_TMP}/create.log"; fail "snapshot create failed"; }
+  local DATA_PARTS
+  # *.bin (not data.bin): compact parts use data.bin, wide parts use per-column <col>.bin.
+  DATA_PARTS=$(docker exec "$LIVE_CONTAINER" \
+    find "/var/lib/clickhouse/backup/${BACKUP_NAME}/shadow" -name '*.bin' 2>/dev/null | wc -l)
+  [[ "$DATA_PARTS" -ge 1 ]] || fail "backup has 0 data parts - FREEZE did not capture rows"
+  log "data parts captured: ${DATA_PARTS}"
+
+  spin_scratch
+
+  log "transfer: backup ${BACKUP_NAME} from live -> scratch"
+  docker exec "$SCRATCH_CONTAINER" mkdir -p /var/lib/clickhouse/backup
+  docker exec "$LIVE_CONTAINER" tar -C /var/lib/clickhouse/backup -cf - "$BACKUP_NAME" \
+    | docker exec -i "$SCRATCH_CONTAINER" tar -C /var/lib/clickhouse/backup -xf - || fail "backup tar failed"
+  docker exec -u 0 "$SCRATCH_CONTAINER" chown -R clickhouse:clickhouse \
+    "/var/lib/clickhouse/backup/${BACKUP_NAME}" || fail "chown failed"
+
+  log "restore: clickhouse-backup restore ${BACKUP_NAME} (inside scratch)"
+  docker exec "$SCRATCH_CONTAINER" /usr/bin/clickhouse-backup restore "$BACKUP_NAME" \
+    >"${DRILL_TMP}/restore.log" 2>&1 || { cat "${DRILL_TMP}/restore.log"; fail "restore command failed"; }
+
+  local SCRATCH_COUNT SCRATCH_HAS_DRILL LIVE_SCHEMA SCRATCH_SCHEMA
+  SCRATCH_COUNT=$(scratch_q "SELECT count() FROM bullpen._drill_marker")
+  SCRATCH_HAS_DRILL=$(scratch_q "SELECT count() FROM bullpen._drill_marker WHERE note='${DRILL_NOTE}'")
+  LIVE_SCHEMA=$(docker exec "$LIVE_CONTAINER" clickhouse-client --user "$CH_USER" --password "$CH_PASSWORD" \
+    --query "SELECT engine_full FROM system.tables WHERE database='bullpen' AND name='_drill_marker'")
+  SCRATCH_SCHEMA=$(scratch_q "SELECT engine_full FROM system.tables WHERE database='bullpen' AND name='_drill_marker'")
+
+  log "cleanup live: TRUNCATE bullpen._drill_marker + delete drill backup"
+  docker exec "$LIVE_CONTAINER" clickhouse-client --user "$CH_USER" --password "$CH_PASSWORD" \
+    --query "TRUNCATE TABLE bullpen._drill_marker" || true
+  docker exec "$LIVE_CONTAINER" /usr/bin/clickhouse-backup delete local "$BACKUP_NAME" >/dev/null 2>&1 || true
+
+  echo
+  echo "================================================================"
+  echo "RESTORE DRILL RESULT (local mechanics)"
+  echo "================================================================"
+  echo "  backup:           ${BACKUP_NAME}"
+  echo "  live row count:   ${LIVE_COUNT}"
+  echo "  scratch count:    ${SCRATCH_COUNT}"
+  echo "  drill row found:  ${SCRATCH_HAS_DRILL}"
+  echo "  schema match:     $([[ "$LIVE_SCHEMA" == "$SCRATCH_SCHEMA" ]] && echo yes || echo no)"
+  echo "================================================================"
+  if [[ "$LIVE_COUNT" == "$SCRATCH_COUNT" && "$SCRATCH_HAS_DRILL" -ge 1 && "$LIVE_SCHEMA" == "$SCRATCH_SCHEMA" ]]; then
+    echo "  RESULT: PASS"; exit 0
+  else
+    echo "  RESULT: FAIL"; exit 1
+  fi
+}
+
+# --- dispatch --------------------------------------------------------------
+
+if [[ "$MODE" == "r2" ]]; then
+  run_r2_drill
+else
+  [[ "$DRY_RUN" == "1" ]] && { log "local mode --dry-run: no separate plan (it mutates only a scratch container + a disposable marker row)"; exit 0; }
+  run_local_drill
+fi

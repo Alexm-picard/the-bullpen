@@ -14,7 +14,9 @@ public sealed class RegistryException extends RuntimeException
         RegistryException.ResetConfirmationMissing,
         RegistryException.PromotionCriteriaMissing,
         RegistryException.BaselineMissing,
-        RegistryException.ModelLoadFailed {
+        RegistryException.ModelKindMismatch,
+        RegistryException.ModelLoadFailed,
+        RegistryException.R2PushFailed {
 
   protected RegistryException(String message) {
     super(message);
@@ -24,7 +26,11 @@ public sealed class RegistryException extends RuntimeException
     super(message, cause);
   }
 
-  /** A required artifact file is not on disk at registration time. */
+  /**
+   * A required artifact file is not usable at registration time. The detail-carrying variants
+   * distinguish ENOENT from EACCES: C-31 attempt #11 burned a full GPU training run because "does
+   * not exist" actually meant "exists, but the api user cannot traverse a 750 parent directory".
+   */
   public static final class ArtifactMissing extends RegistryException {
     public ArtifactMissing(String path) {
       super("registry: artifact file does not exist on disk: " + path);
@@ -32,6 +38,15 @@ public sealed class RegistryException extends RuntimeException
 
     public ArtifactMissing(String path, Throwable cause) {
       super("registry: artifact file does not exist on disk: " + path, cause);
+    }
+
+    /** Detail variant - the message says WHICH failure (ENOENT vs EACCES vs other). */
+    public ArtifactMissing(String path, String detail) {
+      super("registry: artifact file " + detail + ": " + path);
+    }
+
+    public ArtifactMissing(String path, String detail, Throwable cause) {
+      super("registry: artifact file " + detail + ": " + path, cause);
     }
   }
 
@@ -198,6 +213,64 @@ public sealed class RegistryException extends RuntimeException
               + (cause.getMessage() == null
                   ? cause.getClass().getSimpleName()
                   : cause.getMessage()),
+          cause);
+    }
+  }
+
+  /**
+   * {@code metadata.json}'s {@code model_kind} is absent or wrong for a family whose serving loader
+   * is resolved by that field (decision [184]).
+   *
+   * <p>Refused at REGISTRATION rather than at promote on purpose: a row that registers without it
+   * looks perfectly healthy until {@code ModelLoadValidator} sniffs it into the batted-ball branch,
+   * and the promotion then fails with a message about a completely different model. Catching it
+   * here turns a confusing box-side 422 into a specific one, at the moment the operator can still
+   * fix the bundle.
+   */
+  public static final class ModelKindMismatch extends RegistryException {
+    private final String modelName;
+    private final String expectedKind;
+    private final String declaredKind;
+
+    public ModelKindMismatch(String modelName, String expectedKind, String declaredKind) {
+      super(
+          "registry: decision [184] - "
+              + modelName
+              + " metadata.json must declare model_kind="
+              + expectedKind
+              + " but declares "
+              + declaredKind
+              + "; re-export the bundle (bullpen_training.pitch_type.persist writes this field)"
+              + " and re-register. The registry will not store a model whose serving loader"
+              + " cannot be resolved from its own metadata.");
+      this.modelName = modelName;
+      this.expectedKind = expectedKind;
+      this.declaredKind = declaredKind;
+    }
+
+    public String modelName() {
+      return modelName;
+    }
+
+    public String expectedKind() {
+      return expectedKind;
+    }
+
+    public String declaredKind() {
+      return declaredKind;
+    }
+  }
+
+  public static final class R2PushFailed extends RegistryException {
+    public R2PushFailed(net.thebullpen.baseball.registry.dto.ModelVersion mv, Throwable cause) {
+      super(
+          "registry: champion "
+              + mv.modelName()
+              + "/"
+              + mv.version()
+              + " (id="
+              + mv.id()
+              + ") promoted but R2 push failed - serving but not recoverable from R2",
           cause);
     }
   }

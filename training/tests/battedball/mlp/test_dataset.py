@@ -8,6 +8,8 @@ docker dependency.
 
 from __future__ import annotations
 
+import re
+
 import numpy as np
 import pytest
 
@@ -125,15 +127,19 @@ def _toy_row(seed: int = 0) -> _BipRow:
     rng = np.random.default_rng(seed)
     features = _fake_features(1)[0]
     labels = rng.dirichlet(np.ones(5), size=30).astype(np.float32)
-    return _BipRow(features=features, labels=labels, home_park_id="NYY")
+    carry = rng.uniform(150.0, 420.0, size=30).astype(np.float32)
+    return _BipRow(features=features, labels=labels, carry=carry, home_park_id="NYY")
 
 
 def test_dataset_returns_raw_features_when_no_scaler() -> None:
     rows = [_toy_row(i) for i in range(3)]
     ds = BBIPDataset(rows)
-    x, y = ds[0]
+    x, y, carry = ds[0]
     np.testing.assert_array_equal(x, rows[0].features)
     assert y.shape == (30, 5)
+    # The _BipRow path surfaces the row's per-park carry verbatim.
+    assert carry.shape == (30,)
+    np.testing.assert_array_equal(carry, rows[0].carry)
 
 
 def test_dataset_applies_scaler_when_provided() -> None:
@@ -141,13 +147,334 @@ def test_dataset_applies_scaler_when_provided() -> None:
     ds_raw = BBIPDataset(rows)
     scaler = FeatureScaler.fit(ds_raw.all_features())
     ds = BBIPDataset(rows, scaler=scaler)
-    x, _y = ds[0]
+    x, _y, _carry = ds[0]
     raw = rows[0].features
     expected = (raw - scaler.means) / scaler.stds
     np.testing.assert_allclose(x, expected, atol=1e-6)
+
+
+def test_dataset_array_path_surfaces_carry_and_nans_where_absent() -> None:
+    """The dense-array path returns the carry row when given one, and an
+    all-NaN row when carry is omitted (outcome-only / legacy callers)."""
+    feats = _fake_features(4)
+    labels = np.random.default_rng(1).dirichlet(np.ones(5), size=(4, 30)).astype(np.float32)
+    carry = np.full((4, 30), np.nan, dtype=np.float32)
+    carry[0, 0] = 410.0  # one backfilled (BIP, park); the rest still NULL -> NaN
+    ds = BBIPDataset(feats, labels, carry=carry)
+    _x, _y, c = ds[0]
+    assert c.shape == (30,)
+    assert c[0] == pytest.approx(410.0)
+    assert np.isnan(c[1])
+
+    ds_nocarry = BBIPDataset(feats, labels)
+    _x2, _y2, c2 = ds_nocarry[0]
+    assert c2.shape == (30,)
+    assert bool(np.isnan(c2).all())
 
 
 def test_all_features_stacks_rows() -> None:
     rows = [_toy_row(i) for i in range(7)]
     arr = BBIPDataset(rows).all_features()
     assert arr.shape == (7, 15)
+
+
+# --- load_arrays per-year query discipline (C-31 attempts #1-#4) -----------
+#
+# The box evidence map in dataset.py's module docstring is pinned here: EVERY
+# ClickHouse query load_arrays issues must be single-year (the full-range
+# DISTINCT count OOM'd C-31 attempts #1/#3; probes 3-4 proved settings cannot
+# rescue any full-range form), the count must carry the probe-2 external
+# spills, and year-ordered concatenation must preserve the global row order
+# the (N, n_parks, n_outcomes) reshape depends on.
+
+
+def _fake_clickhouse(queries: list[str], year_bips: dict[int, int], parks: tuple[str, ...]):
+    """A _run_clickhouse stand-in: records queries, answers counts and rows."""
+
+    def run(query: str, *, container: str = "unused") -> str:
+        queries.append(query)
+        # Which year does this query target? Per-year discipline means BETWEEN y AND y.
+        year = None
+        for y in year_bips:
+            if f"BETWEEN {y} AND {y}" in query:
+                year = y
+                break
+        assert year is not None, f"query is not single-year:\n{query}"
+        if "count()" in query:
+            return f"{year_bips[year]}\n"
+        # Row query: emit year_bips[year] BIPs x len(parks) rows, 19 TSV cols.
+        # Honor a LIMIT clause like real ClickHouse (LIMIT {bips * n_parks} rows).
+        n_bips = year_bips[year]
+        limit_match = re.search(r"LIMIT (\d+)", query)
+        if limit_match:
+            n_bips = min(n_bips, int(limit_match.group(1)) // len(parks))
+        lines = []
+        for bip in range(n_bips):
+            for park in parks:
+                lines.append(
+                    "\t".join(
+                        [
+                            f"{year}-06-01",  # game_date
+                            str(year * 1000 + bip),  # game_id
+                            "1",  # at_bat_index
+                            "1",  # pitch_number
+                            "100.0",  # launch_speed_mph
+                            "25.0",  # launch_angle_deg
+                            "100.0",  # hc_x
+                            "100.0",  # hc_y
+                            "350.0",  # hit_distance_ft
+                            "R",  # stand
+                            "0",  # base_state
+                            "1",  # outs
+                            park,  # park_id
+                            "0.5",  # prob_out
+                            "0.2",  # prob_1b
+                            "0.1",  # prob_2b
+                            "0.05",  # prob_3b
+                            "0.15",  # prob_hr
+                            str(float(year)),  # carry_ft (year-tagged for order check)
+                        ]
+                    )
+                )
+        return "\n".join(lines) + "\n"
+
+    return run
+
+
+def _stub_purge(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Replace _purge_jemalloc with a recorder - keeps unit tests hermetic even
+    on a machine where CH_ADMIN_PASSWORD happens to be set (no docker exec)."""
+    from bullpen_training.battedball.mlp import dataset as ds
+
+    purges: list[str] = []
+    monkeypatch.setattr(ds, "_purge_jemalloc", lambda *, container="x": purges.append(container))
+    return purges
+
+
+def test_load_arrays_issues_only_single_year_queries(monkeypatch: pytest.MonkeyPatch) -> None:
+    from bullpen_training.battedball.mlp import dataset as ds
+
+    queries: list[str] = []
+    parks = ("AAA", "BBB")
+    monkeypatch.setattr(ds, "_run_clickhouse", _fake_clickhouse(queries, {2015: 2, 2016: 3}, parks))
+    _stub_purge(monkeypatch)
+
+    features, labels, carry = ds.load_arrays(season_from=2015, season_to=2016, park_order=parks)
+
+    # 2 per-year counts + 2 per-year row loads; nothing spans the range.
+    counts = [q for q in queries if "count()" in q]
+    rows = [q for q in queries if "count()" not in q]
+    assert len(counts) == 2 and len(rows) == 2
+    assert not any("BETWEEN 2015 AND 2016" in q for q in queries)
+    # Per-year counts summed into the allocation.
+    assert features.shape == (5, 15)
+    assert labels.shape == (5, 2, 5)
+    assert carry.shape == (5, 2)
+
+
+def test_every_query_carries_partial_merge_and_probe6_500mb_spills(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Probe 6 (2026-07-14): 1.5 GB spill thresholds OOM'd on a retention-inflated
+    # server; 500 MB completes. BOTH the count and the row query must carry them.
+    from bullpen_training.battedball.mlp import dataset as ds
+
+    queries: list[str] = []
+    parks = ("AAA",)
+    monkeypatch.setattr(ds, "_run_clickhouse", _fake_clickhouse(queries, {2020: 1}, parks))
+    _stub_purge(monkeypatch)
+    ds.load_arrays(season_from=2020, season_to=2020, park_order=parks)
+
+    assert len(queries) == 2
+    for q in queries:
+        assert "join_algorithm = 'partial_merge'" in q
+        assert "max_bytes_before_external_group_by = 500000000" in q
+        assert "max_bytes_before_external_sort = 500000000" in q
+        assert "1500000000" not in q  # the too-high probe-2 threshold must not return
+
+
+def test_load_arrays_purges_jemalloc_after_every_chunk(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Probe 6: retention ratchets across chunks; the loader must issue a
+    # deterministic release after EVERY per-year query (counts and rows).
+    from bullpen_training.battedball.mlp import dataset as ds
+
+    queries: list[str] = []
+    parks = ("AAA",)
+    monkeypatch.setattr(
+        ds, "_run_clickhouse", _fake_clickhouse(queries, {2015: 1, 2016: 1, 2017: 1}, parks)
+    )
+    purges = _stub_purge(monkeypatch)
+    ds.load_arrays(season_from=2015, season_to=2017, park_order=parks)
+
+    # 3 count-chunks + 3 row-chunks = 6 purges, container threaded through.
+    assert len(purges) == 6
+    assert set(purges) == {"bullpen-clickhouse"}
+
+
+def test_purge_jemalloc_noops_with_warning_when_admin_password_unset(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from bullpen_training.battedball.mlp import dataset as ds
+
+    monkeypatch.delenv("CH_ADMIN_PASSWORD", raising=False)
+
+    def _boom(*args: object, **kwargs: object) -> None:
+        raise AssertionError("subprocess must not run when CH_ADMIN_PASSWORD is unset")
+
+    monkeypatch.setattr(ds.subprocess, "run", _boom)
+    ds._purge_jemalloc()
+    assert "CH_ADMIN_PASSWORD unset" in capsys.readouterr().out
+
+
+def test_purge_jemalloc_runs_as_default_user_and_keeps_password_out_of_argv(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Audit note 2026-07-14: the password must be forwarded via name-only
+    # `docker exec -e` + the subprocess env (clickhouse-client reads
+    # CLICKHOUSE_PASSWORD inside the container) - NEVER as a --password argv,
+    # which would sit in the box's process table for the life of the call.
+    from bullpen_training.battedball.mlp import dataset as ds
+
+    monkeypatch.setenv("CH_ADMIN_PASSWORD", "s3cret")
+    calls: list[tuple[list[str], dict[str, str] | None]] = []
+
+    def _capture(argv: list[str], **kwargs: object):
+        calls.append((argv, kwargs.get("env")))  # type: ignore[arg-type]
+
+        class _Res:
+            stdout = ""
+            stderr = ""
+            returncode = 0
+
+        return _Res()
+
+    monkeypatch.setattr(ds.subprocess, "run", _capture)
+    ds._purge_jemalloc(container="bullpen-clickhouse")
+
+    ((argv, env),) = calls
+    assert argv[:4] == ["docker", "exec", "-e", "CLICKHOUSE_PASSWORD"]
+    assert argv[4] == "bullpen-clickhouse"
+    assert "--user" in argv and argv[argv.index("--user") + 1] == "default"
+    assert "--password" not in argv
+    assert "s3cret" not in argv  # the secret never appears in the process table
+    assert argv[-1] == "SYSTEM JEMALLOC PURGE"
+    assert env is not None and env["CLICKHOUSE_PASSWORD"] == "s3cret"
+
+
+def test_load_arrays_concatenates_years_in_ascending_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # game_date partitions years, so year-ordered concatenation preserves the
+    # global (game_date, game_id, at_bat_index, pitch_number) ordering the
+    # rolling-origin date split depends on. carry is year-tagged by the fake.
+    from bullpen_training.battedball.mlp import dataset as ds
+
+    queries: list[str] = []
+    parks = ("AAA",)
+    monkeypatch.setattr(
+        ds, "_run_clickhouse", _fake_clickhouse(queries, {2018: 2, 2019: 1, 2020: 2}, parks)
+    )
+    _stub_purge(monkeypatch)
+    _, _, carry = ds.load_arrays(season_from=2018, season_to=2020, park_order=parks)
+
+    np.testing.assert_array_equal(
+        carry[:, 0], np.array([2018.0, 2018.0, 2019.0, 2020.0, 2020.0], dtype=np.float32)
+    )
+
+
+def test_load_arrays_limit_still_caps_allocation(monkeypatch: pytest.MonkeyPatch) -> None:
+    from bullpen_training.battedball.mlp import dataset as ds
+
+    queries: list[str] = []
+    parks = ("AAA",)
+    monkeypatch.setattr(ds, "_run_clickhouse", _fake_clickhouse(queries, {2015: 4, 2016: 4}, parks))
+    _stub_purge(monkeypatch)
+    features, _, _ = ds.load_arrays(season_from=2015, season_to=2016, park_order=parks, limit=3)
+
+    assert features.shape[0] == 3
+
+
+# --- P0: stderr surfaced (the 15-attempt C-31 ledger, 2026-07-14) -----------
+
+
+class _FakeCompleted:
+    def __init__(self, returncode: int, stdout: str = "", stderr: str = "") -> None:
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+def test_run_clickhouse_surfaces_stderr_on_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Attempts #13-#15 were diagnosed blind because exit-241 arrived with no server
+    # words. The raised error (and hence the queue row's error_message, which run.py
+    # builds from str(e)) must carry clickhouse-client's stderr.
+    from bullpen_training.battedball.mlp import dataset as ds
+
+    monkeypatch.setattr(
+        ds.subprocess,
+        "run",
+        lambda *a, **k: _FakeCompleted(
+            241, stderr="Code: 241. DB::Exception: Memory limit (total) exceeded: would use 6.1 GiB"
+        ),
+    )
+    with pytest.raises(RuntimeError, match="exited 241") as exc:
+        ds._run_clickhouse("SELECT 1")
+    assert "Memory limit (total) exceeded" in str(exc.value)
+
+
+def test_run_clickhouse_truncates_stderr_to_500_chars(monkeypatch: pytest.MonkeyPatch) -> None:
+    from bullpen_training.battedball.mlp import dataset as ds
+
+    monkeypatch.setattr(
+        ds.subprocess, "run", lambda *a, **k: _FakeCompleted(241, stderr="x" * 2000)
+    )
+    with pytest.raises(RuntimeError) as exc:
+        ds._run_clickhouse("SELECT 1")
+    assert len(str(exc.value)) < 600
+
+
+def test_purge_jemalloc_surfaces_stderr_on_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    from bullpen_training.battedball.mlp import dataset as ds
+
+    monkeypatch.setenv("CH_ADMIN_PASSWORD", "s3cret")
+    monkeypatch.setattr(
+        ds.subprocess,
+        "run",
+        lambda *a, **k: _FakeCompleted(194, stderr="Code: 194. DB::Exception: Wrong password"),
+    )
+    with pytest.raises(RuntimeError, match="exited 194") as exc:
+        ds._purge_jemalloc()
+    assert "Wrong password" in str(exc.value)
+    assert "s3cret" not in str(exc.value)  # the secret must never ride the error
+
+
+# --- optional merge-quiet gate ----------------------------------------------
+
+
+def test_merge_quiet_gate_is_off_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    from bullpen_training.battedball.mlp import dataset as ds
+
+    monkeypatch.delenv("BULLPEN_LOADER_MERGE_QUIET", raising=False)
+
+    def _boom(*a: object, **k: object) -> str:
+        raise AssertionError("gate must not query when disabled")
+
+    monkeypatch.setattr(ds, "_run_clickhouse", _boom)
+    ds._wait_for_merge_quiet()  # no query, no raise
+
+
+def test_merge_quiet_gate_returns_when_merges_drained(monkeypatch: pytest.MonkeyPatch) -> None:
+    from bullpen_training.battedball.mlp import dataset as ds
+
+    monkeypatch.setenv("BULLPEN_LOADER_MERGE_QUIET", "1")
+    seen: list[str] = []
+
+    def _fake(query: str, *, container: str = "x") -> str:
+        seen.append(query)
+        return "0\n"
+
+    monkeypatch.setattr(ds, "_run_clickhouse", _fake)
+    ds._wait_for_merge_quiet()
+    assert seen == ["SELECT count() FROM system.merges"]

@@ -12,10 +12,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
-import net.thebullpen.baseball.api.dto.GameSummary;
-import net.thebullpen.baseball.api.dto.LivePitchRow;
 import net.thebullpen.baseball.data.LivePitchesRepository;
+import net.thebullpen.baseball.domain.GameSummary;
+import net.thebullpen.baseball.domain.LivePitchRow;
+import net.thebullpen.baseball.domain.PagedRows;
+import net.thebullpen.baseball.domain.PostPredictionRow;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
@@ -24,13 +27,15 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 class GameControllerTest {
 
   private LivePitchesRepository repo;
+  private TeamContactAggregator aggregator;
   private MockMvc mvc;
 
   @BeforeEach
   void setup() {
     repo = mock(LivePitchesRepository.class);
+    aggregator = mock(TeamContactAggregator.class);
     mvc =
-        MockMvcBuilders.standaloneSetup(new GameController(repo))
+        MockMvcBuilders.standaloneSetup(new GameController(repo, aggregator))
             .setControllerAdvice(new ApiErrorAdvice())
             .build();
   }
@@ -49,7 +54,9 @@ class GameControllerTest {
                     2,
                     7,
                     "IN_PROGRESS",
-                    "In Progress")));
+                    "In Progress",
+                    null, // currentMatchup
+                    null))); // mostRecentBattedBall
 
     mvc.perform(get("/v1/games/today"))
         .andExpect(status().isOk())
@@ -80,7 +87,9 @@ class GameControllerTest {
                     2,
                     7,
                     "IN_PROGRESS",
-                    "In Progress")));
+                    "In Progress",
+                    null, // currentMatchup
+                    null))); // mostRecentBattedBall
 
     mvc.perform(get("/v1/games/777001"))
         .andExpect(status().isOk())
@@ -120,12 +129,38 @@ class GameControllerTest {
                     0,
                     0,
                     null,
-                    null)));
+                    null,
+                    102.5,
+                    28.0,
+                    412.0,
+                    "fly_ball",
+                    "home_run",
+                    // V032: spray derived server-side from hc_x/hc_y, null when the coordinates
+                    // cannot yield an honest angle.
+                    18.4,
+                    // A5 pre-pitch context (V028): serialized through the games DTO so the frontend
+                    // can build the A6 next-pitch request. scoreDiff is the serving-path constant
+                    // 0.
+                    "R",
+                    "L",
+                    1,
+                    "BOS",
+                    0)));
 
     mvc.perform(get("/v1/games/777001/pitches"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$[0].description").value("called_strike"))
-        .andExpect(jsonPath("$[0].cursor").value(101));
+        .andExpect(jsonPath("$[0].cursor").value(101))
+        .andExpect(jsonPath("$[0].launchSpeedMph").value(102.5))
+        .andExpect(jsonPath("$[0].launchAngleDeg").value(28.0))
+        .andExpect(jsonPath("$[0].hitDistanceFt").value(412.0))
+        .andExpect(jsonPath("$[0].bbType").value("fly_ball"))
+        .andExpect(jsonPath("$[0].event").value("home_run"))
+        .andExpect(jsonPath("$[0].pitcherThrows").value("R"))
+        .andExpect(jsonPath("$[0].batterStand").value("L"))
+        .andExpect(jsonPath("$[0].baseState").value(1))
+        .andExpect(jsonPath("$[0].parkId").value("BOS"))
+        .andExpect(jsonPath("$[0].scoreDiff").value(0));
     verify(repo).findPitchesSince(777001L, 0L);
   }
 
@@ -140,6 +175,64 @@ class GameControllerTest {
   @Test
   void pitchesSince_negative_cursor_rejected_with_400() throws Exception {
     mvc.perform(get("/v1/games/777001/pitches").param("since", "-1"))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void postPredictions_defaults_return_the_page() throws Exception {
+    when(repo.findPostPredictions(777001L, 0, 50))
+        .thenReturn(
+            new PagedRows<>(
+                List.of(
+                    new PostPredictionRow(
+                        1,
+                        1,
+                        7,
+                        660271L,
+                        545361L,
+                        "hit_into_play",
+                        Map.of("in_play", 0.7, "ball", 0.3),
+                        "in_play",
+                        "v1")),
+                false));
+
+    mvc.perform(get("/v1/games/777001/post-predictions"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.page").value(0))
+        .andExpect(jsonPath("$.size").value(50))
+        .andExpect(jsonPath("$.hasNext").value(false))
+        .andExpect(jsonPath("$.rows[0].atBatIndex").value(1))
+        .andExpect(jsonPath("$.rows[0].realizedOutcome").value("hit_into_play"))
+        .andExpect(jsonPath("$.rows[0].postWinner").value("in_play"))
+        .andExpect(jsonPath("$.rows[0].modelVersion").value("v1"));
+    verify(repo).findPostPredictions(777001L, 0, 50);
+  }
+
+  @Test
+  void postPredictions_forwards_page_and_size_parameters() throws Exception {
+    when(repo.findPostPredictions(eq(777001L), eq(2), eq(10)))
+        .thenReturn(new PagedRows<>(List.of(), false));
+
+    mvc.perform(get("/v1/games/777001/post-predictions").param("page", "2").param("size", "10"))
+        .andExpect(status().isOk());
+    verify(repo).findPostPredictions(777001L, 2, 10);
+  }
+
+  @Test
+  void postPredictions_negative_page_rejected_with_400() throws Exception {
+    mvc.perform(get("/v1/games/777001/post-predictions").param("page", "-1"))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void postPredictions_size_over_max_rejected_with_400() throws Exception {
+    mvc.perform(get("/v1/games/777001/post-predictions").param("size", "201"))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void postPredictions_size_below_min_rejected_with_400() throws Exception {
+    mvc.perform(get("/v1/games/777001/post-predictions").param("size", "0"))
         .andExpect(status().isBadRequest());
   }
 }

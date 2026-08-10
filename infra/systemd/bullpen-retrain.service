@@ -11,6 +11,16 @@ Wants=network-online.target
 Type=oneshot
 User=bullpen
 Group=bullpen
+# TWO box prerequisites before this unit's timer is re-armed (M2-B; install.sh installs it
+# DISABLED until these are met, so a reinstall cannot flip it to "enabled + failing"):
+#   1. uv provisioned at /usr/local/bin/uv (owner decision 2026-07-03: install/symlink uv
+#      there so the ExecStart below resolves - the box previously had no uv at that path).
+#   2. The training PROJECT present at WorkingDirectory below. deploy.sh stages only app.jar
+#      to /opt/bullpen, NOT training/, so /opt/bullpen/training must be provisioned separately
+#      (a clone at /opt/bullpen/repo) for `uv run` to find pyproject.toml + src. Once
+#      provisioned, deploy.sh step 3b REFRESHES that clone on every deploy (git pull --ff-only
+#      + uv sync as bullpen), so the timer never runs training code staler than the last deploy.
+# Re-arm after both: sudo systemctl enable --now bullpen-retrain.timer
 WorkingDirectory=/opt/bullpen/training
 
 # secrets.env carries BULLPEN_ADMIN_USER + BULLPEN_ADMIN_PASSWORD that match
@@ -18,6 +28,21 @@ WorkingDirectory=/opt/bullpen/training
 EnvironmentFile=-/etc/default/bullpen
 EnvironmentFile=-/etc/bullpen/secrets.env
 Environment=BULLPEN_ADMIN_BASE_URL=http://127.0.0.1:8080
+
+# The proven working env block (BOX HAND-OFF #1, decision [178] - the 15-attempt
+# ledger burned at least one run on each missing variable; see the retrain-ceremony
+# runbook Step 2 for the annotated list). Non-secrets are set here; the SECRETS
+# (BULLPEN_ADMIN_USER / BULLPEN_ADMIN_PASSWORD derived from THEBULLPEN_ADMIN_BASIC_AUTH,
+# and CH_ADMIN_PASSWORD for the loader's per-chunk SYSTEM JEMALLOC PURGE - without it
+# the purge warn+no-ops and the cross-year retention ratchet returns) MUST live in
+# /etc/bullpen/secrets.env above. Re-arm checklist before `systemctl enable --now
+# bullpen-retrain.timer`: uv at /usr/local/bin/uv, /opt/bullpen/training provisioned,
+# secrets.env carries all three secrets, and the two dirs below exist with
+# alepic-writable/bullpen-readable perms.
+Environment=BULLPEN_RETRAIN_ARTIFACT_DIR=/opt/bullpen/retrain-artifacts
+Environment=BULLPEN_FEATURE_PIPELINE_PATH=/opt/bullpen/contracts/feature_pipeline_battedball.json
+# Optional, advisory (120s timeout then proceed): drain background merges first.
+Environment=BULLPEN_LOADER_MERGE_QUIET=1
 
 # uv resolves the project venv from training/pyproject.toml; the worker module
 # entry point is python -m bullpen_training.retraining.run.

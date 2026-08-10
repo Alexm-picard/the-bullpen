@@ -79,33 +79,44 @@ jobs:
         working-directory: training
         # Covers:
         #   tests/pitch/             - W1/W4b pitch ORT fixture, register_snapshot (new)
+        #   tests/pitch_type/        - pitch_type_pre ([183]): temperature calibrator, y7
+        #     trainer, ONNX parity. LightGBM-based, so it lives on THIS (lgbm) path, not the
+        #     torch path, to keep the OpenMP-co-load segfault split intact.
         #   tests/battedball/lgbm_per_park/ and lr_baseline/ - both now have __init__.py
         #     to resolve the test_export_onnx.py basename collision that breaks default
-        #     (prepend) pytest collection. W5 eval/CV additions land in tests/eval/ and
-        #     tests/battedball/ which are already globbed by this job.
+        #     (prepend) pytest collection.
         #   tests/registry_client/   - feature-hash discipline
         #   tests/retraining/        - trigger/dispatch/run unit tests
+        # NB: tests/eval/ is NOT globbed by either unit job - its files are enumerated
+        # one by one (a new tests/eval/test_*.py must be ADDED here or it never runs in
+        # CI; the M-task-23 audit caught test_calibration.py + test_ece_reconciliation.py
+        # orphaned by exactly this).
         run: |
           uv run python -m pytest -x --ignore=tests/leakage \
             --cov=src/bullpen_training --cov-branch --cov-append --cov-fail-under=0 \
-            tests/pitch tests/eval/test_artifact.py \
+            tests/pitch tests/pitch_type tests/eval/test_artifact.py \
+            tests/eval/test_calibration.py \
+            tests/eval/test_ece_reconciliation.py \
             tests/battedball/test_train_toy.py \
             tests/battedball/test_python_java_parity.py \
             tests/battedball/lgbm_baseline \
             tests/battedball/lgbm_per_park \
             tests/battedball/lr_baseline \
             tests/registry_client \
+            tests/scripts \
             tests/retraining \
             tests/test_smoke.py
       # Coverage gate. 75% (pyproject fail_under) stays the aspirational TARGET, surfaced as a
-      # warning. The ENFORCED gate is a regression FLOOR at 40% (current is ~46%): coverage may not
-      # backslide below it, but isn't blocked from shipping today. Raise the floor as coverage
-      # climbs toward 75; that's when the floor and the target converge.
-      - name: Coverage gate (regression floor 40%; 75% is the aspirational target)
+      # warning. The ENFORCED gate is a regression FLOOR at 55% (the blended coverage.py TOTAL is
+      # ~57% as of 2026-07-04, up from ~46%): coverage may not backslide below it, but isn't blocked
+      # from shipping today. Raise the floor as coverage climbs toward 75; that's when the floor and
+      # the target converge. The floor is coverage.py's combined line+branch TOTAL (--cov-branch on),
+      # not the cobertura line-rate.
+      - name: Coverage gate (regression floor 55%; 75% is the aspirational target)
         working-directory: training
         run: |
           uv run coverage report || echo "::warning title=Coverage below 75% target::training coverage is under the 75% aspiration (non-blocking)"
-          uv run coverage report --fail-under=40 >/dev/null
+          uv run coverage report --fail-under=55 >/dev/null
       - name: Coverage XML artifact
         if: always()
         working-directory: training
@@ -232,10 +243,13 @@ jobs:
           CLICKHOUSE_PORT: "9000"
           CLICKHOUSE_PASSWORD: thebullpen
         # uv run python -m pytest avoids the stale-PYTHONPATH quirk (see unit-tests job).
-        # Both drive REAL queries against the CH service (BULLPEN_REQUIRE_CH=1 = a skip is a failure):
-        # the SQL-path leakage test (DEF-H2/H3) + the batted-ball full-data export query (auditor
-        # NOTE 2 on #112) so a schema/join/FINAL bug in the export fails here, not on the box's CV.
+        # All drive REAL queries against the CH service (BULLPEN_REQUIRE_CH=1 = a skip is a failure):
+        # the SQL-path leakage test (DEF-H2/H3), the pitch-type window-SQL leakage gate + the V029
+        # materialisation round-trip (pitch_type_pre, [183]), and the batted-ball full-data export
+        # query (auditor NOTE 2 on #112) so a schema/join/FINAL bug fails here, not on the box's CV.
         run: >
           uv run python -m pytest
           tests/leakage/test_sql_path_contamination.py
+          tests/leakage/test_pitch_type_sql_leakage.py
+          tests/pitch_type/test_materialize_ch.py
           tests/eval/promotion/test_batted_ball_export_ch.py -v

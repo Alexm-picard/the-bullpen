@@ -32,7 +32,10 @@ CONTRACT_PATH = REPO_ROOT.parent / "contracts" / "feature_pipeline.json"
 FIXTURE_DIR = REPO_ROOT / "tests" / "fixtures"
 INPUT_PATH = FIXTURE_DIR / "parity_pitch_pre_001.json"
 EXPECTED_PATH = FIXTURE_DIR / "parity_pitch_pre_001_expected.json"
-ARTIFACT_DIR = REPO_ROOT / "artifacts" / "pitch_outcome_pre" / "v1"
+# v2 to match the Java mirror (PitchPreParityTest PRE_VERSION="v2") and the fixtures, which are
+# generated against the v2 bundle. v1/v2 share the feature schema_hash; the expected ONNX probs in
+# the fixture pin the version.
+ARTIFACT_DIR = REPO_ROOT / "artifacts" / "pitch_outcome_pre" / "v2"
 ONNX_PATH = ARTIFACT_DIR / "model.onnx"
 CALIBRATOR_PATH = ARTIFACT_DIR / "calibrator.json"
 PARK_PATH = ARTIFACT_DIR / "park_id_mapping.json"

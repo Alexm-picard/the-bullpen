@@ -1,24 +1,35 @@
 package net.thebullpen.baseball.api.ops;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import net.thebullpen.baseball.api.dto.LatencyStat;
-import net.thebullpen.baseball.api.dto.OpsEvent;
+import net.thebullpen.baseball.api.dto.ModelAccuracyScorecard;
+import net.thebullpen.baseball.api.dto.OpsEventsPage;
+import net.thebullpen.baseball.api.dto.RollingAccuracyResponse;
+import net.thebullpen.baseball.api.dto.RollingAccuracyResponse.ModelRollingAccuracy;
 import net.thebullpen.baseball.data.OpsEventsRepository;
 import net.thebullpen.baseball.data.PredictionLogRepository;
-import net.thebullpen.baseball.drift.DriftMetric;
+import net.thebullpen.baseball.data.RollingAccuracyRepository;
+import net.thebullpen.baseball.domain.LatencyStat;
 import net.thebullpen.baseball.drift.DriftMetricsRepository;
+import net.thebullpen.baseball.drift.TaggedDriftMetric;
 import net.thebullpen.baseball.inference.routing.RoutingConfig;
 import net.thebullpen.baseball.inference.routing.RoutingRepository;
+import net.thebullpen.baseball.registry.AccuracyService;
 import net.thebullpen.baseball.registry.RegistryService;
 import net.thebullpen.baseball.retraining.RetrainingQueueService;
 import net.thebullpen.baseball.retraining.dto.RetrainingTrigger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * Public Ops dashboard read API (leaves 4e.2 + 4e.3 + 4e.4). Single controller because each
@@ -40,10 +51,29 @@ import org.springframework.web.bind.annotation.RestController;
  * materialises when CH isn't around — the drift section then surfaces an empty list and the UI
  * shows its "no drift data yet" placeholder.
  */
+@Tag(
+    name = "Ops dashboard",
+    description =
+        "Public read API behind the Ops dashboard: drift metrics, A/B routing, retrain queue,"
+            + " recent ops events, latency, and calibration + accuracy scorecards. No auth"
+            + " (decision [29]); returns empty rather than 404 for speculative polling.")
 @RestController
 @RequestMapping("/v1/ops")
 @Profile("api")
 public class OpsController {
+
+  private static final int OPS_EVENTS_MIN_SIZE = 1;
+  private static final int OPS_EVENTS_MAX_SIZE = 200;
+  private static final int LATENCY_MIN_DAYS = 1;
+  // 365 days caps the prediction_log window scan: an uncapped `days` (the live days=2000000000
+  // case)
+  // is a full-table-scan DoS on an anonymous public read. Inline check (not class @Validated) so it
+  // enforces under standaloneSetup, matching PlayerController's documented pattern.
+  private static final int LATENCY_MAX_DAYS = 365;
+  private static final int ROLLING_ACCURACY_MIN_DAYS = 1;
+  // 30 caps the truth-join scan; beyond the 14-day pitches_live TTL there is no joinable truth
+  // anyway, so a larger window would widen the prediction_log scan for zero additional signal.
+  private static final int ROLLING_ACCURACY_MAX_DAYS = 30;
 
   private final DriftMetricsRepository driftRepo;
   private final RoutingRepository routingRepo;
@@ -51,6 +81,8 @@ public class OpsController {
   private final RegistryService registry;
   private final OpsEventsRepository opsEvents;
   private final PredictionLogRepository predictionLog;
+  private final AccuracyService accuracyService;
+  private final RollingAccuracyRepository rollingAccuracy;
 
   public OpsController(
       @Autowired(required = false) DriftMetricsRepository driftRepo,
@@ -58,25 +90,31 @@ public class OpsController {
       RetrainingQueueService retrain,
       RegistryService registry,
       OpsEventsRepository opsEvents,
-      @Autowired(required = false) PredictionLogRepository predictionLog) {
+      @Autowired(required = false) PredictionLogRepository predictionLog,
+      AccuracyService accuracyService,
+      @Autowired(required = false) RollingAccuracyRepository rollingAccuracy) {
     this.driftRepo = driftRepo;
     this.routingRepo = routingRepo;
     this.retrain = retrain;
     this.registry = registry;
     this.opsEvents = opsEvents;
     this.predictionLog = predictionLog;
+    this.accuracyService = accuracyService;
+    this.rollingAccuracy = rollingAccuracy;
   }
 
   /**
    * Leaf 4e.2: recent drift rows for a model. The repo returns rows ordered newest-first; the UI
-   * sparklines flip back to chronological for plotting.
+   * sparklines flip back to chronological for plotting. E-4: rows carry the V027 {@code tag} (empty
+   * = organic) so the dashboard can label [175] induced-drill evidence rows honestly instead of
+   * rendering a synthetic PSI spike as organic drift - additive field, same row shape.
    */
   @GetMapping("/drift")
-  public List<DriftMetric> drift(@RequestParam("model") String modelName) {
+  public List<TaggedDriftMetric> drift(@RequestParam("model") String modelName) {
     if (driftRepo == null) {
       return List.of();
     }
-    return driftRepo.findAllForModel(modelName);
+    return driftRepo.findAllForModelTagged(modelName);
   }
 
   /** Leaf 4e.3: every A/B routing row, including current traffic split + mode. */
@@ -102,13 +140,27 @@ public class OpsController {
 
   /**
    * B3: most-recent ops events (registrations, promotions, deploys, drift alerts, retrain
-   * completions, restore drills) for the dashboard's Ops Log. {@code limit} defaults to 20, capped
-   * at 200 by the repository. Empty list on a fresh DB — the UI then falls back to its showcase
-   * fixtures.
+   * completions, restore drills) for the dashboard's Ops Log, newest first. Offset-paginated
+   * ({@code page} 0-based, {@code size} 1..200, defaulting to the newest 20) so a caller can page
+   * past the newest {@code size} events instead of being stuck at a hard cap; {@code hasNext} comes
+   * from a size+1 over-fetch, mirroring {@code GET /v1/games/{id}/post-predictions}. An empty page
+   * on a fresh DB is a legitimate "no events yet" state - the UI shows its own empty path, NOT the
+   * showcase fixtures (those appear only when the query fails to resolve).
    */
   @GetMapping("/events")
-  public List<OpsEvent> events(@RequestParam(name = "limit", defaultValue = "20") int limit) {
-    return opsEvents.findRecent(limit);
+  public OpsEventsPage events(
+      @RequestParam(name = "page", defaultValue = "0") int page,
+      @RequestParam(name = "size", defaultValue = "20") int size) {
+    if (page < 0) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "page must be >= 0");
+    }
+    if (size < OPS_EVENTS_MIN_SIZE || size > OPS_EVENTS_MAX_SIZE) {
+      throw new ResponseStatusException(
+          HttpStatus.BAD_REQUEST,
+          "size must be between " + OPS_EVENTS_MIN_SIZE + " and " + OPS_EVENTS_MAX_SIZE);
+    }
+    var events = opsEvents.findRecentPage(page, size);
+    return new OpsEventsPage(events.rows(), page, size, events.hasNext());
   }
 
   /**
@@ -120,10 +172,81 @@ public class OpsController {
    */
   @GetMapping("/latency")
   public List<LatencyStat> latency(@RequestParam(name = "days", defaultValue = "7") int days) {
+    if (days < LATENCY_MIN_DAYS || days > LATENCY_MAX_DAYS) {
+      throw new ResponseStatusException(
+          HttpStatus.BAD_REQUEST,
+          "days must be between " + LATENCY_MIN_DAYS + " and " + LATENCY_MAX_DAYS);
+    }
     if (predictionLog == null) {
       return List.of();
     }
     return predictionLog.latencyQuantiles(days);
+  }
+
+  /**
+   * The /accuracy Live Scorecard: rolling realized top-1 accuracy for all four families over the
+   * trailing ET-day window (default 7, max 30). The two families without live truth SAY WHY ({@code
+   * status: "no_live_truth"} + reason) rather than being omitted - the endpoint's whole point is
+   * that absence is stated, never implied. Champion-served rows only; dedup + join discipline lives
+   * in {@link RollingAccuracyRepository}.
+   *
+   * <p>Honesty constraints carried into the payload: every live figure travels with its n and the
+   * window; pitch_type_pre is a calibrated PRIOR promoted on calibration ([183]) - its top-1 is
+   * supplementary and the frontend captions it as such and floors rendering at n >= 500;
+   * battedball's [163] reality-gap framing is restated in its reason string.
+   */
+  @GetMapping("/rolling-accuracy")
+  public RollingAccuracyResponse rollingAccuracy(
+      @RequestParam(name = "days", defaultValue = "7") int days) {
+    if (days < ROLLING_ACCURACY_MIN_DAYS || days > ROLLING_ACCURACY_MAX_DAYS) {
+      throw new ResponseStatusException(
+          HttpStatus.BAD_REQUEST,
+          "days must be between "
+              + ROLLING_ACCURACY_MIN_DAYS
+              + " and "
+              + ROLLING_ACCURACY_MAX_DAYS);
+    }
+    List<ModelRollingAccuracy> models =
+        List.of(
+            pitchOutcomeEntry("pitch_outcome_pre", days),
+            pitchOutcomeEntry("pitch_outcome_post", days),
+            ModelRollingAccuracy.noTruth(
+                "battedball_outcome",
+                "prediction_log rows for this family carry no live pitch keys - the served"
+                    + " surface is the park heatmap, a calibrated physics estimate (decision"
+                    + " [163]) - so realized live accuracy is structurally unavailable, not"
+                    + " merely pending"),
+            pitchTypeEntry(days));
+    return new RollingAccuracyResponse(days, Instant.now(), models);
+  }
+
+  private ModelRollingAccuracy pitchOutcomeEntry(String modelName, int days) {
+    if (rollingAccuracy == null) {
+      return ModelRollingAccuracy.noTruth(
+          modelName, "analytical store not configured in this environment");
+    }
+    return ModelRollingAccuracy.live(
+        modelName,
+        rollingAccuracy.pitchOutcomeDaily(modelName, days),
+        "no truth-joined champion predictions in the window (live volume and the 14-day"
+            + " pitches_live TTL bound what is joinable)",
+        null);
+  }
+
+  private ModelRollingAccuracy pitchTypeEntry(int days) {
+    if (rollingAccuracy == null) {
+      return ModelRollingAccuracy.noTruth(
+          "pitch_type_pre", "analytical store not configured in this environment");
+    }
+    return ModelRollingAccuracy.live(
+        "pitch_type_pre",
+        rollingAccuracy.pitchTypeDaily(days),
+        "promoted 2026-08-02; live predictions are accumulating and the panel's HTTP path logs"
+            + " no pitch keys, so no truth-joinable volume exists yet",
+        // The endpoint is public and self-describing (its own honesty contract): a direct API
+        // caller sees the [183] framing without needing the frontend's caption.
+        "calibrated prior ([183]): top-1 is supplementary, never the claim; the site renders no"
+            + " % below n = 500");
   }
 
   /**
@@ -146,5 +269,29 @@ public class OpsController {
                         .orElse(""),
                 (a, b) -> a,
                 java.util.LinkedHashMap::new));
+  }
+
+  /**
+   * Phase 3 model-accuracy scorecard: per-model OFFLINE held-out eval (Brier / ECE / vs-baseline /
+   * sample size / gate verdict) from the committed promotion-evidence. Every row is labeled offline
+   * - NOT live production accuracy - and carries the gate status + calibration note so a failed
+   * model is never implied to be serving. Empty list when no evidence is bundled.
+   */
+  @GetMapping("/accuracy")
+  public List<ModelAccuracyScorecard> accuracy() {
+    return accuracyService.scorecards();
+  }
+
+  /**
+   * Phase 3 batted-ball backfill: the offline real-vs-predicted scoring of the battedball_outcome
+   * champion over historical in-play balls, served verbatim. 204 No Content until the box hand-off
+   * commits the artifact (it is box/R2-only, ADR-0006), which the UI renders as its empty state.
+   */
+  @GetMapping("/backfill-accuracy")
+  public ResponseEntity<JsonNode> backfillAccuracy() {
+    return accuracyService
+        .backfill()
+        .map(ResponseEntity::ok)
+        .orElseGet(() -> ResponseEntity.noContent().build());
   }
 }

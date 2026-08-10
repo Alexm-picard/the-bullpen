@@ -62,7 +62,8 @@ def _ref_outcome(launch: LaunchParams, atmo: Atmosphere, park_id: str) -> Outcom
     return classify_outcome(simulate(launch, atmo), load_park_geometry(park_id))
 
 
-def _fused_outcome(launch: LaunchParams, atmo: Atmosphere, park_id: str) -> Outcome:
+def _fused_run(launch: LaunchParams, atmo: Atmosphere, park_id: str) -> tuple[int, float]:
+    """Run the fused CPU kernel for one trajectory; return ``(outcome_code, carry_ft)``."""
     state0 = _initial_state(launch)
     spin_axis = _spin_axis_unit_from_tilt(launch.spin_axis_tilt_deg)
     wind = atmo.wind_vec_m_s
@@ -80,7 +81,7 @@ def _fused_outcome(launch: LaunchParams, atmo: Atmosphere, park_id: str) -> Outc
     traj_in[0, 10] = wind[1]
     traj_in[0, 11] = wind[2]
     angles, dists, heights, counts = _build_fence_arrays((park_id,))
-    codes = simulate_classify_cpu(
+    codes, carry = simulate_classify_cpu(
         traj_in,
         np.zeros(1, dtype=np.int32),
         angles,
@@ -90,7 +91,12 @@ def _fused_outcome(launch: LaunchParams, atmo: Atmosphere, park_id: str) -> Outc
         dt=0.005,
         n_steps_max=2000,
     )
-    return _CODE_TO_OUTCOME[int(codes[0])]
+    return int(codes[0]), float(carry[0])
+
+
+def _fused_outcome(launch: LaunchParams, atmo: Atmosphere, park_id: str) -> Outcome:
+    code, _carry = _fused_run(launch, atmo, park_id)
+    return _CODE_TO_OUTCOME[code]
 
 
 # --- clear, non-borderline cases must match exactly -----------------------
@@ -111,6 +117,25 @@ def test_weak_grounder_matches_reference_out() -> None:
     for park_id in ("NYY", "COL", "SF"):
         assert _ref_outcome(launch, atmo, park_id) == Outcome.OUT
         assert _fused_outcome(launch, atmo, park_id) == Outcome.OUT
+
+
+def test_fused_carry_matches_reference_landing_distance() -> None:
+    """Phase 4: the fused kernel's carry (XY ground landing distance, ft) matches the float64
+    reference ``Trajectory.distance_ft`` for landed balls - the per-park carry regression target.
+    The kernel's one documented deviation is in the fence-crossing HEIGHT capture, not the landing
+    point, so landing-distance parity is tight (within 2 ft or 1%)."""
+    atmo = Atmosphere()
+    for launch in (
+        LaunchParams(launch_speed_mph=104.0, launch_angle_deg=30.0, spray_angle_deg=10.0),
+        LaunchParams(launch_speed_mph=95.0, launch_angle_deg=22.0, spray_angle_deg=-15.0),
+        LaunchParams(launch_speed_mph=88.0, launch_angle_deg=35.0, spray_angle_deg=0.0),
+    ):
+        ref = simulate(launch, atmo)
+        assert ref.landed
+        _code, carry = _fused_run(launch, atmo, "NYY")
+        assert carry > 0.0  # a landed ball has non-zero carry (the reduction means over carry>0)
+        tol = max(2.0, 0.01 * ref.distance_ft)
+        assert abs(carry - ref.distance_ft) <= tol, (carry, ref.distance_ft)
 
 
 # --- broad grid: agreement rate is the guard for the documented deviation --

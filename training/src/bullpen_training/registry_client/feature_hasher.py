@@ -16,8 +16,9 @@ Algorithm:
 
 1. Parse the JSON.
 2. Replace the top-level ``schema_hash`` field with ``""`` so the hash
-   stays stable across self-updates of that field (same trick used by
-   ``.githooks/pre-commit``).
+   stays stable across self-updates of that field. ``.githooks/pre-commit``
+   calls ``compute`` directly (stdlib-only, so it runs under the hook's bare
+   ``python3``), so this is the sole Python copy of the algorithm.
 3. Serialize via ``json.dumps(sort_keys=True, separators=(",", ":"))``.
    This produces deterministic UTF-8 bytes (``ensure_ascii=True`` is
    the default, so non-ASCII becomes ``\\uXXXX`` escapes).
@@ -30,7 +31,7 @@ import copy
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 
 def compute(feature_pipeline_path: str | Path) -> str:
@@ -50,7 +51,7 @@ def compute_from_content(json_content: str) -> str:
         raise ValueError(
             f"registry: feature pipeline root must be a JSON object, got {type(data).__name__}"
         )
-    canonical = _with_zeroed_schema_hash(data)
+    canonical = _with_zeroed_schema_hash(cast("dict[str, Any]", data))
     canonical_blob = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(canonical_blob).hexdigest()
 

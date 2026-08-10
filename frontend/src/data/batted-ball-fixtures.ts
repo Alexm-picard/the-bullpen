@@ -23,7 +23,8 @@ export type ParkOutcome = {
   outcome: string; // "HR" | "2B" | "OUT"
   tone: ParkOutcomeTone;
   dist: number;
-  err: number;
+  /** Nominal band, illustration only. Null on the live path: the model reports no uncertainty. */
+  err: number | null;
   /** The park the game is actually being played at - pinned, non-removable. */
   here?: boolean;
 };
@@ -31,6 +32,12 @@ export type ParkOutcome = {
 export type BattedBall = {
   batter: string;
   description: string;
+  /**
+   * The batted-ball class shown on the distance metric AND inside `description`. ONE field, so the
+   * card cannot classify the same ball two ways - the sub-line and the metric render the same
+   * string by construction rather than by two functions agreeing.
+   */
+  band: string;
   result: string;
   exitVeloMph: number;
   launchDeg: number;
@@ -42,11 +49,25 @@ export type BattedBall = {
   parks: ParkOutcome[];
   /** Park names shown by default; the rest are addable via the dropdown. */
   defaultShown: string[];
+  /**
+   * Served model identity for the masthead (the project rule: a displayed prediction names its
+   * calibration source). The showcase pins its editorial value; the live path fills the real
+   * served champion from the all-parks response.
+   */
+  modelName?: string;
+  modelVersion?: string;
+  /**
+   * One-line editorial under the per-park grid. The showcase pins its prose; the live path OMITS
+   * it (a hardcoded "caught at the track" would contradict a real result) - the real outcome is
+   * the headline `result` + the per-park chips.
+   */
+  narrative?: string;
 };
 
 export const SHOWCASE_BATTED_BALL: BattedBall = {
   batter: "Giancarlo Stanton",
   description: "Fly ball to center · 2 out",
+  band: "Fly ball",
   result: "Fly Out",
   exitVeloMph: 108.1,
   launchDeg: 31,
@@ -54,6 +75,9 @@ export const SHOWCASE_BATTED_BALL: BattedBall = {
   xba: ".540",
   hrParkCount: 17,
   parkCount: 30,
+  modelName: "batted_ball",
+  modelVersion: "v1.4",
+  narrative: "Here it was caught at the track - the model’s whole point.",
   defaultShown: [
     "Comerica (here)",
     "Yankee Stadium",

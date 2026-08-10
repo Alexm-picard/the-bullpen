@@ -98,6 +98,19 @@ const GAME: Record<string, unknown> = {
   inning: 6,
   status: "IN_PROGRESS",
   detailedState: "In Progress",
+  // V031 live matchup. UNTYPED fixture (Record<string, unknown>), so tsc cannot flag a missing
+  // field here - hand-kept in step with the GameSummary DTO (#309 two-mock-layers lesson).
+  // A DIFFERENT batter from this file's fixture pitches (batterId 2): the page must show THIS
+  // one. Display coverage is asserted in game-page.test.tsx; here the two player routes below
+  // make the name resolvable so the e2e proves the precedence end-to-end rather than shape only.
+  currentMatchup: {
+    batterId: 900001,
+    pitcherId: 900002,
+    batSide: "R",
+    pitchHand: "R",
+    atBatIndex: 1,
+  }, // Untyped route mock - tsc cannot force this field; hand-maintained by necessity.
+  mostRecentBattedBall: null,
 };
 
 function pitch(atBat: number, n: number, desc: string, type: string) {
@@ -120,6 +133,17 @@ function pitch(atBat: number, n: number, desc: string, type: string) {
     inning: 6,
     homeScore: 2,
     awayScore: 1,
+    // V032: spray is derived server-side and may be null; null here keeps this fixture on the
+    // page's DECLINE path, which is the honest default for a mock that carries no coordinates.
+    // These e2e fixtures are UNTYPED (Record<string, unknown>), so tsc cannot force this field the
+    // way it just forced the four vitest fixtures - this line is hand-maintained by necessity.
+    sprayAngleDeg: null,
+    // A5 pre-pitch context (V028): mirrors the LivePitchRow DTO shape.
+    pitcherThrows: "R",
+    batterStand: "L",
+    baseState: 0,
+    parkId: "TOR",
+    scoreDiff: 0,
     predictedClasses: {
       ball: 0.2,
       called_strike: 0.2,
@@ -136,11 +160,136 @@ test("live game page renders the pitch log when the feed has pitches", async ({
 }) => {
   const errors = trackPageErrors(page);
   await page.route(`**/v1/games/${GAME_ID}`, (route) => json(route, GAME));
+  // The pre-first-pitch comparison. Mocked explicitly rather than left to 404: an unmocked route
+  // exercises the panel's ERROR state, so the spec would assert the page survives a failed call
+  // rather than that the panel renders. These e2e fixtures are untyped, so tsc cannot force this
+  // the way it forces the vitest ones.
+  await page.route(`**/v1/games/${GAME_ID}/team-contact`, (route) =>
+    json(route, {
+      homeTeam: "TOR",
+      home: {
+        team: "TOR",
+        parkId: "TOR",
+        meanHrProbability: 0.041,
+        n: 231,
+        modelVersion: "v2",
+      },
+      awayTeam: "BOS",
+      away: {
+        team: "BOS",
+        parkId: "TOR",
+        meanHrProbability: 0.036,
+        n: 198,
+        modelVersion: "v2",
+      },
+      since: "2026-01-01",
+    }),
+  );
   await page.route(`**/v1/games/${GAME_ID}/pitches*`, (route) =>
     json(route, [
       pitch(1, 1, "ball", "FF"),
       pitch(1, 2, "swinging_strike", "SL"),
     ]),
+  );
+  // A6: the newest fixture pitch is strike three (at-bat over) -> the next-pitch query is GATED
+  // off. This route is a safety net so a future fixture change can never leak a real request.
+  // NOTE the glob also covers /v1/predict/pitch-type, which is intended: both queries gate on the
+  // same condition, so if either ever leaks a request it must hit a stub rather than the network.
+  await page.route(`**/v1/predict/pitch*`, (route) =>
+    route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: "null",
+    }),
+  );
+
+  // Resolve the LIVE matchup's players so the header renders names, not #ids - without these the
+  // spec could not tell a correct page from one that reverted to the last-pitch batter.
+  await page.route(`**/v1/players/900001`, (route) =>
+    json(route, {
+      id: 900001,
+      name: "Now Batting",
+      primaryPosition: "1B",
+      active: true,
+      team: "BAL",
+    }),
+  );
+  await page.route(`**/v1/players/900002`, (route) =>
+    json(route, {
+      id: 900002,
+      name: "Now Pitching",
+      primaryPosition: "P",
+      active: true,
+      team: "BOS",
+    }),
+  );
+
+  await page.goto(`/games/${GAME_ID}`);
+
+  await expect(page.locator("h1").first()).toBeVisible();
+  await expect(page.getByText("Now Batting")).toBeVisible();
+  await expect(page.getByText("Now Pitching")).toBeVisible();
+  // The slug-era guard must not fire on a numeric id.
+  await expect(page.getByText("Invalid game id")).toHaveCount(0);
+  // The live pitch-log section + the pitch-count stat render against real rows.
+  await expect(
+    page.locator('[aria-labelledby="game-pitch-log-label"]'),
+  ).toBeVisible();
+  // A6: the Next-Pitch Model section renders its GATED state (strike three ended the at-bat).
+  // SCOPED to the section, because the Pitch-Type Model panel gates on the SAME condition and says
+  // so in the same words - deliberately, since both describe the one upcoming pitch that does not
+  // exist. An unscoped locator matched both and failed strict mode; asserting per section is what
+  // the test meant all along.
+  await expect(
+    page
+      .locator('[aria-labelledby="next-pitch-label"]')
+      .getByText(/Awaiting a settled at-bat/i),
+  ).toBeVisible();
+  // The pitch-type prior ([183]) gates identically, and must show no distribution while gated.
+  const pitchTypeSection = page.locator('[aria-labelledby="pitch-type-label"]');
+  await expect(
+    pitchTypeSection.getByText(/Awaiting a settled at-bat/i),
+  ).toBeVisible();
+  await expect(pitchTypeSection).not.toContainText("%");
+  await expect(
+    page.getByText("Pitches", { exact: false }).first(),
+  ).toBeVisible();
+  expect(errors, "uncaught errors on populated /games/:id").toEqual([]);
+});
+
+test("live game page renders the first-class empty pitch-log state when the feed has no pitches", async ({
+  page,
+}) => {
+  const errors = trackPageErrors(page);
+  await page.route(`**/v1/games/${GAME_ID}`, (route) => json(route, GAME));
+  // An in-progress game whose pitch feed is still empty - the common pre-first-pitch case.
+  // The pre-first-pitch comparison. Mocked explicitly rather than left to 404: an unmocked route
+  // exercises the panel's ERROR state, so the spec would assert the page survives a failed call
+  // rather than that the panel renders. These e2e fixtures are untyped, so tsc cannot force this
+  // the way it forces the vitest ones.
+  await page.route(`**/v1/games/${GAME_ID}/team-contact`, (route) =>
+    json(route, {
+      homeTeam: "TOR",
+      home: {
+        team: "TOR",
+        parkId: "TOR",
+        meanHrProbability: 0.041,
+        n: 231,
+        modelVersion: "v2",
+      },
+      awayTeam: "BOS",
+      away: {
+        team: "BOS",
+        parkId: "TOR",
+        meanHrProbability: 0.036,
+        n: 198,
+        modelVersion: "v2",
+      },
+      since: "2026-01-01",
+    }),
+  );
+  await page.route(`**/v1/games/${GAME_ID}/pitches*`, (route) =>
+    json(route, []),
   );
 
   await page.goto(`/games/${GAME_ID}`);
@@ -148,14 +297,13 @@ test("live game page renders the pitch log when the feed has pitches", async ({
   await expect(page.locator("h1").first()).toBeVisible();
   // The slug-era guard must not fire on a numeric id.
   await expect(page.getByText("Invalid game id")).toHaveCount(0);
-  // The live pitch-log section + the pitch-count stat render against real rows.
+  // The pitch-log section still renders...
   await expect(
     page.locator('[aria-labelledby="game-pitch-log-label"]'),
   ).toBeVisible();
-  await expect(
-    page.getByText("Pitches", { exact: false }).first(),
-  ).toBeVisible();
-  expect(errors, "uncaught errors on populated /games/:id").toEqual([]);
+  // ...with the LivePitchBoard's first-class waiting state, not a blank table or an error.
+  await expect(page.getByText("Waiting for the first pitch")).toBeVisible();
+  expect(errors, "uncaught errors on empty /games/:id").toEqual([]);
 });
 
 // --- /ops (live registry x routing x latency, with fixture fallback) -----------------------
@@ -167,7 +315,11 @@ async function mockOps(page: Page, registry: unknown[] = []) {
   await page.route("**/v1/ops/latency*", (route) => json(route, []));
   await page.route("**/v1/ops/drift*", (route) => json(route, []));
   await page.route("**/v1/ops/retrain*", (route) => json(route, []));
-  await page.route("**/v1/ops/events*", (route) => json(route, []));
+  // /v1/ops/events is a page object ({rows, page, size, hasNext}), not a bare list - an empty page
+  // is a legitimate live "no events yet" state (the ops-log reads data.rows).
+  await page.route("**/v1/ops/events*", (route) =>
+    json(route, { rows: [], page: 0, size: 20, hasNext: false }),
+  );
   await page.route("**/v1/ops/calibration-summary", (route) => json(route, {}));
   // model-names list (used to fan out drift queries) - keep it empty so no extra calls.
   await page.route("**/v1/ops/registry", (route) => json(route, []));

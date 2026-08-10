@@ -1,0 +1,15 @@
+-- V025 - per-park carry distance (ft) on the batted-ball retrodiction labels (Phase 4).
+--
+-- SNAPSHOT FIRST: this is an ALTER on a live prod table - take a ClickHouse snapshot before
+-- applying (the block-destructive-ch hook + the hard rule cover ALTER). Additive ADD COLUMN only,
+-- no ORDER BY / PARTITION BY change (immutable on a ReplacingMergeTree); never edit V011 (the
+-- migration runner hard-fails on checksum drift).
+--
+-- carry_ft is the per-(BIP, park) MEAN landing distance (ft) over the Monte-Carlo draws that landed
+-- - the regression target for the Phase-4 per-park distance head. The physics already computes it
+-- (PR-1 stopped the fused kernel discarding it); the retrodiction pipeline now writes it. Nullable,
+-- NOT a 0.0 default, so existing 30-row blocks read NULL until the pipeline re-runs to backfill them
+-- (a 0.0 default would be a silent fake-carry, the placebo trap); training gates on
+-- carry_ft IS NOT NULL. bbip_retrodicted_labels is a ReplacingMergeTree(ingested_at), so the
+-- relabel's fresh rows win on FINAL reads - no backfill DML, just a full 2015-2025 re-run.
+ALTER TABLE bbip_retrodicted_labels ADD COLUMN IF NOT EXISTS carry_ft Nullable(Float32) AFTER n_mc;

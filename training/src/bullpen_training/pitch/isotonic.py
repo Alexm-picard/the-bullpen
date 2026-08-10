@@ -23,7 +23,8 @@ from pathlib import Path
 from typing import Self, cast
 
 import numpy as np
-from sklearn.isotonic import IsotonicRegression
+
+from bullpen_training.eval.calibration import fit_isotonic
 
 
 @dataclass(frozen=True)
@@ -51,9 +52,8 @@ class IsotonicCalibrator:
 
         breakpoints: list[tuple[tuple[float, ...], tuple[float, ...]]] = []
         for c in range(n_classes):
-            ir = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0, increasing=True)
             y_one_vs_rest = (y_int == c).astype(np.float64)
-            ir.fit(proba[:, c], y_one_vs_rest)
+            ir = fit_isotonic(proba[:, c], y_one_vs_rest, y_min=0.0, y_max=1.0, increasing=True)
             xs = cast(np.ndarray, ir.X_thresholds_)
             ys = cast(np.ndarray, ir.y_thresholds_)
             breakpoints.append((tuple(float(v) for v in xs), tuple(float(v) for v in ys)))

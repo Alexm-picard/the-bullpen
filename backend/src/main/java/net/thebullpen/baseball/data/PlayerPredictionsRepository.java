@@ -9,7 +9,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import javax.sql.DataSource;
-import net.thebullpen.baseball.api.dto.PlayerPredictionRow;
+import net.thebullpen.baseball.domain.PlayerPredictionRow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -26,7 +26,7 @@ import org.springframework.stereotype.Repository;
  * pitcher ({@code pitcherId}) or batter ({@code batterId}). The JSON path uses ClickHouse's {@code
  * JSONExtractInt} against camelCase keys because the Jackson-serialized Java record components
  * ({@code PitchRequest.pitcherId} / {@code batterId}) use those names — confirmed by {@code
- * PredictPitchController.serializeFeatures()}.
+ * PitchPredictionService.serializeFeatures()}.
  *
  * <p>The {@code prediction} column is also JSON: parsed in Java (cheap, runs at most {@code limit}
  * times) so the wire format stays small ({@code winnerClass} + {@code winnerProb}) and the UI
@@ -43,11 +43,18 @@ public class PlayerPredictionsRepository {
   private static final Logger log = LoggerFactory.getLogger(PlayerPredictionsRepository.class);
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
+  // pitch_outcome_post is excluded: F2.1a starts logging it champion-role, but it has no
+  // user-visible surface yet (retrospective-only on its own game-page panel, [177]). Keeping it out
+  // of this player panel holds the [154]/ADR-0011 "no user-visible pitch prediction" line until
+  // that
+  // panel deliberately introduces it. The predicate is inside the parens so it binds to BOTH id
+  // ORs.
   private static final String FIND_RECENT_SQL =
       "SELECT request_at, model_name, model_version, role, prediction"
           + " FROM prediction_log"
-          + " WHERE JSONExtractInt(features, 'pitcherId') = ?"
-          + "    OR JSONExtractInt(features, 'batterId') = ?"
+          + " WHERE (JSONExtractInt(features, 'pitcherId') = ?"
+          + "        OR JSONExtractInt(features, 'batterId') = ?)"
+          + "   AND model_name != 'pitch_outcome_post'"
           + " ORDER BY request_at DESC"
           + " LIMIT ?";
 

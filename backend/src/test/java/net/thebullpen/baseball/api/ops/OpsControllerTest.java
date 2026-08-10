@@ -2,25 +2,30 @@ package net.thebullpen.baseball.api.ops;
 
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
 import java.util.List;
 import net.thebullpen.baseball.api.ApiErrorAdvice;
-import net.thebullpen.baseball.api.dto.LatencyStat;
-import net.thebullpen.baseball.api.dto.OpsEvent;
-import net.thebullpen.baseball.api.dto.OpsEventType;
 import net.thebullpen.baseball.data.OpsEventsRepository;
 import net.thebullpen.baseball.data.PredictionLogRepository;
-import net.thebullpen.baseball.drift.DriftMetric;
+import net.thebullpen.baseball.domain.LatencyStat;
+import net.thebullpen.baseball.domain.OpsEvent;
+import net.thebullpen.baseball.domain.OpsEventType;
+import net.thebullpen.baseball.domain.PagedRows;
 import net.thebullpen.baseball.drift.DriftMetricsRepository;
 import net.thebullpen.baseball.drift.MetricType;
+import net.thebullpen.baseball.drift.TaggedDriftMetric;
 import net.thebullpen.baseball.inference.routing.RoutingConfig;
 import net.thebullpen.baseball.inference.routing.RoutingMode;
 import net.thebullpen.baseball.inference.routing.RoutingRepository;
+import net.thebullpen.baseball.registry.AccuracyEvidenceRepository;
+import net.thebullpen.baseball.registry.AccuracyService;
 import net.thebullpen.baseball.registry.RegistryService;
 import net.thebullpen.baseball.registry.dto.ModelVersion;
 import net.thebullpen.baseball.registry.dto.Stage;
@@ -41,6 +46,7 @@ class OpsControllerTest {
   private RegistryService registry;
   private OpsEventsRepository opsEvents;
   private PredictionLogRepository predictionLog;
+  private AccuracyService accuracyService;
   private MockMvc mvc;
 
   @BeforeEach
@@ -51,10 +57,21 @@ class OpsControllerTest {
     registry = mock(RegistryService.class);
     opsEvents = mock(OpsEventsRepository.class);
     predictionLog = mock(PredictionLogRepository.class);
+    // Real AccuracyService over the bundled classpath evidence (processResources copies the
+    // committed *_full*.json into build/resources/main/accuracy-evidence/), so the scorecard test
+    // asserts on real held-out numbers rather than mocks.
+    accuracyService = new AccuracyService(new AccuracyEvidenceRepository(new ObjectMapper()));
     mvc =
         MockMvcBuilders.standaloneSetup(
                 new OpsController(
-                    driftRepo, routingRepo, retrain, registry, opsEvents, predictionLog))
+                    driftRepo,
+                    routingRepo,
+                    retrain,
+                    registry,
+                    opsEvents,
+                    predictionLog,
+                    accuracyService,
+                    null))
             .setControllerAdvice(new ApiErrorAdvice())
             .build();
   }
@@ -77,33 +94,57 @@ class OpsControllerTest {
   }
 
   @Test
-  void drift_returns_repo_rows_for_named_model() throws Exception {
+  void drift_returns_repo_rows_for_named_model_with_the_tag() throws Exception {
+    // E-4: the ops surface reads the tag-carrying variant so [175] induced-drill evidence rows
+    // are labelable on the dashboard; '' = organic. Same row shape plus the additive tag field.
     Instant now = Instant.parse("2026-05-25T12:00:00Z");
-    when(driftRepo.findAllForModel("pitch_outcome_pre"))
+    when(driftRepo.findAllForModelTagged("battedball_outcome"))
         .thenReturn(
             List.of(
-                new DriftMetric(
+                new TaggedDriftMetric(
                     now,
-                    "pitch_outcome_pre",
+                    "battedball_outcome",
                     7L,
                     MetricType.PSI_FEATURE,
-                    "launch_speed_mph",
-                    0.05,
-                    1234L,
-                    now.minusSeconds(7 * 86400),
-                    now)));
+                    "launchSpeedMph",
+                    0.91,
+                    5000L,
+                    now.minusSeconds(86400),
+                    now,
+                    "induced-drill-2026-07"),
+                new TaggedDriftMetric(
+                    now.minusSeconds(3600),
+                    "battedball_outcome",
+                    7L,
+                    MetricType.PSI_FEATURE,
+                    "launchAngleDeg",
+                    0.04,
+                    5000L,
+                    now.minusSeconds(86400),
+                    now,
+                    "")));
 
-    mvc.perform(get("/v1/ops/drift").param("model", "pitch_outcome_pre"))
+    mvc.perform(get("/v1/ops/drift").param("model", "battedball_outcome"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$[0].modelName").value("pitch_outcome_pre"))
-        .andExpect(jsonPath("$[0].metricValue").value(0.05));
+        .andExpect(jsonPath("$[0].modelName").value("battedball_outcome"))
+        .andExpect(jsonPath("$[0].metricValue").value(0.91))
+        .andExpect(jsonPath("$[0].tag").value("induced-drill-2026-07"))
+        .andExpect(jsonPath("$[1].tag").value(""));
   }
 
   @Test
   void drift_returns_empty_when_repo_bean_is_absent() throws Exception {
     MockMvc m =
         MockMvcBuilders.standaloneSetup(
-                new OpsController(null, routingRepo, retrain, registry, opsEvents, predictionLog))
+                new OpsController(
+                    null,
+                    routingRepo,
+                    retrain,
+                    registry,
+                    opsEvents,
+                    predictionLog,
+                    accuracyService,
+                    null))
             .setControllerAdvice(new ApiErrorAdvice())
             .build();
     m.perform(get("/v1/ops/drift").param("model", "any")).andExpect(status().isOk());
@@ -111,25 +152,41 @@ class OpsControllerTest {
 
   @Test
   void events_returns_recent_ops_log_newest_first() throws Exception {
-    when(opsEvents.findRecent(20))
+    when(opsEvents.findRecentPage(0, 20))
         .thenReturn(
-            List.of(
-                new OpsEvent(
-                    2L,
-                    Instant.parse("2026-05-30T19:00:00Z"),
-                    OpsEventType.PROMOTE,
-                    "pitch_outcome_pre v3.3 SHADOW → CHAMPION"),
-                new OpsEvent(
-                    1L,
-                    Instant.parse("2026-05-30T14:00:00Z"),
-                    OpsEventType.REGISTER,
-                    "batted_ball v1.5 registered as SHADOW")));
+            new PagedRows<>(
+                List.of(
+                    new OpsEvent(
+                        2L,
+                        Instant.parse("2026-05-30T19:00:00Z"),
+                        OpsEventType.PROMOTE,
+                        "pitch_outcome_pre v3.3 SHADOW → CHAMPION"),
+                    new OpsEvent(
+                        1L,
+                        Instant.parse("2026-05-30T14:00:00Z"),
+                        OpsEventType.REGISTER,
+                        "batted_ball v1.5 registered as SHADOW")),
+                false));
 
     mvc.perform(get("/v1/ops/events"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$[0].type").value("PROMOTE"))
-        .andExpect(jsonPath("$[0].detail").value("pitch_outcome_pre v3.3 SHADOW → CHAMPION"))
-        .andExpect(jsonPath("$[1].type").value("REGISTER"));
+        .andExpect(jsonPath("$.page").value(0))
+        .andExpect(jsonPath("$.size").value(20))
+        .andExpect(jsonPath("$.hasNext").value(false))
+        .andExpect(jsonPath("$.rows[0].type").value("PROMOTE"))
+        .andExpect(jsonPath("$.rows[0].detail").value("pitch_outcome_pre v3.3 SHADOW → CHAMPION"))
+        .andExpect(jsonPath("$.rows[1].type").value("REGISTER"));
+  }
+
+  @Test
+  void events_rejects_a_negative_page() throws Exception {
+    mvc.perform(get("/v1/ops/events").param("page", "-1")).andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void events_rejects_a_size_outside_1_to_200() throws Exception {
+    mvc.perform(get("/v1/ops/events").param("size", "0")).andExpect(status().isBadRequest());
+    mvc.perform(get("/v1/ops/events").param("size", "201")).andExpect(status().isBadRequest());
   }
 
   @Test
@@ -233,12 +290,95 @@ class OpsControllerTest {
   }
 
   @Test
+  void latency_rejects_days_outside_1_to_365_without_hitting_the_repo() throws Exception {
+    // The live days=2000000000 full-table-scan DoS: an out-of-range window is a 400 BEFORE the
+    // ClickHouse read, so an anonymous caller cannot force an unbounded prediction_log scan.
+    mvc.perform(get("/v1/ops/latency").param("days", "2000000000"))
+        .andExpect(status().isBadRequest());
+    mvc.perform(get("/v1/ops/latency").param("days", "0")).andExpect(status().isBadRequest());
+    verifyNoInteractions(predictionLog);
+  }
+
+  @Test
+  void rollingAccuracy_rejects_days_outside_1_to_30() throws Exception {
+    // Same anonymous-scan-DoS fence as latency, tighter cap: past the 14-day pitches_live TTL a
+    // wider window only widens the prediction_log scan for zero additional joinable truth.
+    mvc.perform(get("/v1/ops/rolling-accuracy").param("days", "31"))
+        .andExpect(status().isBadRequest());
+    mvc.perform(get("/v1/ops/rolling-accuracy").param("days", "0"))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void rollingAccuracy_withoutClickHouse_statesWhyForAllFourModels() throws Exception {
+    // The endpoint's honesty contract: absence is STATED, never implied. With no analytical
+    // store every family says why there is no live figure - no fabricated zeros, no omissions.
+    mvc.perform(get("/v1/ops/rolling-accuracy"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.windowDays").value(7))
+        .andExpect(jsonPath("$.models.length()").value(4))
+        .andExpect(jsonPath("$.models[0].modelName").value("pitch_outcome_pre"))
+        .andExpect(jsonPath("$.models[0].status").value("no_live_truth"))
+        .andExpect(jsonPath("$.models[0].top1").doesNotExist())
+        .andExpect(jsonPath("$.models[1].modelName").value("pitch_outcome_post"))
+        .andExpect(jsonPath("$.models[2].modelName").value("battedball_outcome"))
+        .andExpect(
+            jsonPath("$.models[2].reason").value(org.hamcrest.Matchers.containsString("[163]")))
+        .andExpect(jsonPath("$.models[3].modelName").value("pitch_type_pre"))
+        .andExpect(jsonPath("$.models[3].status").value("no_live_truth"));
+  }
+
+  @Test
   void latency_returns_empty_when_prediction_log_bean_is_absent() throws Exception {
     MockMvc m =
         MockMvcBuilders.standaloneSetup(
-                new OpsController(driftRepo, routingRepo, retrain, registry, opsEvents, null))
+                new OpsController(
+                    driftRepo,
+                    routingRepo,
+                    retrain,
+                    registry,
+                    opsEvents,
+                    null,
+                    accuracyService,
+                    null))
             .setControllerAdvice(new ApiErrorAdvice())
             .build();
     m.perform(get("/v1/ops/latency")).andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+  }
+
+  @Test
+  void accuracy_returns_offline_scorecard_from_committed_evidence() throws Exception {
+    mvc.perform(get("/v1/ops/accuracy"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$").isArray())
+        // every row is labeled offline held-out, never live
+        .andExpect(
+            jsonPath("$[0].evaluation").value(org.hamcrest.Matchers.containsString("offline")))
+        .andExpect(
+            jsonPath("$[0].evaluation").value(org.hamcrest.Matchers.containsString("not live")))
+        // the passed post head is present with its gate verdict
+        .andExpect(
+            jsonPath("$[?(@.modelName=='pitch_outcome_post')].gateStatus")
+                .value(org.hamcrest.Matchers.hasItem("passed")))
+        // batted_ball_mlp reconciles to the registry/serving name
+        .andExpect(
+            jsonPath("$[?(@.evidenceModelName=='batted_ball_mlp')].modelName")
+                .value(org.hamcrest.Matchers.hasItem("battedball_outcome")))
+        // the SELF-REFERENTIAL ece_vs_retro calibration note rides through verbatim
+        .andExpect(
+            jsonPath("$[?(@.modelName=='battedball_outcome')].calibrationNote")
+                .value(
+                    org.hamcrest.Matchers.hasItem(org.hamcrest.Matchers.containsString("retro"))));
+  }
+
+  @Test
+  void backfill_accuracy_returns_the_committed_box_artifact() throws Exception {
+    // The artifact is committed (#157) + bundled onto the classpath, so the endpoint returns 200
+    // with the held-out backfill doc (was 204 before #157; this test is updated to that state).
+    mvc.perform(get("/v1/ops/backfill-accuracy"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.model_name").value("battedball_outcome"))
+        .andExpect(jsonPath("$.season_from").value(2026))
+        .andExpect(jsonPath("$.eval_kind").value("offline_holdout_unseen"));
   }
 }

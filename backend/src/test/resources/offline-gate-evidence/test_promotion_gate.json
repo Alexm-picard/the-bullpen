@@ -1,0 +1,25 @@
+{
+  "model_name": "carry_it_model",
+  "champion_model_name": "carry_it_model v1 (no-carry recipe)",
+  "challenger_model_name": "carry_it_model v2 (carry candidate)",
+  "primary_metric": "brier",
+  "primary_threshold": -0.002,
+  "sample_size_target": 100,
+  "sample_size_observed": 5000,
+  "champion_metric": 0.116,
+  "challenger_metric": 0.1161,
+  "guardrails": { "log-loss": 0.01, "ece": 0.015 },
+  "guardrails_observed": { "log-loss": -0.003, "ece": -0.001 },
+  "guardrails_violated": {},
+  "status": "passed",
+  "verdict": {
+    "outcome": "would_pass",
+    "passed": true,
+    "sample_size_met": true
+  },
+  "carry_gate": { "passed": true, "hard_gate": true },
+  "provenance": {
+    "git_commit": "deadbeef",
+    "generated_at": "2026-06-27T12:00:00+00:00"
+  }
+}

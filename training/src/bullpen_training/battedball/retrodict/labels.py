@@ -56,7 +56,11 @@ from bullpen_training.battedball.physics._fused import (
     simulate_classify_batch,
 )
 from bullpen_training.battedball.physics.atmosphere import Atmosphere, air_density
-from bullpen_training.battedball.physics.simulator import LaunchParams, simulate_batch
+from bullpen_training.battedball.physics.simulator import (
+    LaunchParams,
+    Trajectory,
+    simulate_batch,
+)
 from bullpen_training.battedball.physics.spin import (
     PhysicsCalibration,
     batted_ball_spin,
@@ -126,6 +130,9 @@ class RetrodictionResult:
     prob_hr: float
     observed_outcome: str | None  # 'out' / '1b' / '2b' / '3b' / 'hr', only on home park
     n_mc: int
+    # Phase 4: mean XY ground landing distance (ft) over the MC draws that landed at this park
+    # (the per-park carry regression target). None when no draw landed (degenerate cell).
+    carry_ft: float | None
 
 
 # --- event -> outcome mapping ---------------------------------------------
@@ -203,6 +210,14 @@ def _jittered_launches(
     ]
 
 
+def _mean_carry_ft(trajectories: list[Trajectory]) -> float | None:
+    """Phase-4 per-park carry target: mean XY ground landing distance (ft) over the draws that
+    LANDED, or None if none did. Mirrors the fused GPU path's mean-over-(carry>0) reduction so the
+    reference and production paths agree on the carry semantics."""
+    landed = [t.distance_ft for t in trajectories if t.landed]
+    return float(np.mean(landed)) if landed else None
+
+
 def retrodict_one(
     bbip: BBIP,
     park_id: str,
@@ -248,6 +263,7 @@ def retrodict_one(
         prob_hr=counts[Outcome.HOME_RUN] / total,
         observed_outcome=observed,
         n_mc=n_mc,
+        carry_ft=_mean_carry_ft(trajectories),
     )
 
 
@@ -315,6 +331,7 @@ def retrodict_bip_at_all_parks(
         total = float(n_mc)
         is_home = pid == bbip.home_park_id
         observed = event_to_outcome(bbip.observed_event) if is_home else None
+        park_traj = trajectories[i * n_mc : (i + 1) * n_mc]
         results.append(
             RetrodictionResult(
                 bbip=bbip,
@@ -327,6 +344,7 @@ def retrodict_bip_at_all_parks(
                 prob_hr=counts[Outcome.HOME_RUN] / total,
                 observed_outcome=observed,
                 n_mc=n_mc,
+                carry_ft=_mean_carry_ft(park_traj),
             )
         )
     return results
@@ -531,7 +549,7 @@ def retrodict_bips_batch(
         np.arange(n_parks, dtype=np.int32)[None, :, None], (n_bbip, n_parks, n_mc)
     )
 
-    codes = simulate_classify_batch(
+    codes, carry = simulate_classify_batch(
         traj.reshape(-1, TRAJ_IN_COLS),
         np.ascontiguousarray(park_idx_grid).reshape(-1),
         fence_angle,
@@ -540,13 +558,20 @@ def retrodict_bips_batch(
         fence_n,
         device=device,
         cd_scale=calib.cd_scale,
-    ).reshape(n_bbip, n_parks, n_mc)
+    )
+    codes = codes.reshape(n_bbip, n_parks, n_mc)
+    carry = carry.reshape(n_bbip, n_parks, n_mc)
 
     total = float(n_mc)
     results: list[RetrodictionResult] = []
     for b, bbip in enumerate(bbips):
         for pk, pid in enumerate(park_ids):
             sl = codes[b, pk]
+            # Per-park carry target: mean landing distance (ft) over the draws that landed
+            # (carry > 0); None when none landed (matches _mean_carry_ft on the reference path).
+            carry_sl = carry[b, pk]
+            landed_carry = carry_sl[carry_sl > 0.0]
+            carry_ft = float(landed_carry.mean()) if landed_carry.size else None
             is_home = pid == bbip.home_park_id
             observed = event_to_outcome(bbip.observed_event) if is_home else None
             results.append(
@@ -561,6 +586,7 @@ def retrodict_bips_batch(
                     prob_hr=int(np.count_nonzero(sl == HR_CODE)) / total,
                     observed_outcome=observed,
                     n_mc=n_mc,
+                    carry_ft=carry_ft,
                 )
             )
     return results

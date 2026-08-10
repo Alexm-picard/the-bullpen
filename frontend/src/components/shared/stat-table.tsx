@@ -27,7 +27,7 @@ import { useState } from "react";
 
 import type { CondFormatRamp, MetricMeta } from "../../design/cellColor";
 import { cellColorWith } from "../../design/cellColor";
-import { broadcastStatTablePalette } from "../broadcast/palettes";
+import { useStatTablePalette } from "../broadcast/use-palette";
 import { radii, typography } from "../../design/broadcast";
 
 // ── Identity palette ([160] migration) ───────────────────────────────────────
@@ -144,8 +144,10 @@ export function StatTable({
   columns,
   rows,
   caption,
-  palette = broadcastStatTablePalette,
+  palette: paletteProp,
 }: StatTableProps) {
+  const themePalette = useStatTablePalette();
+  const palette = paletteProp ?? themePalette;
   const [sort, setSort] = useState<SortState>(null);
 
   function handleHeaderClick(key: string) {

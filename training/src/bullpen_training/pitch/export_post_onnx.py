@@ -22,7 +22,6 @@ Outputs alongside ``model.lgb``:
 
 from __future__ import annotations
 
-import copy
 import hashlib
 import json
 import logging
@@ -40,6 +39,7 @@ from onnxmltools.convert.common.data_types import FloatTensorType  # type: ignor
 
 from bullpen_training.logging_config import configure_logging, get_logger
 from bullpen_training.pitch import PITCH_FEATURE_COLUMNS_POST
+from bullpen_training.registry_client import feature_hasher
 
 log = get_logger(__name__)
 
@@ -61,11 +61,7 @@ def load_canonical_pipeline() -> dict[str, Any]:
     """
     spec = cast(dict[str, Any], json.loads(CONTRACT_PATH.read_text()))
     declared = spec["schema_hash"]
-    canonical = copy.deepcopy(spec)
-    canonical["schema_hash"] = ""
-    recomputed = hashlib.sha256(
-        json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
+    recomputed = feature_hasher.compute(CONTRACT_PATH)
     if declared != recomputed:
         raise RuntimeError(
             f"/contracts/feature_pipeline_post.json schema_hash is stale "

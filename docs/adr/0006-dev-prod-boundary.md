@@ -146,4 +146,18 @@ train-sample` runs locally on a stratified sample for iteration;
 
 ## Revision History
 
-(none)
+- **2026-07-03** - Clarified a box-artifact carve-out to the git-push-only
+  boundary. The dev/prod boundary is git-push-only for CODE, but
+  box-PRODUCED evidence/data artifacts that this ADR forbids the box from
+  committing (the `training/data/eval/*.json` accuracy scorecards, the
+  decision-[140] observed_norm anchor, the pitch/battedball
+  `backfill_accuracy` JSONs, and the gate-evidence JSONs) are relayed from
+  the box verbatim through the handoff channel and COMMITTED FROM THE MAC.
+  This is consistent with the ADR (the box still authors nothing in git;
+  the Mac remains the sole git-authoring boundary) and with the M0
+  gitignore discipline that tracks these specific evidence files by an
+  explicit re-include. Latest instance of the pattern: M2-A4 (PR #210).
+  Status stays Accepted - the boundary ("the Mac is the only authoring
+  machine; the box authors nothing in git") is unchanged; this records how
+  box-produced evidence legitimately reaches the repo. References decisions
+  [140], [153], the M0 gitignore work, and PR #210.

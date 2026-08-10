@@ -3,7 +3,7 @@ import net.ltgt.gradle.errorprone.errorprone
 plugins {
     java
     jacoco
-    id("org.springframework.boot") version "3.5.4"
+    id("org.springframework.boot") version "3.5.16"
     id("io.spring.dependency-management") version "1.1.7"
     id("com.diffplug.spotless") version "7.0.2"
     id("com.github.spotbugs") version "6.0.27"
@@ -26,6 +26,35 @@ java {
 repositories {
     mavenCentral()
 }
+
+// F3 supply-chain pinning: every resolvable configuration locks to the committed
+// gradle.lockfile, so a dependency (direct or transitive) can only change through an
+// explicit, reviewable `--write-locks` diff - never silently via a floating version.
+// Regenerate after an intentional bump: ./gradlew resolveAndLockAll --write-locks
+dependencyLocking {
+    lockAllConfigurations()
+}
+
+// The Gradle-docs idiom for (re)writing the lockfile across ALL resolvable
+// configurations in one pass (the `dependencies` task alone does not touch
+// plugin-created configs like spotbugs/errorprone/jmh).
+tasks.register("resolveAndLockAll") {
+    notCompatibleWithConfigurationCache("Filters configurations at execution time")
+    doFirst {
+        require(gradle.startParameter.isWriteDependencyLocks) { "Run with --write-locks" }
+    }
+    doLast {
+        configurations.filter { it.isCanBeResolved }.forEach { it.resolve() }
+    }
+}
+
+// Security override: netty is pulled transitively (the AWS S3 client's netty-nio-client) and
+// Spring Boot 3.5.x's BOM manages it at 4.1.135.Final, which carries CVE-2026-59901 (netty-codec)
+// + CVE-2026-55831 / -55833 / -56745 (netty-codec-http), all HIGH, fixed in 4.1.136.Final.
+// Overriding the BOM's `netty.version` property (the io.spring.dependency-management idiom) bumps
+// every netty module coherently - they ship as one coordinated release. Drop this once a managed
+// Boot patch catches up. Regenerate the lock after changing: ./gradlew resolveAndLockAll --write-locks
+extra["netty.version"] = "4.1.136.Final"
 
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
@@ -56,13 +85,13 @@ dependencies {
     implementation("software.amazon.awssdk:s3")
     implementation("software.amazon.awssdk:apache-client")
 
-    implementation("com.microsoft.onnxruntime:onnxruntime:1.20.0")
+    implementation("com.microsoft.onnxruntime:onnxruntime:1.28.0")
     // EJML for the 15x15 fundamental-matrix inversion in the forward simulator (2a.9).
     // Leaner than Commons Math, actively maintained, simpler API for this use case.
     implementation("org.ejml:ejml-simple:0.43.1")
-    implementation("com.clickhouse:clickhouse-jdbc:0.7.2")
-    implementation("com.clickhouse:clickhouse-http-client:0.7.2")
-    implementation("org.apache.httpcomponents.client5:httpclient5:5.4.1")
+    implementation("com.clickhouse:clickhouse-jdbc:0.9.8:all")
+    implementation("com.clickhouse:clickhouse-http-client:0.9.8")
+    implementation("org.apache.httpcomponents.client5:httpclient5:5.4.3")
 
     // springdoc: auto-generate the OpenAPI 3 spec from the @RestController surface,
     // served at /v3/api-docs (+ Swagger UI at /swagger-ui.html). The spec is the
@@ -71,6 +100,10 @@ dependencies {
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
+    // C1/C2 (audit remediation): architecture boundary rules. The data/ -> api.dto rule is now
+    // STRICT (C2 drained it to zero); one FreezingArchRule baseline remains, for the api-leaf rule
+    // (src/test/resources/archunit-store).
+    testImplementation("com.tngtech.archunit:archunit-junit5:1.4.1")
     testImplementation("org.testcontainers:junit-jupiter:1.20.6")
     testImplementation("org.testcontainers:clickhouse:1.20.6")
     testImplementation("org.testcontainers:minio:1.20.6")
@@ -119,6 +152,40 @@ tasks.matching { it.name == "compileJmhJava" }.configureEach {
 }
 tasks.matching { it.name == "spotbugsJmh" }.configureEach { enabled = false }
 
+// PropertiesLauncher: honors -Dloader.main=<class> to swap the entry point at runtime,
+// enabling RestoreVersionMain (docs/runbooks/registry-snapshot-recovery.md) without a
+// separate JAR. When no loader.main is set, falls back to Start-Class (Application),
+// so normal `java -jar app.jar` is unaffected.
+tasks.named<org.springframework.boot.gradle.tasks.bundling.BootJar>("bootJar") {
+    manifest {
+        attributes["Main-Class"] = "org.springframework.boot.loader.launch.PropertiesLauncher"
+    }
+}
+
+// Phase 3 accuracy scorecard: bundle the committed promotion-evidence JSONs (and, once the box
+// hand-off commits it, the batted-ball backfill artifact) into the JAR as classpath resources under
+// accuracy-evidence/, so the public GET /v1/ops/accuracy + /v1/ops/backfill-accuracy read them
+// identically in tests and prod with no deploy.sh staging. Sibling-module artifacts copied from
+// ../training at build time; the backfill include is a no-op until the box produces that file.
+tasks.processResources {
+    from("../training/data/eval/promotion") {
+        include("*_experiment_results_full*.json")
+        into("accuracy-evidence")
+    }
+    from("../training/data/eval") {
+        include("battedball_backfill_accuracy_v1.json")
+        into("accuracy-evidence")
+    }
+    // OFFLINE promotion-gate artifacts (e.g. the carry champion non-inferiority ablation,
+    // ADR-0012/[166]) into a SEPARATE classpath dir so AccuracyEvidenceRepository's
+    // *_experiment_results_full*.json glob never sees them (they are raw-softmax gate evidence read
+    // by the import-offline admin path, NOT public /accuracy scorecard rows).
+    from("../training/data/eval/promotion") {
+        include("*_promotion_gate.json")
+        into("offline-gate-evidence")
+    }
+}
+
 tasks.named<Test>("test") {
     // @Tag("drill") tests (e.g. the drift-induction drill) are slow, verbose, and
     // run on demand — exclude from normal CI. Run with: ./gradlew test -PrunDrills
@@ -153,8 +220,12 @@ tasks.named<Test>("test") {
 // A2 / Wave-4 - coverage measurement plus a binding regression floor. jacocoTestReport always
 // publishes the honest baseline (no class exclusions: the denominator is the whole main source
 // set, so the percentage isn't quietly massaged). jacocoTestCoverageVerification adds a HARD floor
-// a few points under the CI-measured baseline (LINE 77.85% / BRANCH 65.67% on 2026-06-15, full
-// suite incl. Docker ITs) so a real coverage regression reds the build without flapping on noise.
+// a few points under the CI-measured baseline (LINE 82.42% / BRANCH 70.54% on 2026-07-04, full
+// suite incl. Docker ITs; up from the 2026-06-15 77.85% / 65.67% as the two-instance + Wave D tests
+// landed) so a real coverage regression reds the build without flapping on noise. Re-baselined
+// 2026-07-08 (F2.3): un-skipping the @EnabledIf pitch + simulate web tests (~13 methods, incl. the
+// previously-0%-covered simulation package) raised the CI baseline further, so the floor moves
+// LINE 80 -> 82 and BRANCH 68 -> 70; the exact new baseline is in the backend-test job summary.
 //
 // The floor is enforced ONLY when the Docker-gated ITs actually ran (-Dbullpen.it.docker=true, i.e.
 // CI). A local `./gradlew build` on macOS skips those ITs, which drags coverage below the floor;
@@ -180,12 +251,12 @@ tasks.jacocoTestCoverageVerification {
             limit {
                 counter = "LINE"
                 value = "COVEREDRATIO"
-                minimum = "0.72".toBigDecimal()
+                minimum = "0.82".toBigDecimal()
             }
             limit {
                 counter = "BRANCH"
                 value = "COVEREDRATIO"
-                minimum = "0.58".toBigDecimal()
+                minimum = "0.70".toBigDecimal()
             }
         }
     }

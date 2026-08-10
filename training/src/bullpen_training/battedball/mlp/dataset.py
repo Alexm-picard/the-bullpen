@@ -1,23 +1,62 @@
 """Dataset loader for the multi-output MLP (Phase 2c.5).
 
 Joins ``bbip_retrodicted_labels`` (the 2c.4 output) against ``pitches``
-(for the launch-time features) and produces ``(features, labels)`` pairs
-the Torch trainer consumes:
+(for the launch-time features) and produces ``(features, labels, carry)``
+tuples the Torch trainer consumes:
 
   - ``features``: (n_features,) float32 — 15 features described in
     :data:`FEATURE_NAMES`.
   - ``labels``: (n_parks, n_outcomes) float32 — the retrodicted
     probability vectors, in the same park ordering as the model's
     heads.
+  - ``carry``: (n_parks,) float32 — the per-park mean carry distance in
+    FEET (Phase 4 regression target), same park ordering. ``NaN`` where
+    ``bbip_retrodicted_labels.carry_ft`` is still NULL (un-backfilled rows
+    before the relabel runs); the trainer masks those out of the carry
+    loss, so the carry head simply gets no signal until the relabel lands.
 
 The class is intentionally light on Torch coupling — `__getitem__`
 returns NumPy arrays, the trainer wraps with `torch.from_numpy` and
 moves to device. That keeps tests Torch-free where they don't need it.
+
+MEMORY DISCIPLINE - every ClickHouse query this module issues in production is
+PER-YEAR, and settings-only rescue of full-range queries is empirically dead.
+Box evidence map (2026-07-13 probes, 4 GiB container cap; C-31 attempts #1-#3):
+
+1. 10-yr DISTINCT count + partial_merge alone: OOM 241 (attempt #3's failure).
+2. 10-yr count + partial_merge + max_bytes_before_external_group_by/sort=1.5e9:
+   completes, 10.4s, 1,077,632 BIPs (the DISTINCT aggregation was the eater).
+3. 10-yr MAIN query + partial_merge + external spills: OOM 241 "While executing
+   FillingRightJoinSide" - the wide labels side materializes ~3 GiB regardless.
+4. 10-yr MAIN + grace_hash (8 buckets) + external sort: OOM 241. Settings exhausted.
+5. The E-1 backfill CLI ran the same join per-year (build_year_query, #238's
+   partial_merge) and completed 1.2M rows on 2026-07-08. Per-year + partial_merge
+   is the proven shape.
+
+Hence: load_arrays row loads are per-year (probe 5's shape); the count is summed
+per-year AND carries the spill settings. Any new query against this table pair
+must be per-year with partial_merge - do not reintroduce a full-range join and
+try to settings your way out; probes 3-4 already buried that.
+
+6. #269's per-year chunking was NECESSARY BUT NOT SUFFICIENT (9 more box
+   failures, 2026-07-14). Two compounding causes: (a) the 1.5 GB spill
+   thresholds were too high - the SAME 2016 count query OOMs at 1.5 GB but
+   completes at 500 MB on a released server (10.5s); (b) jemalloc retention
+   RATCHETS across year-chunks - each year's join retains memory the next
+   year's query piles onto, so failures march later year-by-year (4g cap died
+   at 2015/2016; 6g cap reached 2017; same code). A static threshold cannot
+   outrun a monotonically-growing baseline. Fix: 500 MB spills on EVERY
+   per-year query (count AND rows) + a deterministic `SYSTEM JEMALLOC PURGE`
+   between chunks (a host-side babysitter was tried and races the loader).
+   The purge needs the SYSTEM grant, so it runs as the admin/default user via
+   CH_ADMIN_PASSWORD - no-op with a warning when unset (local/CI).
 """
 
 from __future__ import annotations
 
+import os
 import subprocess
+import time
 from dataclasses import dataclass
 
 import numpy as np
@@ -40,7 +79,20 @@ class _BipRow:
 
     features: np.ndarray  # (n_features,) float32
     labels: np.ndarray  # (n_parks, n_outcomes) float32
+    carry: np.ndarray  # (n_parks,) float32, NaN where carry_ft is NULL
     home_park_id: str
+
+
+def _parse_carry(raw: str) -> float:
+    """Parse a ``carry_ft`` TSV field to float; NULL (``\\N``) / blank -> NaN.
+
+    Un-backfilled rows carry a ClickHouse NULL (rendered ``\\N`` in TSV), which
+    must become NaN so the trainer's carry mask drops them - never 0.0, which
+    would be a silent fake-carry (the placebo trap V025's comment calls out)."""
+    try:
+        return float(raw)
+    except ValueError:
+        return float("nan")
 
 
 @dataclass(frozen=True)
@@ -95,7 +147,15 @@ def _query_joined(
 ) -> str:
     """SQL that joins pitches + bbip_retrodicted_labels and emits one
     row per BIP x park, ordered so reshape (-1, n_parks, n_outcomes)
-    gives the right per-park label tensor."""
+    gives the right per-park label tensor.
+
+    Only ever issued PER-YEAR in production (load_arrays' loop) - probe 5's
+    proven shape. The full-range form is settings-unrescuable (probes 3-4:
+    the wide labels side materializes ~3 GiB in FillingRightJoinSide
+    regardless of spills). partial_merge (same fix as #238's export query)
+    changes only HOW the join executes, never WHICH rows it returns. The
+    500 MB external spills are probe 6's threshold (1.5 GB was too high on
+    a retention-inflated server); execution-only, value-neutral."""
     parks = ", ".join(f"'{p}'" for p in park_order)
     limit_clause = f"LIMIT {limit * len(park_order)}" if limit else ""
     return f"""
@@ -117,7 +177,8 @@ def _query_joined(
       toString(r.prob_1b) AS prob_1b,
       toString(r.prob_2b) AS prob_2b,
       toString(r.prob_3b) AS prob_3b,
-      toString(r.prob_hr) AS prob_hr
+      toString(r.prob_hr) AS prob_hr,
+      toString(r.carry_ft) AS carry_ft
     FROM pitches AS p FINAL
     JOIN bbip_retrodicted_labels AS r FINAL
       ON r.game_id = p.game_id
@@ -133,6 +194,9 @@ def _query_joined(
     ORDER BY p.game_date, p.game_id, p.at_bat_index, p.pitch_number,
              indexOf([{parks}], r.park_id)
     {limit_clause}
+    SETTINGS join_algorithm = 'partial_merge',
+             max_bytes_before_external_group_by = 500000000,
+             max_bytes_before_external_sort = 500000000
     FORMAT TSV
     """
 
@@ -144,7 +208,14 @@ def _query_count(
     park_order: tuple[str, ...],
     limit: int | None = None,
 ) -> str:
-    """Count the BIPs that the main query will return."""
+    """Count the BIPs the main query will return for the given season range.
+
+    load_arrays calls this PER-YEAR and sums (see the module docstring's
+    evidence map): the full-range form of this exact query is what OOM'd C-31
+    attempts #1 and #3. The trailing SETTINGS applies query-wide, covering the
+    inner join; the external group-by/sort spills are the probe-2 mitigation
+    (the DISTINCT aggregation was the count's real memory eater), and each
+    per-year count is strictly smaller than both box-probed shapes."""
     parks = ", ".join(f"'{p}'" for p in park_order)
     limit_clause = f"LIMIT {limit}" if limit else ""
     return f"""
@@ -164,6 +235,9 @@ def _query_count(
         AND r.park_id IN ({parks})
       {limit_clause}
     )
+    SETTINGS join_algorithm = 'partial_merge',
+             max_bytes_before_external_group_by = 500000000,
+             max_bytes_before_external_sort = 500000000
     """
 
 
@@ -175,7 +249,11 @@ def _query_joined_chunk(
     offset_bips: int,
     chunk_bips: int,
 ) -> str:
-    """SQL for a single chunk of BIPs (LIMIT/OFFSET on the joined rows)."""
+    """SQL for a single chunk of BIPs (LIMIT/OFFSET on the joined rows).
+
+    WARNING: no production callers (superseded by load_arrays' per-year loop);
+    the un-year-filtered join here is the settings-unrescuable full-range shape
+    (module docstring evidence map). Kept only for API compatibility."""
     parks = ", ".join(f"'{p}'" for p in park_order)
     n_parks = len(park_order)
     return f"""
@@ -197,7 +275,8 @@ def _query_joined_chunk(
       toString(r.prob_1b) AS prob_1b,
       toString(r.prob_2b) AS prob_2b,
       toString(r.prob_3b) AS prob_3b,
-      toString(r.prob_hr) AS prob_hr
+      toString(r.prob_hr) AS prob_hr,
+      toString(r.carry_ft) AS carry_ft
     FROM pitches AS p FINAL
     JOIN bbip_retrodicted_labels AS r FINAL
       ON r.game_id = p.game_id
@@ -213,18 +292,116 @@ def _query_joined_chunk(
     ORDER BY p.game_date, p.game_id, p.at_bat_index, p.pitch_number,
              indexOf([{parks}], r.park_id)
     LIMIT {chunk_bips * n_parks} OFFSET {offset_bips * n_parks}
+    SETTINGS join_algorithm = 'partial_merge'
     FORMAT TSV
     """
 
 
 def _run_clickhouse(query: str, *, container: str = "bullpen-clickhouse") -> str:
+    """Run one query via in-container clickhouse-client, stdout back.
+
+    P0 of the 15-attempt C-31 ledger (2026-07-14): NEVER swallow stderr.
+    check=True's CalledProcessError stringifies to just "exit status 241" -
+    every diagnosis of attempts #13-#15 was an assumption about what that
+    meant. On failure this raises with the server's own words (first 500
+    chars of stderr), which run.py's failure path then lands verbatim in the
+    queue row's error_message.
+    """
     res = subprocess.run(
         ["docker", "exec", container, "clickhouse-client", "--query", query],
-        check=True,
+        check=False,
         capture_output=True,
         text=True,
     )
+    if res.returncode != 0:
+        raise RuntimeError(
+            f"clickhouse-client exited {res.returncode}: "
+            f"{(res.stderr or '<no stderr>').strip()[:500]}"
+        )
     return res.stdout
+
+
+def _purge_jemalloc(*, container: str = "bullpen-clickhouse") -> None:
+    """Release jemalloc-retained server memory between year-chunks.
+
+    Evidence-map probe 6: retention RATCHETS across chunks - each year's join
+    retains memory the next year's query piles onto, so a static memory cap
+    cannot outrun the monotonically-growing baseline (failures marched
+    2015/2016 at a 4g cap to 2017 at 6g, same code). `SYSTEM JEMALLOC PURGE`
+    between chunks is the deterministic release; a host-side babysitter was
+    tried and races the loader.
+
+    Needs the SYSTEM grant, which the bullpen user deliberately lacks - runs
+    as the admin/default user via CH_ADMIN_PASSWORD. When unset (local/CI
+    without a server), warns and no-ops so the loader still runs; when set
+    but wrong, fails LOUD on the first chunk (a cred typo at minute two
+    beats an unexplained OOM at year 2019).
+
+    The password is forwarded via a name-only `docker exec -e` (the docker
+    client reads CLICKHOUSE_PASSWORD from the subprocess env we pass, and
+    clickhouse-client picks it up inside the container) - NEVER as a
+    `--password` argv, which would sit in the box's process table for the
+    life of the call (audit note, 2026-07-14).
+    """
+    password = os.environ.get("CH_ADMIN_PASSWORD")
+    if not password:
+        print(
+            "  WARNING: CH_ADMIN_PASSWORD unset - skipping SYSTEM JEMALLOC PURGE"
+            " (fine locally; on the box this reintroduces the cross-year"
+            " retention ratchet, evidence-map probe 6)",
+            flush=True,
+        )
+        return
+    res = subprocess.run(
+        [
+            "docker",
+            "exec",
+            "-e",
+            "CLICKHOUSE_PASSWORD",
+            container,
+            "clickhouse-client",
+            "--user",
+            "default",
+            "--query",
+            "SYSTEM JEMALLOC PURGE",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "CLICKHOUSE_PASSWORD": password},
+    )
+    # P0 stderr discipline, same as _run_clickhouse: fail loud WITH the server's words.
+    if res.returncode != 0:
+        raise RuntimeError(
+            f"SYSTEM JEMALLOC PURGE exited {res.returncode}: "
+            f"{(res.stderr or '<no stderr>').strip()[:500]}"
+        )
+
+
+def _wait_for_merge_quiet(
+    *, container: str = "bullpen-clickhouse", timeout_s: float = 120.0
+) -> None:
+    """Opt-in (BULLPEN_LOADER_MERGE_QUIET=1): wait for system.merges to drain
+    before the year sweep. Background merges compete for the same memory budget
+    as the join (15-attempt C-31 ledger); on a busy server draining them first
+    removes one variable. ADVISORY, not a gate: times out with a warning and
+    proceeds, and stays off unless explicitly enabled."""
+    if os.environ.get("BULLPEN_LOADER_MERGE_QUIET") != "1":
+        return
+    deadline = time.monotonic() + timeout_s
+    while True:
+        n = int(_run_clickhouse("SELECT count() FROM system.merges", container=container).strip())
+        if n == 0:
+            print("  merge-quiet: system.merges drained", flush=True)
+            return
+        if time.monotonic() > deadline:
+            print(
+                f"  WARNING: merge-quiet timed out with {n} merge(s) still running - proceeding",
+                flush=True,
+            )
+            return
+        print(f"  merge-quiet: waiting on {n} running merge(s)...", flush=True)
+        time.sleep(5.0)
 
 
 def _row_to_features(
@@ -257,6 +434,7 @@ def _parse_chunk_into_arrays(
     park_index: dict[str, int],
     features_out: np.ndarray,
     labels_out: np.ndarray,
+    carry_out: np.ndarray,
     write_offset: int,
 ) -> int:
     """Parse a TSV chunk directly into pre-allocated arrays. Returns the
@@ -289,6 +467,7 @@ def _parse_chunk_into_arrays(
             labels_out[bip_idx, idx, 2] = float(row[15])
             labels_out[bip_idx, idx, 3] = float(row[16])
             labels_out[bip_idx, idx, 4] = float(row[17])
+            carry_out[bip_idx, idx] = _parse_carry(row[18])
     return n_bips
 
 
@@ -307,6 +486,11 @@ def load_rows(
     test (~150 K BIPs x 4 KB ~= 600 MB max). Streaming variants for the
     full 2015-2024 backfill belong in the trainer where shuffling
     happens; this function is the simplest correct path.
+
+    WARNING: no production callers, and this issues ONE query for the whole
+    season range - a multi-year range OOMs the box (module docstring evidence
+    map, probes 3-4: settings cannot rescue the full-range join). Single-year
+    smoke use only; production loading is load_arrays (per-year everywhere).
     """
     tsv = _run_clickhouse(
         _query_joined(
@@ -341,7 +525,7 @@ def load_rows(
             block[0][11],
         )
         labels = np.zeros((n_parks, n_outcomes), dtype=np.float32)
-        home_park_id = block[0][9]
+        carry = np.full(n_parks, np.nan, dtype=np.float32)
         for row in block:
             pid = row[12]
             idx = park_index[pid]
@@ -350,8 +534,8 @@ def load_rows(
             labels[idx, 2] = float(row[15])  # prob_2b
             labels[idx, 3] = float(row[16])  # prob_3b
             labels[idx, 4] = float(row[17])  # prob_hr
-        home_park_id = ""
-        out.append(_BipRow(features=features, labels=labels, home_park_id=home_park_id))
+            carry[idx] = _parse_carry(row[18])  # carry_ft (NaN where NULL)
+        out.append(_BipRow(features=features, labels=labels, carry=carry, home_park_id=""))
     return out
 
 
@@ -363,33 +547,52 @@ def load_arrays(
     limit: int | None = None,
     container: str = "bullpen-clickhouse",
     chunk_size: int = 5_000,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Memory-efficient loader: pulls one season at a time from ClickHouse
     into pre-allocated dense arrays.
 
-    Returns (features, labels) where:
+    Returns (features, labels, carry) where:
       - features: (N, n_features) float32
       - labels:   (N, n_parks, n_outcomes) float32
+      - carry:    (N, n_parks) float32 — per-park carry in feet, NaN where
+        carry_ft is still NULL (un-backfilled).
 
-    Each season is small enough for ClickHouse to handle without the
-    OFFSET-based pagination that OOMs at high offsets on the full
-    2015-2024 join.
+    EVERY query is per-year - the counts as well as the row loads (module
+    docstring evidence map; the full-range count OOM'd C-31 attempts #1/#3).
+    Summing per-year DISTINCT counts equals the full-range DISTINCT count
+    because a BIP's (game_id, at_bat_index, pitch_number) belongs to exactly
+    one game_date, hence one year - no BIP can be double-counted across
+    year buckets. Ordering: each year's rows arrive in the query's
+    (game_date, game_id, at_bat_index, pitch_number, park) order and years
+    are concatenated in ascending order, so the global ordering the tensor
+    reshape and rolling-origin date-splitting depend on is identical to the
+    full-range query's - game_date partitions years.
     """
     n_features = len(FEATURE_NAMES)
     n_parks = len(park_order)
     n_outcomes = len(OUTCOME_NAMES)
     park_index = {pid: i for i, pid in enumerate(park_order)}
 
-    count_tsv = _run_clickhouse(
-        _query_count(
-            season_from=season_from,
-            season_to=season_to,
-            park_order=park_order,
-            limit=limit,
-        ),
-        container=container,
-    ).strip()
-    total_bips = int(count_tsv)
+    _wait_for_merge_quiet(container=container)
+
+    total_bips = 0
+    for year in range(season_from, season_to + 1):
+        year_count_tsv = _run_clickhouse(
+            _query_count(
+                season_from=year,
+                season_to=year,
+                park_order=park_order,
+                limit=None,
+            ),
+            container=container,
+        ).strip()
+        year_bips = int(year_count_tsv)
+        total_bips += year_bips
+        print(f"  counted season {year}: {year_bips} BIPs (running total {total_bips})")
+        # Probe 6: release jemalloc retention after EVERY chunk's query, counts
+        # included - the ratchet is per-query, and purging here also validates
+        # the admin creds at minute two instead of mid-row-load.
+        _purge_jemalloc(container=container)
     if limit is not None:
         total_bips = min(total_bips, limit)
     print(
@@ -400,6 +603,8 @@ def load_arrays(
 
     features = np.zeros((total_bips, n_features), dtype=np.float32)
     labels = np.zeros((total_bips, n_parks, n_outcomes), dtype=np.float32)
+    # NaN init, not 0.0: unwritten/NULL carry stays NaN so the trainer masks it.
+    carry = np.full((total_bips, n_parks), np.nan, dtype=np.float32)
 
     written = 0
     for year in range(season_from, season_to + 1):
@@ -424,20 +629,25 @@ def load_arrays(
             park_index,
             features,
             labels,
+            carry,
             written,
         )
         written += n
+        # max(total_bips, 1): an entirely-empty range would otherwise divide by zero here.
         print(
             f"  loaded season {year}: {n} BIPs "
             f"(total {written}/{total_bips}, "
-            f"{100 * written / total_bips:.0f}%)",
+            f"{100 * written / max(total_bips, 1):.0f}%)",
             flush=True,
         )
+        # Probe 6: deterministic jemalloc release between year-chunks.
+        _purge_jemalloc(container=container)
 
     if written < total_bips:
         features = features[:written]
         labels = labels[:written]
-    return features, labels
+        carry = carry[:written]
+    return features, labels, carry
 
 
 class BBIPDataset(Dataset):
@@ -456,17 +666,20 @@ class BBIPDataset(Dataset):
         self,
         rows_or_features: list[_BipRow] | np.ndarray,
         labels: np.ndarray | None = None,
+        carry: np.ndarray | None = None,
         scaler: FeatureScaler | None = None,
     ) -> None:
         if isinstance(rows_or_features, np.ndarray):
             assert labels is not None
             self._features = rows_or_features
             self._labels = labels
+            self._carry = carry  # (N, n_parks) feet, NaN where NULL; None -> all-NaN
             self._rows = None
         else:
             self._rows = rows_or_features
             self._features = None
             self._labels = None
+            self._carry = None
         self._scaler = scaler
 
     def __len__(self) -> int:
@@ -475,19 +688,26 @@ class BBIPDataset(Dataset):
         assert self._rows is not None
         return len(self._rows)
 
-    def __getitem__(self, idx: int) -> tuple[np.ndarray, np.ndarray]:
+    def __getitem__(self, idx: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         if self._features is not None:
             assert self._labels is not None
             f = self._features[idx]
             lab = self._labels[idx]
+            if self._carry is not None:
+                carry = self._carry[idx]
+            else:
+                # No carry array supplied (legacy / outcome-only callers): emit an
+                # all-NaN row so the trainer's mask drops it from the carry loss.
+                carry = np.full(self._labels.shape[1], np.nan, dtype=np.float32)
         else:
             assert self._rows is not None
             row = self._rows[idx]
             f = row.features
             lab = row.labels
+            carry = row.carry
         if self._scaler is not None:
             f = self._scaler.transform(f)
-        return f, lab
+        return f, lab, carry
 
     def all_features(self) -> np.ndarray:
         """Stack all rows' raw features into one (N, n_features) array.

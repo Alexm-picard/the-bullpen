@@ -43,7 +43,7 @@ services run inside WSL2.
 | cloudflared              | systemd   | -           | Tunnel: `api.thebullpen.net` -> `localhost:8080`. The only public ingress. Config template: `infra/cloudflared/config.yml.example` (M2). |
 | GlitchTip (error track)  | Docker    | (compose)   | Behind the `errortracking` compose profile (ADR-0008).                                                                                   |
 | Python training env      | on demand | -           | uv-managed, uses the GPU. Not a service; runs for training only.                                                                         |
-| `bullpen-snapshot.timer` | systemd   | -           | Daily 03:00 backup (`clickhouse-snapshot.sh`).                                                                                           |
+| `bullpen-snapshot@<user>.timer` | systemd   | -           | Daily 03:00 backup (`clickhouse-snapshot.sh`).                                                                                           |
 
 **Install layout:**
 

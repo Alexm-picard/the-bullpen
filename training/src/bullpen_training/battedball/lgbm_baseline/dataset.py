@@ -83,6 +83,8 @@ def _query_joined_for_lgbm(
         if include_keys
         else ""
     )
+    # partial_merge: the FINAL x FINAL hash join OOMs under the box's 4 GiB cap
+    # (CH exit 241) - same fix as #238 / mlp/dataset.py, identical result set.
     return f"""
     SELECT
       {key_cols}toString(p.launch_speed_mph) AS launch_speed_mph,
@@ -112,6 +114,7 @@ def _query_joined_for_lgbm(
       AND toYear(p.game_date) BETWEEN {season_from} AND {season_to}
       {park_clause}
     {limit_clause}
+    SETTINGS join_algorithm = 'partial_merge'
     FORMAT JSONEachRow
     """
 

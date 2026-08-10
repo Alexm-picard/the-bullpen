@@ -1,13 +1,31 @@
 name: thebullpen
 
+# M1 task 8: bounded container logs everywhere (previously unbounded json-file - a chatty
+# container could eat the WSL2 disk). Applied per-service below; takes effect at the next
+# container recreate (the M2 window), not on merge.
+x-logging: &bullpen-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "3"
+
 services:
   clickhouse:
     image: clickhouse/clickhouse-server:24.12
     container_name: bullpen-clickhouse
     restart: unless-stopped
+    logging: *bullpen-logging
     ports:
-      - "8123:8123"   # HTTP
-      - "9000:9000"   # native
+      # All published ports bind to 127.0.0.1 (loopback) only - never 0.0.0.0. The bare-metal app
+      # reaches ClickHouse via jdbc:ch:http://localhost:8123 (same host), the Cloudflare Tunnel
+      # connects from the same host, and container-to-container scraping uses the compose network
+      # (not these host ports), so loopback binding breaks nothing while removing LAN exposure of
+      # the analytics DB / dashboards / metrics. See ADR-0006 (single-host) + the Tunnel-only ingress.
+      - "127.0.0.1:8123:8123"   # HTTP
+      - "127.0.0.1:9000:9000"   # native
+      # M1 task 6: ClickHouse's native Prometheus endpoint (config.d/prometheus.xml mount below)
+      # so ClickHouseDown can fire - the api survives a dead CH, so ApiDown never covers this.
+      - "127.0.0.1:9363:9363"   # prometheus /metrics
     environment:
       CLICKHOUSE_USER: "${CLICKHOUSE_USER:-default}"
       # Fail-closed: the container refuses to start without the rotated secret (no known default).
@@ -17,6 +35,14 @@ services:
     volumes:
       - clickhouse-data:/var/lib/clickhouse
       - clickhouse-logs:/var/log/clickhouse-server
+      - ./clickhouse/config.d/prometheus.xml:/etc/clickhouse-server/config.d/prometheus.xml:ro
+      # M2-A1: the declarative least-privilege app user. SINGLE-FILE mount (not the users.d
+      # dir - the image entrypoint WRITES default-user.xml into users.d from the env vars
+      # above, so a read-only dir mount would break startup). The mounted file is RENDERED
+      # (gitignored) by infra/clickhouse/render-users.sh - `make services-up` renders it
+      # automatically; render before any direct `docker compose up`, or the missing bind
+      # source becomes an empty directory inside users.d.
+      - ./clickhouse/users.d/bullpen.xml:/etc/clickhouse-server/users.d/bullpen.xml:ro
     ulimits:
       nofile:
         soft: 262144
@@ -35,11 +61,12 @@ services:
       retries: 5
 
   prometheus:
-    image: prom/prometheus:v3.0.1
+    image: prom/prometheus:v3.13.1
     container_name: bullpen-prometheus
+    logging: *bullpen-logging
     restart: unless-stopped
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     # On native dockerd (the WSL2 box), host.docker.internal does not resolve by default
     # (Docker Desktop magic only) - map it to the docker gateway so the api/worker JVM
     # scrape targets in prometheus.yml reach the host. No-op on Docker Desktop (Mac dev).
@@ -48,8 +75,8 @@ services:
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/rules:/etc/prometheus/rules:ro
-      # M5: scrape credential for the ADMIN-gated /actuator/prometheus (gitignored real file,
-      # .example committed). See infra/prometheus/secrets/metrics_authz.example.
+      # M5: scrape credentials (raw user + raw password) for the ADMIN-gated /actuator/prometheus
+      # (gitignored real files, .example committed). Seed via infra/prometheus/mk-metrics-secrets.sh.
       - ./prometheus/secrets:/etc/prometheus/secrets:ro
       - prometheus-data:/prometheus
     command:
@@ -67,14 +94,17 @@ services:
       start_period: 20s
 
   grafana:
-    image: grafana/grafana:11.4.0
+    image: grafana/grafana:13.1.1
     container_name: bullpen-grafana
+    logging: *bullpen-logging
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER:-admin}"
-      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:-admin}"
+      # Fail-closed like ClickHouse above: no admin/admin default on the dashboard that owns
+      # every ops panel. The value lives in infra/.env on the box (see infra/.env.example).
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD (no default; admin/admin was the old fallback)}"
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - grafana-data:/var/lib/grafana
@@ -100,6 +130,7 @@ services:
   node-exporter:
     image: prom/node-exporter:v1.8.2
     container_name: bullpen-node-exporter
+    logging: *bullpen-logging
     profiles: ["monitoring"]
     restart: unless-stopped
     pid: host
@@ -111,7 +142,7 @@ services:
       - "/:/host:ro,rslave"
       - "/var/lib/node_exporter:/var/lib/node_exporter:ro"
     ports:
-      - "9100:9100"
+      - "127.0.0.1:9100:9100"
     deploy:
       resources:
         limits:
@@ -130,10 +161,11 @@ services:
     # is laxer than the server's). Box-found 2026-06-11.
     image: prom/alertmanager:v0.28.1
     container_name: bullpen-alertmanager
+    logging: *bullpen-logging
     profiles: ["monitoring"]
     restart: unless-stopped
     ports:
-      - "9093:9093"
+      - "127.0.0.1:9093:9093"
     volumes:
       - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - ./alertmanager/secrets:/etc/alertmanager/secrets:ro
@@ -161,11 +193,15 @@ services:
   glitchtip-postgres:
     image: postgres:17-alpine
     container_name: bullpen-glitchtip-postgres
+    logging: *bullpen-logging
     profiles: ["errortracking"]
     restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      # Parameterized because the repo is public; the defaults preserve the already-initialized
+      # volume's credentials (POSTGRES_PASSWORD only applies on FIRST init of glitchtip-pg-data,
+      # so changing the env on an existing DB does nothing - rotate inside postgres first).
+      POSTGRES_USER: "${GLITCHTIP_DB_USER:-postgres}"
+      POSTGRES_PASSWORD: "${GLITCHTIP_DB_PASSWORD:-postgres}"
       POSTGRES_DB: glitchtip
     volumes:
       - glitchtip-pg-data:/var/lib/postgresql/data
@@ -174,7 +210,7 @@ services:
         limits:
           memory: "${BULLPEN_GLITCHTIP_PG_MEM:-512m}"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${GLITCHTIP_DB_USER:-postgres}"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -182,6 +218,7 @@ services:
   glitchtip-redis:
     image: redis:7-alpine
     container_name: bullpen-glitchtip-redis
+    logging: *bullpen-logging
     profiles: ["errortracking"]
     restart: unless-stopped
     deploy:
@@ -198,12 +235,13 @@ services:
   glitchtip-web:
     image: glitchtip/glitchtip:v4.1.1
     container_name: bullpen-glitchtip-web
+    logging: *bullpen-logging
     profiles: ["errortracking"]
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment: &glitchtip-env
-      DATABASE_URL: postgres://postgres:postgres@glitchtip-postgres:5432/glitchtip
+      DATABASE_URL: "postgres://${GLITCHTIP_DB_USER:-postgres}:${GLITCHTIP_DB_PASSWORD:-postgres}@glitchtip-postgres:5432/glitchtip"
       REDIS_URL: redis://glitchtip-redis:6379/0
       SECRET_KEY: "${GLITCHTIP_SECRET_KEY:?set GLITCHTIP_SECRET_KEY to a random hex string, e.g. openssl rand -hex 32}"
       PORT: "8000"
@@ -212,6 +250,14 @@ services:
       EMAIL_URL: "${GLITCHTIP_EMAIL_URL:-consolemail://}"
       # Single-operator instance: open registration off after the first superuser exists.
       ENABLE_OPEN_USER_REGISTRATION: "${GLITCHTIP_OPEN_REGISTRATION:-false}"
+      # Bound Celery worker concurrency. The default scales with CPU count, which on this box
+      # forked ~13 celery children inside the worker's 768m cap - they pinned both the memory and
+      # swap limits (failcnt in the thousands) and the container was OOM-killed roughly every 10s
+      # under `restart: unless-stopped`, indefinitely. That relentless fork + swap-thrash loop
+      # correlated with WSL2-host instability (evidence: the kernel OOM dump + the VM-uptime test).
+      # A single-operator error-tracking instance has trivial task volume, so 1 child is plenty.
+      # Inert on the web/migrate services that share this anchor (they run no Celery worker).
+      CELERY_WORKER_CONCURRENCY: "${BULLPEN_GLITCHTIP_CONCURRENCY:-1}"
     depends_on:
       glitchtip-postgres:
         condition: service_healthy
@@ -234,6 +280,7 @@ services:
   glitchtip-worker:
     image: glitchtip/glitchtip:v4.1.1
     container_name: bullpen-glitchtip-worker
+    logging: *bullpen-logging
     profiles: ["errortracking"]
     restart: unless-stopped
     command: ./bin/run-celery-with-beat.sh
@@ -253,6 +300,7 @@ services:
   glitchtip-migrate:
     image: glitchtip/glitchtip:v4.1.1
     container_name: bullpen-glitchtip-migrate
+    logging: *bullpen-logging
     profiles: ["errortracking"]
     command: ./manage.py migrate
     environment: *glitchtip-env

@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "artifact_name": "pitch_post_backfill_accuracy",
+  "artifact_version": "v1",
+  "model_name": "pitch_outcome_post",
+  "model_version": "v1",
+  "model_dir": "artifacts/pitch_outcome_post/v1",
+  "season": 2026,
+  "class_order": [
+    "ball",
+    "called_strike",
+    "swinging_strike",
+    "foul",
+    "in_play"
+  ],
+  "n_pitches": 237396,
+  "headline": {
+    "top1_accuracy": 0.5906797081669447,
+    "top2_accuracy": 0.808488769819205,
+    "marginal_top1_accuracy": 0.36551163456840047,
+    "marginal_top2_accuracy": 0.5540615680129404
+  },
+  "per_class": [
+    {
+      "outcome": "ball",
+      "support": 86771,
+      "label_share": 0.36551163456840047,
+      "top1_precision": 0.7780911325087627,
+      "top1_recall": 0.8902974496087402,
+      "top2_recall": 0.9463184704567195
+    },
+    {
+      "outcome": "called_strike",
+      "support": 38996,
+      "label_share": 0.16426561525889233,
+      "top1_precision": 0.5307159077327597,
+      "top1_recall": 0.6832239204020926,
+      "top2_recall": 0.7885680582623859
+    },
+    {
+      "outcome": "swinging_strike",
+      "support": 25801,
+      "label_share": 0.1086833813543615,
+      "top1_precision": 0.34868982327848874,
+      "top1_recall": 0.11088717491570094,
+      "top2_recall": 0.5249408937638076
+    },
+    {
+      "outcome": "foul",
+      "support": 44761,
+      "label_share": 0.18854993344453994,
+      "top1_precision": 0.40646146018824725,
+      "top1_recall": 0.3569625343490985,
+      "top2_recall": 0.7730613703894015
+    },
+    {
+      "outcome": "in_play",
+      "support": 41067,
+      "label_share": 0.1729894353738058,
+      "top1_precision": 0.4329991335561332,
+      "top1_recall": 0.4259137507000755,
+      "top2_recall": 0.7529403170428811
+    }
+  ],
+  "data_source": "historical_pitches_offline",
+  "eval_kind": "offline_holdout_unseen",
+  "disclaimer": "2026 rule-13 holdout accuracy (UNSEEN): scored against the REALIZED pitch outcome from the 2026 season, which rule 13 excludes from every training and validation split. This is the genuine out-of-sample generalization read - the post-training accuracy test the holdout exists for. Preprocessing, ONNX graph, and isotonic calibrator are the SERVED pitch_outcome_post artifacts (the parity-fixture preprocess + calibrator.json), so this is the number the production model would produce. Note: 2026 is a partial, in-progress season, so n is smaller than a full year."
+}

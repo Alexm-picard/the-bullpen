@@ -190,15 +190,37 @@ def test_all_registered_models_have_criteria() -> None:
     assert set(CRITERIA_BY_MODEL) == {
         "pitch_outcome_pre",
         "pitch_outcome_post",
+        # pitch-TYPE prior (decision [183]) - the ADR-0014 calibration-first shape (ECE primary,
+        # log-loss guardrail vs the pitch_type_lr_baseline; top-3 is supplementary, not a metric).
+        "pitch_type_pre",
         "batted_ball_lr_baseline",
         "batted_ball_mlp",
+        # carry champion promotion (decision [166]) - a NON-INFERIORITY criteria vs the current
+        # champion v1, distinct from the beats-LR "batted_ball_mlp" criteria.
+        "battedball_outcome",
     }
 
 
 def test_criteria_are_pre_declared_with_required_rule5_fields() -> None:
     for name, c in CRITERIA_BY_MODEL.items():
         assert c.model_name == name
-        assert c.primary_threshold >= 0.0  # margin in metric units
+        if name == "battedball_outcome":
+            # NON-INFERIORITY criteria (decision [166]): a NEGATIVE threshold is the non-inferiority
+            # margin (the challenger may be up to |threshold| WORSE than the champion). Bounded so
+            # it can never silently admit a large outcome regression.
+            assert -0.01 <= c.primary_threshold < 0.0
+        elif name in ("pitch_outcome_pre", "pitch_type_pre"):
+            # ADR-0014 (decision [180]) + decision [183] (pitch_type_pre shares the shape): the
+            # gating primary is the ABSOLUTE ECE bar; the
+            # negative threshold is the [166] non-inferiority idiom making the relative ECE
+            # lane vacuous whenever the bar passes (chal_ece - |threshold| <= base_ece for any
+            # base_ece >= 0). Pin threshold == -bar exactly so the vacuousness is guaranteed
+            # by construction, and the bar itself must be declared.
+            assert c.primary_metric is PrimaryMetric.ECE
+            assert c.absolute_ece_bar is not None
+            assert c.primary_threshold == -c.absolute_ece_bar
+        else:
+            assert c.primary_threshold >= 0.0  # superiority margin in metric units
         assert c.sample_size_target > 0
         assert c.guardrails, f"{name} declares no guardrails"
         # guardrails map uses Java db metric names.

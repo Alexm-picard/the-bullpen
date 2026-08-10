@@ -39,6 +39,19 @@ export const ECE_DELTA_METRIC: MetricMeta = {
 };
 
 /**
+ * ABSOLUTE Expected Calibration Error - what the live CALIBRATION_ERROR rows
+ * in drift_metrics carry (CalibrationJob; 0.10 is the alert PAGE threshold).
+ * Distinct from ECE_DELTA_METRIC (the fleet table's delta-vs-training column):
+ * the drift snapshot's ECE table renders these raw values, so its tint scale
+ * is lower-is-better over the 0..0.10 alert band.
+ */
+export const ECE_METRIC: MetricMeta = {
+  key: "ece",
+  direction: "lower-is-better",
+  reference: { min: 0.0, p25: 0.01, median: 0.03, p75: 0.06, max: 0.1 },
+};
+
+/**
  * Inference latency in milliseconds — lower-is-better. Reference distribution
  * approximates onnxruntime-java in-process latency for a 5-class GBM.
  */
@@ -122,75 +135,103 @@ export const MODEL_FLEET: ModelRegistryRow[] = [
 // ── Drift snapshot ───────────────────────────────────────────────────────────
 
 export type DriftFeatureRow = {
-  /** Feature key, e.g. "release_speed". */
+  /**
+   * Feature key - the REQUEST-field name the PSI job writes (camelCase, e.g.
+   * "launchSpeedMph"): prediction_log.features is the serialized request DTO
+   * and PSI joins reference<->observed by exact key.
+   */
   feature: string;
   /** PSI for each model in the fleet. null = not watched for that model. */
   byModel: Record<string, number | null>;
 };
 
 /**
- * PSI by feature × model. Six Statcast pitch-physics features are the canonical
- * drift surfaces for the two LIVE models.
+ * PSI by feature x model - the REAL monitored surface (E-4 truth-fix): the
+ * continuous request keys from the E-1 champion baseline configs
+ * (training registry_client/distributions.py CHAMPIONS), keyed by the registry
+ * model names. Earlier revisions watched six snake_case pitch-physics names
+ * that could never match a live drift_metrics row (the PSI job writes
+ * request-DTO keys). Live rows for keys outside this list still self-append
+ * via toDriftRows' overlay - categorical PSI rows (stand/baseState/...) land
+ * that way rather than padding this canonical list.
  */
 export const PSI_BY_FEATURE: DriftFeatureRow[] = [
+  // battedball_outcome (the served champion): its four continuous request keys.
   {
-    feature: "release_speed",
-    byModel: { pitch_outcome_pre: 0.05, batted_ball: 0.03 },
+    feature: "launchSpeedMph",
+    byModel: { battedball_outcome: 0.04, pitch_outcome_post: null },
   },
   {
-    feature: "release_spin",
-    byModel: { pitch_outcome_pre: 0.07, batted_ball: 0.04 },
+    feature: "launchAngleDeg",
+    byModel: { battedball_outcome: 0.03, pitch_outcome_post: null },
   },
   {
-    feature: "pfx_x",
-    byModel: { pitch_outcome_pre: 0.04, batted_ball: 0.02 },
+    feature: "sprayAngleDeg",
+    byModel: { battedball_outcome: 0.02, pitch_outcome_post: null },
   },
   {
-    feature: "pfx_z",
-    byModel: { pitch_outcome_pre: 0.06, batted_ball: 0.03 },
+    feature: "hitDistanceFt",
+    byModel: { battedball_outcome: 0.05, pitch_outcome_post: null },
+  },
+  // pitch_outcome_post (champion-stage, UI-held): its nine continuous request keys.
+  {
+    feature: "releaseSpeedMph",
+    byModel: { battedball_outcome: null, pitch_outcome_post: 0.05 },
   },
   {
-    feature: "plate_x",
-    byModel: { pitch_outcome_pre: 0.03, batted_ball: 0.02 },
+    feature: "plateXIn",
+    byModel: { battedball_outcome: null, pitch_outcome_post: 0.03 },
   },
   {
-    feature: "plate_z",
-    byModel: { pitch_outcome_pre: 0.06, batted_ball: 0.04 },
+    feature: "plateZIn",
+    byModel: { battedball_outcome: null, pitch_outcome_post: 0.06 },
+  },
+  {
+    feature: "pfxXIn",
+    byModel: { battedball_outcome: null, pitch_outcome_post: 0.04 },
+  },
+  {
+    feature: "pfxZIn",
+    byModel: { battedball_outcome: null, pitch_outcome_post: 0.06 },
+  },
+  {
+    feature: "spinRateRpm",
+    byModel: { battedball_outcome: null, pitch_outcome_post: 0.07 },
+  },
+  {
+    feature: "spinAxisDeg",
+    byModel: { battedball_outcome: null, pitch_outcome_post: 0.04 },
+  },
+  {
+    feature: "releasePosXIn",
+    byModel: { battedball_outcome: null, pitch_outcome_post: 0.03 },
+  },
+  {
+    feature: "releasePosZIn",
+    byModel: { battedball_outcome: null, pitch_outcome_post: 0.03 },
   },
 ];
 
 export type DriftOutputRow = {
-  /** Output class, e.g. "ball", "called_strike". */
+  /** Calibration segment key - what CalibrationJob writes ("all" today). */
   output: string;
-  /** ECE delta for each model. null = output not emitted by that model. */
+  /** ECE for each model. null = the model has no live calibration lane. */
   byModel: Record<string, number | null>;
 };
 
 /**
- * ECE delta by output class × model. batted_ball only emits for `in_play`
- * outcomes, so the other rows show null (em-dash in the rendered table) —
- * an honest reflection of how the two-head architecture works in practice.
+ * ECE by segment x model - the REAL monitored surface (E-4 truth-fix):
+ * CalibrationJob writes ONE absolute CALIBRATION_ERROR row per model at
+ * segment "all", pitch-family only (its settled-truth join needs live
+ * pitches; battedball calibration is offline - the /accuracy scorecard + the
+ * isotonic promotion gate). Earlier revisions watched five per-outcome rows
+ * that no live row could ever match; per-segment slices land as SEGMENT_BRIER
+ * (weekly), a different metric. New live segments self-append via the overlay.
  */
 export const ECE_BY_OUTPUT: DriftOutputRow[] = [
   {
-    output: "ball",
-    byModel: { pitch_outcome_pre: 0.002, batted_ball: null },
-  },
-  {
-    output: "called_strike",
-    byModel: { pitch_outcome_pre: -0.003, batted_ball: null },
-  },
-  {
-    output: "swinging_strike",
-    byModel: { pitch_outcome_pre: 0.004, batted_ball: null },
-  },
-  {
-    output: "foul",
-    byModel: { pitch_outcome_pre: -0.005, batted_ball: null },
-  },
-  {
-    output: "in_play",
-    byModel: { pitch_outcome_pre: 0.006, batted_ball: -0.008 },
+    output: "all",
+    byModel: { pitch_outcome_post: 0.008, battedball_outcome: null },
   },
 ];
 
@@ -269,7 +310,7 @@ export const RETRAIN_QUEUE: RetrainEntry[] = [
     id: "retrain-2",
     trigger: "DRIFT",
     modelLabel: "pitch_outcome_pre",
-    reason: "PSI release_spin = 0.22 (threshold 0.20)",
+    reason: "PSI launchSpeedMph = 0.31 (threshold 0.25)",
     queuedAt: "11:08 ET",
     scheduledFor: "03:00 ET",
     status: "RUNNING",
@@ -321,7 +362,7 @@ export const OPS_LOG: OpsLogEntry[] = [
     id: "log-5",
     timestamp: "11:08 ET",
     type: "ALERT",
-    detail: "PSI release_spin = 0.22 on pitch_outcome_pre — retrain queued",
+    detail: "PSI launchSpeedMph = 0.31 on battedball_outcome - retrain queued",
   },
   {
     id: "log-4",

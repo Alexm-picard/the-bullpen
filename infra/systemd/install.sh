@@ -60,29 +60,27 @@ if [[ "$UNINSTALL" == "true" ]]; then
       log "removed ${TARGET_DIR}/${u}"
     fi
   done
-  # WS6 / D1: also tear down the snapshot timer + template service.
-  if systemctl list-unit-files | grep -q "^bullpen-snapshot.timer"; then
-    log "stop + disable bullpen-snapshot.timer"
-    sudo systemctl stop bullpen-snapshot.timer 2>/dev/null || true
-    sudo systemctl disable bullpen-snapshot.timer 2>/dev/null || true
-  fi
-  for f in bullpen-snapshot.timer "bullpen-snapshot@.service"; do
-    if [[ -f "${TARGET_DIR}/${f}" ]]; then
-      sudo rm "${TARGET_DIR}/${f}"
-      log "removed ${TARGET_DIR}/${f}"
+  # WS6 / D1 + P2: tear down the snapshot/offsite timers + template services. Handles both the
+  # legacy plain timer name (bullpen-snapshot.timer, pre-templating) and the current @-template
+  # instances, so re-running uninstall after the timer templating migrates cleanly.
+  for stem in bullpen-snapshot bullpen-offsite; do
+    if systemctl list-unit-files | grep -q "^${stem}\.timer"; then
+      log "stop + disable ${stem}.timer (legacy plain unit)"
+      sudo systemctl stop "${stem}.timer" 2>/dev/null || true
+      sudo systemctl disable "${stem}.timer" 2>/dev/null || true
     fi
-  done
-  # P2: tear down the offsite timer + template service.
-  if systemctl list-unit-files | grep -q "^bullpen-offsite.timer"; then
-    log "stop + disable bullpen-offsite.timer"
-    sudo systemctl stop bullpen-offsite.timer 2>/dev/null || true
-    sudo systemctl disable bullpen-offsite.timer 2>/dev/null || true
-  fi
-  for f in bullpen-offsite.timer "bullpen-offsite@.service"; do
-    if [[ -f "${TARGET_DIR}/${f}" ]]; then
-      sudo rm "${TARGET_DIR}/${f}"
-      log "removed ${TARGET_DIR}/${f}"
-    fi
+    while read -r inst _; do
+      [[ -n "$inst" ]] || continue
+      log "stop + disable ${inst}"
+      sudo systemctl stop "$inst" 2>/dev/null || true
+      sudo systemctl disable "$inst" 2>/dev/null || true
+    done < <(systemctl list-units --all --no-legend "${stem}@*.timer" 2>/dev/null || true)
+    for f in "${stem}.timer" "${stem}@.timer" "${stem}@.service"; do
+      if [[ -f "${TARGET_DIR}/${f}" ]]; then
+        sudo rm "${TARGET_DIR}/${f}"
+        log "removed ${TARGET_DIR}/${f}"
+      fi
+    done
   done
   # WS3: tear down the retrain + stale-claim-reaper job timers (plain units).
   for t in bullpen-retrain.timer bullpen-stale-claim-reaper.timer; do
@@ -116,6 +114,25 @@ sudo install -d -o "$SVC_USER" -g "$SVC_USER" -m 0755 "$INSTALL_DIR"
 sudo install -d -o "$SVC_USER" -g "$SVC_USER" -m 0755 "$INSTALL_DIR/data"
 sudo install -d -o "$SVC_USER" -g "$SVC_USER" -m 0755 "$INSTALL_DIR/logs"
 
+# journald policy: pin persistent storage and CAP it. The box's journal was persistent but
+# unbounded; a crash-looping container drove it to ~3.2 GB and forced corrupted rotations every
+# few minutes, destroying crash evidence (see docs/runbooks/wsl-vm-crash-triage.md). Restart
+# systemd-journald only if the drop-in actually changed, so a re-run is a no-op.
+JOURNALD_SRC="${UNIT_DIR}/journald.conf.d/10-bullpen-persistent.conf"
+JOURNALD_DST="/etc/systemd/journald.conf.d/10-bullpen-persistent.conf"
+if [[ -f "$JOURNALD_SRC" ]]; then
+  log "installing journald policy (${JOURNALD_DST})"
+  sudo install -d -o root -g root -m 0755 /etc/systemd/journald.conf.d
+  sudo install -d -g systemd-journal -m 2755 /var/log/journal
+  if ! sudo cmp -s "$JOURNALD_SRC" "$JOURNALD_DST" 2>/dev/null; then
+    sudo install -o root -g root -m 0644 "$JOURNALD_SRC" "$JOURNALD_DST"
+    sudo systemctl restart systemd-journald
+    log "  journald policy applied + restarted"
+  else
+    log "  journald policy already current (no restart)"
+  fi
+fi
+
 log "installing unit files"
 for u in "${UNITS[@]}"; do
   src="${UNIT_DIR}/${u}"
@@ -128,17 +145,33 @@ for u in "${UNITS[@]}"; do
   log "  installed ${dst}"
 done
 
-# WS6 / D1: also install the daily snapshot units (rule 8 forcing function). The .service is a
-# TEMPLATE - it uses %i for the user (ExecStart=/home/%i/...), so it installs under the systemd
-# template name bullpen-snapshot@.service; the committed timer drives the bullpen-snapshot@alepic
-# instance. The timer (not the service) is what gets enabled.
+# M1-R3: the INSTALL path must also retire the LEGACY plain snapshot/offsite timers when
+# present, not just uninstall. The 2026-07-02 box finding: installing the @-templates left
+# the pre-templating plain units live alongside them, and both sets would have double-fired
+# at 03:0x/03:3x. A fresh bootstrap or restore drill re-running this script must converge on
+# exactly one timer of each - so retire the plain names here, idempotently.
+for stem in bullpen-snapshot bullpen-offsite; do
+  if systemctl list-unit-files 2>/dev/null | grep -q "^${stem}\.timer"; then
+    log "retiring legacy plain ${stem}.timer (replaced by the ${stem}@<user>.timer template)"
+    sudo systemctl disable --now "${stem}.timer" 2>/dev/null || true
+  fi
+  if [[ -f "${TARGET_DIR}/${stem}.timer" ]]; then
+    sudo rm "${TARGET_DIR}/${stem}.timer"
+    log "  removed ${TARGET_DIR}/${stem}.timer"
+  fi
+done
+
+# WS6 / D1: also install the daily snapshot units (rule 8 forcing function). BOTH units are
+# TEMPLATES - %i is the operator user (ExecStart=/home/%i/... in the .service; the .timer's
+# Unit= names bullpen-snapshot@%i.service), so no username is hardcoded in a committed unit.
+# The timer instance (not the service) is what gets enabled, below.
 SNAPSHOT_SVC_SRC="${REPO_ROOT}/infra/backup/bullpen-snapshot.service"
-SNAPSHOT_TIMER_SRC="${REPO_ROOT}/infra/backup/bullpen-snapshot.timer"
+SNAPSHOT_TIMER_SRC="${REPO_ROOT}/infra/backup/bullpen-snapshot@.timer"
 INSTALL_SNAPSHOT=false
 if [[ -f "$SNAPSHOT_SVC_SRC" && -f "$SNAPSHOT_TIMER_SRC" ]]; then
   sudo install -o root -g root -m 0644 "$SNAPSHOT_SVC_SRC" "${TARGET_DIR}/bullpen-snapshot@.service"
-  sudo install -o root -g root -m 0644 "$SNAPSHOT_TIMER_SRC" "${TARGET_DIR}/bullpen-snapshot.timer"
-  log "  installed ${TARGET_DIR}/bullpen-snapshot@.service + bullpen-snapshot.timer"
+  sudo install -o root -g root -m 0644 "$SNAPSHOT_TIMER_SRC" "${TARGET_DIR}/bullpen-snapshot@.timer"
+  log "  installed ${TARGET_DIR}/bullpen-snapshot@.service + bullpen-snapshot@.timer"
   INSTALL_SNAPSHOT=true
 else
   log "  WARN: snapshot units not found under infra/backup; skipping the snapshot timer"
@@ -149,15 +182,31 @@ fi
 # BULLPEN_OFFSITE_REMOTE is set in /etc/default/bullpen, so enabling the timer is safe
 # before the env is staged.
 OFFSITE_SVC_SRC="${REPO_ROOT}/infra/backup/bullpen-offsite.service"
-OFFSITE_TIMER_SRC="${REPO_ROOT}/infra/backup/bullpen-offsite.timer"
+OFFSITE_TIMER_SRC="${REPO_ROOT}/infra/backup/bullpen-offsite@.timer"
 INSTALL_OFFSITE=false
 if [[ -f "$OFFSITE_SVC_SRC" && -f "$OFFSITE_TIMER_SRC" ]]; then
   sudo install -o root -g root -m 0644 "$OFFSITE_SVC_SRC" "${TARGET_DIR}/bullpen-offsite@.service"
-  sudo install -o root -g root -m 0644 "$OFFSITE_TIMER_SRC" "${TARGET_DIR}/bullpen-offsite.timer"
-  log "  installed ${TARGET_DIR}/bullpen-offsite@.service + bullpen-offsite.timer"
+  sudo install -o root -g root -m 0644 "$OFFSITE_TIMER_SRC" "${TARGET_DIR}/bullpen-offsite@.timer"
+  log "  installed ${TARGET_DIR}/bullpen-offsite@.service + bullpen-offsite@.timer"
   INSTALL_OFFSITE=true
 else
   log "  WARN: offsite units not found under infra/backup; skipping the offsite timer"
+fi
+
+# M1 task 7: the GPU thermal textfile collector - a 30s sample of nvidia-smi into
+# /var/lib/node_exporter/gpu_temp.prom, feeding the GpuTempHigh/GpuTempCritical rules. Same
+# template shape as the snapshot pair (script path is /home/%i/code/the-bullpen/...). The
+# script self-skips (exit 0) on hosts without nvidia-smi, so enabling is safe everywhere.
+GPU_SVC_SRC="${UNIT_DIR}/bullpen-gpu-temp@.service"
+GPU_TIMER_SRC="${UNIT_DIR}/bullpen-gpu-temp@.timer"
+INSTALL_GPU_TEMP=false
+if [[ -f "$GPU_SVC_SRC" && -f "$GPU_TIMER_SRC" ]]; then
+  sudo install -o root -g root -m 0644 "$GPU_SVC_SRC" "${TARGET_DIR}/bullpen-gpu-temp@.service"
+  sudo install -o root -g root -m 0644 "$GPU_TIMER_SRC" "${TARGET_DIR}/bullpen-gpu-temp@.timer"
+  log "  installed ${TARGET_DIR}/bullpen-gpu-temp@.service + bullpen-gpu-temp@.timer"
+  INSTALL_GPU_TEMP=true
+else
+  log "  WARN: gpu-temp units not found under infra/systemd; skipping the GPU thermal timer"
 fi
 
 # WS3 (decision [19]): the worker-profile JOB timers - the nightly retrain (02-06 ET, drives the
@@ -183,37 +232,53 @@ log "daemon-reload"
 sudo systemctl daemon-reload
 
 # Enable the snapshot timer regardless of the app.jar (it does not depend on the running service).
+# Template timers: the instance is the operator user, matching the @.service %i.
+INSTANCE_USER="${SUDO_USER:-$(whoami)}"
 if [[ "$INSTALL_SNAPSHOT" == "true" ]]; then
   if [[ "$NO_START" == "true" ]]; then
-    sudo systemctl enable bullpen-snapshot.timer
-    log "enabled (not started): bullpen-snapshot.timer"
+    sudo systemctl enable "bullpen-snapshot@${INSTANCE_USER}.timer"
+    log "enabled (not started): bullpen-snapshot@${INSTANCE_USER}.timer"
   else
-    sudo systemctl enable --now bullpen-snapshot.timer
-    log "enabled + started: bullpen-snapshot.timer (fires daily at 03:00 local)"
+    sudo systemctl enable --now "bullpen-snapshot@${INSTANCE_USER}.timer"
+    log "enabled + started: bullpen-snapshot@${INSTANCE_USER}.timer (fires daily at 03:00 local)"
   fi
 fi
 
 if [[ "$INSTALL_OFFSITE" == "true" ]]; then
   if [[ "$NO_START" == "true" ]]; then
-    sudo systemctl enable bullpen-offsite.timer
-    log "enabled (not started): bullpen-offsite.timer"
+    sudo systemctl enable "bullpen-offsite@${INSTANCE_USER}.timer"
+    log "enabled (not started): bullpen-offsite@${INSTANCE_USER}.timer"
   else
-    sudo systemctl enable --now bullpen-offsite.timer
-    log "enabled + started: bullpen-offsite.timer (fires daily at 03:30 local; no-ops until BULLPEN_OFFSITE_REMOTE is set)"
+    sudo systemctl enable --now "bullpen-offsite@${INSTANCE_USER}.timer"
+    log "enabled + started: bullpen-offsite@${INSTANCE_USER}.timer (fires daily at 03:30 local; no-ops until BULLPEN_OFFSITE_REMOTE is set)"
   fi
 fi
 
-# Job timers (retrain + stale-claim reaper). Enable the .timer units; they do not depend on app.jar.
+if [[ "$INSTALL_GPU_TEMP" == "true" ]]; then
+  if [[ "$NO_START" == "true" ]]; then
+    sudo systemctl enable "bullpen-gpu-temp@${INSTANCE_USER}.timer"
+    log "enabled (not started): bullpen-gpu-temp@${INSTANCE_USER}.timer"
+  else
+    sudo systemctl enable --now "bullpen-gpu-temp@${INSTANCE_USER}.timer"
+    log "enabled + started: bullpen-gpu-temp@${INSTANCE_USER}.timer (30s GPU thermal sample)"
+  fi
+fi
+
+# Job timers. The stale-claim reaper (curl-based) is enabled + started. The RETRAIN timer is
+# installed but LEFT DISABLED (M2-B, 2026-07-03): its ExecStart=/usr/local/bin/uv does not
+# resolve on the box, so `enable --now` would flip the intended "retrain OFF" state to
+# "enabled + failing 203/EXEC every 02-06 ET fire". Re-arm it (uncomment below / systemctl
+# enable --now bullpen-retrain.timer) once the uv path + provisioning are decided.
 if [[ "$INSTALL_JOB_TIMERS" == "true" ]]; then
-  for t in bullpen-retrain.timer bullpen-stale-claim-reaper.timer; do
-    if [[ "$NO_START" == "true" ]]; then
-      sudo systemctl enable "$t"
-      log "enabled (not started): ${t}"
-    else
-      sudo systemctl enable --now "$t"
-      log "enabled + started: ${t}"
-    fi
-  done
+  if [[ "$NO_START" == "true" ]]; then
+    sudo systemctl enable bullpen-stale-claim-reaper.timer
+    log "enabled (not started): bullpen-stale-claim-reaper.timer"
+  else
+    sudo systemctl enable --now bullpen-stale-claim-reaper.timer
+    log "enabled + started: bullpen-stale-claim-reaper.timer"
+  fi
+  log "SKIPPED enabling bullpen-retrain.timer (installed-disabled): ExecStart uv path unresolved"
+  log "  -> re-arm with 'sudo systemctl enable --now bullpen-retrain.timer' after the uv fix"
 fi
 
 if [[ "$NO_START" == "true" ]]; then

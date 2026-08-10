@@ -2,15 +2,17 @@
  * <BattedBallExplorer> - the live game's batted-ball card + cross-park compare.
  * Shows a struck ball's Statcast line, then expands the LIVE batted-ball
  * champion's per-park heads: the same ball scored at every park, with the
- * estimated carry +/- error per park and the realized outcome.
+ * estimated carry per park and the realized outcome. The +/- band renders only when the DATA
+ * carries one - null on the live path, since the model reports no per-park uncertainty.
  *
  * The user curates which parks show (+ adds from a dropdown of the remaining
  * parks - the dropdown lists the team abbrev, NOT the result, so adding a park
  * is a reveal; x removes; the current park is pinned). The "N of 30" headline
  * stays full-model - it is NEVER recomputed from the displayed subset.
  *
- * Showcase data (batted-ball-fixtures) until a "score this BIP at N parks"
- * endpoint exists; the LIVE chip marks it as the promoted champion (vs the held
+ * Showcase data (batted-ball-fixtures) is the ILLUSTRATION path only: the game page now feeds this
+ * component a REAL batted ball scored across parks, so the fixture no longer appears there.
+ * The LIVE chip marks the promoted champion (vs the held
  * pitch heads - decision [154]/ADR-0011). Team color is not used here (park
  * rows are neutral); cond-format tones carry the outcome.
  */
@@ -117,7 +119,15 @@ function ParkRow({
             whiteSpace: "nowrap",
           }}
         >
-          {park.dist} ± {park.err} ft
+          {/*
+            The uncertainty band renders ONLY when the data carries one. AllParksResponse has no
+            per-park uncertainty, so on the live path `err` is null and this prints a bare figure -
+            an invented confidence interval beside a real model carry is the same defect as
+            sprayAngleDeg: 0, and would be read as the model's own precision. The showcase fixture
+            still carries a band because it is an illustration that says so.
+          */}
+          {park.dist}
+          {park.err != null ? ` ± ${park.err}` : ""} ft
         </span>
         <span
           style={{
@@ -233,7 +243,18 @@ export function BattedBallExplorer({ data }: { data: BattedBall }) {
       >
         <Metric k="Exit velo" value={data.exitVeloMph.toFixed(1)} unit="mph" />
         <Metric k="Launch" value={`${data.launchDeg}°`} />
-        <Metric k="Distance" value={String(data.distanceFt)} unit="ft" />
+        {/*
+          The label carries the CLASSIFICATION, not the bare word "Distance".
+          totalDistance is Statcast's PROJECTED LANDING distance: meaningful for a ball in the air
+          (a 403 ft home run) and trivially true for one on the ground (a 102.7 mph single at 12 ft,
+          a groundout at 7 ft). Observed range across 187 balls in play: 1-429 ft.
+          "Distance 12 ft" reads as broken data; "Ground ball 12 ft" reads as what it is. Same
+          number, same truth - the label was the thing that was wrong, so the number is NOT
+          suppressed. A missing field would read as missing data, which is a different lie.
+          The band comes from the launch angle via Statcast's own thresholds, so it is derived
+          rather than a presentational trick.
+        */}
+        <Metric k={data.band} value={String(data.distanceFt)} unit="ft" />
         <Metric k="xBA" value={data.xba} />
       </div>
 
@@ -282,7 +303,8 @@ export function BattedBallExplorer({ data }: { data: BattedBall }) {
                 color: colors.ink,
               }}
             >
-              batted_ball v1.4 · per-park heads
+              {data.modelName ?? "batted_ball"} {data.modelVersion ?? "v1.4"} ·
+              per-park heads
             </span>
             <span
               style={{
@@ -313,7 +335,7 @@ export function BattedBallExplorer({ data }: { data: BattedBall }) {
             <strong>
               home run in {data.hrParkCount} of {data.parkCount}
             </strong>
-            . Here it was caught at the track - the model&rsquo;s whole point.
+            .{data.narrative ? ` ${data.narrative}` : ""}
           </p>
 
           <div

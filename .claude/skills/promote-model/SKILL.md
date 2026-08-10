@@ -74,6 +74,20 @@ BEFORE the call so a failure surfaces with context, not as a bare HTTP error.
    - Both STOP-and-report - do not retry blindly.
 5. Watch the next ~10 minutes via Prometheus / Grafana - error rate + p99 latency for the model.
    Discord-ping the promotion per the monitoring setup.
+6. **Refresh the drift baseline (Wave E / E-1).** A freshly promoted champion's `metadata.json`
+   does NOT carry the `feature_distributions` / `training_prediction_distribution` blocks the
+   worker PSI jobs read, so drift detection is dark for it until they are written. The backfill CLI
+   is the single mechanism that emits them - run it against the NEW champion's bundle dir on the
+   box:
+   ```bash
+   # From training/ on the box. battedball derives from ClickHouse (--seasons 2015-2025);
+   # pitch reads the on-box snapshot (--training-parquet <bundle>/training_data.parquet).
+   uv run python scripts/backfill_training_distributions.py \
+     --model {modelName} --model-dir <new champion bundle dir> [--training-parquet ...]
+   ```
+   Rule-13 safe (2015-2025 only) and rule-7 hash-safe (additive metadata keys). If skipped, the
+   next 2 AM ET PSI run fires the `DriftBaselineMissing` alert and logs a WARN naming this exact
+   command. Confirm a non-zero `drift_metrics` count the morning after (or force a `runOnce`).
 
 ## Output
 
@@ -83,9 +97,11 @@ PROMOTION COMPLETE:
   version_id:  <id>   stage: SHADOW -> CHAMPION
   displaced:   <previous_champion_version_id> (ARCHIVED) | none (bootstrap)
   evidence:    {model}_experiment_results_full.json | bootstrap (first champion)
+  drift_baseline: backfill_training_distributions.py run against the new bundle (Y/N)
 WATCH:
   - Grafana dashboard <link>
   - prediction_log error rate / latency for next 30 min
+  - drift_metrics has rows for this champion the morning after (no DriftBaselineMissing alert)
   - Rollback: POST .../promote/<versionId> {"targetStage":"SHADOW","reason":"..."}
 ```
 

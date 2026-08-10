@@ -83,12 +83,12 @@ the change is benign.
 
 ## Resolution paths
 
-| Diagnosis                                                                                   | Action                                                                                                                                                  |
-| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Real seasonal / cohort drift, calibration still good                                        | Accept the NOTICE. Document in `docs/decisions.md` if it represents a new normal. Consider tuning the threshold for this feature.                       |
-| Real drift, calibration also degrading                                                      | Escalate via the [calibration runbook](./calibration-drift-investigation.md). Queue a retrain.                                                          |
-| Reference distribution outdated (a real-but-OK 2024 shift never made it to `metadata.json`) | Update the trainer to re-emit `feature_distributions` and re-register the model. The PSI baseline resets.                                               |
-| False positive (e.g. sample size < 1000)                                                    | Verify `sample_size` in the query above. If low, the metric is noisy. Adjust the job to require minimum sample size before alerting (follow-up commit). |
+| Diagnosis                                                                                   | Action                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Real seasonal / cohort drift, calibration still good                                        | Accept the NOTICE. Document in `docs/decisions.md` if it represents a new normal. Consider tuning the threshold for this feature.                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Real drift, calibration also degrading                                                      | Escalate via the [calibration runbook](./calibration-drift-investigation.md). Queue a retrain.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Reference distribution outdated (a real-but-OK 2024 shift never made it to `metadata.json`) | Re-run `scripts/backfill_training_distributions.py` against the champion bundle to rewrite `feature_distributions` (the single baseline-emission mechanism), then let the next PSI run reset the baseline.                                                                                                                                                                                                                                                                                                                                                                        |
+| False positive (small observed sample)                                                      | Verify `sample_size` in the query above. The math (first-organic triage, 2026-07-16): with 10 reference bins the no-drift noise floor is E[PSI] ~= (B-1)/n, which alone crosses the 0.25 threshold below n ~= 36, and each observed-empty decile adds ~0.69 - n=27 legitimately read PSI 1.62 with zero drift. The alert side now ENFORCES `bullpen.drift.alert.feature-psi-min-sample` (default 300): sub-floor rows are still written (visible on /ops with their sample sizes) but cannot fire or block a NOTICE. See docs/postmortems/2026-07-16_first-organic-psi-triage.md. |
 
 ## After resolution
 
@@ -99,6 +99,33 @@ the change is benign.
 - **Dedup window is 24h** — the NOTICE stays silenced for a day after
   fire. If you fix the underlying issue and want to verify, wait 24h+
   for the next eval cycle.
+
+## No PSI rows at all (the `DriftBaselineMissing` alert)
+
+Distinct from a high-PSI NOTICE: if the daily job finds a champion with **no
+training-distribution baseline**, it cannot compute PSI for that model at all
+and writes zero rows. This is the silent-starve that produced an empty
+`drift_metrics` on 2026-07-04 (decision [175]). It is now loud:
+
+- **Alert:** `DriftBaselineMissing` (Prometheus, `severity: warning`) fires when
+  `bullpen_drift_baseline_missing_total{model,kind}` increases over a daily cycle.
+- **Log:** `PsiFeatureJob` / `PsiPredictionJob` WARN naming the champion and the
+  exact remediation command (SHADOW challengers log INFO only — a shadow may
+  legitimately lack a baseline, so it never trips the alert).
+
+**Fix — run the backfill CLI against the champion bundle on the box** (the single
+baseline-emission mechanism; also step 6 of the promote-model ceremony):
+
+```bash
+# From training/ on the box. battedball derives from ClickHouse; pitch reads the
+# on-box snapshot parquet. Rule-13 safe (2015-2025), rule-7 hash-safe (additive keys).
+uv run python scripts/backfill_training_distributions.py \
+  --model <name> --model-dir <champion bundle dir> [--training-parquet <bundle>/training_data.parquet]
+```
+
+Confirm a non-zero `drift_metrics` count after the next 2 AM ET run (or force a
+`runOnce`). A newly promoted champion is the usual trigger — its `metadata.json`
+does not carry the baseline until the backfill writes it.
 
 ## Related
 

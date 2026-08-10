@@ -69,3 +69,35 @@ describe("ReliabilityDiagram", () => {
     expect(html).toContain("HTTP 500");
   });
 });
+
+describe("ReliabilityDiagram - predicted-only (no truth-join yet)", () => {
+  const PREDICTED_ONLY: CalibrationBin[] = [
+    { binStart: 0.0, binEnd: 0.1, predicted: 0.05, actual: null, n: 120 },
+    { binStart: 0.4, binEnd: 0.5, predicted: 0.45, actual: null, n: 220 },
+    { binStart: 0.8, binEnd: 0.9, predicted: 0.85, actual: null, n: 80 },
+  ];
+
+  it("renders predicted-only (no diagonal, no fabricated points) when actual is absent", () => {
+    const html = render(<ReliabilityDiagram bins={PREDICTED_ONLY} />);
+    expect(html).toContain("<svg");
+    // a distribution view (bars), never a calibration scatter
+    expect(html).toContain("<rect");
+    expect(html).not.toContain("<circle");
+    // the y=x diagonal is the only stroke-width 1.5 element - it must be gone
+    expect(html).not.toContain('stroke-width="1.5"');
+    expect(html).not.toContain("actual frequency");
+    expect(html).not.toContain("actual=");
+    // honest labels
+    expect(html).toContain("share of predictions");
+    expect(html).toContain("Empirical calibration pending live truth");
+  });
+
+  it("still gates on the sample threshold when actual is null", () => {
+    const lowN: CalibrationBin[] = [
+      { binStart: 0.4, binEnd: 0.5, predicted: 0.45, actual: null, n: 5 },
+    ];
+    const html = render(<ReliabilityDiagram bins={lowN} />);
+    expect(html).toContain("Insufficient data");
+    expect(html).not.toContain("<svg");
+  });
+});

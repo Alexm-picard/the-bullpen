@@ -13,26 +13,32 @@ rule_files:
   - /etc/prometheus/rules/*.yml
 
 scrape_configs:
-  # M5: /actuator/prometheus is gated behind ADMIN HTTP Basic in the app's SecurityConfig (it leaks
-  # queue depths, per-model prediction counts, JVM internals). The scrape authenticates with the
-  # admin credential read from a mounted, gitignored secret file - no username or password in this
-  # committed config. The file holds base64("<admin-user>:<admin-password>") i.e. the value half of
-  # THEBULLPEN_ADMIN_BASIC_AUTH; create it from infra/prometheus/secrets/metrics_authz.example before
-  # bringing the stack up (it is mounted read-only at /etc/prometheus/secrets, see docker-compose).
+  # /actuator/prometheus is gated in the app's SecurityConfig behind the METRICS role (or ADMIN) - F3
+  # (it leaks queue depths, per-model prediction counts, JVM internals). The scrape authenticates
+  # with HTTP Basic, reading BOTH halves of the credential from mounted, gitignored secret files (RAW
+  # user + RAW password, NOT base64): metrics_user and metrics_pw. Nothing credentialed - not even
+  # the username - is committed here, and ANY username works (no hardcoded value to drift from the
+  # env). mk-metrics-secrets.sh seeds these from THEBULLPEN_METRICS_BASIC_AUTH (metrics-only role,
+  # preferred) or falls back to THEBULLPEN_ADMIN_BASIC_AUTH until the split is provisioned. Seed via
+  # infra/prometheus/mk-metrics-secrets.sh (or copy the *.example files) before the stack comes up
+  # (secrets dir mounted read-only, see docker-compose).
+  # NOTE: HTTP Basic MUST use the `basic_auth:` block - Prometheus REJECTS `authorization: {type:
+  # Basic}` ("use basic_auth instead"), which crash-looped the 2026-06-24 cutover. `promtool check
+  # config` (infra.yml CI) now guards this syntax so it cannot recur.
   - job_name: "thebullpen-api"
     metrics_path: /actuator/prometheus
-    authorization:
-      type: Basic
-      credentials_file: /etc/prometheus/secrets/metrics_authz
+    basic_auth:
+      username_file: /etc/prometheus/secrets/metrics_user
+      password_file: /etc/prometheus/secrets/metrics_pw
     static_configs:
       - targets: ["host.docker.internal:8080"]
         labels: { profile: "api" }
 
   - job_name: "thebullpen-worker"
     metrics_path: /actuator/prometheus
-    authorization:
-      type: Basic
-      credentials_file: /etc/prometheus/secrets/metrics_authz
+    basic_auth:
+      username_file: /etc/prometheus/secrets/metrics_user
+      password_file: /etc/prometheus/secrets/metrics_pw
     static_configs:
       - targets: ["host.docker.internal:8081"]
         labels: { profile: "worker" }
@@ -40,6 +46,14 @@ scrape_configs:
   - job_name: "prometheus"
     static_configs:
       - targets: ["localhost:9090"]
+
+  # M1 task 6: ClickHouse's NATIVE prometheus endpoint (infra/clickhouse/config.d/prometheus.xml,
+  # port 9363 in docker-compose). Needed because the api deliberately survives a dead ClickHouse
+  # (Hikari initializationFailTimeout(-1)), so ApiDown never fires for it - ClickHouseDown keys on
+  # up{job="clickhouse"} from this scrape. Same-network service name, no host.docker.internal hop.
+  - job_name: "clickhouse"
+    static_configs:
+      - targets: ["clickhouse:9363"]
 
   # WS4: host metrics (RAM/CPU/disk) + the snapshot-freshness textfile metric written by
   # clickhouse-snapshot.sh. The 12 GiB WSL2 cap is shared by everything, so host-RAM visibility

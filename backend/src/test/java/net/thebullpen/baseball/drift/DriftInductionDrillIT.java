@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import java.util.UUID;
+import net.thebullpen.baseball.data.JobLockRepository;
 import net.thebullpen.baseball.drift.TruthJoinedPredictionFetcher.TruthJoinedRow;
 import net.thebullpen.baseball.drift.alerting.AlertHistoryRepository;
 import net.thebullpen.baseball.drift.alerting.DriftAlertEvaluator;
@@ -101,9 +102,7 @@ class DriftInductionDrillIT {
     driftRepo = mock(DriftMetricsRepository.class);
     discord = mock(DiscordNotifier.class);
     ModelVersion champ = champion(MODEL, VERSION_ID);
-    when(registryRepo.findAllNameVersionPairs())
-        .thenReturn(List.<String[]>of(new String[] {MODEL, "v1"}));
-    when(registryRepo.findByName(MODEL)).thenReturn(List.of(champ));
+    when(registryRepo.findActiveChampions()).thenReturn(List.of(champ));
   }
 
   @Test
@@ -142,8 +141,11 @@ class DriftInductionDrillIT {
             driftRepo,
             historyRepo,
             discord,
+            mock(JobLockRepository.class),
             PAGE_ECE_THRESHOLD,
-            NOTICE_PSI_THRESHOLD);
+            NOTICE_PSI_THRESHOLD,
+            7, // feature-PSI notice sustain window: prod default (the drill stages 7 days)
+            0L); // min-sample gate OFF: the drill stages synthetic rows on a miniature window
     int alerts = evaluator.runOnce();
     log("DETECT  DriftAlertEvaluator fired " + alerts + " alert(s)");
     ArgumentCaptor<DiscordNotifier.Severity> sev =
@@ -210,7 +212,8 @@ class DriftInductionDrillIT {
     }
     when(fetcher.fetch(eq(MODEL), eq(VERSION_ID), any(Instant.class), any(Instant.class)))
         .thenReturn(joined);
-    new CalibrationJob(registryRepo, fetcher, captureRepo).runOnce(Instant.now());
+    new CalibrationJob(registryRepo, fetcher, captureRepo, mock(JobLockRepository.class))
+        .runOnce(Instant.now());
 
     @SuppressWarnings("unchecked")
     ArgumentCaptor<List<DriftMetric>> cap = ArgumentCaptor.forClass(List.class);

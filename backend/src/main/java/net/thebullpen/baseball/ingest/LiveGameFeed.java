@@ -2,6 +2,8 @@ package net.thebullpen.baseball.ingest;
 
 import java.time.LocalDate;
 import java.util.List;
+import net.thebullpen.baseball.domain.GameStatus;
+import net.thebullpen.baseball.domain.LivePitch;
 
 /**
  * A parsed MLB GUMBO live feed ({@code /api/v1.1/game/{pk}/feed/live}) for one game: the current
@@ -11,6 +13,9 @@ import java.util.List;
 public record LiveGameFeed(
     long gamePk,
     GameStatus status,
+    // The raw detailedState from the MLB API before normalisation, for diagnostics when
+    // status == UNKNOWN. Null only when the feed carried no detailedState at all.
+    String rawDetailedState,
     LocalDate gameDate,
     int homeTeamId,
     int awayTeamId,

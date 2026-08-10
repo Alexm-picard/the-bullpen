@@ -6,9 +6,9 @@ import jakarta.annotation.PreDestroy;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Map;
+import net.thebullpen.baseball.config.InferenceProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
@@ -34,13 +34,11 @@ public class ToyBattedBallInference {
   private OnnxModel model;
   private FeaturePipeline pipeline;
 
-  public ToyBattedBallInference(
-      @Value("${bullpen.inference.toy.artifacts-dir:../training/artifacts/_toy/v0}")
-          String artifactsDir,
-      @Value("${bullpen.inference.contract-path:../contracts/feature_pipeline_toy.json}")
-          String contractPath) {
-    this.artifactsDir = Path.of(artifactsDir).toAbsolutePath().normalize();
-    this.contractPath = Path.of(contractPath).toAbsolutePath().normalize();
+  public ToyBattedBallInference(InferenceProperties props) {
+    // toyContractPath() resolves the legacy shared bullpen.inference.contract-path key with the
+    // toy's historical default (see InferenceProperties' javadoc on the shared-key wart).
+    this.artifactsDir = Path.of(props.toy().artifactsDir()).toAbsolutePath().normalize();
+    this.contractPath = Path.of(props.toyContractPath()).toAbsolutePath().normalize();
   }
 
   @PostConstruct

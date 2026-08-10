@@ -9,7 +9,7 @@
  * is first-class (no games match the active filter).
  */
 
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 
 import type { SlateCard } from "../../api/slate-view";
 import { colors, cuts, radii, typography } from "../../design/broadcast";

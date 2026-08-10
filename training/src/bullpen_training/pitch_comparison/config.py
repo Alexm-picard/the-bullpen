@@ -8,6 +8,11 @@ from pathlib import Path
 
 @dataclass
 class ExperimentConfig:
+    # Rule-13 note (#188): these season/year fields are programmatically overridable with no
+    # tripwire - safe today because the defaults are 2015-2025 and no CLI exposes them, but
+    # any driver that starts accepting user-supplied years must call
+    # bullpen_training.eval.leakage_guards.refuse_holdout before loading data (2026 is
+    # holdout-only).
     seed: int = 42
     season_from: int = 2015
     season_to: int = 2025

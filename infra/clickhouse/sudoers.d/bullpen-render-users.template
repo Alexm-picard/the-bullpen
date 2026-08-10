@@ -1,0 +1,25 @@
+# /etc/sudoers.d/bullpen-render-users
+#
+# Narrow NOPASSWD rule for The Bullpen's ClickHouse users.d render script (M2-B).
+# render-users.sh self-elevates so it can chown the rendered users.d/bullpen.xml to the
+# ClickHouse container uid (101); this rule lets `make services-up` do that without a
+# password prompt. Nothing else is granted - all other sudo invocations behave normally.
+#
+# Install via: ./infra/clickhouse/install-sudoers.sh
+# Validate manually: sudo visudo -c -f /etc/sudoers.d/bullpen-render-users
+# Remove via: sudo rm /etc/sudoers.d/bullpen-render-users
+#
+# Template variables (substituted by install-sudoers.sh):
+#   {{USER}}        - the Linux user that runs `make services-up` / render interactively
+#   {{SCRIPT_PATH}} - absolute path to render-users.sh (the $SELF path the script re-execs)
+#
+# Security notes:
+# - Scoped to a single absolute path; sudo expands neither aliases nor globs, so this grants
+#   exactly nothing else. It matches the usb-backup rule's posture (infra/backup/sudoers.d).
+# - The script lives in the repo, so repo-write access implies root-NOPASSWD execution of
+#   THIS one command. Acceptable for solo dev on the box; to harden, copy render-users.sh to
+#   /usr/local/sbin (root:root, 0755) and point SCRIPT_PATH there.
+# - MUST be installed at /etc/sudoers.d/bullpen-render-users, mode 0440, owner root:root.
+#   install-sudoers.sh handles this and validates with visudo before writing.
+
+{{USER}} ALL=(root) NOPASSWD: {{SCRIPT_PATH}}

@@ -7,8 +7,9 @@ import java.time.Instant;
 import java.util.List;
 import java.util.TimeZone;
 import java.util.UUID;
-import net.thebullpen.baseball.api.dto.OpsEvent;
-import net.thebullpen.baseball.api.dto.OpsEventType;
+import net.thebullpen.baseball.domain.OpsEvent;
+import net.thebullpen.baseball.domain.OpsEventType;
+import net.thebullpen.baseball.domain.PagedRows;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -93,5 +94,26 @@ class OpsEventsRepositoryIT {
     } finally {
       TimeZone.setDefault(original);
     }
+  }
+
+  @Test
+  void findRecentPagePagesNewestFirstWithOverFetchHasNext() {
+    for (int i = 0; i < 5; i++) {
+      repo.record(OpsEventType.DEPLOY, "deploy " + i); // "deploy 4" is newest (highest id)
+    }
+
+    // Ordering is (occurred_at DESC, id DESC), so the id tiebreak keeps it deterministic even when
+    // the five inserts share a CURRENT_TIMESTAMP second.
+    PagedRows<OpsEvent> first = repo.findRecentPage(0, 2);
+    assertThat(first.rows()).extracting(OpsEvent::detail).containsExactly("deploy 4", "deploy 3");
+    assertThat(first.hasNext()).as("3 events remain past page 0").isTrue();
+
+    PagedRows<OpsEvent> second = repo.findRecentPage(1, 2);
+    assertThat(second.rows()).extracting(OpsEvent::detail).containsExactly("deploy 2", "deploy 1");
+    assertThat(second.hasNext()).as("deploy 0 remains past page 1").isTrue();
+
+    PagedRows<OpsEvent> last = repo.findRecentPage(2, 2);
+    assertThat(last.rows()).extracting(OpsEvent::detail).containsExactly("deploy 0");
+    assertThat(last.hasNext()).as("no events past the last page").isFalse();
   }
 }

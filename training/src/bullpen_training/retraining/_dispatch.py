@@ -9,12 +9,14 @@ The contract for a dispatched function:
 * Persists ``trigger_id`` into the produced ``metadata.json`` so post-hoc correlation of
   the model row to its retrain trigger is one ``trigger_id`` lookup.
 
-The actual wiring of each model_name to its existing Phase-2 trainer (``train_pre.py``,
-``train_post.py``, ``train_toy.py``, etc.) is intentionally left as a follow-up — the Phase-2
-trainers don't currently accept ``trigger_id``, and weaving it through each one is invasive.
-For 3d.3 the dispatch table holds a sentinel raises so the run.py orchestration can be
-exercised end-to-end with tests that mock the callable. The wiring lands in a follow-up
-commit per model.
+Wiring status: ``battedball_outcome`` (the SERVED family) dispatches to the real
+single-graph ``battedball/mlp`` adapter via
+:mod:`bullpen_training.retraining.battedball_outcome` (M2-A3; closes ruling C2). The
+per-park EXPERIMENT adapter from M1 task 3 stays reachable only under its explicit
+experiment key via :mod:`bullpen_training.retraining.batted_ball`. The remaining registry
+entries stay honest sentinels until each Phase-2 trainer is wired to accept ``trigger_id``
+and return ``RetrainOutput``. Naming is settled by ruling C1: dispatch keys equal the
+registry model names (``champ.modelName()``) exactly.
 """
 
 from __future__ import annotations
@@ -54,14 +56,63 @@ def _not_yet_wired(model_name: str) -> RetrainFn:
     return _stub
 
 
-# Sentinel stubs per the leaf body's dispatch table. Each one raises until the matching
-# Phase-2 trainer is updated to accept trigger_id + return RetrainOutput.
+def _experiment_mlp_per_park(
+    trigger_id: str, version: str, trigger_metadata: dict
+) -> RetrainOutput:
+    # Lazy import: keeps torch/onnx out of the import path of every OTHER dispatch, and out
+    # of run.py's queue-empty fast path.
+    from bullpen_training.retraining.batted_ball import retrain_batted_ball
+
+    return retrain_batted_ball(trigger_id, version, trigger_metadata)
+
+
+def _servable_battedball_outcome(
+    trigger_id: str, version: str, trigger_metadata: dict
+) -> RetrainOutput:
+    # M2 ruling C2 is CLOSED by this wiring (M2-A3): the served single-graph battedball/mlp
+    # family (shared backbone + carry head + per-park calibrators) retrains via the
+    # servable-family adapter, in the SERVED artifact format. The per-park EXPERIMENT seam
+    # stays at '_experiment_battedball_mlp_per_park' (test/manual-only).
+    # Lazy import: keeps torch/onnx/sklearn out of the import path of every OTHER dispatch,
+    # and out of run.py's queue-empty fast path.
+    from bullpen_training.retraining.battedball_outcome import retrain_battedball_outcome
+
+    return retrain_battedball_outcome(trigger_id, version, trigger_metadata)
+
+
+# M2 ruling C1: the registry's model_name values are the SINGLE SOURCE OF TRUTH for this
+# list - real retraining_queue rows carry champ.modelName(), so any other spelling is
+# unreachable by construction. If a name here drifts from the registry, the pinned-list
+# test (test_dispatch.py) fails loudly. Verified against model_versions on the box
+# 2026-07-02.
+CANONICAL_REGISTRY_MODEL_NAMES: frozenset[str] = frozenset(
+    {
+        "battedball_outcome",
+        "pitch_outcome_pre",
+        "pitch_outcome_post",
+        "pitch_outcome_lr_baseline",
+        "battedball_lgbm_per_park",
+        "lr_baseline_batted_ball",
+    }
+)
+
+# Keys with this prefix are deliberately NON-registry (excluded from the pinned-list
+# equality by design): reachable only by a hand-built trigger, never by a real queue row.
+EXPERIMENT_KEY_PREFIX = "_experiment_"
+EXPERIMENT_MLP_PER_PARK_KEY = "_experiment_battedball_mlp_per_park"
+
+# battedball_outcome: wired to the SERVABLE-family adapter (M2-A3, closes ruling C2).
+# The per-park adapter (M1 task 3) remains the proven claim->train->register->complete
+# seam under its experiment key. The remaining registry entries stay honest sentinels
+# until each family's trainer is wired to accept trigger_id + return RetrainOutput.
 DISPATCH: dict[str, RetrainFn] = {
+    "battedball_outcome": _servable_battedball_outcome,
     "pitch_outcome_pre": _not_yet_wired("pitch_outcome_pre"),
     "pitch_outcome_post": _not_yet_wired("pitch_outcome_post"),
     "pitch_outcome_lr_baseline": _not_yet_wired("pitch_outcome_lr_baseline"),
-    "batted_ball": _not_yet_wired("batted_ball"),
-    "batted_ball_lgbm_baseline": _not_yet_wired("batted_ball_lgbm_baseline"),
+    "battedball_lgbm_per_park": _not_yet_wired("battedball_lgbm_per_park"),
+    "lr_baseline_batted_ball": _not_yet_wired("lr_baseline_batted_ball"),
+    EXPERIMENT_MLP_PER_PARK_KEY: _experiment_mlp_per_park,
 }
 
 

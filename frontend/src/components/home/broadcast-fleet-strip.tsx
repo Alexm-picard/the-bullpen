@@ -8,7 +8,7 @@
  * caption when the backend is unreachable.
  */
 
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 
 import type { ModelChip } from "../../data/home-fixtures";
 import { colors, radii, typography } from "../../design/broadcast";
