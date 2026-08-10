@@ -125,19 +125,21 @@ function ThemeToggleButton() {
     <button
       onClick={toggle}
       aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+      title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
       style={{
         background: "none",
-        border: `1px solid ${colors.rule}`,
+        border: `1px solid ${colors.panelEdge}`,
         borderRadius: 4,
-        padding: "4px 8px",
+        padding: "6px 12px",
         cursor: "pointer",
-        fontFamily: typography.fonts.mono,
-        fontSize: 11,
-        letterSpacing: "0.08em",
-        color: colors.steel,
+        fontFamily: typography.fonts.display,
+        fontWeight: typography.weights.semibold,
+        fontSize: 18,
+        color: colors.gold,
         display: "inline-flex",
         alignItems: "center",
-        gap: 4,
+        gap: 6,
+        transition: "border-color 0.15s",
       }}
     >
       {theme === "dark" ? "☀" : "☾"}
