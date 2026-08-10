@@ -150,27 +150,75 @@ export default function HomePage() {
 
   return (
     <PageChrome gap={24}>
-      <header>
+      <header
+        style={{
+          background: `linear-gradient(160deg, ${colors.fieldHi} 0%, ${colors.field} 70%)`,
+          margin: "0 -16px",
+          padding: "40px 16px 24px",
+        }}
+      >
         <h1
           style={{
-            margin: 0,
+            margin: "0 0 8px",
             fontFamily: typography.fonts.display,
-            fontStyle: "italic",
             fontWeight: typography.weights.heavy,
-            fontSize: typography.scale[6],
-            lineHeight: typography.lineHeights.display,
+            fontSize: "clamp(40px, 6vw, 64px)",
+            lineHeight: 0.98,
             letterSpacing: "0.01em",
             textTransform: "uppercase",
             color: colors.ink,
           }}
         >
-          Tonight&rsquo;s Slate
+          Tonight&rsquo;s{" "}
+          <span style={{ color: colors.gold, fontStyle: "italic" }}>Slate</span>
         </h1>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "baseline",
+            flexWrap: "wrap",
+            gap: "8px 24px",
+          }}
+        >
+          <p
+            style={{
+              margin: 0,
+              fontSize: 14,
+              color: colors.textMuted,
+              maxWidth: "50ch",
+            }}
+          >
+            <strong style={{ color: colors.text }}>
+              Four calibrated models, predicting live.
+            </strong>{" "}
+            Pitch outcome, pitch type, batted-ball carry - self-hosted,
+            drift-watched, honestly scored.
+          </p>
+          <a
+            href="/models/guide"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              fontFamily: typography.fonts.mono,
+              fontSize: 10,
+              letterSpacing: "0.12em",
+              color: colors.textMuted,
+              textDecoration: "none",
+              textTransform: "uppercase",
+              border: `1px solid ${colors.rule}`,
+              padding: "4px 10px",
+            }}
+          >
+            <span style={{ color: colors.gold, fontSize: 11 }}>{"ⓘ"}</span>
+            Model guide
+          </a>
+        </div>
         <p
           style={{
-            margin: "2px 0 0",
+            margin: "12px 0 0",
             fontFamily: typography.fonts.mono,
-            fontSize: 12,
+            fontSize: 11,
             fontFeatureSettings: '"tnum" 1',
             letterSpacing: "0.02em",
             color: colors.textMuted,

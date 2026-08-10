@@ -520,14 +520,47 @@ export function GamePage() {
         </div>
       </BroadcastPanel>
 
-      <section aria-labelledby="next-pitch-label">
-        <div style={{ marginBottom: 12 }}>
+      <section
+        aria-labelledby="next-pitch-label"
+        style={
+          nextPitchEnabled
+            ? {
+                borderLeft: `3px solid ${colors.gold}`,
+                paddingLeft: 16,
+                marginLeft: -19,
+              }
+            : undefined
+        }
+      >
+        <div
+          style={{
+            marginBottom: 12,
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
           <LowerThird
             id="next-pitch-label"
             meta={nextPitchEnabled ? "LIVE ESTIMATE" : "GATED"}
           >
             Next-Pitch Model
           </LowerThird>
+          <a
+            href="/models/guide#next-pitch"
+            style={{
+              fontFamily: typography.fonts.mono,
+              fontSize: 10,
+              letterSpacing: "0.12em",
+              color: colors.textMuted,
+              textDecoration: "none",
+              textTransform: "uppercase",
+              border: `1px solid ${colors.rule}`,
+              padding: "4px 10px",
+            }}
+          >
+            <span style={{ color: colors.gold, fontSize: 11 }}>{"ⓘ"}</span> What
+          </a>
         </div>
         <NextPitchPanel
           prediction={nextPitch.data}
@@ -538,13 +571,35 @@ export function GamePage() {
       </section>
 
       <section aria-labelledby="pitch-type-label">
-        <div style={{ marginBottom: 12 }}>
+        <div
+          style={{
+            marginBottom: 12,
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
           <LowerThird
             id="pitch-type-label"
             meta={pitchTypeEnabled ? "LIVE PRIOR" : "GATED"}
           >
             Pitch-Type Model
           </LowerThird>
+          <a
+            href="/models/guide#pitch-type"
+            style={{
+              fontFamily: typography.fonts.mono,
+              fontSize: 10,
+              letterSpacing: "0.12em",
+              color: colors.textMuted,
+              textDecoration: "none",
+              textTransform: "uppercase",
+              border: `1px solid ${colors.rule}`,
+              padding: "4px 10px",
+            }}
+          >
+            <span style={{ color: colors.gold, fontSize: 11 }}>{"ⓘ"}</span> What
+          </a>
         </div>
         <PitchTypePanel
           prior={pitchType.data}
@@ -554,8 +609,26 @@ export function GamePage() {
         />
       </section>
 
-      <section aria-labelledby="batted-ball-label">
-        <div style={{ marginBottom: 12 }}>
+      <section
+        aria-labelledby="batted-ball-label"
+        style={
+          battedBallLive
+            ? {
+                borderLeft: `3px solid ${colors.gold}`,
+                paddingLeft: 16,
+                marginLeft: -19,
+              }
+            : undefined
+        }
+      >
+        <div
+          style={{
+            marginBottom: 12,
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
           <LowerThird
             id="batted-ball-label"
             // Not "MODEL EXAMPLE" any more - there is no example. The fixture is retired, so
@@ -574,6 +647,21 @@ export function GamePage() {
           >
             Batted-Ball Model
           </LowerThird>
+          <a
+            href="/models/guide#batted-ball"
+            style={{
+              fontFamily: typography.fonts.mono,
+              fontSize: 10,
+              letterSpacing: "0.12em",
+              color: colors.textMuted,
+              textDecoration: "none",
+              textTransform: "uppercase",
+              border: `1px solid ${colors.rule}`,
+              padding: "4px 10px",
+            }}
+          >
+            <span style={{ color: colors.gold, fontSize: 11 }}>{"ⓘ"}</span> What
+          </a>
         </div>
         <p
           style={{
@@ -584,11 +672,7 @@ export function GamePage() {
           }}
         >
           {battedBallLive ? (
-            <>
-              The most recent in-play batted ball this game, scored through the
-              per-park batted-ball champion: the same contact at all 30 parks,
-              carry and outcome shifting with each park.
-            </>
+            <>Most recent in-play batted ball, scored across all 30 parks.</>
           ) : inPlay != null ? (
             // A ball WAS put in play - the page has been told so. Saying "no ball has been put in
             // play yet" here is the same defect as saying it on an error: asserting a fact the page

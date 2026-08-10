@@ -146,3 +146,4 @@ nohup.out
 
 # Schemathesis run cache (contract fuzzing)
 .schemathesis/
+docs/design/screenshots/
