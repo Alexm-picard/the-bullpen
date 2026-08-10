@@ -61,7 +61,7 @@ services:
       retries: 5
 
   prometheus:
-    image: prom/prometheus:v3.0.1
+    image: prom/prometheus:v3.13.1
     container_name: bullpen-prometheus
     logging: *bullpen-logging
     restart: unless-stopped
