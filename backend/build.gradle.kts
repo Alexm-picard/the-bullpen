@@ -81,7 +81,7 @@ dependencies {
 
     // ADR-0007: single S3-compatible client across prod (Cloudflare R2) and offline dev (MinIO).
     // bom keeps the s3 + apache-client + sts versions aligned without listing each explicitly.
-    implementation(platform("software.amazon.awssdk:bom:2.30.20"))
+    implementation(platform("software.amazon.awssdk:bom:2.51.3"))
     implementation("software.amazon.awssdk:s3")
     implementation("software.amazon.awssdk:apache-client")
 
