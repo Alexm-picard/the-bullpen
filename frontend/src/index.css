@@ -7,17 +7,16 @@
 
 :root {
   font-family: var(--font-ui);
-  color-scheme: dark;
-  background-color: var(--color-bgBase);
-  color: var(--color-textDefault);
+  background-color: var(--bp-field);
+  color: var(--bp-text);
   font-size: 16px;
   line-height: 1.5;
 }
 
 body {
   margin: 0;
-  background-color: var(--color-bgBase);
-  color: var(--color-textDefault);
+  background-color: var(--bp-field);
+  color: var(--bp-text);
 }
 
 /* Bare <h1>..<h4> get the display font; Mantine <Title> already inherits via theme.headings. */
@@ -27,7 +26,7 @@ h3,
 h4 {
   font-family: var(--font-display);
   line-height: 1.2;
-  color: var(--color-textStrong);
+  color: var(--bp-ink);
 }
 
 code,

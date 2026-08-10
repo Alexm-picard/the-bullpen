@@ -23,6 +23,7 @@ import {
 import HomePage from "./pages/home-page";
 import { ErrorBoundary } from "./components/shared/error-boundary";
 import { colors, typography } from "./design/broadcast";
+import { ThemeProvider, useTheme } from "./design/theme-toggle";
 
 /**
  * Every non-home page is lazy-loaded so the initial chunk is just the layout
@@ -118,6 +119,32 @@ const groupSeparatorStyle: React.CSSProperties = {
   paddingLeft: 16,
 };
 
+function ThemeToggleButton() {
+  const { theme, toggle } = useTheme();
+  return (
+    <button
+      onClick={toggle}
+      aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+      style={{
+        background: "none",
+        border: `1px solid ${colors.rule}`,
+        borderRadius: 4,
+        padding: "4px 8px",
+        cursor: "pointer",
+        fontFamily: typography.fonts.mono,
+        fontSize: 11,
+        letterSpacing: "0.08em",
+        color: colors.steel,
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+      }}
+    >
+      {theme === "dark" ? "☀" : "☾"}
+    </button>
+  );
+}
+
 function Layout() {
   // D1: below the `sm` breakpoint the 7-link bar cannot fit the 56px header, so the horizontal
   // group swaps for a burger + chrome drawer (Mantine visibleFrom/hiddenFrom - no JS media logic).
@@ -131,7 +158,7 @@ function Layout() {
       </a>
       <AppShell.Header
         style={{
-          backgroundColor: colors.chrome,
+          backgroundColor: "var(--bp-field-hi)",
           borderBottom: `2px solid ${colors.gold}`,
         }}
       >
@@ -191,6 +218,7 @@ function Layout() {
                 ),
               )}
             </Group>
+            <ThemeToggleButton />
             <Burger
               hiddenFrom="sm"
               opened={navOpen}
@@ -210,9 +238,9 @@ function Layout() {
         hiddenFrom="sm"
         title="The Bullpen"
         styles={{
-          content: { backgroundColor: colors.chrome },
+          content: { backgroundColor: "var(--bp-field-hi)" },
           header: {
-            backgroundColor: colors.chrome,
+            backgroundColor: "var(--bp-field-hi)",
             borderBottom: `2px solid ${colors.gold}`,
           },
           title: {
@@ -282,23 +310,25 @@ function RoutePending() {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route element={<Layout />}>
-          <Route index element={<HomePage />} />
-          <Route path="parks" element={<ParksPage />} />
-          <Route path="players" element={<PlayersPage />} />
-          <Route path="players/:id" element={<PlayerProfilePage />} />
-          <Route path="games" element={<GamesPage />} />
-          <Route path="games/:id" element={<GamePage />} />
-          <Route path="ops" element={<OpsPage />} />
-          <Route path="accuracy" element={<AccuracyPage />} />
-          <Route path="models/guide" element={<ModelGuidePage />} />
-          <Route path="admin/routing" element={<AdminRoutingPage />} />
-          <Route path="about" element={<AboutPage />} />
-          <Route path="*" element={<NotFoundPage />} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
+    <ThemeProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route index element={<HomePage />} />
+            <Route path="parks" element={<ParksPage />} />
+            <Route path="players" element={<PlayersPage />} />
+            <Route path="players/:id" element={<PlayerProfilePage />} />
+            <Route path="games" element={<GamesPage />} />
+            <Route path="games/:id" element={<GamePage />} />
+            <Route path="ops" element={<OpsPage />} />
+            <Route path="accuracy" element={<AccuracyPage />} />
+            <Route path="models/guide" element={<ModelGuidePage />} />
+            <Route path="admin/routing" element={<AdminRoutingPage />} />
+            <Route path="about" element={<AboutPage />} />
+            <Route path="*" element={<NotFoundPage />} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </ThemeProvider>
   );
 }

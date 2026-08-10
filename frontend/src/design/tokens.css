@@ -1,42 +1,33 @@
 /* Tailwind 4 @theme block - BROADCAST design tokens (decision [160], dark-field
- * arrangement per [191]/ADR-0017).
+ * per [191]/ADR-0017, light/dark toggle per [192]).
  *
  * Values mirror src/design/broadcast.ts exactly. If you change one, change both.
  * Lives inside src/design/ so it's a legal hex source for lint:hex-codes.
  *
- * [191] DARK-FIELD: the chrome palette is promoted to ground. The previous
- * light-field values survive as --color-paper-* for the Model Guide page's
- * reading surface. This is a single committed look, NOT a dark-mode toggle. */
+ * [192] TOGGLE: both palettes are defined. The dark-field tokens are the @theme
+ * defaults (Tailwind needs static values). The light/dark switching is done via
+ * CSS custom properties on :root[data-theme], consumed by components through
+ * the broadcast.ts semantic names (colors.field, colors.ink, etc.). */
 
 @theme {
-  /* ── Ground (dark broadcast field, [191]) ── */
+  /* ── Dark field (default, [191]) ── */
   --color-field: #080f1f;
   --color-fieldHi: #0e1b33;
   --color-panel: #101d38;
   --color-panelEdge: #26365c;
   --color-rule: #1c2a4a;
-
-  /* ── Neutral ── */
   --color-steel: #8b95a7;
-
-  /* ── Accent ── */
   --color-gold: #f2a900;
   --color-goldDeep: #c98d00;
-
-  /* ── Text (on dark ground) ── */
   --color-ink: #f4f6fa;
   --color-text: #c9d1e0;
   --color-textMuted: #7c8699;
-
-  /* ── Live state ── */
   --color-live: #39d98a;
-
-  /* ── Heat ramp (batted-ball / pitch-location) ── */
   --color-heatHi: #ff5a4e;
   --color-heatMid: #f2a900;
   --color-heatLo: #3d4f78;
 
-  /* ── Paper surface (Model Guide reading page, [191]) ── */
+  /* ── Paper / Guide surface ── */
   --color-paper: #f6f7f9;
   --color-paperText: #272d38;
   --color-paperMuted: #5e6878;
@@ -55,21 +46,56 @@
   --space-4: 24px;
   --space-5: 40px;
   --space-6: 72px;
+}
 
-  /* ── Legacy aliases (retire on contact as pages migrate to dark field) ── */
-  --color-bgBase: #080f1f;
-  --color-bgSheet: #101d38;
-  --color-bgSubtle: #0e1b33;
-  --color-bgEmphasis: #1c2a4a;
-  --color-scarlet: #c98d00;
-  --color-textStrong: #f4f6fa;
-  --color-textDefault: #c9d1e0;
+/* ── [192] Light/dark palette switching ──────────────────────────────────────
+ * Components read these vars; the @theme block above provides the Tailwind
+ * static values. data-theme is stamped by ThemeProvider. */
+
+:root,
+:root[data-theme="dark"] {
+  --bp-field: #080f1f;
+  --bp-field-hi: #0e1b33;
+  --bp-panel: #101d38;
+  --bp-panel-edge: #26365c;
+  --bp-rule: #1c2a4a;
+  --bp-ink: #f4f6fa;
+  --bp-text: #c9d1e0;
+  --bp-muted: #7c8699;
+  --bp-cond-neutral: #1c2a4a;
+  --bp-cond-good1: #1f4d3a;
+  --bp-cond-bad1: #4d2a28;
+}
+
+:root[data-theme="light"] {
+  --bp-field: #f6f7f9;
+  --bp-field-hi: #edf0f4;
+  --bp-panel: #ffffff;
+  --bp-panel-edge: #d9dee7;
+  --bp-rule: #d9dee7;
+  --bp-ink: #10141b;
+  --bp-text: #272d38;
+  --bp-muted: #5e6878;
+  --bp-cond-neutral: #ebeef2;
+  --bp-cond-good1: #bfe3c6;
+  --bp-cond-bad1: #f6c9c2;
+}
+
+/* ── Legacy aliases (retire on contact) ── */
+:root {
+  --color-bgBase: var(--bp-field);
+  --color-bgSheet: var(--bp-panel);
+  --color-bgSubtle: var(--bp-field-hi);
+  --color-bgEmphasis: var(--bp-rule);
+  --color-scarlet: var(--color-goldDeep);
+  --color-textStrong: var(--bp-ink);
+  --color-textDefault: var(--bp-text);
   --color-textOnNavy: #f4f6fa;
-  --color-chrome: #0e1b33;
-  --color-chromeDeep: #080f1f;
-  --color-chromeEdge: #26365c;
-  --color-textOnChrome: #f4f6fa;
-  --color-goldInk: #c98d00;
+  --color-chrome: var(--bp-field-hi);
+  --color-chromeDeep: var(--bp-field);
+  --color-chromeEdge: var(--bp-panel-edge);
+  --color-textOnChrome: var(--bp-ink);
+  --color-goldInk: var(--color-goldDeep);
   --font-ui: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-data:
     "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;

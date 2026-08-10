@@ -25,7 +25,7 @@ export function PageChrome({
   topPad?: number;
 }) {
   const fieldStyle: CSSProperties = {
-    backgroundColor: colors.field,
+    backgroundColor: "var(--bp-field)",
     minHeight: "100%",
     padding: `24px 16px ${bottomPad}px`,
   };
@@ -50,7 +50,7 @@ const FOOTER_STYLE: CSSProperties = {
   alignItems: "center",
   margin: "0 -16px",
   padding: "10px 16px",
-  backgroundColor: colors.chromeDeep,
+  backgroundColor: "var(--bp-field)",
   fontFamily: typography.fonts.mono,
   fontSize: 11,
   letterSpacing: "0.04em",
