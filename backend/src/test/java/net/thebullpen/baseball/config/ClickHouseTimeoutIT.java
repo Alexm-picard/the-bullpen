@@ -14,12 +14,11 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
- * S4 - proves a query timeout makes a stuck ClickHouse query fail fast instead of hanging the
- * calling thread indefinitely. Runs a server-side {@code SELECT sleep(3)} against a real ClickHouse
- * container with a 1s query timeout and asserts the read aborts well before the 3s sleep completes.
- *
- * <p>Uses JDBC standard {@code Statement.setQueryTimeout()} which works with the v2 driver (0.9.8+)
- * where the legacy {@code socket_timeout} property is ignored.
+ * S4 - proves a query timeout makes a stuck ClickHouse query fail fast. Uses the ClickHouse
+ * server-side {@code max_execution_time} setting (via SETTINGS clause) which is reliable across
+ * both the legacy v1 and the v2 JDBC driver. The JDBC standard {@code Statement.setQueryTimeout()}
+ * and the legacy {@code socket_timeout} property are both unreliable with the v2 driver for {@code
+ * SELECT sleep()}.
  */
 @Testcontainers
 @EnabledIfSystemProperty(
@@ -50,18 +49,17 @@ class ClickHouseTimeoutIT {
   }
 
   @Test
-  void slowQueryAbortsBeforeItWouldComplete() throws Exception {
+  void slowQueryAbortsViaMaxExecutionTime() throws Exception {
     try (HikariDataSource ds = (HikariDataSource) dataSource()) {
       long startNanos = System.nanoTime();
       assertThatThrownBy(
               () -> {
                 try (Connection conn = ds.getConnection();
                     Statement st = conn.createStatement()) {
-                  st.setQueryTimeout(1);
-                  st.executeQuery("SELECT sleep(3)");
+                  st.executeQuery("SELECT sleep(3) SETTINGS max_execution_time = 1");
                 }
               })
-          .as("a 1s query timeout must abort a 3s server-side sleep")
+          .as("max_execution_time=1 must abort a 3s server-side sleep")
           .isInstanceOf(Exception.class);
       long elapsedMs = (System.nanoTime() - startNanos) / 1_000_000;
       assertThat(elapsedMs)
