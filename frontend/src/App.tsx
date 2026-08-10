@@ -75,7 +75,7 @@ const navLinkStyle: React.CSSProperties = {
 };
 
 const navLinkActiveStyle: React.CSSProperties = {
-  color: colors.ink,
+  color: colors.textOnChrome,
   borderBottomColor: colors.gold,
 };
 
@@ -111,12 +111,12 @@ const groupLabelStyle: React.CSSProperties = {
   fontFamily: typography.fonts.mono,
   fontSize: 9,
   letterSpacing: "0.18em",
-  color: colors.textMuted,
+  color: colors.textOnChromeMuted,
   textTransform: "uppercase",
 };
 
 const groupSeparatorStyle: React.CSSProperties = {
-  borderLeft: `1px solid ${colors.rule}`,
+  borderLeft: `1px solid ${colors.chromeEdge}`,
   paddingLeft: 16,
 };
 
