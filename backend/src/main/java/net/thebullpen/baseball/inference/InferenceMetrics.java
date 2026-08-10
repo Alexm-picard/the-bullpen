@@ -117,6 +117,51 @@ public class InferenceMetrics {
                     .register(registry)));
   }
 
+  /** Aggregate-path timer name. Never the served histogram - see decision [188]. */
+  public static final String AGGREGATE_LATENCY_METRIC =
+      "thebullpen_inference_aggregate_latency_seconds";
+
+  private final ConcurrentHashMap<String, Timer> aggregateTimers = new ConcurrentHashMap<>();
+
+  /**
+   * Latency of an INTERNAL aggregate evaluation - the champion run over many rows to produce one
+   * displayed number.
+   *
+   * <p>Its own timer for the reason decision [188] requires one: an aggregate writes nothing to
+   * {@code prediction_log}, so without a metric it would be entirely invisible - a page feature
+   * quietly burning hundreds of inferences per render with nothing in Grafana to show it. Bypassing
+   * the log must not trade pollution for invisibility. Wide bounds and no SLO: this is N inferences
+   * plus a ClickHouse scan, not one served prediction, and it must never skew the served histogram.
+   */
+  public long recordAggregateLatency(Timer.Sample sample, String modelName) {
+    return sample.stop(
+        aggregateTimers.computeIfAbsent(
+            modelName,
+            name ->
+                Timer.builder(AGGREGATE_LATENCY_METRIC)
+                    .tag("model_name", name)
+                    .description("Latency of an internal aggregate model evaluation (not served)")
+                    .publishPercentileHistogram()
+                    .minimumExpectedValue(Duration.ofMillis(1))
+                    .maximumExpectedValue(Duration.ofSeconds(30))
+                    .register(registry)));
+  }
+
+  /**
+   * Count of individual model evaluations performed inside aggregates, and of failed aggregates.
+   */
+  public void incrementAggregateEvaluations(String modelName, long n) {
+    registry
+        .counter("thebullpen_inference_aggregate_evaluations_total", "model_name", modelName)
+        .increment(n);
+  }
+
+  public void incrementAggregateErrors(String modelName) {
+    registry
+        .counter("thebullpen_inference_aggregate_errors_total", "model_name", modelName)
+        .increment();
+  }
+
   public void incrementPrediction(String modelName, String role) {
     counters
         .computeIfAbsent(

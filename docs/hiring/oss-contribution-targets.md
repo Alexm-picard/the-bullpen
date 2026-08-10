@@ -97,6 +97,28 @@ review.
 4. After it merges, link from the README under "Operating evidence"
    and from this doc with the merge date + the PR link.
 
+## Investigated and rejected
+
+### clickhouse-java (Date parameter binding)
+
+**Investigated:** 2026-08-09. This project works around a `java.sql.Date`
+binding bug at 6+ call sites (the driver inlines the Date unquoted,
+ClickHouse evaluates `2026-06-04` as arithmetic). Repro confirmed the bug
+on 0.7.2 (`BadSqlGrammarException`). However:
+
+- The bug is in the **deprecated v1 driver**, which was replaced by
+  `jdbc-v2` in 0.8.x+. The v2 driver handles Date parameters correctly.
+- The v1 driver was never fixed - it was superseded. No fixing commit
+  to reference.
+- The v2 test suite already partially covers Date binding
+  (`PreparedStatementTest.testSetDate`), though not the WHERE-clause
+  filter shape.
+- Contributing a marginal test variant to a deprecated driver's successor
+  is a politeness-merge, not a credibility artifact.
+
+**Verdict:** dead end. The repro is reused as the dependabot #17 (0.7.2
+to 0.9.8) upgrade audit - PR #431 pins Date binding as a regression gate.
+
 ## Track record
 
 | Date       | Project    | PR  | Status | Notes |

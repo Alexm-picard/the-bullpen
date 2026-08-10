@@ -191,8 +191,7 @@ class PsiFeatureJobTest {
 
   @Test
   void s3_archived_metadata_is_skipped_with_log() throws Exception {
-    ModelVersion champ =
-        champion("model_a", 1L, "s3://bucket/models-archive/model_a/v1/metadata.json");
+    ModelVersion champ = champion("model_a", 1L, "s3://bucket/snapshots/model_a/v1/metadata.json");
     when(registryRepo.findActiveServingVersions()).thenReturn(List.of(champ));
 
     int rows = job.runOnce(Instant.now());

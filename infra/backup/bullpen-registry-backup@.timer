@@ -1,0 +1,14 @@
+[Unit]
+Description=The Bullpen - hourly registry backup timer for %i
+
+[Timer]
+# Hourly, offset by 15 minutes to avoid colliding with the nightly snapshot (03:00)
+# or the offsite push (03:30). Persistent=true catches up if the host was off.
+# Enable as: systemctl enable --now bullpen-registry-backup@<user>.timer
+OnCalendar=*-*-* *:15:00
+Persistent=true
+RandomizedDelaySec=2min
+Unit=bullpen-registry-backup@%i.service
+
+[Install]
+WantedBy=timers.target

@@ -269,15 +269,15 @@ export default function AccuracyPage() {
 
       <p style={noteStyle}>
         Two surfaces, deliberately separate. The LIVE SCORECARD is a real
-        truth-join: champion-served live predictions, deduped to one per
-        pitch, scored against what actually happened - and where a family has
-        no live truth, the card says why instead of inventing a number. The
-        OFFLINE sections below are rolling-origin temporal cross-validation on
-        held-out folds (2015-2025), never live outcomes; live numbers never
-        appear in those tables. For the batted-ball model in particular, read
-        its REALITY ECE (calibration against realized outcomes) as the honest
-        figure; its {`ece_vs_retro`} is a self-referential gap against the
-        retrodiction target and is NOT a claim of real-world calibration.
+        truth-join: champion-served live predictions, deduped to one per pitch,
+        scored against what actually happened - and where a family has no live
+        truth, the card says why instead of inventing a number. The OFFLINE
+        sections below are rolling-origin temporal cross-validation on held-out
+        folds (2015-2025), never live outcomes; live numbers never appear in
+        those tables. For the batted-ball model in particular, read its REALITY
+        ECE (calibration against realized outcomes) as the honest figure; its{" "}
+        {`ece_vs_retro`} is a self-referential gap against the retrodiction
+        target and is NOT a claim of real-world calibration.
       </p>
 
       <section aria-labelledby="live-scorecard-label">
@@ -290,8 +290,8 @@ export default function AccuracyPage() {
           Realized top-1 accuracy of champion-served LIVE predictions against
           what actually happened, deduped to one prediction per pitch and
           truth-joined to the live feed. This section and the OFFLINE tables
-          below are deliberately separate surfaces - live numbers never mix
-          into held-out evaluation rows.
+          below are deliberately separate surfaces - live numbers never mix into
+          held-out evaluation rows.
           {rolling.data ? asOfStamp(rolling.data.generatedAt) : ""}
         </p>
         {rolling.data ? (
