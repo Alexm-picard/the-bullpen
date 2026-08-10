@@ -64,11 +64,18 @@ export const colors = {
   // ── Legacy aliases ─────────────────────────────────────────────────────────
   fieldSubtle: "var(--bp-field-hi)",
 
-  // ── Conditional-format (static hex - cellColor needs RGB interpolation) ────
-  // These can't be CSS vars because cellColor parses them as hex for numeric
-  // interpolation. They use the dark-field values; the light-field ramp is
-  // available via condFormatLight for components that need it.
+  // ── Conditional-format (CSS var for direct backgrounds, static for cellColor) ──
+  // Components using these as direct backgrounds get theme-switching via CSS vars.
+  // cellColor (which needs RGB interpolation) uses condFormatHex instead.
   condFormat: {
+    good3: "var(--bp-cond-good3)",
+    good1: "var(--bp-cond-good1)",
+    neutral: "var(--bp-cond-neutral)",
+    bad1: "var(--bp-cond-bad1)",
+    bad3: "var(--bp-cond-bad3)",
+  },
+  // Static hex for cellColor's RGB interpolation (dark-field values).
+  condFormatDark: {
     good3: "#39A568",
     good1: "#1F4D3A",
     neutral: "#1C2A4A",

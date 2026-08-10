@@ -151,7 +151,7 @@ function WindBlock({ block }: { block: ParkSpotlightWindBlock }) {
 export function ParkFactorStrip({ factors }: ParkFactorStripProps) {
   const { theme } = useTheme();
   const ramp = rampFrom(
-    theme === "dark" ? colors.condFormat : colors.condFormatLight,
+    theme === "dark" ? colors.condFormatDark : colors.condFormatLight,
   );
   return (
     <div

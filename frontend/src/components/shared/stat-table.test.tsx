@@ -75,7 +75,7 @@ describe("StatTable", () => {
   it("applies a condFormat color to conditionally-formatted cells", () => {
     const html = render(<StatTable columns={COLUMNS} rows={ROWS} />);
     // condFormat colors should appear as background-color in the cell style
-    const hasCondColor = Object.values(colors.condFormat).some((hex) =>
+    const hasCondColor = Object.values(colors.condFormatDark).some((hex) =>
       html.toLowerCase().includes(hex.toLowerCase()),
     );
     expect(hasCondColor).toBe(true);

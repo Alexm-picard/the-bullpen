@@ -29,7 +29,7 @@ const GRADE_MAX = 80;
 export function GradeBlock({ label, value }: GradeBlockProps) {
   const { theme } = useTheme();
   const ramp = rampFrom(
-    theme === "dark" ? colors.condFormat : colors.condFormatLight,
+    theme === "dark" ? colors.condFormatDark : colors.condFormatLight,
   );
   const numeric =
     typeof value === "number" && Number.isFinite(value) ? value : null;

@@ -24,7 +24,7 @@ export function useStatTablePalette(): StatTablePalette {
       bodyFont: typography.fonts.body,
       monoFont: typography.fonts.mono,
       ramp: rampFrom(
-        theme === "dark" ? colors.condFormat : colors.condFormatLight,
+        theme === "dark" ? colors.condFormatDark : colors.condFormatLight,
       ),
     }),
     [theme],
