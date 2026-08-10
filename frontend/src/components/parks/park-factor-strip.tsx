@@ -28,7 +28,7 @@ import {
   type ParkSpotlightFactor,
   type ParkSpotlightWindBlock,
 } from "../../data/parks-fixtures";
-import { useTheme } from "../../design/theme-toggle";
+import { useTheme } from "../../design/use-theme";
 
 export type ParkFactorStripProps = {
   factors: (ParkSpotlightFactor | ParkSpotlightWindBlock)[];

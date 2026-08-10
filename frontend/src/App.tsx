@@ -23,7 +23,8 @@ import {
 import HomePage from "./pages/home-page";
 import { ErrorBoundary } from "./components/shared/error-boundary";
 import { colors, typography } from "./design/broadcast";
-import { ThemeProvider, useTheme } from "./design/theme-toggle";
+import { ThemeProvider } from "./design/theme-provider";
+import { useTheme } from "./design/use-theme";
 
 /**
  * Every non-home page is lazy-loaded so the initial chunk is just the layout

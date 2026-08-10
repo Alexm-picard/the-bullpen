@@ -4,7 +4,7 @@ import type { StatTablePalette } from "../shared/stat-table";
 import type { KeyNotesPalette } from "../scouting/key-notes";
 import { colors, radii, typography } from "../../design/broadcast";
 import { rampFrom } from "../../design/cellColor";
-import { useTheme } from "../../design/theme-toggle";
+import { useTheme } from "../../design/use-theme";
 
 export function useStatTablePalette(): StatTablePalette {
   const { theme } = useTheme();

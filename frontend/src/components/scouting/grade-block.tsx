@@ -14,7 +14,7 @@
 import { cellColorWith, rampFrom } from "../../design/cellColor";
 import { radii, colors, typography } from "../../design/broadcast";
 import { METRIC_META } from "../../data/matchup-fixtures";
-import { useTheme } from "../../design/theme-toggle";
+import { useTheme } from "../../design/use-theme";
 
 export type GradeBlockProps = {
   /** Short label, e.g. "Power", "FB", "Ctrl". */
