@@ -17,20 +17,31 @@
  * each. Border 1 px bgEmphasis.
  */
 
-import { cellColor } from "../../design/cellColor";
+import {
+  cellColorWith,
+  rampFrom,
+  type CondFormatRamp,
+} from "../../design/cellColor";
 import { radii, colors, typography } from "../../design/broadcast";
 import {
   FACTOR_METRIC,
   type ParkSpotlightFactor,
   type ParkSpotlightWindBlock,
 } from "../../data/parks-fixtures";
+import { useTheme } from "../../design/use-theme";
 
 export type ParkFactorStripProps = {
   factors: (ParkSpotlightFactor | ParkSpotlightWindBlock)[];
 };
 
-function NumericBlock({ block }: { block: ParkSpotlightFactor }) {
-  const bg = cellColor(block.value, FACTOR_METRIC);
+function NumericBlock({
+  block,
+  ramp,
+}: {
+  block: ParkSpotlightFactor;
+  ramp: CondFormatRamp;
+}) {
+  const bg = cellColorWith(ramp, block.value, FACTOR_METRIC);
   return (
     <div
       style={{
@@ -138,6 +149,10 @@ function WindBlock({ block }: { block: ParkSpotlightWindBlock }) {
 }
 
 export function ParkFactorStrip({ factors }: ParkFactorStripProps) {
+  const { theme } = useTheme();
+  const ramp = rampFrom(
+    theme === "dark" ? colors.condFormatDark : colors.condFormatLight,
+  );
   return (
     <div
       style={{
@@ -150,7 +165,11 @@ export function ParkFactorStrip({ factors }: ParkFactorStripProps) {
         f.key === "WIND" ? (
           <WindBlock key={f.key} block={f as ParkSpotlightWindBlock} />
         ) : (
-          <NumericBlock key={f.key} block={f as ParkSpotlightFactor} />
+          <NumericBlock
+            key={f.key}
+            block={f as ParkSpotlightFactor}
+            ramp={ramp}
+          />
         ),
       )}
     </div>

@@ -24,7 +24,6 @@ import type {
   ModelRegistryRow,
 } from "../../data/ops-fixtures";
 import { ECE_METRIC, PSI_METRIC } from "../../data/ops-fixtures";
-import { broadcastStatTablePalette } from "../broadcast/palettes";
 import { StatTable } from "../shared/stat-table";
 import type { StatTableColumn, StatTableRow } from "../shared/stat-table";
 
@@ -105,7 +104,6 @@ export function DriftSnapshotGrid({
     <div className="ops-drift__pair">
       <div>
         <StatTable
-          palette={broadcastStatTablePalette}
           columns={psiCols}
           rows={psiRows(psiByFeature)}
           caption="PSI by feature · 0.25 notice threshold"
@@ -113,7 +111,6 @@ export function DriftSnapshotGrid({
       </div>
       <div>
         <StatTable
-          palette={broadcastStatTablePalette}
           columns={eceCols}
           rows={eceRows(eceByOutput)}
           caption="ECE by segment · 0.10 page threshold"

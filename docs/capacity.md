@@ -225,7 +225,9 @@ on a failed primary, [154] / ADR-0011), so `/v1/predict/pitch` (PRE by default) 
 
 ## What keeps this a 9, not a 10
 
-Deliberately: no multi-host demonstration, a single ClickHouse, and a singleton worker. Each is a
-documented, exit-planned boundary (ADR-0013), not an oversight - the point of this document is that
-the boundary is _chosen and measured_, with the horizontal-scaling path proven at the code level by
-the two-instance ITs and the bottleneck at each tier named with a number or a formula.
+Deliberately: a single ClickHouse and a singleton worker. Each is a documented, exit-planned boundary
+(ADR-0013), not an oversight - the point of this document is that the boundary is _chosen and
+measured_, with the horizontal-scaling path proven at BOTH the code level (`ApiPairTwoInstanceIT`,
+every CI pass) AND the operational level (N1 two-instance demo behind nginx ip_hash LB, 2026-08-10:
+20 identical predictions across both instances, `docs/drills/2026-08-10_n1-two-instance-demo.md`),
+and the bottleneck at each tier named with a number or a formula.
