@@ -26,7 +26,7 @@ export function WhatLink({
 }) {
   return (
     <a href={href} style={STYLE}>
-      <span style={{ color: colors.gold, fontSize: 11 }}>&#9432;</span>
+      <span style={{ color: colors.gold, fontSize: 11 }}>{"ⓘ"}</span>
       {children}
     </a>
   );

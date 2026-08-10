@@ -210,7 +210,7 @@ export default function HomePage() {
               padding: "4px 10px",
             }}
           >
-            <span style={{ color: colors.gold, fontSize: 11 }}>&#9432;</span>
+            <span style={{ color: colors.gold, fontSize: 11 }}>{"ⓘ"}</span>
             Model guide
           </a>
         </div>

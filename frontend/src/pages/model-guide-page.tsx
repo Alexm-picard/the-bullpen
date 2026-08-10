@@ -64,7 +64,7 @@ const BODY: CSSProperties = {
 };
 
 const CALLOUT: CSSProperties = {
-  backgroundColor: "#f0f1f5",
+  backgroundColor: colors.paperRule,
   border: `1px solid ${colors.paperRule}`,
   borderRadius: 2,
   padding: "12px 16px",
