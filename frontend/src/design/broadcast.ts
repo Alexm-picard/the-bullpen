@@ -17,79 +17,69 @@
  */
 
 export const colors = {
-  // ── Ground (dark broadcast field, [191]) ──────────────────────────────────
-  /** Deepest ground - the app base. Was chromeDeep in the light-field era. */
-  field: "#080F1F",
-  /** Elevated ground - nav bar, canvas bars. Was chrome. */
-  fieldHi: "#0E1B33",
-  /** Panel / card background on the dark field. New value. */
-  panel: "#101D38",
-  /** Panel borders, dividers on panels. Was chromeEdge. */
-  panelEdge: "#26365C",
-  /** 1px rules on the dark field. New value between chrome tones. */
-  rule: "#1C2A4A",
+  // ── Theme-switching ground ([192]) ─────────────────────────────────────────
+  // These return CSS var() references so every component responds to the
+  // light/dark toggle without individual changes. The actual values live in
+  // tokens.css :root[data-theme] blocks.
+  field: "var(--bp-field)",
+  fieldHi: "var(--bp-field-hi)",
+  panel: "var(--bp-panel)",
+  panelEdge: "var(--bp-panel-edge)",
+  rule: "var(--bp-rule)",
+  ink: "var(--bp-ink)",
+  text: "var(--bp-text)",
+  textMuted: "var(--bp-muted)",
+  goldInk: "var(--bp-gold-ink)",
+
+  // ── Constant chrome (broadcast identity, same in both themes) ──────────────
+  chrome: "#0E1B33",
+  chromeDeep: "#080F1F",
+  chromeEdge: "#26365C",
+  textOnChrome: "#F4F6FA",
+  textOnChromeMuted: "#9DA9BF",
 
   // ── Neutral ────────────────────────────────────────────────────────────────
-  /** Neutral secondary; also the fallback "team" color (see teamColors). */
   steel: "#8B95A7",
 
-  // ── Accent ─────────────────────────────────────────────────────────────────
-  /** Broadcast gold - LIVE states, emphasis fills, marks, location underline. */
+  // ── Accent (same in both themes) ───────────────────────────────────────────
   gold: "#F2A900",
-  /** Deep gold for text/links on the dark field (higher contrast than gold). */
   goldDeep: "#C98D00",
 
-  // ── Text (on dark ground) ──────────────────────────────────────────────────
-  /** High-emphasis text on the dark field - headlines, values. */
-  ink: "#F4F6FA",
-  /** Body copy and default UI text on the dark field. */
-  text: "#C9D1E0",
-  /** Labels, captions, secondary metadata. Near AA floor on --panel. */
-  textMuted: "#7C8699",
-
   // ── Live state ─────────────────────────────────────────────────────────────
-  /** Live-pulse dot, live badges. */
   live: "#39D98A",
 
-  // ── Heat ramp (batted-ball / pitch-location) ───────────────────────────────
+  // ── Heat ramp ──────────────────────────────────────────────────────────────
   heat: {
     hi: "#FF5A4E",
     mid: "#F2A900",
     lo: "#3D4F78",
   },
 
-  // ── Paper surface (Model Guide reading page, [191]) ────────────────────────
-  /** The Guide's light reading surface - was the app field in the light era. */
+  // ── Paper surface (Model Guide, always light) ──────────────────────────────
   paper: "#F6F7F9",
-  /** Body text on paper. */
   paperText: "#272D38",
-  /** Muted text on paper. */
   paperMuted: "#5E6878",
-  /** Rules on paper. */
   paperRule: "#D9DEE7",
 
-  // ── Legacy bridge (components still importing old names) ───────────────────
-  /** @deprecated Use field */
-  chrome: "#0E1B33",
-  /** @deprecated Use field */
-  chromeDeep: "#080F1F",
-  /** @deprecated Use panelEdge */
-  chromeEdge: "#26365C",
-  /** @deprecated Use goldDeep */
-  goldInk: "#C98D00",
-  /** @deprecated Use ink */
-  textOnChrome: "#F4F6FA",
-  /** @deprecated Use textMuted */
-  textOnChromeMuted: "#7C8699",
-  /** @deprecated Use paper */
-  fieldSubtle: "#0E1B33",
+  // ── Legacy aliases ─────────────────────────────────────────────────────────
+  fieldSubtle: "var(--bp-field-hi)",
 
-  // ── Conditional-format diverging ramp (the signature primitive survives) ───
+  // ── Conditional-format (static hex - cellColor needs RGB interpolation) ────
+  // These can't be CSS vars because cellColor parses them as hex for numeric
+  // interpolation. They use the dark-field values; the light-field ramp is
+  // available via condFormatLight for components that need it.
   condFormat: {
     good3: "#39A568",
     good1: "#1F4D3A",
     neutral: "#1C2A4A",
     bad1: "#4D2A28",
+    bad3: "#E05A4C",
+  },
+  condFormatLight: {
+    good3: "#39A568",
+    good1: "#BFE3C6",
+    neutral: "#EBEEF2",
+    bad1: "#F6C9C2",
     bad3: "#E05A4C",
   },
 

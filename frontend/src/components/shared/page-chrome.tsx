@@ -50,7 +50,7 @@ const FOOTER_STYLE: CSSProperties = {
   alignItems: "center",
   margin: "0 -16px",
   padding: "10px 16px",
-  backgroundColor: "var(--bp-field)",
+  backgroundColor: colors.chromeDeep,
   fontFamily: typography.fonts.mono,
   fontSize: 11,
   letterSpacing: "0.04em",

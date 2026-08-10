@@ -2,32 +2,27 @@
  * per [191]/ADR-0017, light/dark toggle per [192]).
  *
  * Values mirror src/design/broadcast.ts exactly. If you change one, change both.
- * Lives inside src/design/ so it's a legal hex source for lint:hex-codes.
  *
- * [192] TOGGLE: both palettes are defined. The dark-field tokens are the @theme
- * defaults (Tailwind needs static values). The light/dark switching is done via
- * CSS custom properties on :root[data-theme], consumed by components through
- * the broadcast.ts semantic names (colors.field, colors.ink, etc.). */
+ * [192] TOGGLE: theme-switching colors use --bp-* CSS vars stamped by
+ * ThemeProvider. Chrome elements (nav, LowerThird, footer) stay constant
+ * in both modes - the broadcast identity is always dark chrome. */
 
 @theme {
-  /* ── Dark field (default, [191]) ── */
-  --color-field: #080f1f;
-  --color-fieldHi: #0e1b33;
-  --color-panel: #101d38;
-  --color-panelEdge: #26365c;
-  --color-rule: #1c2a4a;
+  /* ── Static tokens (same in both themes) ── */
+  --color-chrome: #0e1b33;
+  --color-chromeDeep: #080f1f;
+  --color-chromeEdge: #26365c;
   --color-steel: #8b95a7;
   --color-gold: #f2a900;
   --color-goldDeep: #c98d00;
-  --color-ink: #f4f6fa;
-  --color-text: #c9d1e0;
-  --color-textMuted: #7c8699;
   --color-live: #39d98a;
   --color-heatHi: #ff5a4e;
   --color-heatMid: #f2a900;
   --color-heatLo: #3d4f78;
+  --color-textOnChrome: #f4f6fa;
+  --color-textOnChromeMuted: #9da9bf;
 
-  /* ── Paper / Guide surface ── */
+  /* ── Paper surface (Model Guide, always light) ── */
   --color-paper: #f6f7f9;
   --color-paperText: #272d38;
   --color-paperMuted: #5e6878;
@@ -39,7 +34,7 @@
   --font-mono:
     "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
-  /* ── Spacing scale (8-point grid) ── */
+  /* ── Spacing scale ── */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 16px;
@@ -48,9 +43,7 @@
   --space-6: 72px;
 }
 
-/* ── [192] Light/dark palette switching ──────────────────────────────────────
- * Components read these vars; the @theme block above provides the Tailwind
- * static values. data-theme is stamped by ThemeProvider. */
+/* ── [192] Theme-switching palette ────────────────────────────────────────── */
 
 :root,
 :root[data-theme="dark"] {
@@ -62,9 +55,13 @@
   --bp-ink: #f4f6fa;
   --bp-text: #c9d1e0;
   --bp-muted: #7c8699;
-  --bp-cond-neutral: #1c2a4a;
+  --bp-gold-ink: #c98d00;
+  --bp-cond-good3: #39a568;
   --bp-cond-good1: #1f4d3a;
+  --bp-cond-neutral: #1c2a4a;
   --bp-cond-bad1: #4d2a28;
+  --bp-cond-bad3: #e05a4c;
+  color-scheme: dark;
 }
 
 :root[data-theme="light"] {
@@ -76,26 +73,26 @@
   --bp-ink: #10141b;
   --bp-text: #272d38;
   --bp-muted: #5e6878;
-  --bp-cond-neutral: #ebeef2;
+  --bp-gold-ink: #8a5f00;
+  --bp-cond-good3: #39a568;
   --bp-cond-good1: #bfe3c6;
+  --bp-cond-neutral: #ebeef2;
   --bp-cond-bad1: #f6c9c2;
+  --bp-cond-bad3: #e05a4c;
+  color-scheme: light;
 }
 
-/* ── Legacy aliases (retire on contact) ── */
+/* ── Legacy aliases ── */
 :root {
   --color-bgBase: var(--bp-field);
   --color-bgSheet: var(--bp-panel);
   --color-bgSubtle: var(--bp-field-hi);
   --color-bgEmphasis: var(--bp-rule);
-  --color-scarlet: var(--color-goldDeep);
+  --color-scarlet: var(--bp-gold-ink);
   --color-textStrong: var(--bp-ink);
   --color-textDefault: var(--bp-text);
   --color-textOnNavy: #f4f6fa;
-  --color-chrome: var(--bp-field-hi);
-  --color-chromeDeep: var(--bp-field);
-  --color-chromeEdge: var(--bp-panel-edge);
-  --color-textOnChrome: var(--bp-ink);
-  --color-goldInk: var(--color-goldDeep);
+  --color-goldInk: var(--bp-gold-ink);
   --font-ui: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-data:
     "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;

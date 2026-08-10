@@ -160,7 +160,7 @@ function Layout() {
       </a>
       <AppShell.Header
         style={{
-          backgroundColor: "var(--bp-field-hi)",
+          backgroundColor: colors.chrome,
           borderBottom: `2px solid ${colors.gold}`,
         }}
       >
@@ -240,7 +240,7 @@ function Layout() {
         hiddenFrom="sm"
         title="The Bullpen"
         styles={{
-          content: { backgroundColor: "var(--bp-field-hi)" },
+          content: { backgroundColor: colors.chrome },
           header: {
             backgroundColor: "var(--bp-field-hi)",
             borderBottom: `2px solid ${colors.gold}`,
