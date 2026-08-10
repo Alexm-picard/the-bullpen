@@ -62,8 +62,8 @@ describe("OverviewParksTable", () => {
     // invertedPct 0.28 → bad1. We assert at least one bad1/bad3 fill is
     // present anywhere in the table.
     const badColors = [
-      colors.condFormat.bad1.toLowerCase(),
-      colors.condFormat.bad3.toLowerCase(),
+      colors.condFormatDark.bad1.toLowerCase(),
+      colors.condFormatDark.bad3.toLowerCase(),
     ];
     const lower = html.toLowerCase();
     const matched = badColors.some((c) => lower.includes(c));

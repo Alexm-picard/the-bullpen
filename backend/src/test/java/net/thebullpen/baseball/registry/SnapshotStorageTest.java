@@ -112,8 +112,8 @@ class SnapshotStorageTest {
     Mockito.verify(repo)
         .updatePaths(
             Mockito.eq(1L),
-            Mockito.eq("s3://bullpen-test/models-archive/retain_model/v1/model.onnx"),
-            Mockito.eq("s3://bullpen-test/models-archive/retain_model/v1/metadata.json"));
+            Mockito.eq("s3://bullpen-test/snapshots/retain_model/v1/model.onnx"),
+            Mockito.eq("s3://bullpen-test/snapshots/retain_model/v1/metadata.json"));
     Mockito.verify(repo).updatePaths(Mockito.eq(2L), Mockito.anyString(), Mockito.anyString());
     Mockito.verify(repo).updatePaths(Mockito.eq(3L), Mockito.anyString(), Mockito.anyString());
     // v4 + v5 stay local — no updatePaths for them.
@@ -123,10 +123,9 @@ class SnapshotStorageTest {
         .updatePaths(Mockito.eq(5L), Mockito.anyString(), Mockito.anyString());
 
     // Uploaded keys present in fake S3.
-    assertThat(fakeArchive.listKeys("models-archive/retain_model/v1"))
+    assertThat(fakeArchive.listKeys("snapshots/retain_model/v1"))
         .contains(
-            "models-archive/retain_model/v1/model.onnx",
-            "models-archive/retain_model/v1/metadata.json");
+            "snapshots/retain_model/v1/model.onnx", "snapshots/retain_model/v1/metadata.json");
 
     // Local dirs for archived versions are gone; for kept versions still exist.
     assertThat(Files.exists(baseDir.resolve("retain_model/v1"))).isFalse();
@@ -174,8 +173,8 @@ class SnapshotStorageTest {
     ModelVersion v1 =
         withPath(
             candidate("retain", "v1", Instant.parse("2026-01-01T00:00:00Z"), 1),
-            "s3://bullpen-test/models-archive/retain/v1/model.onnx",
-            "s3://bullpen-test/models-archive/retain/v1/metadata.json");
+            "s3://bullpen-test/snapshots/retain/v1/model.onnx",
+            "s3://bullpen-test/snapshots/retain/v1/metadata.json");
     List<ModelVersion> versions = new ArrayList<>();
     versions.add(v1);
     for (int i = 2; i <= 5; i++) {
@@ -202,13 +201,13 @@ class SnapshotStorageTest {
   void restoreVersion_pulls_files_back_to_local_and_flips_path() throws Exception {
     SnapshotStorage storage = makeStorage(Optional.of(fakeArchive), 2);
     // Pre-populate fake S3 with an archived snapshot
-    fakeArchive.putForTest("models-archive/restore/v1/model.onnx", "restored-onnx".getBytes());
-    fakeArchive.putForTest("models-archive/restore/v1/metadata.json", "restored-meta".getBytes());
+    fakeArchive.putForTest("snapshots/restore/v1/model.onnx", "restored-onnx".getBytes());
+    fakeArchive.putForTest("snapshots/restore/v1/metadata.json", "restored-meta".getBytes());
     ModelVersion archived =
         withPath(
             candidate("restore", "v1", Instant.parse("2026-01-01T00:00:00Z"), 42),
-            "s3://bullpen-test/models-archive/restore/v1/model.onnx",
-            "s3://bullpen-test/models-archive/restore/v1/metadata.json");
+            "s3://bullpen-test/snapshots/restore/v1/model.onnx",
+            "s3://bullpen-test/snapshots/restore/v1/metadata.json");
     Mockito.when(repo.findById(42L)).thenReturn(Optional.of(archived));
 
     Path restored = storage.restoreVersion(42L);
@@ -241,7 +240,7 @@ class SnapshotStorageTest {
   // --- helpers ----------------------------------------------------------
 
   private SnapshotStorage makeStorage(Optional<R2ArchiveClient> archive, int keepLocally) {
-    return new SnapshotStorage(repo, archive, baseDir.toString(), keepLocally, "models-archive");
+    return new SnapshotStorage(repo, archive, baseDir.toString(), keepLocally, "snapshots");
   }
 
   private static ModelVersion candidate(String name, String version, Instant trainedAt, long id) {

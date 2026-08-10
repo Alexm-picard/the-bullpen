@@ -15,7 +15,8 @@ public sealed class RegistryException extends RuntimeException
         RegistryException.PromotionCriteriaMissing,
         RegistryException.BaselineMissing,
         RegistryException.ModelKindMismatch,
-        RegistryException.ModelLoadFailed {
+        RegistryException.ModelLoadFailed,
+        RegistryException.R2PushFailed {
 
   protected RegistryException(String message) {
     super(message);
@@ -257,6 +258,20 @@ public sealed class RegistryException extends RuntimeException
 
     public String declaredKind() {
       return declaredKind;
+    }
+  }
+
+  public static final class R2PushFailed extends RegistryException {
+    public R2PushFailed(net.thebullpen.baseball.registry.dto.ModelVersion mv, Throwable cause) {
+      super(
+          "registry: champion "
+              + mv.modelName()
+              + "/"
+              + mv.version()
+              + " (id="
+              + mv.id()
+              + ") promoted but R2 push failed - serving but not recoverable from R2",
+          cause);
     }
   }
 }

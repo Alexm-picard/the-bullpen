@@ -390,6 +390,7 @@ public class RegistryService {
       assertBaselineRegistered(current);
       assertPromotionCriteriaMet(current);
       promoteToChampionAtomically(current);
+      pushChampionToR2(current);
     } else if (current.stage() == Stage.CHAMPION && newStage == Stage.SHADOW) {
       // INC-1 (decision [150]) controlled rollback. champion_version_id is NOT NULL, so the routing
       // row can't be emptied - remove it so InferenceRouter finds none and the legacy fallback
@@ -549,6 +550,29 @@ public class RegistryService {
     // promotion auto-creates with SHADOW mode + 0 traffic; subsequent promotions just update
     // the champion_version_id. Same enclosing transaction as the stage update.
     routingService.ensureRoutingForChampion(incoming.modelName(), incoming.id());
+  }
+
+  /**
+   * Post-promotion: push the champion's bundle to R2 so a DR restore can recover it. A champion you
+   * can't recover is a promotion that shouldn't finalize silently. Runs AFTER the human gate and
+   * the atomic promote, so the promotion is committed regardless; the push failure surfaces as a
+   * 500 so the operator knows the R2 copy is missing and can retry or push manually.
+   */
+  private void pushChampionToR2(ModelVersion mv) {
+    try {
+      if (!snapshotStorage.pushChampionBundle(mv)) {
+        return;
+      }
+    } catch (SnapshotStorageException e) {
+      log.error(
+          "registry: champion {}/{} (id={}) promoted but R2 push FAILED - the champion is"
+              + " serving but NOT recoverable from R2 until manually pushed",
+          mv.modelName(),
+          mv.version(),
+          mv.id(),
+          e);
+      throw new RegistryException.R2PushFailed(mv, e);
+    }
   }
 
   // --- helpers ------------------------------------------------------------

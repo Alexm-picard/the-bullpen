@@ -14,6 +14,16 @@ for offline debugging). It applies whenever you see one of:
   something that turns out to be needed (rare but possible after a
   surprise champion-rollback).
 
+## Registry source selection (K6)
+
+In a full DR restore, prefer the newest **hourly** backup
+(`backups/hourly/<timestamp>/registry.sqlite` in R2, pushed every hour by
+`registry-backup.sh`) over the nightly snapshot's registry copy when they
+differ. The hourly leg has ~1h RPO; the nightly snapshot has ~24h RPO. The
+`restore-drill.sh` script uses the nightly snapshot (it restores the full
+ClickHouse + registry bundle); for midday recovery, replace its registry with
+the newest hourly copy after the main restore completes.
+
 ## Pre-checks
 
 1. **You are on the right host.** Restore writes to
@@ -73,7 +83,7 @@ curl -u "$THEBULLPEN_ADMIN_BASIC_AUTH" -X POST \
 
 1. Reads `model_versions.artifact_path` for the row — must be `s3://`.
 2. Downloads every key under
-   `models-archive/<model_name>/<version>/` from R2 to
+   `snapshots/<model_name>/<version>/` from R2 to
    `${BULLPEN_MODELS_DIR}/<model_name>/<version>/`.
 3. Updates `model_versions.artifact_path` + `metadata_path` to point at
    the local copies.

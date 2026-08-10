@@ -31,7 +31,8 @@ public record ExperimentResult(
     String guardrailsObserved, // JSON, nullable
     Status status,
     String notes, // nullable
-    Instant createdAt) {
+    Instant createdAt,
+    Double deadLetteredAtStart) {
 
   /** {@code status} mirror of the V012 CHECK constraint. */
   public enum Status {

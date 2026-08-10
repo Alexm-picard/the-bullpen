@@ -25,7 +25,7 @@ No memory pressure (a low-memory watchdog armed for the run never fired).
 ## FINDING - data-complete, not serving-capable
 
 The drill's own probe recorded `api prediction probe: HTTP 503`. The restore returns every row and a
-registry pointing at champions whose ONNX bytes are archived SEPARATELY in R2 (`models-archive/`,
+registry pointing at champions whose ONNX bytes are archived SEPARATELY in R2 (`snapshots/`,
 per ADR-0007) and are not materialised by this drill. So measured RTO is ~21 minutes to DATA; RTO to
 a SERVING system is unmeasured and includes an operator following
 [`docs/runbooks/registry-snapshot-recovery.md`](../runbooks/registry-snapshot-recovery.md).
@@ -40,7 +40,7 @@ Worth stating explicitly, because the finding above reads worse than the situati
 ladder has three rungs, and only the top one is undrilled:
 
 1. **Artifacts present locally** - normal operation, no recovery needed.
-2. **Artifacts archived in R2** under `models-archive/<model_name>/<version>/`, pushed at
+2. **Artifacts archived in R2** under `snapshots/<model_name>/<version>/`, pushed at
    registration. `ModelLoader` rejects `s3://` paths deliberately, with an error naming the
    pull-back runbook, so this is a designed manual step rather than a missing capability. This is
    the rung this drill does not exercise.
@@ -67,8 +67,8 @@ incomplete one rather than as a completed one with missing paperwork.
 
 ## Action items
 
-1. ~~Extend the drill to exercise the R2 `models-archive` pull-back.~~ **[DEV] DONE** -
-   `restore_model_artifacts` rclone-downloads champion ONNX from `models-archive/<name>/<version>/`
+1. ~~Extend the drill to exercise the R2 `snapshots` pull-back.~~ **[DEV] DONE** -
+   `restore_model_artifacts` rclone-downloads champion ONNX from `snapshots/<name>/<version>/`
    into the local paths the registry points at. Also wired: admin restore endpoint
    (`POST /v1/admin/registry/{name}/restore/{id}`) and `RestoreVersionMain` CLI entry point
    (`-Dloader.main=...`, PropertiesLauncher configured in `build.gradle.kts`).

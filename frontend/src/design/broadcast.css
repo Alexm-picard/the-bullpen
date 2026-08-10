@@ -46,7 +46,7 @@
 }
 .broadcast-strip:hover,
 .broadcast-strip:focus-visible {
-  background-color: var(--broadcast-field-subtle, #edf0f4);
+  background-color: var(--color-fieldHi);
 }
 
 @media (prefers-reduced-motion: reduce) {
