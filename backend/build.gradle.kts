@@ -11,7 +11,7 @@ plugins {
     // JMH microbenchmarks for the inference hot path (S1g). Runs via `./gradlew jmh`,
     // nightly in CI against a committed baseline (build is NOT gated on it — JMH
     // timing flaps on shared runners). Creates the `src/jmh/java` source set.
-    id("me.champeau.jmh") version "0.7.2"
+    id("me.champeau.jmh") version "0.7.3"
 }
 
 group = "net.thebullpen"
