@@ -48,8 +48,9 @@ export const ABOUT_META = {
 
 // ── Facts ribbon (4 cells) ───────────────────────────────────────────────────
 
+// SHELF: 2026-09 grep -c '^\`\[' docs/decisions.md; ls docs/adr/*.md | wc -l
 export const FACTS_RIBBON: FactCell[] = [
-  { figure: "191", eyebrow: "Locked", unit: "Decisions" },
+  { figure: "193", eyebrow: "Locked", unit: "Decisions" },
   { figure: "17", eyebrow: "Architecture", unit: "ADRs" },
   { figure: "4", eyebrow: "Calibrated", unit: "Models" },
   { figure: "4", eyebrow: "Rolling-Origin", unit: "CV Folds" },
