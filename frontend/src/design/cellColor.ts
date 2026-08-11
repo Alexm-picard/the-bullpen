@@ -89,6 +89,47 @@ export function rampFrom(condFormat: {
   ];
 }
 
+// ── Luminance + contrast ────────────────────────────────────────────────────
+
+function parseHex(hex: string): [number, number, number] {
+  const h = hex.replace("#", "");
+  return [
+    parseInt(h.slice(0, 2), 16),
+    parseInt(h.slice(2, 4), 16),
+    parseInt(h.slice(4, 6), 16),
+  ];
+}
+
+function srgbChannel(c8: number): number {
+  const s = c8 / 255;
+  return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+}
+
+export function relativeLuminance(hex: string): number {
+  const [r, g, b] = parseHex(hex);
+  return (
+    0.2126 * srgbChannel(r) + 0.7152 * srgbChannel(g) + 0.0722 * srgbChannel(b)
+  );
+}
+
+export function contrastRatio(hex1: string, hex2: string): number {
+  const l1 = relativeLuminance(hex1);
+  const l2 = relativeLuminance(hex2);
+  const lighter = Math.max(l1, l2);
+  const darker = Math.min(l1, l2);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+const DARK_TEXT = "#0B1222";
+const LIGHT_TEXT = "#E8ECF2";
+const LUMINANCE_FLIP = 0.179;
+
+export function textForBackground(bgHex: string): string {
+  return relativeLuminance(bgHex) > LUMINANCE_FLIP ? DARK_TEXT : LIGHT_TEXT;
+}
+
+export type CellColorPair = { bg: string; text: string };
+
 // ── Internal utilities ───────────────────────────────────────────────────────
 
 /**
@@ -228,4 +269,19 @@ export function cellColorWith(
 
   const rampIndex = percentileToRampIndex(goodPct);
   return ramp[rampIndex];
+}
+
+/**
+ * Like {@link cellColorWith} but returns both background AND a
+ * luminance-matched text color so the value is legible on any ramp stop
+ * in both dark and light themes. The flip point clears WCAG AA (4.5:1)
+ * against both ramp endpoints.
+ */
+export function cellColorPairWith(
+  ramp: CondFormatRamp,
+  value: number | null,
+  metric: MetricMeta,
+): CellColorPair {
+  const bg = cellColorWith(ramp, value, metric);
+  return { bg, text: textForBackground(bg) };
 }

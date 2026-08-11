@@ -11,7 +11,12 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { cellColor } from "./cellColor";
+import {
+  cellColor,
+  contrastRatio,
+  relativeLuminance,
+  textForBackground,
+} from "./cellColor";
 import { colors } from "./broadcast";
 
 const REF = { min: 0, p25: 25, median: 50, p75: 75, max: 100 };
@@ -211,5 +216,52 @@ describe("cellColor — degenerate / malformed reference (DEF-L8)", () => {
     for (const v of [0, 25, 50, 55, 60, 100]) {
       expect(cellColor(v, metric)).toMatch(HEX6);
     }
+  });
+});
+
+// ── WCAG AA contrast recurrence pin ─────────────────────────────────────────
+// axe's contrast check does not evaluate JS-computed inline backgrounds per
+// cell (it reads the resolved computed style, which for a heat-tinted cell is
+// the static hex set via style=, but axe may not correlate the cell's text
+// color override with that background). This test covers the gap: every ramp
+// stop in both palettes must clear 4.5:1 against its luminance-matched text.
+
+describe("textForBackground — WCAG AA contrast on every condFormat ramp stop", () => {
+  const WCAG_AA = 4.5;
+
+  const palettes = [
+    { name: "dark", stops: colors.condFormatDark },
+    { name: "light", stops: colors.condFormatLight },
+  ] as const;
+
+  for (const { name, stops } of palettes) {
+    for (const [key, hex] of Object.entries(stops)) {
+      it(`${name}/${key} (${hex}) clears AA (4.5:1)`, () => {
+        const text = textForBackground(hex);
+        const ratio = contrastRatio(hex, text);
+        expect(ratio).toBeGreaterThanOrEqual(WCAG_AA);
+      });
+    }
+  }
+});
+
+describe("textForBackground — WCAG AA contrast on every spray ramp stop", () => {
+  const WCAG_AA = 4.5;
+
+  for (const [i, hex] of colors.spray.entries()) {
+    it(`spray[${i}] (${hex}) clears AA (4.5:1)`, () => {
+      const text = textForBackground(hex);
+      const ratio = contrastRatio(hex, text);
+      expect(ratio).toBeGreaterThanOrEqual(WCAG_AA);
+    });
+  }
+});
+
+describe("relativeLuminance", () => {
+  it("black is 0", () => {
+    expect(relativeLuminance("#000000")).toBeCloseTo(0, 4);
+  });
+  it("white is 1", () => {
+    expect(relativeLuminance("#FFFFFF")).toBeCloseTo(1, 4);
   });
 });

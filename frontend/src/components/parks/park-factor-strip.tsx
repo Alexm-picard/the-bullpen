@@ -18,8 +18,9 @@
  */
 
 import {
-  cellColorWith,
+  cellColorPairWith,
   rampFrom,
+  type CellColorPair,
   type CondFormatRamp,
 } from "../../design/cellColor";
 import { radii, colors, typography } from "../../design/broadcast";
@@ -41,11 +42,15 @@ function NumericBlock({
   block: ParkSpotlightFactor;
   ramp: CondFormatRamp;
 }) {
-  const bg = cellColorWith(ramp, block.value, FACTOR_METRIC);
+  const pair: CellColorPair = cellColorPairWith(
+    ramp,
+    block.value,
+    FACTOR_METRIC,
+  );
   return (
     <div
       style={{
-        backgroundColor: bg,
+        backgroundColor: pair.bg,
         border: `1px solid ${colors.rule}`,
         borderRadius: radii.sm,
         padding: "12px 16px",
@@ -61,7 +66,7 @@ function NumericBlock({
           fontWeight: typography.weights.bold,
           textTransform: "uppercase",
           letterSpacing: "0.06em",
-          color: colors.ink,
+          color: pair.text,
         }}
       >
         {block.label}
@@ -72,7 +77,7 @@ function NumericBlock({
           fontSize: 48,
           fontWeight: typography.weights.heavy,
           lineHeight: 1,
-          color: colors.ink,
+          color: pair.text,
           fontFeatureSettings: '"tnum" 1',
         }}
       >
@@ -82,9 +87,7 @@ function NumericBlock({
         style={{
           fontFamily: typography.fonts.mono,
           fontSize: 12,
-          // D4 (AA): the caption sits ON the cellColor tint - muted gray reads 1.5:1 on the
-          // strongest stop; ink clears >=5:1 on every stop, size keeps it subordinate.
-          color: colors.ink,
+          color: pair.text,
           fontFeatureSettings: '"tnum" 1',
         }}
       >

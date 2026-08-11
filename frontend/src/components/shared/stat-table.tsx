@@ -26,7 +26,7 @@
 import { useState } from "react";
 
 import type { CondFormatRamp, MetricMeta } from "../../design/cellColor";
-import { cellColorWith } from "../../design/cellColor";
+import { cellColorPairWith } from "../../design/cellColor";
 import { useStatTablePalette } from "../broadcast/use-palette";
 import { radii, typography } from "../../design/broadcast";
 
@@ -332,6 +332,7 @@ export function StatTable({
                 // Only apply heat-map fill when metricMeta is provided
                 // and the raw value is numeric.
                 let cellBg: string = palette.surface;
+                let cellText: string | undefined;
                 if (col.metricMeta !== undefined) {
                   const numericValue =
                     rawValue === null
@@ -343,7 +344,13 @@ export function StatTable({
                     numericValue !== null && isNaN(numericValue)
                       ? null
                       : numericValue;
-                  cellBg = cellColorWith(palette.ramp, coerced, col.metricMeta);
+                  const pair = cellColorPairWith(
+                    palette.ramp,
+                    coerced,
+                    col.metricMeta,
+                  );
+                  cellBg = pair.bg;
+                  cellText = pair.text;
                 }
 
                 return (
@@ -352,6 +359,7 @@ export function StatTable({
                     style={{
                       ...dataCellBaseStyle,
                       backgroundColor: cellBg,
+                      ...(cellText != null ? { color: cellText } : {}),
                       textAlign: "right",
                     }}
                   >
