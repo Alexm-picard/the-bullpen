@@ -26,3 +26,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: check newest drill record age
         run: ./scripts/check-drill-freshness.sh
+
+  shelf-markers:
+    name: SHELF markers current ([190])
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: check SHELF marker expiry
+        run: ./scripts/check-shelf-markers.sh
