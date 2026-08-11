@@ -556,9 +556,9 @@
           "details": "First 30 seconds of HM eyeball-time IS the README. Spend disproportionate time here. Lead with what-it-is + why-interesting in one sentence each. The Ops Dashboard screenshot should be above the fold. Tech-decisions section pulls highlights from docs/decisions.md with one-line rationales \u2014 do not link to the raw log, summarize."
         },
         {
-          "label": "At least one merged OSS PR in a project adjacent to The Bullpen's stack",
-          "done": false,
-          "details": "Goal: one defensible answer to 'tell me about working with a maintainer through code review.' Doesn't need to be big \u2014 a docs fix or a real bug you hit during Phase 2/3 counts. Targets in priority order: onnxruntime (Java bindings), clickhouse-java / clickhouse-jdbc, lightgbm, pybaseball, mantine, tanstack/query, taste-skill, frontend-design. Only file a PR if you genuinely hit something \u2014 manufactured contributions read worse than no contribution."
+          "label": "~~Merged OSS PR~~ STRUCK by [193]: personal project, no upstream track",
+          "done": true,
+          "details": "Deliberately ended. The track existed (clickhouse-java investigation, LightGBM PR #7394), was pursued honestly, and is closed. Decision [193]."
         },
         {
           "label": "Drift postmortem written in real SRE format (Five Whys, timeline, threshold analysis, runbook updates), not blog format",
@@ -584,7 +584,7 @@
         }
       ],
       "mvp_cuts": "Do not cut. This phase IS the resume work; cutting it wastes Phases 0\u20135.",
-      "notes": "(2026-05-25) Scaffolding shipped: docs/hiring/README.md (11-deliverable status table), 60-second-pitch.md (drafted + 30s/15s variants + Q&A + rehearsal log), lessons-learned.md (skeleton pre-seeded from Phases 0-5 surprises), oss-contribution-targets.md (6 ranked candidates with concrete scope suggestions). Gated deliverables (first real postmortem, merged OSS PR, recruiter-time-test) land during operation."
+      "notes": "(2026-05-25) Scaffolding shipped: docs/hiring/README.md (11-deliverable status table), 60-second-pitch.md (drafted + 30s/15s variants + Q&A + rehearsal log), lessons-learned.md (skeleton pre-seeded from Phases 0-5 surprises), oss-contribution-targets.md (6 ranked candidates - deleted by [193]). Gated deliverables (first real postmortem, recruiter-time-test) land during operation."
     }
   ],
   "soft_cut_priority": [

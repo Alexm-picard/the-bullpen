@@ -346,8 +346,8 @@ the work of Phases 0–5 from an L5-evaluation standpoint.
 ships the engineering; Phase 6 makes the engineering _land_.
 
 This phase is unusual in that it can run concurrent with Phase 5 calendar-wise
-(write the README during the season, file the OSS PR whenever you hit a real
-bug, draft the postmortem as drift events happen). The hour estimate assumes
+(write the README during the season, draft the postmortem as drift events
+happen). The hour estimate assumes
 deliberate dedicated time even if it overlaps the Phase 5 weeks.
 
 The standard here is **"clear the bar by a mile"**, not "clear the bar."
@@ -363,10 +363,7 @@ README and a blog-format postmortem, that investment doesn't compound.
   - Link to the drift postmortem
   - Tech-decisions section pulling highlights from `docs/decisions.md` with one-line rationales (do not link to the raw log; summarize)
   - "Why these tech choices over the obvious alternatives" — short, references `design.md` §10
-- **One merged OSS PR in a project adjacent to The Bullpen's stack**
-  - Substantive code, not a docs typo
-  - Targets in priority: `onnxruntime` (Java bindings), `clickhouse-java`/`clickhouse-jdbc`, `lightgbm`, `pybaseball`, `mantine`, `tanstack/query`, `taste-skill`, `frontend-design`
-  - Only file when you genuinely hit a bug worth fixing during the build — manufactured contributions read worse than no contribution
+- ~~One merged OSS PR~~ **Struck by [193]**: personal project, no upstream track.
   - Goal: one defensible answer to "tell me about working with a maintainer through code review"
 - **Drift postmortem in real SRE format** (not blog format)
   - Steal the structure from real published postmortems — Cloudflare, GitHub, Stripe, Fly.io
@@ -395,7 +392,7 @@ collaboration without scrolling. The project is interview-ready as a
 **Do not cut.** This phase IS the resume work; cutting it wastes Phases 0–5.
 
 If energy is depleted by Phase 5, **extend the calendar** for Phase 6 rather
-than reduce the scope. The README, postmortem, and OSS PR all benefit from
+than reduce the scope. The README and postmortem both benefit from
 the time. A rushed README is worse than a delayed one.
 
 ---

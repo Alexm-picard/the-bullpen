@@ -26,7 +26,7 @@ session and most "obvious" alternatives have already been considered and rejecte
 - **Phase 3 — ML systems wrapper**: done (registry, A/B router, drift jobs, retraining queue, async prediction logger)
 - **Phase 4 — Frontend build-out**: done (player lookup, park explorer, game-live, ops dashboard, about)
 - **Phase 5 — Polish + operate**: in progress (hardening sweeps, perf/a11y/bundle, public launch)
-- **Phase 6 — Hiring readiness**: in progress (README, drift postmortem, OSS targets)
+- **Phase 6 — Hiring readiness**: in progress (README, drift postmortem)
 
 ### Current reality vs. headline claims — keep this honest when editing docs
 
@@ -115,7 +115,7 @@ approval:
 1. **Build the demoable spine first, thicken it later.** No horizontal building. Phase 1's vertical slice (one prediction visible end-to-end in browser) is the credibility floor.
 2. **No design tokens drift.** Hex codes in component files are defects — reach for tokens.
 3. **No deploys during live games** (evenings April–October).
-4. **No cuts to**: Phase 0 foundation, eval artifacts, the model registry, the Ops dashboard, Phase 6 hiring-readiness work (README, drift postmortem, OSS PR).
+4. **No cuts to**: Phase 0 foundation, eval artifacts, the model registry, the Ops dashboard, Phase 6 hiring-readiness work (README, drift postmortem).
 5. **No promotion of a model without pre-declared promotion criteria** (primary metric, sample size, threshold, guardrails) and a passing row in `experiment_results`.
 6. **No auto-promotion of retrained models** — retraining is automated, promotion stays human-gated.
 7. **Feature schema hashing is enforced at registration** — refuse models whose schema hash doesn't match the production feature pipeline.
