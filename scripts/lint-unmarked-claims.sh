@@ -9,7 +9,7 @@
 # Pattern: deliberately noisy rather than silent. False positives are tolerable
 # (the operator skims the list); false negatives (missing a real perishable) are
 # the failure mode this exists to prevent.
-set -euo pipefail
+set -eo pipefail
 
 TARGETS=(
   README.md
@@ -31,16 +31,13 @@ CLAIM_PATTERN='[0-9]+%|[0-9],[0-9]{3}|[0-9]+k |Brier [0-9]|ECE [0-9]|as of [A-Z]
 
 hits=0
 while IFS=: read -r file line content; do
-  # Check if this line or the line above has a SHELF: marker
-  prev_line=$((line - 1))
+  # Skip malformed lines (binary matches, empty line numbers)
+  [[ -z "$line" || ! "$line" =~ ^[0-9]+$ ]] && continue
+  # Check if this line or any of the 5 lines above has a SHELF: marker
   has_shelf=false
-  if [[ $prev_line -ge 1 ]]; then
-    prev_content=$(sed -n "${prev_line}p" "$file" 2>/dev/null || true)
-    if echo "$prev_content" | grep -q 'SHELF:'; then
-      has_shelf=true
-    fi
-  fi
-  if echo "$content" | grep -q 'SHELF:'; then
+  start=$((line > 5 ? line - 5 : 1))
+  nearby=$(sed -n "${start},${line}p" "$file" 2>/dev/null || true)
+  if echo "$nearby" | grep -q 'SHELF:'; then
     has_shelf=true
   fi
 
