@@ -407,11 +407,11 @@ at_bat_index, pitch_number)` is implemented and feeds the nightly calibration
     honestly-labeled synthetic **induced-drift drill** (decision [175],
     [`2026-07-16_induced-drift-drill.md`](docs/postmortems/2026-07-16_induced-drift-drill.md)
     - now reclassified as the drill report that proved the detector had teeth
-    before the real event arrived). An earlier pre-season drill
-    [`drill-2026-05-30-induced-battedball-drift.md`](docs/postmortems/drill-2026-05-30-induced-battedball-drift.md)
-    (PSI 0.912, ECE 0.188) and the first-organic-PSI triage
-    [`2026-07-16_first-organic-psi-triage.md`](docs/postmortems/2026-07-16_first-organic-psi-triage.md)
-    round out the drift ledger.
+      before the real event arrived). An earlier pre-season drill
+      [`drill-2026-05-30-induced-battedball-drift.md`](docs/postmortems/drill-2026-05-30-induced-battedball-drift.md)
+      (PSI 0.912, ECE 0.188) and the first-organic-PSI triage
+      [`2026-07-16_first-organic-psi-triage.md`](docs/postmortems/2026-07-16_first-organic-psi-triage.md)
+      round out the drift ledger.
 - **Restore + reboot drill reports** under
   [`docs/drills/`](docs/drills/) (rule 8).
 - **Hardening sweeps** (Phase 5.5) - running observations in
@@ -423,7 +423,7 @@ at_bat_index, pitch_number)` is implemented and feeds the nightly calibration
   leak 1→0, perf baselines, the drift-chain validation).
 - **Hiring readiness** (Phase 6) - deliverables tracked in
   [`docs/hiring/`](docs/hiring/): 60-second verbal pitch, lessons-
-  learned doc, OSS contribution targets, recruiter-time-test.
+  learned doc, recruiter-time-test.
 
 ## Repository layout
 
