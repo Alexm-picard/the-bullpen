@@ -17,7 +17,8 @@ TARGETS=(
   docs/capacity.md
   docs/plan.md
   docs/runbooks/
-  docs/research/
+  # docs/research/ and docs/postmortems/ excluded: dated point-in-time reports
+  # are historical records, not live claims.
   frontend/src/data/about-fixtures.ts
   frontend/src/pages/model-guide-page.tsx
 )

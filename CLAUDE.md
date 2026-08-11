@@ -54,9 +54,10 @@ session and most "obvious" alternatives have already been considered and rejecte
   503s by design and the panel renders an explicit "model not yet promoted" state (rule 6,
   human-gated). PRE's declared primary was re-aimed by [180]/ADR-0014 from a Brier edge to absolute
   calibration (ECE < 0.02, passing at 0.0036), so "failed primary" no longer describes its gate
-  either. The post head is separately surfaced RETROSPECTIVELY on the same page ([177]): logged
-  champion predictions replayed against realized outcomes, which is a read of `prediction_log`, not
-  a live prediction call.
+  either. The post head is separately surfaced RETROSPECTIVELY on the /accuracy page ([177], relocated
+  from the game page by [191.2]): the Live Retrospective section shows the post-pitch champion's
+  rolling truth-joined accuracy plus pinned holdout verification, which is a read of the
+  rolling-accuracy endpoint, not a live prediction call.
 - **Coverage is measured everywhere; backend, training, and frontend now gate.** Backend
   JaCoCo (in `backend/build.gradle.kts` and `backend.yml`) gates on a regression floor (LINE >= 82%,
   BRANCH >= 70%, re-baselined 2026-07-08 when F2.3 un-skipped the pitch + simulate web tests; a few
@@ -68,6 +69,15 @@ session and most "obvious" alternatives have already been considered and rejecte
   branches >= 62%, functions >= 75%, in `vite.config.ts`). The README's earlier unbacked "~95%" has
   been corrected to the measured figures. Rule still holds: do **not** cite a coverage percentage you
   cannot reproduce from CI.
+- **Frontend visual identity rework is complete.** All pages on the broadcast identity ([160]) with
+  chrome-over-dark-field ground ([191]/ADR-0017), light/dark toggle ([192]) with CSS custom
+  properties + localStorage persistence + system preference default. Theme-switching colors return
+  `var(--bp-*)` CSS references from `broadcast.ts`; chrome elements stay constant dark in both modes.
+  condFormat has three exports: `condFormat` (CSS vars for theme switching), `condFormatDark`/
+  `condFormatLight` (static hex for cellColor RGB interpolation). AA contrast verified via axe.
+  SHELF markers ([190]) seeded on static metric callouts; `lint-unmarked-claims.sh` runs as a
+  non-blocking CI check. D4 honesty labels inline on all fixture surfaces. The post-pitch
+  retrospective relocated from the game page to /accuracy ([191.2]).
 
 ## What this project is
 

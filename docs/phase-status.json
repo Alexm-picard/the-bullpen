@@ -3,7 +3,7 @@
   "_doc": "Single source of truth for phase progress. Hand-edited as work completes. /status reads this. Bump fields honestly \u2014 surgical cuts come from honest tracking.",
   "current_phase": "5",
   "weekly_hours_target": 13,
-  "last_updated": "2026-07-03",
+  "last_updated": "2026-08-10",
   "phases": [
     {
       "id": "0",
@@ -456,7 +456,8 @@
       "exit_criteria_checklist": [
         {
           "label": "Polish pass across all pages (typography, spacing, color, motion, a11y)",
-          "done": false
+          "done": true,
+          "details": "DONE 2026-08-10 via the frontend rework program ([160]/[191]/[192]). All pages on the broadcast identity (Barlow Condensed / Inter / JetBrains Mono) with chrome-over-dark-field ground, light/dark toggle ([192]) with CSS custom properties + localStorage persistence + system preference default, theme-switching condFormat palettes for StatTable heat tints, AA contrast verified via axe. Post-pitch retrospective relocated from game page to /accuracy ([191.2]). D4 honesty labels inline on all fixture surfaces. SHELF markers seeded on static metric callouts ([190])."
         },
         {
           "label": "One specific Park Explorer heatmap iteration ('fine' \u2192 'memorable')",

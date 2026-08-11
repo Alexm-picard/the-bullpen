@@ -4,11 +4,12 @@ A self-hosted baseball-analytics platform built primarily as an ML-systems +
 serving wrapper (registry, shadow-mode A/B routing, drift jobs, retraining queue) around three
 calibrated models, two of which reach a browser today: a batted-ball champion serving live (a
 per-park calibrated physics estimate, honest about its reality gap - see the cross-park limitation
-below), and the post-pitch champion, whose logged predictions are replayed against realized
-outcomes on the game page (decision [177]). The pre-pitch head now has its own next-pitch panel
-there; its declared primary was re-aimed from Brier edge to absolute calibration (ECE < 0.02,
-passing at 0.0036 - decision [180] / ADR-0014, amending the [154] / ADR-0011 hold), and the panel
-renders a clean "model not yet promoted" state until the human-gated promotion lands (rule 6). Built to
+below), and the post-pitch champion, whose rolling truth-joined accuracy is surfaced on the
+/accuracy page's Live Retrospective section (decision [177], relocated by [191.2]). The pre-pitch
+head has its own next-pitch panel on the game page; its declared primary was re-aimed from Brier
+edge to absolute calibration (ECE < 0.02, passing at 0.0036 - decision [180] / ADR-0014, amending
+the [154] / ADR-0011 hold), and the panel renders a clean "model not yet promoted" state until the
+human-gated promotion lands (rule 6). Built to
 operate through at least one MLB season for a real drift postmortem - delivered: the flagship
 write-up documents a real two-month silent staleness event on the live pitch path, caught by
 designed machinery and verified recovered
@@ -42,10 +43,10 @@ designed machinery and verified recovered
 - **ONNX Runtime in-process** in Java + Spring Boot 3 - no Python
   sidecar, no live RPC. Training is Python; serving is JVM.
 - **Broadcast-graphics design system** (Barlow Condensed / Inter /
-  JetBrains Mono, scorebug + lower-third telecast chrome). The product is
-  advance-scouting analytics, so it presents as a live-broadcast package,
-  not yet-another-SaaS chrome (decision [160], superseding the earlier
-  scouting-report identity [133]).
+  JetBrains Mono, scorebug + lower-third telecast chrome) with a dark-field
+  ground ([191]/ADR-0017) and light/dark toggle ([192]) via CSS custom
+  properties. The product is advance-scouting analytics, so it presents as a
+  live-broadcast package, not yet-another-SaaS chrome (decision [160]).
 - **Per-model eval artifact** with rolling-origin cross-validation,
   reliability diagrams, calibration metrics - always co-registered with
   a logistic-regression baseline to bound the neural model's lift.

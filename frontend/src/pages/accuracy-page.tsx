@@ -16,6 +16,8 @@
  *   3. Live Scorecard ..... GET /v1/ops/rolling-accuracy -> <LiveScorecard>
  *                           four-card grid (data-first: a failed poll shows a
  *                           stale marker, never discards populated cards)
+ *   3b. Live Retrospective  post-pitch champion truth-join focused view
+ *                           ([191.2] relocated from game page)
  *   4. Section A .......... Held-Out Scorecard (GET /v1/ops/accuracy) -> StatTable
  *                           with an honest NoHistoryNote empty state
  *   5. Section B .......... Batted-Ball Backfill (GET /v1/ops/backfill-accuracy)
@@ -45,7 +47,10 @@ import {
   type BattedBallBackfillReport,
   type ModelScorecardRow,
 } from "../api/accuracy";
-import { useRollingAccuracy } from "../api/rolling-accuracy";
+import {
+  useRollingAccuracy,
+  type ModelRollingAccuracy,
+} from "../api/rolling-accuracy";
 import {
   DEFAULT_WINDOW_DAYS,
   LiveScorecard,
@@ -202,6 +207,94 @@ function backfillAggregateRows(
   ];
 }
 
+// -- Live Retrospective ([191.2] relocation from game page) ---------------
+
+/** Verified 2026-holdout accuracy (PR-210 evidence, pinned to champion v1). */
+// SHELF: 2026-09 experiment_results WHERE model_name='pitch_outcome_post'
+const HOLDOUT_ACCURACY = "59.1% top-1 · 80.8% top-2 (verified 2026 holdout)";
+
+function LiveRetrospective({
+  post,
+  windowDays,
+}: {
+  post: ModelRollingAccuracy | undefined;
+  windowDays: number;
+}) {
+  const hasLive = post?.status === "live" && post.top1 != null;
+  return (
+    <section aria-labelledby="live-retrospective-label">
+      <div style={{ marginBottom: 12 }}>
+        <LowerThird id="live-retrospective-label" meta="LIVE TRUTH-JOIN">
+          Post-Pitch Retrospective
+        </LowerThird>
+      </div>
+      <p style={sectionNoteStyle}>
+        The post-pitch champion (pitch_outcome_post) predicts pitch outcome from
+        early-flight features AFTER the pitch is thrown - release speed, plate
+        location, spin rate. These are the model's logged predictions scored
+        against what actually happened, not live next-pitch predictions.
+      </p>
+      <div
+        style={{
+          backgroundColor: colors.panel,
+          border: `1px solid ${colors.rule}`,
+          padding: "16px 20px",
+          marginBottom: 16,
+        }}
+      >
+        {hasLive ? (
+          <>
+            <div
+              style={{
+                fontFamily: typography.fonts.display,
+                fontWeight: typography.weights.heavy,
+                fontSize: typography.scale[5],
+                color: colors.ink,
+              }}
+            >
+              {(post.top1! * 100).toFixed(1)}%
+            </div>
+            <div
+              style={{
+                fontFamily: typography.fonts.mono,
+                fontSize: 12,
+                color: colors.textMuted,
+                marginTop: 4,
+              }}
+            >
+              rolling {windowDays}d top-1 realized accuracy - 5 classes -{" "}
+              {(post.n ?? 0).toLocaleString()} truth-joined predictions
+            </div>
+          </>
+        ) : (
+          <div
+            style={{
+              fontFamily: typography.fonts.body,
+              fontSize: 14,
+              color: colors.textMuted,
+            }}
+          >
+            {post?.reason ??
+              "No live truth-joined data for the post-pitch champion yet."}
+          </div>
+        )}
+        <div
+          style={{
+            fontFamily: typography.fonts.body,
+            fontSize: 13,
+            color: colors.textMuted,
+            marginTop: 12,
+            paddingTop: 10,
+            borderTop: `1px solid ${colors.rule}`,
+          }}
+        >
+          Holdout verification: {HOLDOUT_ACCURACY}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 // -- Page component -------------------------------------------------------
 
 export default function AccuracyPage() {
@@ -323,6 +416,15 @@ export default function AccuracyPage() {
           </p>
         )}
       </section>
+
+      {rolling.data ? (
+        <LiveRetrospective
+          post={rolling.data.models.find(
+            (m) => m.modelName === "pitch_outcome_post",
+          )}
+          windowDays={rolling.data.windowDays}
+        />
+      ) : null}
 
       <section aria-labelledby="accuracy-scorecard-label">
         <div style={{ marginBottom: 12 }}>
