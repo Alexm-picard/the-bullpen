@@ -95,6 +95,7 @@ export default function ModelGuidePage() {
               the count, runners, batter/pitcher history (28-day form, target
               encodings), and park - everything available before the windup.
             </p>
+            {/* SHELF: 2026-09 experiment_results WHERE model_name='pitch_outcome_pre' */}
             <div style={CALLOUT}>
               <strong>Primary metric:</strong> Brier score (lower is better).
               The champion passed its promotion gate at Brier 0.104 vs the LR
@@ -121,6 +122,7 @@ export default function ModelGuidePage() {
               outing sequence (previous two pitches, pitches into the outing),
               and the batter's handedness.
             </p>
+            {/* SHELF: 2026-09 experiment_results WHERE model_name='pitch_type_pre' */}
             <div style={CALLOUT}>
               <strong>Primary metric:</strong> ECE (expected calibration error).
               The champion passed at ECE 0.0036, well under the 0.02 threshold.
