@@ -38,7 +38,7 @@ while IFS=: read -r file line content; do
     echo "::warning file=${file},line=${line}::SHELF marker expired ${age_days}d ago: ${content}"
     warnings=$((warnings + 1))
   fi
-done < <(grep -rn 'SHELF: 20[0-9][0-9]-[0-9][0-9]' README.md frontend/src/data/ \
+done < <(grep -rn 'SHELF: 20[0-9][0-9]-[0-9][0-9]' README.md frontend/src/data/ frontend/src/pages/ \
   docs/design/ docs/runbooks/ docs/research/ docs/capacity.md docs/plan.md \
   2>/dev/null | grep -v 'decisions.md' || true)
 
