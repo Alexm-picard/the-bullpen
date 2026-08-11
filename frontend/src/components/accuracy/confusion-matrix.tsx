@@ -19,6 +19,7 @@
  */
 
 import { colors, radii, typography } from "../../design/broadcast";
+import { textForBackground } from "../../design/cellColor";
 
 export type ConfusionMatrixProps = {
   /** Class labels in matrix order (used for both axes). */
@@ -31,15 +32,20 @@ export type ConfusionMatrixProps = {
 
 const SPRAY = colors.spray; // 4-stop green sequential ramp (all tokens)
 
-/** Map a row-normalized fraction in [0, 1] to a spray ramp stop. */
-function fractionToStop(fraction: number): { bg: string; darkest: boolean } {
+/** Map a row-normalized fraction in [0, 1] to a spray ramp stop + text color. */
+function fractionToStop(fraction: number): { bg: string; text: string } {
   if (!Number.isFinite(fraction) || fraction <= 0) {
-    return { bg: colors.panel, darkest: false };
+    return { bg: colors.panel, text: colors.ink };
   }
-  if (fraction < 0.25) return { bg: SPRAY[0], darkest: false };
-  if (fraction < 0.5) return { bg: SPRAY[1], darkest: false };
-  if (fraction < 0.75) return { bg: SPRAY[2], darkest: false };
-  return { bg: SPRAY[3], darkest: true };
+  const hex =
+    fraction < 0.25
+      ? SPRAY[0]
+      : fraction < 0.5
+        ? SPRAY[1]
+        : fraction < 0.75
+          ? SPRAY[2]
+          : SPRAY[3];
+  return { bg: hex, text: textForBackground(hex) };
 }
 
 function isWellFormed(labels: string[], matrix: number[][]): boolean {
@@ -174,7 +180,7 @@ export function ConfusionMatrix({
               {row.map((count, predIdx) => {
                 const rowTotal = rowTotals[trueIdx] ?? 0;
                 const fraction = rowTotal > 0 ? count / rowTotal : 0;
-                const { bg, darkest } = fractionToStop(fraction);
+                const { bg, text } = fractionToStop(fraction);
                 const safeCount = Number.isFinite(count) ? count : 0;
                 return (
                   <td
@@ -182,7 +188,7 @@ export function ConfusionMatrix({
                     title={`true ${labels[trueIdx]}, predicted ${labels[predIdx]}: ${safeCount}`}
                     style={{
                       backgroundColor: bg,
-                      color: darkest ? colors.textOnChrome : colors.ink,
+                      color: text,
                       fontFamily: typography.fonts.mono,
                       fontSize: 13,
                       fontFeatureSettings: '"tnum" 1',
