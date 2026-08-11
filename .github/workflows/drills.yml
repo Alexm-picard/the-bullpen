@@ -34,3 +34,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: check SHELF marker expiry
         run: ./scripts/check-shelf-markers.sh
+
+  unmarked-claims:
+    name: unmarked numeric claims ([190] layer 3, non-blocking)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: lint for unmarked numeric claims
+        run: ./scripts/lint-unmarked-claims.sh
