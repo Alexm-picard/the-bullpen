@@ -27,7 +27,6 @@ import {
   useLivePitches,
   usePitchPrediction,
   usePitchTypePrediction,
-  usePostPredictions,
   useTeamContact,
   type GameSummary,
   type LivePitchRow,
@@ -48,7 +47,6 @@ import { BattedBallExplorer } from "../components/games/batted-ball-explorer";
 import { LivePitchBoard } from "../components/games/live-pitch-board";
 import { NextPitchPanel } from "../components/games/next-pitch-panel";
 import { PitchTypePanel } from "../components/games/pitch-type-panel";
-import { PostPredictionPanel } from "../components/games/post-prediction-panel";
 import { TeamContactPanel } from "../components/games/team-contact-panel";
 import {
   type BattedBall,
@@ -234,10 +232,6 @@ export function GamePage() {
 
   const game = useGame(valid ? numericId : null);
   const pitches = useLivePitches(valid ? numericId : null, game.data?.status);
-  const postPredictions = usePostPredictions(
-    valid ? numericId : null,
-    game.data?.status,
-  );
   const mostRecent = pitches.pitches[0];
   // WHO IS BATTING: the live currentPlay matchup when the feed has one, the last thrown pitch
   // otherwise. The fallback is why this can never render worse than before - it IS the old
@@ -730,28 +724,6 @@ export function GamePage() {
           </p>
         ) : (
           <LivePitchBoard pitches={pitches.pitches} />
-        )}
-      </section>
-
-      <section aria-labelledby="game-post-predictions-label">
-        <div style={{ marginBottom: 12 }}>
-          <LowerThird id="game-post-predictions-label" meta="RETROSPECTIVE">
-            Post-Pitch Model Scorecard
-          </LowerThird>
-        </div>
-        {postPredictions.isError ? (
-          <p style={errorTextStyle}>
-            Could not load post-pitch predictions
-            {postPredictions.error instanceof Error
-              ? `: ${postPredictions.error.message}`
-              : ""}
-            .
-          </p>
-        ) : (
-          <PostPredictionPanel
-            rows={postPredictions.data?.rows ?? []}
-            hasNext={postPredictions.data?.hasNext ?? false}
-          />
         )}
       </section>
 

@@ -111,9 +111,10 @@ describe("AccuracyPage", () => {
     expect(h1Count).toBe(1);
   });
 
-  it("renders all three LowerThird section labels", () => {
+  it("renders all four LowerThird section labels", () => {
     const html = renderEmpty();
     expect(html).toContain("Live Scorecard (rolling 7d)");
+    expect(html).toContain("Post-Pitch Retrospective");
     // The exact-label form: a bare substring would match the header eyebrow
     // ("Live + Held-Out Scorecards") and could never fail for the section.
     expect(html).toContain(">Held-Out Scorecard<");
@@ -172,6 +173,12 @@ describe("AccuracyPage", () => {
       .replace(/style="[^"]*"/g, "")
       .replace(/<[^>]+>/g, " ");
     expect(text).not.toMatch(/\b0\.\d{2,3}\b/);
-    expect(text).not.toMatch(/\d+\.\d+%/);
+    // The holdout verification line ("59.1% top-1 · 80.8% top-2") is pinned
+    // evidence from PR-210, not a fabricated metric. Strip it before asserting.
+    const withoutHoldout = text.replace(
+      /59\.1% top-1 · 80\.8% top-2 \(verified 2026 holdout\)/,
+      "",
+    );
+    expect(withoutHoldout).not.toMatch(/\d+\.\d+%/);
   });
 });
