@@ -205,6 +205,10 @@ public class PitchTypePredictionService {
       float elapsedMs = elapsedNanos / 1_000_000.0f;
 
       LoadedPitchTypeModel serving = modelLoader.loadPitchType(routed.servingVersionId());
+      // [188]/ADR-0016: the game page's pitch-type call carries game identity keys in the request
+      // body. Log them so prediction_log rows can be truth-joined against pitches_live for the
+      // rolling-accuracy scorecard. These keys are part of the answer-as-delivered, not internal
+      // evaluation; the promotion gate's evidence surface (experiment_results) is separate.
       logger.enqueue(
           new PredictionLogEvent(
               UUID.randomUUID(),
@@ -217,18 +221,13 @@ public class PitchTypePredictionService {
               serializeFeatures(req),
               serializePrediction(probs),
               elapsedMs,
-              correlationId));
+              correlationId,
+              req.gameId(),
+              req.atBatIndex(),
+              req.pitchNumber()));
 
-      // Shadow row fire-and-forget off the request path: the serving leg already returned, and the
-      // shadow logs when it completes. WHAT THIS BUYS IS THE MECHANISM AND THE CORRECT ROLE - NOT
-      // promotion evidence. Rows from THIS endpoint carry NULL live keys (the A8 contract on
-      // predict()), and every evidence reader exclude them by explicit game_id IS NOT NULL filter,
-      // so nothing logged here enters any gate. Evidence rows arrive when a live-ingest poller leg
-      // supplies real live keys - via a separate INTERNAL entry point, since this method
-      // uses the no-key constructor and must never lift keys off the public request DTO. Do NOT
-      // "fix" an evidence shortfall by logging the caller-supplied live keys - that is precisely
-      // the injection the NULL keys exist to prevent, and it would poison the truth-joined sample
-      // a real promotion gate reads.
+      // Shadow row: the serving leg already returned. Log with the same live keys so shadow
+      // truth-join volume accumulates alongside the champion.
       routed
           .shadowFuture()
           .ifPresent(
@@ -256,7 +255,10 @@ public class PitchTypePredictionService {
                                 serializeFeatures(req),
                                 serializePrediction(shadowProbs),
                                 elapsedMs,
-                                correlationId));
+                                correlationId,
+                                req.gameId(),
+                                req.atBatIndex(),
+                                req.pitchNumber()));
                       } catch (RuntimeException logEx) {
                         // A throwing whenComplete action completes the DERIVED future
                         // exceptionally, and that future is discarded - so without this the failure

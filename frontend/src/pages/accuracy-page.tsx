@@ -401,10 +401,6 @@ export default function AccuracyPage() {
             <LiveScorecard
               models={rolling.data.models}
               windowDays={rolling.data.windowDays}
-              battedBallOfflineEce={
-                scoreRows.find((r) => r.modelName === "battedball_outcome")
-                  ?.ece ?? null
-              }
             />
           </>
         ) : rolling.isLoading ? (

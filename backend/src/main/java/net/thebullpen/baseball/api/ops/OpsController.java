@@ -241,8 +241,8 @@ public class OpsController {
     return ModelRollingAccuracy.live(
         "pitch_type_pre",
         rollingAccuracy.pitchTypeDaily(days),
-        "promoted 2026-08-02; live predictions are accumulating and the panel's HTTP path logs"
-            + " no pitch keys, so no truth-joinable volume exists yet",
+        "promoted 2026-08-02; the game page's HTTP path now logs pitch keys ([188]/ADR-0016),"
+            + " so truth-joinable volume accumulates as games are watched",
         // The endpoint is public and self-describing (its own honesty contract): a direct API
         // caller sees the [183] framing without needing the frontend's caption.
         "calibrated prior ([183]): top-1 is supplementary, never the claim; the site renders no"
