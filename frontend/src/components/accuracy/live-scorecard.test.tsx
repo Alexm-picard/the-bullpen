@@ -25,17 +25,10 @@ import { theme } from "../../design/theme";
 
 import { LiveScorecard, PITCH_TYPE_RENDER_FLOOR } from "./live-scorecard";
 
-function render(
-  models: ModelRollingAccuracy[],
-  offlineEce: number | null = 0.031,
-): string {
+function render(models: ModelRollingAccuracy[]): string {
   return renderToStaticMarkup(
     <MantineProvider theme={theme}>
-      <LiveScorecard
-        models={models}
-        windowDays={7}
-        battedBallOfflineEce={offlineEce}
-      />
+      <LiveScorecard models={models} windowDays={7} />
     </MantineProvider>,
   );
 }
@@ -124,18 +117,12 @@ describe("LiveScorecard", () => {
     expect(html).toContain("without its numbers");
   });
 
-  it("batted-ball echoes the offline figure with a calibration gloss and the backend's [163] reason", () => {
+  it("batted-ball states structural unavailability and points to the backfill section", () => {
     const html = render([BATTED]);
-    expect(html).toContain("offline ECE 0.031 (calibration error)");
-    expect(html).toContain("structurally unavailable, not merely pending");
+    expect(html).toContain("measured offline");
+    expect(html).toContain("structurally unavailable");
+    expect(html).toContain("Guide #batted-ball");
     expect(html).not.toMatch(/\d+\.\d%/);
-  });
-
-  it("batted-ball with no offline figure still states its no-truth state", () => {
-    const html = render([BATTED], null);
-    expect(html).toContain("no live truth");
-    expect(html).toContain("[163]");
-    expect(html).not.toContain("offline ECE");
   });
 
   it("pitch_type with no truth-joinable volume renders the backend's reason, never an FE-invented headline", () => {
@@ -187,7 +174,7 @@ describe("LiveScorecard", () => {
     ]);
     expect(html).toContain("44.4%");
     expect(html).toContain(
-      "calibrated prior; top-1 is supplementary, never the claim ([183])",
+      "top-1 of a calibrated 7-class distribution; ceiling ~45% by design",
     );
   });
 

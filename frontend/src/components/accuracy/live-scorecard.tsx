@@ -276,26 +276,17 @@ function pitchOutcomeCard(m: ModelRollingAccuracy, windowDays: number) {
   );
 }
 
-function battedBallCard(
-  m: ModelRollingAccuracy,
-  battedBallOfflineEce: number | null,
-) {
-  // Deliberately ALWAYS the no-truth card, whatever the status says: this
-  // family's live realized accuracy is structurally unavailable ([163]), and
-  // if the endpoint ever claimed otherwise that is a contract change to
-  // review, not silently render.
+function battedBallCard(m: ModelRollingAccuracy) {
+  // This family's live realized accuracy is structurally unavailable ([163]):
+  // the served surface is the park heatmap (a cross-park counterfactual), not
+  // per-pitch predictions, so there are no pitch keys to truth-join. The card
+  // leads with the graded offline evidence instead.
   return (
     <NoTruthCard
       key={m.modelName}
       modelName={m.modelName}
-      headline={
-        battedBallOfflineEce != null
-          ? `offline ECE ${battedBallOfflineEce.toFixed(3)} (calibration error)`
-          : "no live truth"
-      }
-      detail={
-        m.reason ?? "no live truth-join - calibrated physics estimate ([163])"
-      }
+      headline="measured offline (see backfill below)"
+      detail="live truth-join structurally unavailable - calibrated physics estimate, not per-pitch predictions (Guide #batted-ball)"
       note={m.note}
     />
   );
@@ -315,7 +306,7 @@ function pitchTypeCard(m: ModelRollingAccuracy, windowDays: number) {
         // exists only for an older payload without one.
         qualifier={
           m.note ??
-          "calibrated prior; top-1 is supplementary, never the claim ([183])"
+          "top-1 of a calibrated 7-class distribution; ceiling ~45% by design (Guide #pitch-type)"
         }
       />
     );
@@ -353,12 +344,9 @@ function pitchTypeCard(m: ModelRollingAccuracy, windowDays: number) {
 export function LiveScorecard({
   models,
   windowDays,
-  battedBallOfflineEce,
 }: {
   models: ModelRollingAccuracy[];
   windowDays: number;
-  /** The OFFLINE table's batted-ball ECE, echoed on its card with its label. */
-  battedBallOfflineEce: number | null;
 }) {
   const byName = new Map(models.map((m) => [m.modelName, m]));
 
@@ -377,7 +365,7 @@ export function LiveScorecard({
       );
     }
     if (name === "battedball_outcome") {
-      return battedBallCard(m, battedBallOfflineEce);
+      return battedBallCard(m);
     }
     if (name === "pitch_type_pre") {
       return pitchTypeCard(m, windowDays);
