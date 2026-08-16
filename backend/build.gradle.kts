@@ -56,6 +56,20 @@ tasks.register("resolveAndLockAll") {
 // Boot patch catches up. Regenerate the lock after changing: ./gradlew resolveAndLockAll --write-locks
 extra["netty.version"] = "4.1.136.Final"
 
+// Security override: clickhouse-jdbc 0.9.8 pulls httpcore5 5.3.x transitively, which carries
+// CVE-2026-54399 + CVE-2026-54428 (HIGH). httpclient5 5.4.3 (declared above) depends on
+// httpcore5 5.4.3, but the CH driver's 5.3.x wins Gradle's resolution. Force all httpcore5
+// modules to the fixed version. Drop once the CH driver ships with a patched transitive.
+configurations.all {
+    resolutionStrategy.eachDependency {
+        if (requested.group == "org.apache.httpcomponents.core5"
+            && requested.name.startsWith("httpcore5")) {
+            useVersion("5.4.3")
+            because("CVE-2026-54399 / CVE-2026-54428 fixed in 5.4.3")
+        }
+    }
+}
+
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-actuator")

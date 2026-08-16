@@ -67,11 +67,15 @@ public class RollingAccuracyRepository {
   // Temporal guard: p.request_at < t.ingested_at enforces the pre-pitch claim: the prediction
   // was logged BEFORE the truth row was ingested. Worker rows satisfy this by construction (the
   // poller predicts the UPCOMING pitch, then ingests it when the feed delivers it); the guard
-  // exists so the metric's pre-pitch claim is enforced, not assumed.
+  // exists so the metric's pre-pitch claim is enforced, not assumed. Applied as a WHERE (not a
+  // JOIN ON) because ClickHouse's LIMIT 1 BY optimizer drops subquery columns not referenced in
+  // the outer SELECT, and adding request_at to the JOIN condition triggers
+  // NOT_FOUND_COLUMN_IN_BLOCK.
   private static final String SHAPE =
-      "SELECT t.game_date AS d,"
-          + " countIf(%2$s) AS n,"
-          + " countIf(%2$s AND %3$s = t.truth_class) AS hits"
+      "SELECT d, n, hits FROM ("
+          + " SELECT t.game_date AS d,"
+          + "   countIf(%2$s) AS n,"
+          + "   countIf(%2$s AND %3$s = t.truth_class) AS hits"
           + " FROM ("
           + "   SELECT game_id, at_bat_index, pitch_number, request_at, %1$s"
           + "   FROM prediction_log"
@@ -85,8 +89,9 @@ public class RollingAccuracyRepository {
           + " ) AS t"
           + " ON p.game_id = t.game_id AND p.at_bat_index = t.at_bat_index"
           + "    AND p.pitch_number = t.pitch_number"
-          + "    AND p.request_at < t.ingested_at"
-          + " GROUP BY d ORDER BY d ASC";
+          + " WHERE p.request_at < t.ingested_at"
+          + " GROUP BY d ORDER BY d ASC"
+          + ") AS final_agg";
 
   /**
    * y5 truth side: the parser writes {@code description} in exactly the locked 5-class vocabulary
