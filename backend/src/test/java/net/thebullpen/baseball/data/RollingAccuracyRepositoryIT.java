@@ -165,9 +165,10 @@ class RollingAccuracyRepositoryIT {
             conn.prepareStatement(
                 "INSERT INTO pitches_live (game_id, at_bat_index, pitch_number, game_date,"
                     + " pitcher_id, batter_id, description, pitch_type, balls, strikes, outs,"
-                    + " inning, home_score, away_score, home_team, away_team) VALUES"
+                    + " inning, home_score, away_score, home_team, away_team, ingested_at)"
+                    + " VALUES"
                     + " (?, ?, ?, toDate(now('America/New_York')) - ?, 1, 2, ?, ?, 0, 0, 0, 1, 0, 0,"
-                    + " 'HOME', 'AWAY')")) {
+                    + " 'HOME', 'AWAY', now() + 2)")) {
       ps.setLong(1, gameId);
       ps.setInt(2, abIndex);
       ps.setInt(3, pitchNumber);
