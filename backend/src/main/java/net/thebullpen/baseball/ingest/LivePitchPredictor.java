@@ -11,14 +11,18 @@ import java.time.LocalDate;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import net.thebullpen.baseball.data.PitchTypeArsenalDeriver;
 import net.thebullpen.baseball.data.PitcherForm;
 import net.thebullpen.baseball.data.PitcherFormRepository;
+import net.thebullpen.baseball.data.PitcherOutingSequence;
 import net.thebullpen.baseball.domain.LivePitch;
 import net.thebullpen.baseball.inference.AsyncPredictionLogger;
 import net.thebullpen.baseball.inference.FeaturePipelinePitchPost;
 import net.thebullpen.baseball.inference.FeaturePipelinePitchPre;
+import net.thebullpen.baseball.inference.FeaturePipelinePitchType;
 import net.thebullpen.baseball.inference.InferenceRouter;
 import net.thebullpen.baseball.inference.LoadedPitchModel;
+import net.thebullpen.baseball.inference.LoadedPitchTypeModel;
 import net.thebullpen.baseball.inference.ModelLoader;
 import net.thebullpen.baseball.inference.PredictionLogEvent;
 import net.thebullpen.baseball.inference.RoutedPrediction;
@@ -69,12 +73,14 @@ public class LivePitchPredictor {
   private static final ObjectMapper MAPPER = new ObjectMapper();
   static final String MODEL_NAME = "pitch_outcome_pre";
   static final String POST_MODEL_NAME = "pitch_outcome_post";
+  static final String PITCH_TYPE_MODEL_NAME = "pitch_type_pre";
 
   private final InferenceRouter router;
   private final ModelLoader modelLoader;
   private final RegistryService registry;
   private final AsyncPredictionLogger logger;
   private final IngestMetrics ingestMetrics;
+  private final PitchTypeArsenalDeriver arsenal;
 
   /**
    * Short-TTL cache over {@code pitcher_form_current} so the poll loop never issues one CH read per
@@ -91,11 +97,13 @@ public class LivePitchPredictor {
       RegistryService registry,
       AsyncPredictionLogger logger,
       Optional<PitcherFormRepository> formRepo,
+      Optional<PitchTypeArsenalDeriver> arsenalDeriver,
       IngestMetrics ingestMetrics) {
     this.router = router;
     this.modelLoader = modelLoader;
     this.registry = registry;
     this.logger = logger;
+    this.arsenal = arsenalDeriver.orElse(null);
     this.ingestMetrics = ingestMetrics;
     this.formCache =
         formRepo
@@ -205,6 +213,161 @@ public class LivePitchPredictor {
             });
 
     return routed.servingResponse();
+  }
+
+  /**
+   * Route the next pitch through the {@code pitch_type_pre} champion and enqueue a keyed {@code
+   * prediction_log} row. Same injection-immune provenance as {@link #predictAndLog}: the worker
+   * reads its own poll, not a public request, and the keys are structurally pre-pitch.
+   *
+   * <p>Graceful degradation: when the arsenal deriver is absent (ClickHouse down), no champion
+   * exists, or the prior is unavailable for this pitcher, the method returns an empty map and logs
+   * nothing. A {@link PitchTypeArsenalDeriver.PriorUnavailable} skips the pitch honestly rather
+   * than fabricating a prior.
+   */
+  public Map<String, Double> predictPitchTypeAndLog(LiveNextPitch ctx) {
+    if (arsenal == null) {
+      return Map.of();
+    }
+    Instant requestAt = Instant.now();
+    long startNanos = System.nanoTime();
+
+    PitchTypeArsenalDeriver.Arsenal ars;
+    PitcherOutingSequence seq;
+    try {
+      ars =
+          arsenal.derive(
+              ctx.pitcherId(),
+              ctx.gameDate(),
+              ctx.gameId(),
+              ctx.atBatIndex(),
+              ctx.pitchNumber(),
+              ctx.balls(),
+              ctx.strikes(),
+              ctx.gameDate());
+      seq =
+          arsenal.deriveSequence(
+              ctx.pitcherId(), ctx.gameId(), ctx.atBatIndex(), ctx.pitchNumber());
+    } catch (PitchTypeArsenalDeriver.PriorUnavailable e) {
+      log.debug(
+          "pitch-type prior unavailable for pitcher {} in game {}: {}",
+          ctx.pitcherId(),
+          ctx.gameId(),
+          e.getMessage());
+      return Map.of();
+    } catch (RuntimeException e) {
+      log.warn("pitch-type derivation failed for game {}: {}", ctx.gameId(), e.getMessage());
+      return Map.of();
+    }
+
+    String stand =
+        "S".equals(ctx.batSide()) ? ("L".equals(ctx.pitchHand()) ? "R" : "L") : ctx.batSide();
+    FeaturePipelinePitchType.Request features =
+        new FeaturePipelinePitchType.Request(
+            ctx.balls(),
+            ctx.strikes(),
+            ctx.outs(),
+            ctx.inning(),
+            ctx.baseState(),
+            stand,
+            ctx.pitchHand(),
+            ctx.parkId(),
+            null,
+            null,
+            null,
+            ars.arsFf(),
+            ars.arsSi(),
+            ars.arsFc(),
+            ars.arsSl(),
+            ars.arsCu(),
+            ars.arsCh(),
+            ars.arsOff(),
+            ars.arsFfByCount(),
+            (int) ars.pitcherPriorN(),
+            seq.prev1PtI(),
+            seq.prev2PtI(),
+            seq.prev1Missing(),
+            seq.pitchesIntoOuting());
+
+    Optional<ModelVersion> champion = registry.findChampion(PITCH_TYPE_MODEL_NAME);
+
+    RoutedPrediction<Map<String, Double>> routed;
+    try {
+      routed =
+          router.route(
+              PITCH_TYPE_MODEL_NAME,
+              ctx.gameId(),
+              versionId -> predictPitchType(versionId, features),
+              () -> {
+                if (champion.isEmpty()) {
+                  return null;
+                }
+                return predictPitchType(champion.get().id(), features);
+              });
+    } catch (RuntimeException e) {
+      log.warn("pitch-type routing failed for game {}: {}", ctx.gameId(), e.getMessage());
+      return Map.of();
+    }
+
+    if (routed.servingResponse() == null) {
+      return Map.of();
+    }
+
+    float latencyMs = (System.nanoTime() - startNanos) / 1_000_000.0f;
+
+    long servingVersionId =
+        routed.servingVersionId() == -1L ? champion.orElseThrow().id() : routed.servingVersionId();
+    LoadedPitchTypeModel servingModel = modelLoader.loadPitchType(servingVersionId);
+
+    logger.enqueue(
+        buildPitchTypeEvent(
+            ctx,
+            features,
+            routed.servingResponse(),
+            requestAt,
+            servingModel.version(),
+            servingVersionId,
+            servingModel.schemaHash(),
+            mapRole(routed.servingRole()),
+            latencyMs));
+
+    routed
+        .shadowFuture()
+        .ifPresent(
+            shadowFut -> {
+              long shadowVid = routed.shadowVersionId().orElseThrow();
+              shadowFut.whenComplete(
+                  (shadowResp, ex) -> {
+                    if (ex != null) {
+                      return;
+                    }
+                    LoadedPitchTypeModel shadowModel = modelLoader.loadPitchType(shadowVid);
+                    logger.enqueue(
+                        buildPitchTypeEvent(
+                            ctx,
+                            features,
+                            shadowResp,
+                            requestAt,
+                            shadowModel.version(),
+                            shadowVid,
+                            shadowModel.schemaHash(),
+                            PredictionLogEvent.Role.SHADOW,
+                            latencyMs));
+                  });
+            });
+
+    return routed.servingResponse();
+  }
+
+  private Map<String, Double> predictPitchType(
+      long versionId, FeaturePipelinePitchType.Request features) {
+    try {
+      return modelLoader.loadPitchType(versionId).predict(features);
+    } catch (RuntimeException e) {
+      throw e;
+    } catch (Exception e) {
+      throw new IllegalStateException("pitch-type inference failed", e);
+    }
   }
 
   /**
@@ -547,6 +710,34 @@ public class LivePitchPredictor {
         pitch.gameId(),
         pitch.atBatIndex(),
         pitch.pitchNumber());
+  }
+
+  static PredictionLogEvent buildPitchTypeEvent(
+      LiveNextPitch ctx,
+      FeaturePipelinePitchType.Request featureReq,
+      Map<String, Double> probs,
+      Instant requestAt,
+      String modelVersion,
+      long modelVersionId,
+      String schemaHash,
+      PredictionLogEvent.Role role,
+      float latencyMs) {
+    String winner = argmax(probs);
+    return new PredictionLogEvent(
+        UUID.randomUUID(),
+        requestAt,
+        PITCH_TYPE_MODEL_NAME,
+        modelVersion,
+        modelVersionId,
+        role,
+        schemaHash,
+        serialize(featureReq),
+        serializePrediction(probs, winner),
+        latencyMs,
+        MDC.get("correlation_id"),
+        ctx.gameId(),
+        ctx.atBatIndex(),
+        ctx.pitchNumber());
   }
 
   static String argmax(Map<String, Double> probs) {

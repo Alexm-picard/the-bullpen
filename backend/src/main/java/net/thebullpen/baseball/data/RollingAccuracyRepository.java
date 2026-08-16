@@ -64,6 +64,10 @@ public class RollingAccuracyRepository {
   // side is also upper-bounded at today-ET: the parser's rare officialDate-absent fallback stamps
   // the UTC first-pitch date, which for a late PT game is TOMORROW - without the bound that row
   // would render a future sparkline bucket.
+  // Temporal guard: p.request_at < t.ingested_at enforces the pre-pitch claim: the prediction
+  // was logged BEFORE the truth row was ingested. Worker rows satisfy this by construction (the
+  // poller predicts the UPCOMING pitch, then ingests it when the feed delivers it); the guard
+  // exists so the metric's pre-pitch claim is enforced, not assumed.
   private static final String SHAPE =
       "SELECT t.game_date AS d,"
           + " countIf(%2$s) AS n,"
@@ -81,6 +85,7 @@ public class RollingAccuracyRepository {
           + " ) AS t"
           + " ON p.game_id = t.game_id AND p.at_bat_index = t.at_bat_index"
           + "    AND p.pitch_number = t.pitch_number"
+          + "    AND p.request_at < t.ingested_at"
           + " GROUP BY d ORDER BY d ASC";
 
   /**
@@ -93,7 +98,8 @@ public class RollingAccuracyRepository {
           "JSONExtractString(prediction, 'winner') AS w",
           "p.w != ''",
           "p.w",
-          "   SELECT game_id, at_bat_index, pitch_number, game_date, description AS truth_class"
+          "   SELECT game_id, at_bat_index, pitch_number, game_date, ingested_at,"
+              + "     description AS truth_class"
               + "   FROM pitches_live FINAL"
               + "   WHERE description IN"
               + "     ('ball', 'called_strike', 'swinging_strike', 'foul', 'in_play')"
@@ -115,7 +121,7 @@ public class RollingAccuracyRepository {
               + " 'Float64')) AS kv",
           "length(p.kv) > 0",
           "tupleElement(p.kv[1], 1)",
-          "   SELECT game_id, at_bat_index, pitch_number, game_date, "
+          "   SELECT game_id, at_bat_index, pitch_number, game_date, ingested_at, "
               + PitcherPitchTypePriorSnapshotSql.CANONICAL_Y7
               + " AS truth_class"
               + "   FROM pitches_live FINAL"

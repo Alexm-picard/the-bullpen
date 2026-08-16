@@ -49,6 +49,7 @@ class LivePitchPredictorPostTest {
           registry,
           logger,
           Optional.<PitcherFormRepository>empty(),
+          Optional.empty(),
           ingestMetrics);
 
   @Test
