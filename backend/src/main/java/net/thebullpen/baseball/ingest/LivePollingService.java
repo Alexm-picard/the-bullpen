@@ -403,6 +403,7 @@ public class LivePollingService {
     }
     try {
       predictor.get().predictAndLog(np);
+      predictor.get().predictPitchTypeAndLog(np);
       lastPredictedKeyByGame.put(gamePk, key);
     } catch (Exception e) {
       // Containment + failure-dedup (C1/C2): any model-load or inference failure - e.g. a stale

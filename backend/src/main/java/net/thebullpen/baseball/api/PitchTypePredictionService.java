@@ -113,18 +113,17 @@ public class PitchTypePredictionService {
 
   /**
    * A8, THE LOGGING CONTRACT OF THIS METHOD: HTTP-path rows carry NULL {@code (gameId, atBatIndex,
-   * pitchNumber)} in {@code prediction_log}, matching the pitch-outcome precedent - an arbitrary
-   * API caller must not be able to inject rows that join to real {@code pitches_live} pitches. Both
-   * evidence readers exclude NULL-keyed rows by explicit filter, so NOTHING this method logs enters
-   * any promotion gate.
+   * pitchNumber)} in {@code prediction_log}. An arbitrary API caller must not be able to inject
+   * rows that join to real {@code pitches_live} pitches - NULL keys are the system-wide provenance
+   * discriminator ({@code game_id IS NOT NULL} in RollingAccuracyRepository.SHAPE, both drift
+   * TruthJoinedPredictionFetchers). NOTHING this method logs enters any truth-join or gate.
    *
-   * <p>The consequence is worth stating rather than discovering: until a live-ingest poller leg
-   * exists for pitch-type, its rows are UNPAIRED - no truth join, no retrospective scorecard for
-   * this family. That does not affect the first-champion path (the offline gate, [182]/#334), but
-   * ECE evidence for any LATER promotion has to come from the poller leg or the offline gate, never
-   * from here. Note also that the logged {@code features} carry the 11 wire keys only: ARS and SEQ
-   * are server-derived and absent, so a logged row does NOT determine the scored vector and cannot
-   * be replayed.
+   * <p>Keyed pitch-type rows come from the LivePitchPredictor's per-pitch loop (worker profile),
+   * which runs the pitch-type champion (and shadow, router-mediated) alongside the outcome heads.
+   * Those rows are structurally pre-pitch and injection-immune because the worker reads its own
+   * poll, not a public request. The logged {@code features} here carry the 11 wire keys only: ARS
+   * and SEQ are server-derived and absent, so an HTTP row does NOT determine the scored vector and
+   * cannot be replayed.
    */
   public Served predict(PitchTypeRequest req) {
     Instant requestAt = Instant.now();
@@ -205,10 +204,6 @@ public class PitchTypePredictionService {
       float elapsedMs = elapsedNanos / 1_000_000.0f;
 
       LoadedPitchTypeModel serving = modelLoader.loadPitchType(routed.servingVersionId());
-      // [188]/ADR-0016: the game page's pitch-type call carries game identity keys in the request
-      // body. Log them so prediction_log rows can be truth-joined against pitches_live for the
-      // rolling-accuracy scorecard. These keys are part of the answer-as-delivered, not internal
-      // evaluation; the promotion gate's evidence surface (experiment_results) is separate.
       logger.enqueue(
           new PredictionLogEvent(
               UUID.randomUUID(),
@@ -221,13 +216,9 @@ public class PitchTypePredictionService {
               serializeFeatures(req),
               serializePrediction(probs),
               elapsedMs,
-              correlationId,
-              req.gameId(),
-              req.atBatIndex(),
-              req.pitchNumber()));
+              correlationId));
 
-      // Shadow row: the serving leg already returned. Log with the same live keys so shadow
-      // truth-join volume accumulates alongside the champion.
+      // Shadow row fire-and-forget off the request path.
       routed
           .shadowFuture()
           .ifPresent(
@@ -255,10 +246,7 @@ public class PitchTypePredictionService {
                                 serializeFeatures(req),
                                 serializePrediction(shadowProbs),
                                 elapsedMs,
-                                correlationId,
-                                req.gameId(),
-                                req.atBatIndex(),
-                                req.pitchNumber()));
+                                correlationId));
                       } catch (RuntimeException logEx) {
                         // A throwing whenComplete action completes the DERIVED future
                         // exceptionally, and that future is discarded - so without this the failure
