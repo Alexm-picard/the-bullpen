@@ -3,7 +3,7 @@
   "_doc": "Single source of truth for phase progress. Hand-edited as work completes. /status reads this. Bump fields honestly \u2014 surgical cuts come from honest tracking.",
   "current_phase": "5",
   "weekly_hours_target": 13,
-  "last_updated": "2026-08-10",
+  "last_updated": "2026-08-17",
   "phases": [
     {
       "id": "0",
@@ -164,7 +164,7 @@
       "started_on": "2026-05-23",
       "completed_on": null,
       "exit_criterion": "Three models registered, all with eval artifacts, all served via Spring, all with passing leakage tests in CI. ECE < 0.02 on test data per model.",
-      "current_leaf": "**[2026-06-30] CARRY CHAMPION v2 PROMOTED + LIVE (decision [168]).** The owner-gated box ceremony (authorized [166], unblocked by [167] + #175) RAN off-window 02:15-06:24 ET 2026-06-30 and SUCCEEDED: v2 (id 8) SHADOW->CHAMPION, v1 (id 1) ARCHIVED; /parks now serves real per-park carryFtByPark (modelVersion v2; COL 439 / ATL 426 / KC 423 ft, Mac-verified); rule-5 evidence row id 4, INC-2 load gate + carry sanity (413-441 ft) + rule-7 schema-hash all passed; zero bypasses. Non-gating watch item for review: the /parks HR heatmap shifted (canonical COL P(HR) 0.50->0.95 - physically-correct + non-inferior per [166], reversible via demote). **[2026-06-26] PHASE-4 CARRY CEREMONY - RETRAIN + FAITHFUL CV COMPLETE ON THE BOX; only the owner's register/promote/deploy remain.** The overnight box wake (02:15->11:05 ET) retrained the served BattedBallMLP with the carry head (50 epochs, n_train 1.08M / n_val 123k, carry_loss 0.0171) and exported one self-contained model.onnx (195KB, no .data sidecar; carry_target mean 225 / std 80; 2-output graph probabilities [?,30,5] + carry [?,30]). The faithful rolling-origin CV (4 folds) then read carry_gate_passed=TRUE (the hard must-pass: per-park carry in [50,550] ft) and status=failed/would_fail_guardrail exactly as predicted - challenger realized Brier 0.1166 vs the LR baseline 0.0860 (the documented [141]/[163] reality gap, NOT a failed run; the raw-softmax ECE flag is not served-faithful since serving adds per-park isotonic). One authorized intervention: the relabel had left bbip_retrodicted_labels 2.3x bloated (un-merged ReplacingMergeTree) so the load query OOM'd until a snapshot-backed OPTIMIZE ... FINAL deduped it (raw=FINAL=38.8M rows, rule 13 intact, 2026 carry still 0). #166 (live batted ball) deployed clean as v2026.06.26-0616. The faithful-evidence JSON (sha256 72ee418e) is in hand and needs a Mac commit to training/artifacts/ for the rule-5 gate. REMAINING (owner-gated, rule 6): register SHADOW -> human-promote -> deploy so /parks + the game page light up real per-park carry. The live-stats feature plan is therefore build+train+eval COMPLETE; promotion is the operator's judgment call.** **[2026-06-25] LIVE-STATS FEATURE PLAN COMPLETE (Mac-side) + PHASE-4 CARRY ARC MERGED.** The federated-crafting-waterfall live-stats plan is done on the Mac: live-wiring (the live batted ball on /games/:id, #166, which LEFT JOINs the historical pitches table since pitches_live carries no batted-ball physics), per-player arsenal/in-play/HR surfaces, and the offline /accuracy scorecard all shipped. The per-park CARRY arc is merged (#158-#165): carry head on the SERVED mlp/BattedBallMLP (PR-3 #161), 2-output single-file ONNX serving with NO schema_hash change since carry is an additive output (PR-4 #163), /parks + game-page carry rendering (PR-5 #164, dormant until a carry champion is promoted), and a faithful rolling-origin CV harness that evaluates the ACTUAL served architecture - closing the promotion driver's PerParkMLP evidence-vs-served gap (PR-6 #165). The box ran the full 2015-2025 relabel (100% carry_ft coverage on FINAL; rule 13 held, 2026 untouched). REMAINING = the box's human-gated carry ceremony (rule 6): retrain via mlp/train.py reading bbip_retrodicted_labels with FINAL -> run the faithful CV (python -m bullpen_training.battedball.mlp.rolling_cv_eval) -> register SHADOW -> human-promote -> deploy so /parks + the game page light up real per-park carry. [UPDATE 2026-06-26: the retrain + faithful CV are now DONE per the [2026-06-26] note above - the carry_gate PASSED and the realized-Brier WOULD_FAIL_PRIMARY landed as documented; only register SHADOW -> human-promote -> deploy remain.] HONEST: the faithful CV will likely read WOULD_FAIL_PRIMARY because the served MLP is Brier ~0.107 vs the LR baseline ~0.084 on REALIZED outcomes (the [141]/[163] reality gap - the champion is a calibrated per-park ESTIMATE, not a realized-Brier winner); the carry SANITY gate (per-park feet plausible) is the real must-pass, and promotion is the operator's judgment call. The engineering-gap checklist items below (coverage floor 75%, Schemathesis contract tests) remain open, so Phase 2 stays in_progress.** **[2026-06-08] CURRENT STATE: batted-ball v1 re-scoped to a calibrated per-park OUTCOME model (decision [141], correcting the contaminated non-FINAL cross-park metric); MLP champion serving /all-parks via the registry, with the 2026-06-07 first-champion promotion incident resolved ([149]-[152]). Champion registry row is pending box confirm (ADR-0006, prod-only). Pitch heads onto-registry plus the LR and post baselines are pending the memory-constrained box re-run. The narrative below is the prior pre-[141] Phase 2c framing, retained as history.** **Phase 2c COMPLETE \u2014 all 9 leaves done.** 2c.9 closing: built `bullpen_training.battedball.eval.{comparison,report}` for the MLP-vs-LGBM head-to-head. `compare_models` -> `ComparisonReport` carries per-park (Brier / ECE / argmax-accuracy / 5x5 confusion) + aggregate-across-parks + `prefer_for_production` flag set by the tiebreak ladder (Brier first; ECE if Brier within 1e-4; simpler model (LGBM) on full tie). `render_html` emits a self-contained HTML side-by-side; `save_report` writes JSON + HTML to `data/eval/batted_ball_comparison_v1.{json,html}`. Pure-numpy module \u2014 no torch / no lightgbm imports \u2014 so it loads from either CI pass. Entry-point script `scripts/run_2c9_comparison.py` glues the MLP + LGBM loaders + comparison together with `import lightgbm` first to dodge the macOS libomp segfault. **19 new comparison tests; pyright + ruff clean.** CI's torch-path job extended to include `tests/battedball/eval`. Production artifacts regenerate on the desktop overnight run alongside the 2c.5/2c.8 prod training. If that run emits prefer_for_production='lgbm', decision [45] gets reversed via a new decisions.md entry (conditional acceptance criterion). **Phase 2c summary: 9 leaves complete, ~80h of work landed, ~200 new tests across the suite (260+ training tests total). Full-data desktop pipeline (2c.4 backfill -> 2c.5 MLP -> 2c.6 calibrators -> 2c.7 sanity gate -> 2c.8 LGBM -> 2c.9 comparison) is the one remaining sequential dependency before Phase 2 closes.** Previous 2c.8 leaf: Built `bullpen_training.battedball.lgbm_baseline.{dataset,train}`. `load_lgbm_dataset` flattens the BIP\u00d7park retrodicted-label tensor into a pandas DataFrame keyed on (BIP, park_id) with `park_id` as a pandas Categorical (LGBM native handling); label = argmax of the 5-class retrodicted distribution. `train_lgbm` fits multiclass / multi_logloss / lr=0.05 / num_leaves=63 / deterministic + per-class isotonic calibrators; persists model.txt + calibrator.json + metadata.json. Same `lgb.register_logger(...)` stdout-flush fix from 2b.2 carried over. Refactor: pulled the torch-free feature helpers out of `mlp/dataset.py` into `battedball/features_shared.py` (FEATURE_NAMES / OUTCOME_NAMES / one-hot encoders / hc_to_spray_deg) so the LGBM baseline doesn't pull torch in transitively (verified: importing lgbm_baseline.train now loads zero torch modules). The macOS dual-libomp segfault that surfaced in 2c.5 stays fenced via the CI split + the import decoupling. Smoke training on 987 BIPs x 30 parks = 29,610 rows: 100 boost rounds in 3.7s, COL P(HR)=1.000 top (overconfident from in-sample isotonic on tiny smoke set; production train+val split fixes); cross-park ranking shape correct. **16 lgbm tests + 76 mlp tests pass; pyright + ruff clean.** CI workflow's lightgbm-path job updated to include `tests/battedball/lgbm_baseline`. Production training defers to the desktop overnight via the documented CLI after 2c.4's full backfill lands. Phase 2c is now **8 of 9 leaves done**; only 2c.9 (eval artifact comparing MLP vs LGBM) remains. Previous 2c.7 leaf: Built `bullpen_training.battedball.mlp.sanity` (canonical 110 mph / 28\u00b0 launch encoder; `cross_park_p_hr` via the same FeatureScaler the model trained with; `check_monotonicity` with Spearman \u03c1 + Coors\u2192Oakland gap + per-park rank-delta diagnostics + `actionable_error()` message naming the top-3 offending parks), `published_hr_factors.json` (30 parks, 2024 Baseball Savant single-season, normalised to 1.00 = league avg), and `test_cross_park_sanity.py` (15 unit tests + 1 hard `@pytest.mark.production` gate). Added scipy dep + pytest `production` marker; default pytest runs exclude the marker via `addopts = -m 'not production'`. Smoke run on the 987-BIP MLP correctly **fails** both gates (Spearman 0.288 vs 0.80, COL\u2212ATH gap +0.041 vs +0.05) \u2014 the framework is honest, and COL ranks **first** in the smoke predictions (the altitude signal is intact end-to-end). `data/cross_park_sanity_report.json` saved as evidence. **76 mlp tests pass (1 deselected); pyright + ruff clean.** Decision [52] discipline rule enforceable: the production gate re-runs once the 2c.5 desktop full-data training lands, and the MLP cannot be registered until both gates pass. Phase 2c is now **7 of 9 leaves done**. Remaining: 2c.8 (LightGBM Option-A baseline) and 2c.9 (eval artifact). Previous 2c.6 leaf: Built `bullpen_training.battedball.mlp.{calibration,reliability_plots}`. `ParkCalibrators` = frozen 30x5 grid of fitted `sklearn.isotonic.IsotonicRegression` with `to_json`/`from_json` keyed by park_order + outcome_order (contract boundary for the Java port). `fit_per_park_calibrators` fits on (raw MLP probs, retrodicted label distributions); `transform` applies per-cell isotonic + per-row renormalisation. ECE / reliability_curve / per_park_ece metrics; `plot_all_parks` writes one PNG per park (raw vs calibrated overlay, all 5 outcomes, y=x diagonal). Smoke fit on the 987-BIP MLP from 2c.5: **mean ECE 0.0314 \u2192 0.0112 (64 % drop), all 30/30 parks improved**; calibrator.json 241 KB. JSON round-trip parity 1e-6 (sklearn's `_build_f` lazy interp rebuild called explicitly in `from_json`). Added matplotlib dep. **21 new tests (62 mlp / 234 torch-path total); pyright + ruff clean.** Production calibration + per-park reliability PNGs regenerate after the 2c.5 desktop training run. Phase 2c sequence remaining: 2c.7 (cross-park sanity) -> 2c.8 (LightGBM Option-A baseline) -> 2c.9 (eval artifact). Originally Phase 2c.5 leaf: Built `bullpen_training.battedball.mlp.{architecture,dataset,train}`: `BattedBallMLP` (shared Linear(15\u219264)\u2192ReLU\u2192Linear(64\u219264)\u2192ReLU backbone + 30 parallel Linear(64\u21925) heads, returns raw logits `(B, 30, 5)`), `BBIPDataset` (joins `pitches FINAL` + `bbip_retrodicted_labels FINAL` via ClickHouse `indexOf` per-park ordering), `FeatureScaler` (z-score on continuous cols, one-hots untouched, persisted into `metadata.json` for Java-side parity), and the trainer (KLDiv loss with eps=0.01 label smoothing for degenerate Dirac labels, Adam + cosine LR, ONNX export with dynamic batch axis). Round-trip parity Python\u2194ONNX at 1e-5 (`test_onnx_export_matches_pytorch_within_1e5`). Deps: torch 2.12 + onnx 1.21 + onnxscript 0.7 + onnxruntime 1.20. Tests: 43 new (architecture / dataset / scaler / training convergence / ONNX round-trip / dynamic batch). Smoke training on the 987-BIP 2024 sample completes 30 epochs in 0.6 s on Mac CPU with loss 13.7 \u2192 11.0 after normalisation. **All 273 training tests pass; pyright + ruff clean** (added `reportPrivateImportUsage = false` to silence PyTorch's lazy-export stubs). Full production training (50 epochs on 1.5M BIPs with GPU) deferred to desktop after the 2c.4 overnight backfill \u2014 projected well under the 2 h/fold target per ADR-0006. Per-park test ECE gate (<0.05 pre-calibration) requires the production run; for now the gate is verified-as-achievable. Next: 2c.6 (30 isotonic calibrators) \u2014 built on top of v1 model outputs.",
+      "current_leaf": "**[2026-08-17] STATE RECONCILE (registry-verified).** Since the 2026-06-30 note below: PRE v2 promoted CHAMPION 2026-07-22 via the first-champion offline-gate path ([180]/ADR-0014 + [182], evidence row id=5) and serves the game page's next-pitch panel; the pitch_type family shipped per [183] (pitch_type_pre v1 CHAMPION 2026-08-02, pitch_type_lr_baseline v1 CANDIDATE); C-31 proved the unattended retrain path 2026-07-15 ([178], battedball_outcome v3 CANDIDATE, not promoted per rule 6); the flagship NATURAL drift postmortem landed 2026-08-03 ([186]/[187]). Registry now holds 8 model names / 4 champions. Checklist flags below reconciled 2026-08-17 against GET /v1/ops/registry/all. **[2026-06-30] CARRY CHAMPION v2 PROMOTED + LIVE (decision [168]).** The owner-gated box ceremony (authorized [166], unblocked by [167] + #175) RAN off-window 02:15-06:24 ET 2026-06-30 and SUCCEEDED: v2 (id 8) SHADOW->CHAMPION, v1 (id 1) ARCHIVED; /parks now serves real per-park carryFtByPark (modelVersion v2; COL 439 / ATL 426 / KC 423 ft, Mac-verified); rule-5 evidence row id 4, INC-2 load gate + carry sanity (413-441 ft) + rule-7 schema-hash all passed; zero bypasses. Non-gating watch item for review: the /parks HR heatmap shifted (canonical COL P(HR) 0.50->0.95 - physically-correct + non-inferior per [166], reversible via demote). **[2026-06-26] PHASE-4 CARRY CEREMONY - RETRAIN + FAITHFUL CV COMPLETE ON THE BOX; only the owner's register/promote/deploy remain.** The overnight box wake (02:15->11:05 ET) retrained the served BattedBallMLP with the carry head (50 epochs, n_train 1.08M / n_val 123k, carry_loss 0.0171) and exported one self-contained model.onnx (195KB, no .data sidecar; carry_target mean 225 / std 80; 2-output graph probabilities [?,30,5] + carry [?,30]). The faithful rolling-origin CV (4 folds) then read carry_gate_passed=TRUE (the hard must-pass: per-park carry in [50,550] ft) and status=failed/would_fail_guardrail exactly as predicted - challenger realized Brier 0.1166 vs the LR baseline 0.0860 (the documented [141]/[163] reality gap, NOT a failed run; the raw-softmax ECE flag is not served-faithful since serving adds per-park isotonic). One authorized intervention: the relabel had left bbip_retrodicted_labels 2.3x bloated (un-merged ReplacingMergeTree) so the load query OOM'd until a snapshot-backed OPTIMIZE ... FINAL deduped it (raw=FINAL=38.8M rows, rule 13 intact, 2026 carry still 0). #166 (live batted ball) deployed clean as v2026.06.26-0616. The faithful-evidence JSON (sha256 72ee418e) is in hand and needs a Mac commit to training/artifacts/ for the rule-5 gate. REMAINING (owner-gated, rule 6): register SHADOW -> human-promote -> deploy so /parks + the game page light up real per-park carry. The live-stats feature plan is therefore build+train+eval COMPLETE; promotion is the operator's judgment call.** **[2026-06-25] LIVE-STATS FEATURE PLAN COMPLETE (Mac-side) + PHASE-4 CARRY ARC MERGED.** The federated-crafting-waterfall live-stats plan is done on the Mac: live-wiring (the live batted ball on /games/:id, #166, which LEFT JOINs the historical pitches table since pitches_live carries no batted-ball physics), per-player arsenal/in-play/HR surfaces, and the offline /accuracy scorecard all shipped. The per-park CARRY arc is merged (#158-#165): carry head on the SERVED mlp/BattedBallMLP (PR-3 #161), 2-output single-file ONNX serving with NO schema_hash change since carry is an additive output (PR-4 #163), /parks + game-page carry rendering (PR-5 #164, dormant until a carry champion is promoted), and a faithful rolling-origin CV harness that evaluates the ACTUAL served architecture - closing the promotion driver's PerParkMLP evidence-vs-served gap (PR-6 #165). The box ran the full 2015-2025 relabel (100% carry_ft coverage on FINAL; rule 13 held, 2026 untouched). REMAINING = the box's human-gated carry ceremony (rule 6): retrain via mlp/train.py reading bbip_retrodicted_labels with FINAL -> run the faithful CV (python -m bullpen_training.battedball.mlp.rolling_cv_eval) -> register SHADOW -> human-promote -> deploy so /parks + the game page light up real per-park carry. [UPDATE 2026-06-26: the retrain + faithful CV are now DONE per the [2026-06-26] note above - the carry_gate PASSED and the realized-Brier WOULD_FAIL_PRIMARY landed as documented; only register SHADOW -> human-promote -> deploy remain.] HONEST: the faithful CV will likely read WOULD_FAIL_PRIMARY because the served MLP is Brier ~0.107 vs the LR baseline ~0.084 on REALIZED outcomes (the [141]/[163] reality gap - the champion is a calibrated per-park ESTIMATE, not a realized-Brier winner); the carry SANITY gate (per-park feet plausible) is the real must-pass, and promotion is the operator's judgment call. The engineering-gap checklist items below (coverage floor 75%, Schemathesis contract tests) remain open, so Phase 2 stays in_progress.** **[2026-06-08] CURRENT STATE: batted-ball v1 re-scoped to a calibrated per-park OUTCOME model (decision [141], correcting the contaminated non-FINAL cross-park metric); MLP champion serving /all-parks via the registry, with the 2026-06-07 first-champion promotion incident resolved ([149]-[152]). Champion registry row is pending box confirm (ADR-0006, prod-only). Pitch heads onto-registry plus the LR and post baselines are pending the memory-constrained box re-run. The narrative below is the prior pre-[141] Phase 2c framing, retained as history.** **Phase 2c COMPLETE \u2014 all 9 leaves done.** 2c.9 closing: built `bullpen_training.battedball.eval.{comparison,report}` for the MLP-vs-LGBM head-to-head. `compare_models` -> `ComparisonReport` carries per-park (Brier / ECE / argmax-accuracy / 5x5 confusion) + aggregate-across-parks + `prefer_for_production` flag set by the tiebreak ladder (Brier first; ECE if Brier within 1e-4; simpler model (LGBM) on full tie). `render_html` emits a self-contained HTML side-by-side; `save_report` writes JSON + HTML to `data/eval/batted_ball_comparison_v1.{json,html}`. Pure-numpy module \u2014 no torch / no lightgbm imports \u2014 so it loads from either CI pass. Entry-point script `scripts/run_2c9_comparison.py` glues the MLP + LGBM loaders + comparison together with `import lightgbm` first to dodge the macOS libomp segfault. **19 new comparison tests; pyright + ruff clean.** CI's torch-path job extended to include `tests/battedball/eval`. Production artifacts regenerate on the desktop overnight run alongside the 2c.5/2c.8 prod training. If that run emits prefer_for_production='lgbm', decision [45] gets reversed via a new decisions.md entry (conditional acceptance criterion). **Phase 2c summary: 9 leaves complete, ~80h of work landed, ~200 new tests across the suite (260+ training tests total). Full-data desktop pipeline (2c.4 backfill -> 2c.5 MLP -> 2c.6 calibrators -> 2c.7 sanity gate -> 2c.8 LGBM -> 2c.9 comparison) is the one remaining sequential dependency before Phase 2 closes.** Previous 2c.8 leaf: Built `bullpen_training.battedball.lgbm_baseline.{dataset,train}`. `load_lgbm_dataset` flattens the BIP\u00d7park retrodicted-label tensor into a pandas DataFrame keyed on (BIP, park_id) with `park_id` as a pandas Categorical (LGBM native handling); label = argmax of the 5-class retrodicted distribution. `train_lgbm` fits multiclass / multi_logloss / lr=0.05 / num_leaves=63 / deterministic + per-class isotonic calibrators; persists model.txt + calibrator.json + metadata.json. Same `lgb.register_logger(...)` stdout-flush fix from 2b.2 carried over. Refactor: pulled the torch-free feature helpers out of `mlp/dataset.py` into `battedball/features_shared.py` (FEATURE_NAMES / OUTCOME_NAMES / one-hot encoders / hc_to_spray_deg) so the LGBM baseline doesn't pull torch in transitively (verified: importing lgbm_baseline.train now loads zero torch modules). The macOS dual-libomp segfault that surfaced in 2c.5 stays fenced via the CI split + the import decoupling. Smoke training on 987 BIPs x 30 parks = 29,610 rows: 100 boost rounds in 3.7s, COL P(HR)=1.000 top (overconfident from in-sample isotonic on tiny smoke set; production train+val split fixes); cross-park ranking shape correct. **16 lgbm tests + 76 mlp tests pass; pyright + ruff clean.** CI workflow's lightgbm-path job updated to include `tests/battedball/lgbm_baseline`. Production training defers to the desktop overnight via the documented CLI after 2c.4's full backfill lands. Phase 2c is now **8 of 9 leaves done**; only 2c.9 (eval artifact comparing MLP vs LGBM) remains. Previous 2c.7 leaf: Built `bullpen_training.battedball.mlp.sanity` (canonical 110 mph / 28\u00b0 launch encoder; `cross_park_p_hr` via the same FeatureScaler the model trained with; `check_monotonicity` with Spearman \u03c1 + Coors\u2192Oakland gap + per-park rank-delta diagnostics + `actionable_error()` message naming the top-3 offending parks), `published_hr_factors.json` (30 parks, 2024 Baseball Savant single-season, normalised to 1.00 = league avg), and `test_cross_park_sanity.py` (15 unit tests + 1 hard `@pytest.mark.production` gate). Added scipy dep + pytest `production` marker; default pytest runs exclude the marker via `addopts = -m 'not production'`. Smoke run on the 987-BIP MLP correctly **fails** both gates (Spearman 0.288 vs 0.80, COL\u2212ATH gap +0.041 vs +0.05) \u2014 the framework is honest, and COL ranks **first** in the smoke predictions (the altitude signal is intact end-to-end). `data/cross_park_sanity_report.json` saved as evidence. **76 mlp tests pass (1 deselected); pyright + ruff clean.** Decision [52] discipline rule enforceable: the production gate re-runs once the 2c.5 desktop full-data training lands, and the MLP cannot be registered until both gates pass. Phase 2c is now **7 of 9 leaves done**. Remaining: 2c.8 (LightGBM Option-A baseline) and 2c.9 (eval artifact). Previous 2c.6 leaf: Built `bullpen_training.battedball.mlp.{calibration,reliability_plots}`. `ParkCalibrators` = frozen 30x5 grid of fitted `sklearn.isotonic.IsotonicRegression` with `to_json`/`from_json` keyed by park_order + outcome_order (contract boundary for the Java port). `fit_per_park_calibrators` fits on (raw MLP probs, retrodicted label distributions); `transform` applies per-cell isotonic + per-row renormalisation. ECE / reliability_curve / per_park_ece metrics; `plot_all_parks` writes one PNG per park (raw vs calibrated overlay, all 5 outcomes, y=x diagonal). Smoke fit on the 987-BIP MLP from 2c.5: **mean ECE 0.0314 \u2192 0.0112 (64 % drop), all 30/30 parks improved**; calibrator.json 241 KB. JSON round-trip parity 1e-6 (sklearn's `_build_f` lazy interp rebuild called explicitly in `from_json`). Added matplotlib dep. **21 new tests (62 mlp / 234 torch-path total); pyright + ruff clean.** Production calibration + per-park reliability PNGs regenerate after the 2c.5 desktop training run. Phase 2c sequence remaining: 2c.7 (cross-park sanity) -> 2c.8 (LightGBM Option-A baseline) -> 2c.9 (eval artifact). Originally Phase 2c.5 leaf: Built `bullpen_training.battedball.mlp.{architecture,dataset,train}`: `BattedBallMLP` (shared Linear(15\u219264)\u2192ReLU\u2192Linear(64\u219264)\u2192ReLU backbone + 30 parallel Linear(64\u21925) heads, returns raw logits `(B, 30, 5)`), `BBIPDataset` (joins `pitches FINAL` + `bbip_retrodicted_labels FINAL` via ClickHouse `indexOf` per-park ordering), `FeatureScaler` (z-score on continuous cols, one-hots untouched, persisted into `metadata.json` for Java-side parity), and the trainer (KLDiv loss with eps=0.01 label smoothing for degenerate Dirac labels, Adam + cosine LR, ONNX export with dynamic batch axis). Round-trip parity Python\u2194ONNX at 1e-5 (`test_onnx_export_matches_pytorch_within_1e5`). Deps: torch 2.12 + onnx 1.21 + onnxscript 0.7 + onnxruntime 1.20. Tests: 43 new (architecture / dataset / scaler / training convergence / ONNX round-trip / dynamic batch). Smoke training on the 987-BIP 2024 sample completes 30 epochs in 0.6 s on Mac CPU with loss 13.7 \u2192 11.0 after normalisation. **All 273 training tests pass; pyright + ruff clean** (added `reportPrivateImportUsage = false` to silence PyTorch's lazy-export stubs). Full production training (50 epochs on 1.5M BIPs with GPU) deferred to desktop after the 2c.4 overnight backfill \u2014 projected well under the 2 h/fold target per ADR-0006. Per-park test ECE gate (<0.05 pre-calibration) requires the production run; for now the gate is verified-as-achievable. Next: 2c.6 (30 isotonic calibrators) \u2014 built on top of v1 model outputs.",
       "sub_phases": [
         {
           "id": "2a",
@@ -182,7 +182,7 @@
           "id": "2c",
           "name": "Batted-ball with physics retrodiction",
           "weeks": "13\u201317",
-          "done": false,
+          "done": true,
           "details": "[2026-06-08] Re-scoped per decision [141]: batted-ball v1 ships as a calibrated per-park OUTCOME model (per-park ECE post-cal mean 0.0005), with the cross-park sanity check demoted to a non-blocking diagnostic and registration gated on outcome calibration instead. MLP champion serving /all-parks; first-champion incident ([149]-[152]) resolved; champion row pending box confirm (ADR-0006). Prior narrative: All 9 leaves code-complete + smoke-validated as of 2026-05-24. Final 'done' awaits the desktop overnight pipeline: 2c.4 backfill -> 2c.5 MLP training -> 2c.6 calibrator regen -> 2c.7 sanity gate (decision [52] hard gate) -> 2c.8 LGBM training -> 2c.9 comparison artifact. Production gates (Spearman rho >= 0.8 sanity, per-park ECE < 0.05, MLP-vs-LGBM Brier comparison) are only meaningful against full-data trained models."
         }
       ],
@@ -205,7 +205,7 @@
         {
           "label": "Coverage floor 75% enforced in CI for training/",
           "done": false,
-          "details": "Matches StudyForesight's bar. ruff + pytest-cov in CI, fail build under 75%. Coverage report uploaded as Actions artifact."
+          "details": "STILL OPEN (2026-08-17): the enforced CI gate is a 55% regression floor with 75% warning-only (training.yml); blended TOTAL ~57%. Raising the enforced floor to 75% remains this criterion's target."
         },
         {
           "label": "Contract tests on the API via Schemathesis (against Spring's /v3/api-docs)",
@@ -239,18 +239,18 @@
         },
         {
           "label": "Multi-output MLP: shared backbone + 30 per-park heads + 30 isotonic calibrators",
-          "done": false,
-          "details": "Code-complete + smoke-validated; the per-park MLP + LGBM + calibrator code merged from the desktop 2026-05-30 (commits 9d4584a..eceb439). Full-data GPU training + registration is the remaining desktop hand-off (plan Sprint 2). Artifacts battedball_mlp_v1/ + batted_ball_lgbm_baseline/v1/ exist; per-park ECE<0.02 post-calibration PASSES on full data (mean 0.0005, decision [141]); the MLP is registered and serving champion via /all-parks, with the registry row pending box confirm (ADR-0006)."
+          "done": true,
+          "details": "DONE - registered and serving: battedball_outcome v1 champion 2026-06-06, v2 (additive carry head) champion 2026-06-30 ([168]); per-park ECE post-cal mean 0.0005 passes the [141] gate. The old 'pending box confirm' note is long resolved; v3 (the C-31 unattended-retrain product, 2026-07-15) sits CANDIDATE awaiting human promotion (rule 6). Reconciled 2026-08-17 against the live registry."
         },
         {
           "label": "LR baseline registered for each role (no primary without baseline)",
-          "done": false,
-          "details": "Pitch LR baseline present at pitch_outcome_lr_baseline/v1-smoke (smoke, needs full v1). Batted-ball LR baseline co-registration lands with the Sprint-2 full-data close. Pre/post pitch heads have full eval; the baseline registration is the gap."
+          "done": true,
+          "details": "DONE (reconciled 2026-08-17 against GET /v1/ops/registry/all): pitch_outcome_lr_baseline v1 SHADOW (full clean-feature retrain 2026-06-09, chain B-4 - supersedes the earlier v1-smoke note), lr_baseline_batted_ball v1 SHADOW + battedball_lgbm_per_park v1 SHADOW ([142]/[145], 2026-06-06), pitch_type_lr_baseline v1 CANDIDATE (2026-07-28, [183]). Every serving family has its rule-9 baseline co-registered."
         },
         {
           "label": "ECE < 0.02 on test data per model",
-          "done": false,
-          "details": "Pre-pitch head PASSES (mean ECE 0.0035, verified 2026-05-30). Post-pitch head eval present (verify value). Batted-ball re-scoped to a per-park OUTCOME model ([141]): per-park ECE post-cal mean 0.0005 / max 0.0010 PASSES (<0.02) on full data; aggregate test ECE < 0.02 is the registration gate. Champion serving pending box confirm (ADR-0006)."
+          "done": true,
+          "details": "PASSES for all four families: pre v2 ECE 0.000895 vs LR 0.001606 ([182] offline gate, evidence row id=5); post v1 ECE 0.0013 (2026-06-20 gate); batted-ball per-park post-cal mean 0.0005 / max 0.0010 ([141]); pitch_type_pre primary (ECE < 0.02) passed at its 2026-08-02 promotion ([183]). Reconciled 2026-08-17."
         }
       ],
       "mvp_cuts": [
@@ -283,25 +283,25 @@
           "id": "3a",
           "name": "Registry",
           "weeks": "18\u201319",
-          "done": false
+          "done": true
         },
         {
           "id": "3b",
           "name": "A/B Routing",
           "weeks": "19\u201320",
-          "done": false
+          "done": true
         },
         {
           "id": "3c",
           "name": "Drift Detection",
           "weeks": "20\u201321",
-          "done": false
+          "done": true
         },
         {
           "id": "3d",
           "name": "Retraining Triggers",
           "weeks": "21\u201322",
-          "done": false
+          "done": true
         }
       ],
       "exit_criteria_checklist": [
@@ -383,37 +383,37 @@
           "id": "4a",
           "name": "Design system tokens",
           "weeks": "23",
-          "done": false
+          "done": true
         },
         {
           "id": "4b",
           "name": "Player Lookup",
           "weeks": "24\u201325",
-          "done": false
+          "done": true
         },
         {
           "id": "4c",
           "name": "Park Explorer (MARQUEE)",
           "weeks": "25\u201327",
-          "done": false
+          "done": true
         },
         {
           "id": "4d",
           "name": "Game / Live view",
           "weeks": "27\u201328",
-          "done": false
+          "done": true
         },
         {
           "id": "4e",
           "name": "Ops Dashboard",
           "weeks": "29",
-          "done": false
+          "done": true
         },
         {
           "id": "4f",
           "name": "About / Methodology",
           "weeks": "30",
-          "done": false
+          "done": true
         }
       ],
       "exit_criteria_additions": [
@@ -465,11 +465,13 @@
         },
         {
           "label": "Performance optimizations (bundle audit, image opt, lazy loading)",
-          "done": false
+          "done": true,
+          "details": "DONE per the 5.1-5.7 polish pass (see notes): lazy routes + vendor splits took initial JS 542 -> 147 kB gz; a blocking bundle budget (<300 kB gz initial, <250 kB per chunk) now gates in frontend.yml. Reconciled 2026-08-17."
         },
         {
           "label": "README rewrite, design decisions doc, methodology page final content",
-          "done": false
+          "done": true,
+          "details": "README rewritten 2026-05-25 (broadcast era) and again 2026-08-16 (cold-reader restructure: badges, By-the-numbers, honest models table). decisions.md at 193 entries. Methodology reshaped by [191]: /about demoted to a slim colophon, explanatory content absorbed by /models/guide. Reconciled 2026-08-17."
         },
         {
           "label": "Public launch: post to r/baseball, r/sabermetrics, r/programming, HN",
@@ -482,7 +484,7 @@
         {
           "label": "Mid-season drift postmortem WRITTEN (the centerpiece artifact)",
           "done": true,
-          "details": "DONE (synthetic, honestly labeled) - docs/postmortems/2026-07-16_induced-drift-drill.md: the [175] PRIMARY-path induced drill ran on the LIVE PSI pipeline 2026-07-15/16 (All-Star break), a month ahead of [169]'s 2026-08-15 tripwire. Injector #276 + notice-days knob #277 + tagging #275; real PsiFeatureJob detection row + real DriftAlertEvaluator NOTICE (alert_history + Discord) on prod tables; tagged drift_metrics rows retained as evidence, synthetic prediction_log rows cleaned up. Feature-PSI lane only (battedball has no live calibration truth-join; DriftTrigger is calibration-driven, so the NOTICE is terminal - the retrain control plane is separately proven by [178]/C-31, the companion postmortem). Two real defects found + fixed: GAP 1 (cleanup ALTER DELETE 497'd under the [171] least-priv user; now a one-shot CH-admin connection) and GAP 2 (docs implied a retrain leg). [169]'s natural-supersedes clause STANDS: a confirmed real in-season event gets its own write-up and this one reclassifies as a drill report."
+          "details": "DONE (synthetic, honestly labeled) - docs/postmortems/2026-07-16_induced-drift-drill.md: the [175] PRIMARY-path induced drill ran on the LIVE PSI pipeline 2026-07-15/16 (All-Star break), a month ahead of [169]'s 2026-08-15 tripwire. Injector #276 + notice-days knob #277 + tagging #275; real PsiFeatureJob detection row + real DriftAlertEvaluator NOTICE (alert_history + Discord) on prod tables; tagged drift_metrics rows retained as evidence, synthetic prediction_log rows cleaned up. Feature-PSI lane only (battedball has no live calibration truth-join; DriftTrigger is calibration-driven, so the NOTICE is terminal - the retrain control plane is separately proven by [178]/C-31, the companion postmortem). Two real defects found + fixed: GAP 1 (cleanup ALTER DELETE 497'd under the [171] least-priv user; now a one-shot CH-admin connection) and GAP 2 (docs implied a retrain leg). [169]'s natural-supersedes clause STANDS: a confirmed real in-season event gets its own write-up and this one reclassifies as a drill report. CLAUSE EXECUTED 2026-08-03: the natural event arrived - docs/postmortems/2026-08-03_pitcher-form-silent-staleness.md is the flagship per [187]; this write-up stands reclassified as the drill that proved the detector."
         },
         {
           "label": "Nightly k6 load test gating on SLA (p99 prediction latency < 50ms, error rate < 0.1%)",
@@ -516,16 +518,17 @@
         },
         {
           "label": "Triage at sweep start: top 8\u201315 items by impact-to-effort selected from observations.md",
-          "done": false
+          "done": true,
+          "details": "First sweep done 2026-05-30: 18 observations triaged -> 11 fixed / 7 deferred (docs/hardening/2026-05-30_sweep.md). Reconciled 2026-08-17."
         },
         {
           "label": "Each selected item implemented with a measurable before/after",
-          "done": false,
+          "done": true,
           "details": "Before/after must be a real metric or evidence, not 'feels better.' Examples: query latency p99, test count, RLS coverage count, false-positive rate on drift detector, time-to-rollback in drill."
         },
         {
           "label": "Impact table written in docs/hardening/{date}_sweep.md",
-          "done": false,
+          "done": true,
           "details": "Format: | Area | Before | After | Where |. Mirror StudyForesight's Q2 sweep table layout exactly \u2014 it's a known-good pattern that reads well."
         },
         {
@@ -534,7 +537,8 @@
         },
         {
           "label": "Sweep doc referenced from README and Phase 6 hiring-readiness work",
-          "done": false
+          "done": true,
+          "details": "README's Operating evidence section and docs/hiring/README.md both link 2026-05-30_sweep.md. Reconciled 2026-08-17."
         }
       ],
       "mvp_cuts": "Do not cut. If energy limited, SHRINK the number of items in the table \u2014 but produce the document. Even 5 honest hardening items with before/after metrics is better than nothing.",
@@ -554,7 +558,7 @@
         {
           "label": "README is the interview opener \u2014 one-paragraph origin story, screenshot of Ops Dashboard, link to drift postmortem, tech decisions with rationale, live link to dashboard",
           "done": false,
-          "details": "First 30 seconds of HM eyeball-time IS the README. Spend disproportionate time here. Lead with what-it-is + why-interesting in one sentence each. The Ops Dashboard screenshot should be above the fold. Tech-decisions section pulls highlights from docs/decisions.md with one-line rationales \u2014 do not link to the raw log, summarize."
+          "details": "First 30 seconds of HM eyeball-time IS the README. Spend disproportionate time here. Lead with what-it-is + why-interesting in one sentence each. The Ops Dashboard screenshot should be above the fold. Tech-decisions section pulls highlights from docs/decisions.md with one-line rationales \u2014 do not link to the raw log, summarize. (2026-08-16: README rewritten for cold readers - badges, By-the-numbers, honest models table, AI-authorship section; the summarize-decision-highlights piece remains open, so this stays un-done.)"
         },
         {
           "label": "~~Merged OSS PR~~ STRUCK by [193]: personal project, no upstream track",
@@ -563,8 +567,8 @@
         },
         {
           "label": "Drift postmortem written in real SRE format (Five Whys, timeline, threshold analysis, runbook updates), not blog format",
-          "done": false,
-          "details": "Steal the structure from real public postmortems \u2014 Cloudflare, GitHub, Stripe, Fly.io all publish theirs. Sections: TL;DR (3 lines), Timeline (detection \u2192 mitigation \u2192 resolution with timestamps), Root Cause (Five Whys), Impact (what was wrong with predictions for how long), What Went Well / What Went Poorly, Lessons Learned, Action Items (with owners and dates \u2014 even if owner is always 'me'), Runbook Updates. If the season is too quiet to produce a natural drift event, INDUCE one in a controlled way (inject a known shift, watch detection fire, write up the response) and document the synthetic nature honestly."
+          "done": true,
+          "details": "DONE 2026-08-03: docs/postmortems/2026-08-03_pitcher-form-silent-staleness.md - a real natural event in full SRE format (TL;DR, timeline, Five Whys terminating at an unowned assumption, impact stated plainly, action items with PRs, runbook updates), flagship per [187]; the 2026-07-16 induced write-up stands reclassified as the drill. Original guidance: Steal the structure from real public postmortems \u2014 Cloudflare, GitHub, Stripe, Fly.io all publish theirs. Sections: TL;DR (3 lines), Timeline (detection \u2192 mitigation \u2192 resolution with timestamps), Root Cause (Five Whys), Impact (what was wrong with predictions for how long), What Went Well / What Went Poorly, Lessons Learned, Action Items (with owners and dates \u2014 even if owner is always 'me'), Runbook Updates. If the season is too quiet to produce a natural drift event, INDUCE one in a controlled way (inject a known shift, watch detection fire, write up the response) and document the synthetic nature honestly."
         }
       ],
       "supplementary_artifacts": [
@@ -603,10 +607,10 @@
   ],
   "drills": {
     "restore_drill": {
-      "last_run": "2026-05-23",
+      "last_run": "2026-08-09",
       "must_run_before_season": true,
-      "result": "PASS",
-      "report": "docs/drills/2026-05-23_restore.md"
+      "result": "PASS (first run FAILED - two zero-byte champion artifacts found in R2, fixed same day; re-run PASS with measured RTO 1492s)",
+      "report": "docs/drills/2026-08-09_gating-restore-from-r2.md"
     },
     "reboot_drill": {
       "last_run": "2026-05-23",

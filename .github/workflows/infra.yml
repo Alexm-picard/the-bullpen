@@ -44,7 +44,7 @@ jobs:
             -v "$PWD/infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro" \
             -v "$PWD/infra/prometheus/rules:/etc/prometheus/rules:ro" \
             -v "$RUNNER_TEMP/secrets:/etc/prometheus/secrets:ro" \
-            --entrypoint promtool prom/prometheus:v3.0.1 \
+            --entrypoint promtool prom/prometheus:v3.13.2 \
             check config /etc/prometheus/prometheus.yml
       # NOTE: test files are named INDIVIDUALLY here, not globbed. A new .test.yml that is not added
       # to this list simply never runs, and its rules go untested while the lane stays green - the
@@ -61,7 +61,7 @@ jobs:
           set -euo pipefail
           docker run --rm \
             -v "$PWD/infra/prometheus/rules:/rules:ro" \
-            --entrypoint promtool prom/prometheus:v3.0.1 \
+            --entrypoint promtool prom/prometheus:v3.13.2 \
             test rules \
               /rules/tests/freshness-alerts.test.yml \
               /rules/tests/prediction-log-writer.test.yml \
@@ -109,5 +109,5 @@ jobs:
           docker run --rm \
             -v "$PWD/infra/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro" \
             -v "$RUNNER_TEMP/am-secrets:/etc/alertmanager/secrets:ro" \
-            --entrypoint amtool prom/alertmanager:v0.28.1 \
+            --entrypoint amtool prom/alertmanager:v0.33.1 \
             check-config /etc/alertmanager/alertmanager.yml

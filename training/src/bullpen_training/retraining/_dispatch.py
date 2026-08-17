@@ -84,7 +84,8 @@ def _servable_battedball_outcome(
 # list - real retraining_queue rows carry champ.modelName(), so any other spelling is
 # unreachable by construction. If a name here drifts from the registry, the pinned-list
 # test (test_dispatch.py) fails loudly. Verified against model_versions on the box
-# 2026-07-02.
+# 2026-07-02; pitch_type_pre + pitch_type_lr_baseline appended 2026-08-16 after the
+# pitch-type family registered (2026-07-28 / champion 2026-08-02, decision [183]).
 CANONICAL_REGISTRY_MODEL_NAMES: frozenset[str] = frozenset(
     {
         "battedball_outcome",
@@ -93,6 +94,8 @@ CANONICAL_REGISTRY_MODEL_NAMES: frozenset[str] = frozenset(
         "pitch_outcome_lr_baseline",
         "battedball_lgbm_per_park",
         "lr_baseline_batted_ball",
+        "pitch_type_pre",
+        "pitch_type_lr_baseline",
     }
 )
 
@@ -112,6 +115,8 @@ DISPATCH: dict[str, RetrainFn] = {
     "pitch_outcome_lr_baseline": _not_yet_wired("pitch_outcome_lr_baseline"),
     "battedball_lgbm_per_park": _not_yet_wired("battedball_lgbm_per_park"),
     "lr_baseline_batted_ball": _not_yet_wired("lr_baseline_batted_ball"),
+    "pitch_type_pre": _not_yet_wired("pitch_type_pre"),
+    "pitch_type_lr_baseline": _not_yet_wired("pitch_type_lr_baseline"),
     EXPERIMENT_MLP_PER_PARK_KEY: _experiment_mlp_per_park,
 }
 

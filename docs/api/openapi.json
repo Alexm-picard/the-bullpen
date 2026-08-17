@@ -7,7 +7,7 @@
     },
     "servers": [
         {
-            "url": "http://localhost:8093",
+            "url": "http://localhost:8080",
             "description": "Generated server url"
         }
     ],
@@ -521,6 +521,14 @@
                         "schema": {
                             "type": "integer",
                             "format": "int64"
+                        }
+                    },
+                    {
+                        "name": "X-Bullpen-Park-Id",
+                        "in": "header",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
                         }
                     }
                 ],
@@ -1641,6 +1649,125 @@
                 }
             }
         },
+        "/v1/admin/registry/{modelName}/restore/{versionId}": {
+            "post": {
+                "tags": [
+                    "Admin: Registry"
+                ],
+                "operationId": "restore",
+                "parameters": [
+                    {
+                        "name": "modelName",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "versionId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ModelVersion"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request: validation failed, malformed JSON, or a bad path/query value.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No such resource.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    },
+                    "405": {
+                        "description": "HTTP method not allowed for this path.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    },
+                    "413": {
+                        "description": "Request payload too large.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    },
+                    "414": {
+                        "description": "Request URI too long.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    },
+                    "415": {
+                        "description": "Unsupported request media type - send application/json.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded - back off and retry after the Retry-After interval.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "The model or a required dependency is temporarily unavailable.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/admin/registry/{modelName}/register": {
             "post": {
                 "tags": [
@@ -2469,6 +2596,118 @@
                                     "items": {
                                         "$ref": "#/components/schemas/RoutingConfig"
                                     }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request: validation failed, malformed JSON, or a bad path/query value.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No such resource.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    },
+                    "405": {
+                        "description": "HTTP method not allowed for this path.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    },
+                    "413": {
+                        "description": "Request payload too large.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    },
+                    "414": {
+                        "description": "Request URI too long.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    },
+                    "415": {
+                        "description": "Unsupported request media type - send application/json.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded - back off and retry after the Retry-After interval.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "The model or a required dependency is temporarily unavailable.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/ops/rolling-accuracy": {
+            "get": {
+                "tags": [
+                    "Ops dashboard"
+                ],
+                "operationId": "rollingAccuracy",
+                "parameters": [
+                    {
+                        "name": "days",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int32",
+                            "default": 7
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RollingAccuracyResponse"
                                 }
                             }
                         }
@@ -5222,7 +5461,7 @@
                         "minimum": -90.0,
                         "exclusiveMinimum": false,
                         "type": "number",
-                        "description": "Horizontal spray angle, degrees (- pull, + oppo).",
+                        "description": "Horizontal spray angle, degrees. ABSOLUTE, not batter-relative: positive is toward 3B / LEFT field, negative toward 1B / right. Matches training's hc_to_spray_deg convention, which the served model was trained on and the feature pipeline passes through unmodified. It was previously documented as \"- pull, + oppo\", which is only correct for a LEFT-handed batter: pull and oppo swap with handedness, so a batter-relative label cannot describe an absolute axis.",
                         "format": "double",
                         "example": 12.0
                     },
@@ -5334,7 +5573,7 @@
                         "minimum": -90.0,
                         "exclusiveMinimum": false,
                         "type": "number",
-                        "description": "Horizontal spray angle, degrees (- pull, + oppo).",
+                        "description": "Horizontal spray angle, degrees. ABSOLUTE, not batter-relative: positive is toward 3B / LEFT field, negative toward 1B / right. Matches training's hc_to_spray_deg convention, which the served model was trained on and the feature pipeline passes through unmodified. It was previously documented as \"- pull, + oppo\", which is only correct for a LEFT-handed batter: pull and oppo swap with handedness, so a batter-relative label cannot describe an absolute axis.",
                         "format": "double",
                         "example": 12.0
                     },
@@ -5584,45 +5823,6 @@
                     }
                 }
             },
-            "RegisterRequest": {
-                "type": "object",
-                "properties": {
-                    "modelName": {
-                        "type": "string"
-                    },
-                    "version": {
-                        "type": "string"
-                    },
-                    "artifactPath": {
-                        "type": "string"
-                    },
-                    "metadataPath": {
-                        "type": "string"
-                    },
-                    "featurePipelinePath": {
-                        "type": "string"
-                    },
-                    "trainingDataHash": {
-                        "type": "string"
-                    },
-                    "trainingDataWindow": {
-                        "type": "string"
-                    },
-                    "evalMetricsJson": {
-                        "type": "string"
-                    },
-                    "trainedAt": {
-                        "type": "string",
-                        "format": "date-time"
-                    },
-                    "createdBy": {
-                        "type": "string"
-                    },
-                    "notes": {
-                        "type": "string"
-                    }
-                }
-            },
             "ModelVersion": {
                 "type": "object",
                 "properties": {
@@ -5684,6 +5884,45 @@
                     "updatedAt": {
                         "type": "string",
                         "format": "date-time"
+                    }
+                }
+            },
+            "RegisterRequest": {
+                "type": "object",
+                "properties": {
+                    "modelName": {
+                        "type": "string"
+                    },
+                    "version": {
+                        "type": "string"
+                    },
+                    "artifactPath": {
+                        "type": "string"
+                    },
+                    "metadataPath": {
+                        "type": "string"
+                    },
+                    "featurePipelinePath": {
+                        "type": "string"
+                    },
+                    "trainingDataHash": {
+                        "type": "string"
+                    },
+                    "trainingDataWindow": {
+                        "type": "string"
+                    },
+                    "evalMetricsJson": {
+                        "type": "string"
+                    },
+                    "trainedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "createdBy": {
+                        "type": "string"
+                    },
+                    "notes": {
+                        "type": "string"
                     }
                 }
             },
@@ -5811,6 +6050,10 @@
                     "createdAt": {
                         "type": "string",
                         "format": "date-time"
+                    },
+                    "deadLetteredAtStart": {
+                        "type": "number",
+                        "format": "double"
                     }
                 }
             },
@@ -5897,6 +6140,78 @@
                     },
                     "reason": {
                         "type": "string"
+                    }
+                }
+            },
+            "DailyBucket": {
+                "type": "object",
+                "properties": {
+                    "date": {
+                        "type": "string"
+                    },
+                    "n": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "top1": {
+                        "type": "number",
+                        "format": "double"
+                    }
+                },
+                "nullable": true
+            },
+            "ModelRollingAccuracy": {
+                "type": "object",
+                "properties": {
+                    "modelName": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "reason": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "top1": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "n": {
+                        "type": "integer",
+                        "format": "int64",
+                        "nullable": true
+                    },
+                    "buckets": {
+                        "type": "array",
+                        "nullable": true,
+                        "items": {
+                            "$ref": "#/components/schemas/DailyBucket"
+                        }
+                    },
+                    "note": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                }
+            },
+            "RollingAccuracyResponse": {
+                "type": "object",
+                "properties": {
+                    "windowDays": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "generatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "models": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ModelRollingAccuracy"
+                        }
                     }
                 }
             },

@@ -158,17 +158,17 @@ enforcing its cadence - keeps the historical corpus's provenance simple.
 
 All closed unless marked open.
 
-| Item                                                                        | Status                  |
-| --------------------------------------------------------------------------- | ----------------------- |
-| [186] union in both snapshot queries, parity-tested, leakage-audited        | DONE - PRs #378, #381   |
-| V007 data-anchored as_of + `bullpen_pitcher_form_age_days`                  | DONE - PR #378          |
-| Coverage-gap gauge (contiguity, not recency)                                | DONE - PR #381          |
-| Last-success timestamps + served-scrape tests + staleness alert rules       | DONE - PR #384          |
-| Behavioral alert-rule testing lane (`promtool test rules` in CI)            | DONE - PR #384          |
-| Coverage-gap GROWTH alert (level accepted, growth is loss)                  | DONE - PR #388          |
-| Timezone-basis sweep of CH IT fixtures (server-tz `today()` vs ET bounds)   | OPEN - issue #392       |
-| Manual `pitches` backfill run | DONE - box, 2026-08-03: coverage gap 54d -> 0.0, and #388 completed its first ORGANIC fire-and-resolve cycle (paged on real growth, resolved on real closure - the alert doing exactly its job on day one) |
-| Freshness thresholds locked via /decide (3d age, 26h stamp are provisional) | OPEN - decision backlog |
+| Item                                                                        | Status                                                                                                                                                                                                     |
+| --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [186] union in both snapshot queries, parity-tested, leakage-audited        | DONE - PRs #378, #381                                                                                                                                                                                      |
+| V007 data-anchored as_of + `bullpen_pitcher_form_age_days`                  | DONE - PR #378                                                                                                                                                                                             |
+| Coverage-gap gauge (contiguity, not recency)                                | DONE - PR #381                                                                                                                                                                                             |
+| Last-success timestamps + served-scrape tests + staleness alert rules       | DONE - PR #384                                                                                                                                                                                             |
+| Behavioral alert-rule testing lane (`promtool test rules` in CI)            | DONE - PR #384                                                                                                                                                                                             |
+| Coverage-gap GROWTH alert (level accepted, growth is loss)                  | DONE - PR #388                                                                                                                                                                                             |
+| Timezone-basis sweep of CH IT fixtures (server-tz `today()` vs ET bounds)   | CLOSED 2026-08-06 - issue #392                                                                                                                                                                             |
+| Manual `pitches` backfill run                                               | DONE - box, 2026-08-03: coverage gap 54d -> 0.0, and #388 completed its first ORGANIC fire-and-resolve cycle (paged on real growth, resolved on real closure - the alert doing exactly its job on day one) |
+| Freshness thresholds locked via /decide (3d age, 26h stamp are provisional) | CLOSED - locked at 3d age / 26h stamp by [189], 2026-08-06                                                                                                                                                 |
 
 ## What this cost, honestly
 

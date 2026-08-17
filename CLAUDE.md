@@ -22,7 +22,7 @@ session and most "obvious" alternatives have already been considered and rejecte
 
 - **Phase 0 — Foundation**: done (WSL2 host, systemd units, Cloudflare Tunnel, CI, `deploy.sh`)
 - **Phase 1 — Vertical slice**: done (one prediction end-to-end in the browser)
-- **Phase 2 — Real models**: in progress (pitch pre/post heads + LR baseline done; batted-ball MLP / physics / retrodiction landing in 2c)
+- **Phase 2 — Real models**: in progress (all four heads trained and champion-serving; close-out remainders per phase-status.json: full per-role LR-baseline registration + the 75% training coverage target)
 - **Phase 3 — ML systems wrapper**: done (registry, A/B router, drift jobs, retraining queue, async prediction logger)
 - **Phase 4 — Frontend build-out**: done (player lookup, park explorer, game-live, ops dashboard, about)
 - **Phase 5 — Polish + operate**: in progress (hardening sweeps, perf/a11y/bundle, public launch)
@@ -30,34 +30,41 @@ session and most "obvious" alternatives have already been considered and rejecte
 
 ### Current reality vs. headline claims — keep this honest when editing docs
 
-- **Live data is now mixed, no longer narrow.** Live against the backend: `/games/:id`, the
-  player lookup + `/players/:id` profile, the `/parks` HR-probability-by-park heatmap, the home
-  page's tonight slate, and the Ops dashboard's Model Fleet / latency / retrain queue / ops log
+- **Live data is the default; fixtures are labeled islands.** Live against the backend:
+  `/games/:id` (including the NextPitchPanel serving the PRE champion and the pitch-type panel
+  serving the calibrated pitch-type prior), the player lookup + `/players/:id` profile, the
+  `/parks` HR-probability-by-park heatmap, the home page's tonight slate, `/accuracy` (scorecard +
+  Live Retrospective), and the Ops dashboard's Model Fleet / latency / retrain queue / ops log
   (live via `/v1/ops/*`, with a fixture fallback when those return empty or the backend is
   offline - so Ops is live-wired, not "fixtures"). The Ops drift snapshot is ALSO live-wired
   (`/v1/ops/drift` + a skeleton-overlay: the watched-surface rows render em-dashes until live
   `drift_metrics` values land; E-4 keyed the watchlist by the real request-DTO feature names and
   labels [175] induced-drill rows via the V027 tag). Still pure fixtures from
-  `frontend/src/data/*-fixtures.ts`: the `/parks` factor table and the `/about` methodology page.
-- **Live game poller is enabled ingest-only; no user-visible pitch prediction (POST is champion-stage but UI-held).**
-  The full producer chain (MLB Stats API client + parser + per-game poll + `pitches_live` writer +
-  the `prediction_log` truth-join) is merged, unit-tested, and enabled in prod behind
-  `BULLPEN_INGEST_LIVE_ENABLED` (flipped 2026-06-11, decision [157]). The POST head PASSED its
-  full-box gate (Brier 0.104 vs LR baseline 0.149, ECE 0.0013, 710k rows) and was promoted
-  SHADOW->CHAMPION at the registry STAGE level on 2026-06-20 (box-verified: `ops_events` #18;
-  decisions [164] then corrected by [165]). It is still NOT user-visible: `POST /v1/predict/pitch?head=post`
-  WOULD serve post v1 to a direct API caller (in SHADOW routing the champion serves, exactly as
-  `/parks` serves the batted-ball champion). SUPERSEDED AS OF PHASE-1 A5/A6 (PRs #315/#316): the
-  live game page's NextPitchPanel now DOES call `POST /v1/predict/pitch?head=pre`
-  (`frontend/src/api/games.ts` -> `usePitchPrediction`), so the old "absent UI caller" argument no
-  longer holds. What holds the guarantee now is PROMOTION STATE: PRE has no champion, so that call
-  503s by design and the panel renders an explicit "model not yet promoted" state (rule 6,
-  human-gated). PRE's declared primary was re-aimed by [180]/ADR-0014 from a Brier edge to absolute
-  calibration (ECE < 0.02, passing at 0.0036), so "failed primary" no longer describes its gate
-  either. The post head is separately surfaced RETROSPECTIVELY on the /accuracy page ([177], relocated
-  from the game page by [191.2]): the Live Retrospective section shows the post-pitch champion's
-  rolling truth-joined accuracy plus pinned holdout verification, which is a read of the
-  rolling-accuracy endpoint, not a live prediction call.
+  `frontend/src/data/*-fixtures.ts`: the `/parks` factor table, the `/about` colophon, the
+  `/players` landing's Featured Reports + Model Standouts, the `/players/:id` slug showcase
+  matchup, and the Ops infra ribbon. `/models/guide` ([191]) is a static explainer page, not a
+  data surface.
+- **The live pitch path is user-visible end-to-end; all three pitch-side heads are CHAMPION.**
+  The poller chain (MLB Stats API client + parser + per-game poll + `pitches_live` writer + the
+  `prediction_log` truth-join) is enabled in prod behind `BULLPEN_INGEST_LIVE_ENABLED` (flipped
+  2026-06-11, decision [157]) and has operated against the real feed: issue #1 closed completed
+  2026-08-06, and the [186]/[187] staleness postmortem is operating evidence from this very path
+  (freshness-alert thresholds locked by [189]). Surfaces: `pitch_outcome_pre` v2 (CHAMPION
+  2026-07-22 via the first-champion offline-gate path - [180]/ADR-0014 re-aimed its primary to
+  absolute calibration, [182] bound the gate to the co-registered LR baseline, evidence row id=5)
+  serves the game page's NextPitchPanel live (`frontend/src/api/games.ts` -> `usePitchPrediction`
+  -> `POST /v1/predict/pitch?head=pre`); `pitch_type_pre` v1 (CHAMPION 2026-08-02) serves the
+  game page's pitch-type panel as a calibrated PRIOR under [183]'s honest-framing constraint
+  (never marketed on top-1, ~0.45); `pitch_outcome_post` (champion-stage since 2026-06-20 -
+  `ops_events` #18, decisions [164] corrected by [165]; gate Brier 0.104 vs LR 0.149, ECE 0.0013,
+  710k rows) is retrospective BY NATURE and is surfaced on /accuracy's Live Retrospective ([177],
+  relocated from the game page by [191.2]) as a read of its LOGGED predictions via the
+  rolling-accuracy endpoint - the worker runs the POST and pitch-type legs per ingested pitch
+  into `prediction_log` for the truth-join (#467/#468, with a temporal guard). HISTORY GUARD: the
+  earlier "no user-visible pitch prediction / PRE has no champion, so the panel 503s by design"
+  framing was true only until [182] - do not reintroduce it when editing docs. Standing [186]
+  constraint: the historical `pitches` corpus is manually backfilled with NO live->historical
+  promotion job; snapshot-window queries read the UNION of `pitches` and `pitches_live`.
 - **Coverage is measured everywhere; backend, training, and frontend now gate.** Backend
   JaCoCo (in `backend/build.gradle.kts` and `backend.yml`) gates on a regression floor (LINE >= 82%,
   BRANCH >= 70%, re-baselined 2026-07-08 when F2.3 un-skipped the pitch + simulate web tests; a few
@@ -81,16 +88,19 @@ session and most "obvious" alternatives have already been considered and rejecte
 
 ## What this project is
 
-The Bullpen (`thebullpen.net`) — a self-hosted baseball analytics platform with a custom
-ML systems wrapper (registry, A/B routing, drift detection, retraining triggers) around three
-calibrated models: a batted-ball champion serving live (a per-park calibrated PHYSICS ESTIMATE,
-honest about its reality gap - decision [163], surfaced as such on `/parks`), plus two pitch-outcome
-heads with no user-visible prediction yet (`pitch_outcome_post` is champion-STAGE since 2026-06-20
-but UI-held; `pitch_outcome_pre` stays shadow on a failed primary - [154]/ADR-0011/[165]). Solo
-developer, ~8–10 months calendar at 12–15h/week. Built to operate through at least one MLB
-season for a real drift postmortem (delivered 2026-07-16 as the honestly-labeled synthetic
-induced-drill write-up, `docs/postmortems/2026-07-16_induced-drift-drill.md`, per [175]; a
-confirmed natural in-season event would supersede it per [169]).
+The Bullpen (`thebullpen.net`) - a self-hosted baseball analytics platform with a custom
+ML systems wrapper (registry, A/B routing, drift detection, retraining triggers) around four
+CHAMPION model families, each user-visible with honest framing: the batted-ball champion (a
+per-park calibrated PHYSICS ESTIMATE, honest about its reality gap - decision [163], surfaced
+as such on `/parks`), `pitch_outcome_pre` v2 (the game page's next-pitch panel, champion
+2026-07-22 - [180]/[182]), `pitch_outcome_post` (champion since 2026-06-20, surfaced
+retrospectively on `/accuracy` - [177]), and `pitch_type_pre` (a calibrated pitch-type PRIOR,
+never marketed on top-1 - [183]). Solo developer, ~8–10 months calendar at 12–15h/week. Built
+to operate through at least one MLB season for a real drift postmortem - DELIVERED as the real
+thing: `docs/postmortems/2026-08-03_pitcher-form-silent-staleness.md` (two months of silent
+form staleness on the live pitch path, caught by designed detection, fixed via [186]), which
+executed [169]'s natural-event-supersedes clause over the earlier honestly-labeled synthetic
+induced-drift drill ([175]) per decision [187].
 
 It is **not** a SaaS product, not a betting tool, not a research contribution. Framing
 matters — see `design.md` §1.
@@ -110,7 +120,7 @@ matters — see `design.md` §1.
 | Hosting       | Self-hosted in WSL2 (Ubuntu 24.04 LTS) on personal desktop. Cloudflare Tunnel for public access. Frontend on Vercel.                                                                                               |
 | Process mgmt  | systemd (bare-metal for app, Docker for stateful services)                                                                                                                                                         |
 | Observability | Prometheus + Grafana + Actuator (internal); Uptime Robot + Healthchecks.io + Discord webhook (external)                                                                                                            |
-| Models        | LightGBM (pitch outcome, multinomial); multi-output MLP with shared backbone + 30 per-park heads (batted-ball); LR baseline always co-registered                                                                   |
+| Models        | LightGBM (pitch-outcome + pitch-type heads, multinomial); multi-output MLP with shared backbone + 30 per-park heads (batted-ball); LR baseline always co-registered                                                |
 | Eval          | Rolling-origin temporal CV, 4 folds 2015–2025. **Never** random splits. Within-fold split granularity is by date — never by game or pitch.                                                                         |
 
 Already-rejected alternatives (with reasoning in `design.md` §10): LLM for pitch outcome,
