@@ -244,17 +244,17 @@ if [[ "$SKIP_SMOKE" == "true" ]]; then
 else
   log "smoke: waiting for api (:${BULLPEN_API_PORT:-8080}) AND worker (:${BULLPEN_WORKER_PORT:-8081}) to go green"
   if ! smoke_health "${BULLPEN_API_PORT:-8080}" "api"; then
-    log "smoke FAILED: api did not go UP within 30s — attempting rollback"
+    log "smoke FAILED: api did not go UP within 60s — attempting rollback"
     rollback
-    die "deploy aborted; api health did not go UP within 30s"
+    die "deploy aborted; api health did not go UP within 60s"
   fi
   # WS4: the worker (:8081) restarts alongside the api but was never smoked. A worker that fails to
   # boot used to deploy 'green' and die silently (the 2026-06-04 blindspot). Smoke it too, and roll
   # back the WHOLE deploy if it does not come up — a half-up deploy (api yes, worker no) is a defect.
   if ! smoke_health "${BULLPEN_WORKER_PORT:-8081}" "worker"; then
-    log "smoke FAILED: worker did not go UP within 30s — attempting rollback"
+    log "smoke FAILED: worker did not go UP within 60s — attempting rollback"
     rollback
-    die "deploy aborted; worker health did not go UP within 30s"
+    die "deploy aborted; worker health did not go UP within 60s"
   fi
 fi
 

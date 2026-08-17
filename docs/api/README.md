@@ -1,26 +1,31 @@
 # The Bullpen API reference
 
 The committed [`openapi.json`](./openapi.json) is a point-in-time snapshot of the
-springdoc-generated OpenAPI 3 spec (38 operations). The LIVE spec is always at
+springdoc-generated OpenAPI 3 spec (40 paths / 43 operations, regenerated
+2026-08-17 via the procedure below). The LIVE spec is always at
 [`https://api.thebullpen.net/v3/api-docs`](https://api.thebullpen.net/v3/api-docs)
 (interactive explorer at
 [`/swagger-ui.html`](https://api.thebullpen.net/swagger-ui.html)) - the spec and
 its explorer are deliberately public (M1 task 10). CI fuzzes every operation
 against this contract (Schemathesis, `contract.yml`), so contract-vs-impl drift
-fails the build rather than landing silently.
+fails the build rather than landing silently. The snapshot is the EMPTY-STACK
+SUBSET by construction: ClickHouse-gated read controllers (games / players /
+live surfaces) only register against a live ClickHouse, so the live spec is
+larger (52 paths at the 2026-08-16 check).
 
 ## Surfaces at a glance
 
-| Surface                                                | Auth                                  | Notes                                                                                                                                                                         |
-| ------------------------------------------------------ | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /v1/predict/batted-ball`                         | public, rate-limited                  | single-park P(HR); the Phase-1 toy path                                                                                                                                       |
-| `POST /v1/predict/batted-ball/all-parks`               | public, rate-limited                  | the served per-park champion: HR probability (and carry, when the champion ships a carry head) across all 30 parks. Logs every request to `prediction_log`                    |
-| `POST /v1/predict/pitch?head=pre\|post`                | public, rate-limited                  | calibrated 5-class pre/post-pitch outcome distribution. `head=pre` 503s until a PRE champion is promoted (rule 6, human-gated); `head=post` requires the Tier-4 flight fields |
-| `POST /v1/simulate/plate-appearance[/monte-carlo]`     | public, own rate bucket               | unrouted diagnostic (decision [176]): pins one artifact, never routes                                                                                                         |
-| `GET /v1/ops/*`                                        | public reads                          | the Ops dashboard's registry / routing / drift / latency / retrain / events / accuracy surfaces. `/v1/ops/events` is offset-paginated (`page`/`size` + `hasNext`)             |
-| `GET /health`, `/actuator/health/**`, `/actuator/info` | public                                | liveness/readiness probes (Uptime Robot + deploy smoke)                                                                                                                       |
-| `/v1/admin/**`                                         | HTTP Basic, role `ADMIN`              | registry writes (register / promote), routing config, experiments (incl. `import-offline`), retrain queue admin                                                               |
-| `/actuator/prometheus`                                 | HTTP Basic, role `METRICS` or `ADMIN` | the Prometheus scrape endpoint (metrics-only credential; F3 role split)                                                                                                       |
+| Surface                                                | Auth                                  | Notes                                                                                                                                                                  |
+| ------------------------------------------------------ | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /v1/predict/batted-ball`                         | public, rate-limited                  | single-park P(HR); the Phase-1 toy path                                                                                                                                |
+| `POST /v1/predict/batted-ball/all-parks`               | public, rate-limited                  | the served per-park champion: HR probability (and carry, when the champion ships a carry head) across all 30 parks. Logs every request to `prediction_log`             |
+| `POST /v1/predict/pitch?head=pre\|post`                | public, rate-limited                  | calibrated 5-class pre/post-pitch outcome distribution. `head=pre` serves the PRE champion (promoted 2026-07-22, [182]); `head=post` requires the Tier-4 flight fields |
+| `POST /v1/predict/pitch-type`                          | public, rate-limited                  | calibrated 7-class pitch-type PRIOR for the next pitch ([183] - framed on calibration, deliberately not on top-1 accuracy)                                             |
+| `POST /v1/simulate/plate-appearance[/monte-carlo]`     | public, own rate bucket               | unrouted diagnostic (decision [176]): pins one artifact, never routes                                                                                                  |
+| `GET /v1/ops/*`                                        | public reads                          | the Ops dashboard's registry / routing / drift / latency / retrain / events / accuracy surfaces. `/v1/ops/events` is offset-paginated (`page`/`size` + `hasNext`)      |
+| `GET /health`, `/actuator/health/**`, `/actuator/info` | public                                | liveness/readiness probes (Uptime Robot + deploy smoke)                                                                                                                |
+| `/v1/admin/**`                                         | HTTP Basic, role `ADMIN`              | registry writes (register / promote), routing config, experiments (incl. `import-offline`), retrain queue admin                                                        |
+| `/actuator/prometheus`                                 | HTTP Basic, role `METRICS` or `ADMIN` | the Prometheus scrape endpoint (metrics-only credential; F3 role split)                                                                                                |
 
 Error envelope: every 4xx/5xx returns the shared `ApiError` body
 (`status` / `error` / `message` / `correlationId`). A `503` from a predict

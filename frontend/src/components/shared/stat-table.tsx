@@ -1,20 +1,23 @@
 /**
- * <StatTable> — the signature component of the scouting-report identity.
+ * <StatTable> - the signature component of the broadcast identity ([160]).
  *
  * A conditionally-formatted stat sheet built on a Mantine <Table> substrate
- * with custom broadcast-chrome styling per design.md §7 + §8.
+ * with custom broadcast-chrome styling per design.md §7 + §8. All colors and
+ * fonts come from the injected StatTablePalette (see below) - the broadcast
+ * identity passes Barlow Condensed / Inter / JetBrains Mono per [160]; nothing
+ * here hardcodes a face or a hex.
  *
  * Layout:
- *   - Header row: navy background, cream text, Saira Condensed uppercase 14px
+ *   - Header row: palette header surface + palette.displayFont uppercase 14px
  *     tracked +0.04em, weight 700. Click to sort.
- *   - First column (row labels): silver background, IBM Plex Sans semibold 14px.
- *   - Data cells: bgSheet by default; conditionally-formatted cells get the
+ *   - First column (row labels): palette label surface, palette.bodyFont semibold 14px.
+ *   - Data cells: palette surface by default; conditionally-formatted cells get the
  *     condFormat ramp color as a background tint via cellColor(). The ramp colors
  *     are already light (good1/bad1 are pale; good3/bad3 are saturated but the
- *     value text is high-contrast mono on top — a11y rule: color is never the
+ *     value text is high-contrast mono on top - a11y rule: color is never the
  *     sole carrier).
- *   - Values: IBM Plex Mono tabular-nums 14px, textStrong.
- *   - 1-px borders in bgEmphasis — no shadows.
+ *   - Values: palette.monoFont tabular-nums 14px, strong text color.
+ *   - 1-px borders from the palette - no shadows.
  *
  * Accessibility: every table has a caption via <caption> (visible or sr-only).
  * Sort controls use aria-sort on column headers. The sort indicator is an SVG
