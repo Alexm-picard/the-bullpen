@@ -117,7 +117,7 @@ dependencies {
     // C1/C2 (audit remediation): architecture boundary rules. The data/ -> api.dto rule is now
     // STRICT (C2 drained it to zero); one FreezingArchRule baseline remains, for the api-leaf rule
     // (src/test/resources/archunit-store).
-    testImplementation("com.tngtech.archunit:archunit-junit5:1.4.1")
+    testImplementation("com.tngtech.archunit:archunit-junit5:1.5.0")
     testImplementation("org.testcontainers:junit-jupiter:1.20.6")
     testImplementation("org.testcontainers:clickhouse:1.20.6")
     testImplementation("org.testcontainers:minio:1.20.6")
