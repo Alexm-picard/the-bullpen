@@ -154,7 +154,7 @@ groups:
           severity: warning
         annotations:
           summary: "Unrecognised MLB detailedState hitting the feed"
-          description: "The live poller saw an unknown game status ({{ $value }}/s over 5m). An unrecognised detailedState parks the game in UNKNOWN and slows its poll to 5 min (cadence inheritance softens this, but the vocabulary gap is still diagnostic). Check `journalctl -u bullpen-worker | grep 'unrecognised detailedState'` for the raw string."
+          description: "The live poller saw an unknown game status ({{ $value | printf \"%.3f\" }}/s over 5m). An unrecognised detailedState parks the game in UNKNOWN and slows its poll to 5 min (cadence inheritance softens this, but the vocabulary gap is still diagnostic). Check `journalctl -u bullpen-worker | grep 'unrecognised detailedState'` for the raw string."
 
       # GPU thermals during the 2-6 AM retrains (M1 task 7's textfile collector). CPU temperature
       # is unreadable under WSL2; the box's shutdown risk IS the GPU under training load.

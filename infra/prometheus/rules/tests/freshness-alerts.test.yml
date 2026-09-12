@@ -226,6 +226,14 @@ tests:
               reason: unknown_game_status
               job: thebullpen-worker
               instance: w
+            exp_annotations:
+              summary: "Unrecognised MLB detailedState hitting the feed"
+              description:
+                "The live poller saw an unknown game status (0.017/s over 5m). An
+                unrecognised detailedState parks the game in UNKNOWN and slows its poll
+                to 5 min (cadence inheritance softens this, but the vocabulary gap is
+                still diagnostic). Check `journalctl -u bullpen-worker | grep
+                'unrecognised detailedState'` for the raw string."
 
   # Zero anomalies: the alert must stay silent.
   - interval: 1m
