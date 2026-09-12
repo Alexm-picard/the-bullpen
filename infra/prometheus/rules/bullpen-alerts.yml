@@ -143,6 +143,19 @@ groups:
           summary: "MLB feed parse anomalies are sustained"
           description: "Nonzero parse-anomaly rate for 30m ({{ $value }}/s). The GUMBO feed is handing back vocabulary/fields the parser degrades on - inspect the reason label breakdown before the drift dataset silently thins."
 
+      # Narrower variant of ParserAnomalyRate: fires in 5m (not 30m) specifically when an
+      # unrecognised detailedState is hitting the feed. This is the exact shape of the ABS-challenge
+      # bug: a new MLB vocabulary string parks the game in UNKNOWN (5-min poll) mid-play, causing a
+      # silence the broad alert would not catch for half an hour.
+      - alert: UnknownGameStatusRate
+        expr: rate(bullpen_ingest_parse_anomalies_total{reason="unknown_game_status"}[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Unrecognised MLB detailedState hitting the feed"
+          description: "The live poller saw an unknown game status ({{ $value }}/s over 5m). An unrecognised detailedState parks the game in UNKNOWN and slows its poll to 5 min (cadence inheritance softens this, but the vocabulary gap is still diagnostic). Check `journalctl -u bullpen-worker | grep 'unrecognised detailedState'` for the raw string."
+
       # GPU thermals during the 2-6 AM retrains (M1 task 7's textfile collector). CPU temperature
       # is unreadable under WSL2; the box's shutdown risk IS the GPU under training load.
       - alert: GpuTempHigh

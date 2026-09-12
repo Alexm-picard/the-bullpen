@@ -60,8 +60,9 @@ public enum GameStatus {
     if (normalised.contains("postpone")) return POSTPONED;
     if (normalised.contains("suspend")) return SUSPENDED;
     if (normalised.contains("delay")) return DELAYED;
-    if (normalised.contains("manager challenge")
+    if (normalised.contains("challenge")
         || normalised.contains("review")
+        || normalised.contains("replay")
         || normalised.equals("in progress")) {
       return IN_PROGRESS;
     }

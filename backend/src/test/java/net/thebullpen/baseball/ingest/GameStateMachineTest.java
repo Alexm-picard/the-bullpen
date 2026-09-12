@@ -29,6 +29,16 @@ class GameStateMachineTest {
   }
 
   @Test
+  void fromMlbDetailedState_maps_2026_abs_challenge_to_in_progress() {
+    assertThat(GameStatus.fromMlbDetailedState("Player challenge: Pitch Result"))
+        .isEqualTo(GameStatus.IN_PROGRESS);
+    assertThat(GameStatus.fromMlbDetailedState("Manager Challenge: Play at 1st"))
+        .isEqualTo(GameStatus.IN_PROGRESS);
+    assertThat(GameStatus.fromMlbDetailedState("Replay: Review in Progress"))
+        .isEqualTo(GameStatus.IN_PROGRESS);
+  }
+
+  @Test
   void fromMlbDetailedState_collapses_unknown_to_UNKNOWN_not_throw() {
     assertThat(GameStatus.fromMlbDetailedState(null)).isEqualTo(GameStatus.UNKNOWN);
     assertThat(GameStatus.fromMlbDetailedState("")).isEqualTo(GameStatus.UNKNOWN);

@@ -205,3 +205,45 @@ tests:
       - eval_time: 120h
         alertname: PitchTypePriorCoverageGapGrowing
         exp_alerts: []
+
+  # --- UnknownGameStatusRate: fires when unrecognised detailedState hits the feed ---------------
+  # Sustained unknown_game_status anomalies at 1/min for 10m: the alert fires after the 5m for:.
+  - interval: 1m
+    input_series:
+      - series: 'bullpen_ingest_parse_anomalies_total{reason="unknown_game_status", job="thebullpen-worker", instance="w"}'
+        values: "0+1x20"
+    alert_rule_test:
+      # 4m: pending, not yet firing.
+      - eval_time: 4m
+        alertname: UnknownGameStatusRate
+        exp_alerts: []
+      # 11m: the 5m rate window is nonzero AND the 5m for: has elapsed.
+      - eval_time: 11m
+        alertname: UnknownGameStatusRate
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              reason: unknown_game_status
+              job: thebullpen-worker
+              instance: w
+
+  # Zero anomalies: the alert must stay silent.
+  - interval: 1m
+    input_series:
+      - series: 'bullpen_ingest_parse_anomalies_total{reason="unknown_game_status", job="thebullpen-worker", instance="w"}'
+        values: "0x20"
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: UnknownGameStatusRate
+        exp_alerts: []
+
+  # A burst that stops: after the anomalies cease, the rate decays and the alert resolves.
+  - interval: 1m
+    input_series:
+      - series: 'bullpen_ingest_parse_anomalies_total{reason="unknown_game_status", job="thebullpen-worker", instance="w"}'
+        values: "0+1x6 6x20"
+    alert_rule_test:
+      # 15m after the burst stopped: the 5m rate window is all-flat, so the rate is 0.
+      - eval_time: 20m
+        alertname: UnknownGameStatusRate
+        exp_alerts: []
