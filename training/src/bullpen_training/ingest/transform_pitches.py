@@ -14,6 +14,7 @@ Usage:
 
 from __future__ import annotations
 
+import datetime
 import logging
 import re
 import time
@@ -38,10 +39,12 @@ log = get_logger(__name__)
 SQL_DIR = Path(__file__).resolve().parent / "sql"
 
 EXPECTED_REGULAR_SEASON_ROWS = 700_000
+IN_SEASON_MIN_ROWS = 10_000
 
 # Each assertion's name → (expected_value, tolerance_pct OR None for exact 0).
-# `regular_season_count` uses the tolerance band; the rest must be exactly 0
-# (or, for `unknown_description_excess`, < 100).
+# `regular_season_count` uses the tolerance band for completed seasons; for the
+# current (in-progress) season it applies a floor-only check so mid-season
+# backfills stop failing the +-5% gate.
 _ASSERTION_GATES: dict[str, dict[str, Any]] = {
     "regular_season_count": {
         "kind": "range",
@@ -99,7 +102,7 @@ def _scalar(client: Client, sql: str) -> int:
     return int(rows[0][0]) if rows else 0
 
 
-def _evaluate_assertion(name: str, value: int) -> None:
+def _evaluate_assertion(name: str, value: int, *, year: int | None = None) -> None:
     gate = _ASSERTION_GATES.get(name)
     if gate is None:
         log.warning(
@@ -113,22 +116,39 @@ def _evaluate_assertion(name: str, value: int) -> None:
             raise AssertionFailure(f"assertion {name} failed: value={value} > max={gate['max']}")
         log.info("assertion passed", name=name, value=value, gate="max", limit=gate["max"])
     elif gate["kind"] == "range":
-        expected = int(gate["expected"])
-        tol = float(gate["tol_pct"])
-        lower = expected * (1 - tol / 100)
-        upper = expected * (1 + tol / 100)
-        if not (lower <= value <= upper):
-            raise AssertionFailure(
-                f"assertion {name} out of band: value={value} expected~{expected} (±{tol}%)"
+        current_year = datetime.date.today().year
+        in_season = year is not None and year >= current_year
+        if in_season:
+            if value < IN_SEASON_MIN_ROWS:
+                raise AssertionFailure(
+                    f"assertion {name} failed: value={value} < floor={IN_SEASON_MIN_ROWS}"
+                    f" (in-season backfill for {year})"
+                )
+            log.info(
+                "assertion passed (in-season floor)",
+                name=name,
+                value=value,
+                gate="floor",
+                floor=IN_SEASON_MIN_ROWS,
+                year=year,
             )
-        log.info(
-            "assertion passed",
-            name=name,
-            value=value,
-            gate="range",
-            expected=expected,
-            tol_pct=tol,
-        )
+        else:
+            expected = int(gate["expected"])
+            tol = float(gate["tol_pct"])
+            lower = expected * (1 - tol / 100)
+            upper = expected * (1 + tol / 100)
+            if not (lower <= value <= upper):
+                raise AssertionFailure(
+                    f"assertion {name} out of band: value={value} expected~{expected} (±{tol}%)"
+                )
+            log.info(
+                "assertion passed",
+                name=name,
+                value=value,
+                gate="range",
+                expected=expected,
+                tol_pct=tol,
+            )
 
 
 def run_assertions(client: Client, year: int) -> dict[str, int]:
@@ -139,7 +159,7 @@ def run_assertions(client: Client, year: int) -> dict[str, int]:
         bound = _bind(body, {"year": year})
         value = _scalar(client, bound)
         results[name] = value
-        _evaluate_assertion(name, value)
+        _evaluate_assertion(name, value, year=year)
     return results
 
 

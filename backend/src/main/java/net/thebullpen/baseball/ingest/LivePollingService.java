@@ -548,7 +548,9 @@ public class LivePollingService {
       schedule = client.fetchSchedule(today);
       scheduleFetchedAt = Instant.now();
       for (ScheduledGame g : schedule) {
-        statusByGame.putIfAbsent(g.gamePk(), g.status());
+        if (GameStateMachine.shouldPoll(g.status())) {
+          statusByGame.putIfAbsent(g.gamePk(), g.status());
+        }
       }
       // Persist the full day's card so /v1/games/today surfaces every game (names + start time)
       // BEFORE first pitch - the slate is schedule-driven now, not pitch-driven. Best-effort: a

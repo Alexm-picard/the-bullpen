@@ -70,17 +70,32 @@ def test_evaluate_max_gate_fails_over_limit() -> None:
 
 
 def test_evaluate_range_gate_passes_in_band() -> None:
-    _evaluate_assertion("regular_season_count", 700_000)
+    _evaluate_assertion("regular_season_count", 700_000, year=2024)
 
 
 def test_evaluate_range_gate_fails_below_band() -> None:
     with pytest.raises(AssertionFailure, match="regular_season_count"):
-        _evaluate_assertion("regular_season_count", 100_000)
+        _evaluate_assertion("regular_season_count", 100_000, year=2024)
 
 
 def test_evaluate_range_gate_fails_above_band() -> None:
     with pytest.raises(AssertionFailure, match="regular_season_count"):
-        _evaluate_assertion("regular_season_count", 1_000_000)
+        _evaluate_assertion("regular_season_count", 1_000_000, year=2024)
+
+
+def test_evaluate_range_gate_uses_floor_for_current_season() -> None:
+    import datetime
+
+    current_year = datetime.date.today().year
+    _evaluate_assertion("regular_season_count", 300_000, year=current_year)
+
+
+def test_evaluate_range_gate_floor_rejects_empty_current_season() -> None:
+    import datetime
+
+    current_year = datetime.date.today().year
+    with pytest.raises(AssertionFailure, match="in-season"):
+        _evaluate_assertion("regular_season_count", 5_000, year=current_year)
 
 
 def test_evaluate_unknown_assertion_is_a_warning_not_a_failure() -> None:

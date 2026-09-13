@@ -1150,6 +1150,85 @@ class LivePollingServiceTest {
         .isEqualTo(1);
   }
 
+  @Test
+  void tick_does_not_track_terminal_games_from_the_schedule() throws Exception {
+    MlbStatsApiClient client = mock(MlbStatsApiClient.class);
+    LivePitchesRepository repo = mock(LivePitchesRepository.class);
+    LivePitchPredictor predictor = mock(LivePitchPredictor.class);
+    when(predictor.predictAndLog(any()))
+        .thenReturn(new LivePitchPredictor.PredictionResult(Map.of("ball", 1.0), "v1"));
+    when(repo.insertPitches(any())).thenReturn(1);
+
+    long liveGame = 822810L;
+    long completedGame = 822811L;
+    long postponedGame = 822812L;
+    when(client.fetchSchedule(any()))
+        .thenReturn(
+            List.of(
+                new ScheduledGame(
+                    liveGame,
+                    GameStatus.IN_PROGRESS,
+                    "BOS",
+                    "BAL",
+                    "BOS",
+                    "BAL",
+                    null,
+                    0L,
+                    "",
+                    0L,
+                    ""),
+                new ScheduledGame(
+                    completedGame,
+                    GameStatus.COMPLETED,
+                    "NYY",
+                    "TOR",
+                    "NYY",
+                    "TOR",
+                    null,
+                    0L,
+                    "",
+                    0L,
+                    ""),
+                new ScheduledGame(
+                    postponedGame,
+                    GameStatus.POSTPONED,
+                    "LAD",
+                    "SFG",
+                    "LAD",
+                    "SFG",
+                    null,
+                    0L,
+                    "",
+                    0L,
+                    "")));
+    when(client.fetchLiveFeed(liveGame))
+        .thenReturn(
+            feedFor(liveGame, List.of(pitchFor(liveGame, 1, 1)), nextPitchFor(liveGame, 1, 2)));
+
+    LivePollingService svc =
+        new LivePollingService(
+            client,
+            repo,
+            Optional.of(predictor),
+            Optional.empty(),
+            new IngestMetrics(new SimpleMeterRegistry()),
+            heldLease(),
+            new com.fasterxml.jackson.databind.ObjectMapper(),
+            new MlbFeedParser(new com.fasterxml.jackson.databind.ObjectMapper()),
+            new IngestProperties(
+                new IngestProperties.Live(
+                    "https://statsapi.mlb.com", "ua", 5000, 3, 0L, 0L, 30L, false),
+                new IngestProperties.Players(false)));
+    svc.tick();
+
+    assertThat(svc.trackedGameCount())
+        .as("only the live game should be tracked; COMPLETED and POSTPONED are terminal")
+        .isEqualTo(1);
+    verify(client).fetchLiveFeed(liveGame);
+    verify(client, never()).fetchLiveFeed(completedGame);
+    verify(client, never()).fetchLiveFeed(postponedGame);
+  }
+
   private static LiveNextPitch nextPitchWithBatter(int atBat, int pitchNumber, long batterId) {
     return new LiveNextPitch(
         822810L,
