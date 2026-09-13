@@ -22,6 +22,7 @@ bullpen:
       schedule-refresh-min: ${BULLPEN_INGEST_LIVE_SCHEDULE_REFRESH_MIN:15}
       timeout-ms: ${BULLPEN_INGEST_LIVE_TIMEOUT_MS:5000}
       max-retries: ${BULLPEN_INGEST_LIVE_MAX_RETRIES:3}
+      diff-patch-enabled: ${BULLPEN_DIFFPATCH_ENABLED:false}
     players:
       # DP3 players-dimension refresh: backfill-on-empty at worker startup plus a weekly
       # Monday 03:40 ET re-pull of the current season. Deliberately independent of the live
