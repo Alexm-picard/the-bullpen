@@ -40,14 +40,16 @@ public class MlbStatsApiClient {
   private static final Logger log = LoggerFactory.getLogger(MlbStatsApiClient.class);
 
   private final MlbFeedParser parser;
+  private final IngestMetrics metrics;
   private final String baseUrl;
   private final String userAgent;
   private final int maxRetries;
   private final CloseableHttpClient http;
 
-  public MlbStatsApiClient(MlbFeedParser parser, IngestProperties props) {
+  public MlbStatsApiClient(MlbFeedParser parser, IngestProperties props, IngestMetrics metrics) {
     IngestProperties.Live live = props.live();
     this.parser = parser;
+    this.metrics = metrics;
     String baseUrl = live.baseUrl();
     this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
     this.userAgent = live.userAgent();
@@ -183,6 +185,13 @@ public class MlbStatsApiClient {
           }
           if (code >= 400) {
             throw new IOException("MLB API " + code + " for " + url);
+          }
+          var ageHeader = response.getFirstHeader("Age");
+          if (ageHeader != null) {
+            try {
+              metrics.setCdnAgeMs(Long.parseLong(ageHeader.getValue()) * 1000L);
+            } catch (NumberFormatException ignored) {
+            }
           }
           return body(response.getEntity());
         });
