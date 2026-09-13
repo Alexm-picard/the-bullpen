@@ -17,6 +17,7 @@ import static org.mockito.Mockito.when;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -966,6 +967,101 @@ class LivePollingServiceTest {
     verify(repo).upsertGameStatus(eq(822810L), any(), any(), captor.capture());
     assertThat(captor.getValue()).isNotNull();
     assertThat(captor.getValue().batterId()).isEqualTo(610000L);
+  }
+
+  // --- Cadence inheritance: UNKNOWN inherits the previous state's poll interval ---------------
+
+  @Test
+  void effectivePollInterval_unknown_after_in_progress_returns_12s() throws Exception {
+    MlbStatsApiClient client = mock(MlbStatsApiClient.class);
+    LivePitchesRepository repo = mock(LivePitchesRepository.class);
+    LivePitchPredictor predictor = mock(LivePitchPredictor.class);
+    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(client.fetchLiveFeed(822810L))
+        .thenReturn(feed(List.of(pitch(1, 1)), nextPitch(1, 2)))
+        .thenReturn(unknownFeed(List.of(pitch(1, 1), pitch(1, 2)), nextPitch(1, 3)));
+
+    LivePollingService svc = service(client, repo, predictor);
+    svc.pollGame(822810L); // IN_PROGRESS: populates lastNonUnknownStatus
+    svc.pollGame(822810L); // UNKNOWN: the cadence map must inherit from IN_PROGRESS
+
+    assertThat(svc.effectivePollInterval(822810L, GameStatus.UNKNOWN))
+        .as("a game that was IN_PROGRESS 12s ago must keep 12s polling when UNKNOWN")
+        .isEqualTo(Duration.ofSeconds(12));
+  }
+
+  @Test
+  void effectivePollInterval_unknown_with_no_prior_status_returns_5min() {
+    MlbStatsApiClient client = mock(MlbStatsApiClient.class);
+    LivePitchesRepository repo = mock(LivePitchesRepository.class);
+
+    LivePollingService svc = service(client, repo, mock(LivePitchPredictor.class));
+
+    assertThat(svc.effectivePollInterval(999999L, GameStatus.UNKNOWN))
+        .as("a never-seen game that starts UNKNOWN gets the conservative 5-min default")
+        .isEqualTo(Duration.ofMinutes(5));
+  }
+
+  @Test
+  void effectivePollInterval_returns_own_interval_after_game_leaves_unknown() throws Exception {
+    MlbStatsApiClient client = mock(MlbStatsApiClient.class);
+    LivePitchesRepository repo = mock(LivePitchesRepository.class);
+    LivePitchPredictor predictor = mock(LivePitchPredictor.class);
+    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(client.fetchLiveFeed(822810L))
+        .thenReturn(feed(List.of(pitch(1, 1)), nextPitch(1, 2)))
+        .thenReturn(unknownFeed(List.of(pitch(1, 1), pitch(1, 2)), nextPitch(1, 3)))
+        .thenReturn(feed(List.of(pitch(1, 1), pitch(1, 2), pitch(1, 3)), nextPitch(1, 4)));
+
+    LivePollingService svc = service(client, repo, predictor);
+    svc.pollGame(822810L); // IN_PROGRESS
+    svc.pollGame(822810L); // UNKNOWN
+    svc.pollGame(822810L); // back to IN_PROGRESS
+
+    assertThat(svc.effectivePollInterval(822810L, GameStatus.IN_PROGRESS))
+        .as("once the game returns to IN_PROGRESS, the map holds IN_PROGRESS again")
+        .isEqualTo(Duration.ofSeconds(12));
+    assertThat(svc.effectivePollInterval(822810L, GameStatus.UNKNOWN))
+        .as("a future UNKNOWN would still inherit IN_PROGRESS's 12s")
+        .isEqualTo(Duration.ofSeconds(12));
+  }
+
+  @Test
+  void pollGame_unknown_status_increments_the_anomaly_counter() throws Exception {
+    MlbStatsApiClient client = mock(MlbStatsApiClient.class);
+    LivePitchesRepository repo = mock(LivePitchesRepository.class);
+    LivePitchPredictor predictor = mock(LivePitchPredictor.class);
+    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(client.fetchLiveFeed(822810L))
+        .thenReturn(feed(List.of(pitch(1, 1)), nextPitch(1, 2)))
+        .thenReturn(unknownFeed(List.of(pitch(1, 1), pitch(1, 2)), nextPitch(1, 3)));
+
+    SimpleMeterRegistry registry = new SimpleMeterRegistry();
+    LivePollingService svc = service(client, repo, predictor, registry);
+    svc.pollGame(822810L);
+    svc.pollGame(822810L);
+
+    assertThat(
+            registry
+                .get("bullpen_ingest_parse_anomalies_total")
+                .tag("reason", "unknown_game_status")
+                .counter()
+                .count())
+        .isEqualTo(1.0);
+  }
+
+  private static LiveGameFeed unknownFeed(List<LivePitch> pitches, LiveNextPitch next) {
+    return new LiveGameFeed(
+        822810L,
+        GameStatus.UNKNOWN,
+        "Player challenge: Pitch Result",
+        LocalDate.of(2026, 6, 5),
+        1,
+        2,
+        "TOR",
+        "BAL",
+        pitches,
+        next);
   }
 
   /** A current play with an explicit batter id, for pinch-hitter / at-bat-rollover fixtures. */

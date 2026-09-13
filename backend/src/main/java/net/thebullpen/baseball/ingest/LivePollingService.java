@@ -103,6 +103,11 @@ public class LivePollingService {
   // across polls (belt-and-suspenders alongside the cursor high-water that gates the fresh list).
   private final Map<Long, Long> lastPostPredictedKeyByGame = new ConcurrentHashMap<>();
   private final Map<Long, Long> lastFailedKeyByGame = new ConcurrentHashMap<>();
+  // Cadence inheritance: a game that was IN_PROGRESS 12s ago must keep polling at 12s even if MLB
+  // labels it UNKNOWN. Without this, a transient status flip (e.g. "Player challenge: Pitch Result"
+  // before the mapper recognises it) parks the game at UNKNOWN's 5-minute interval and the poller
+  // goes silent for a full cycle while pitches keep landing.
+  private final Map<Long, GameStatus> lastNonUnknownStatus = new ConcurrentHashMap<>();
   private final java.util.Set<String> seenUnknownStates = ConcurrentHashMap.newKeySet();
   private volatile List<ScheduledGame> schedule = List.of();
   private volatile Instant scheduleFetchedAt = Instant.EPOCH;
@@ -193,6 +198,9 @@ public class LivePollingService {
     GameStatus current =
         stateMachine.transition(gamePk, prev == null ? GameStatus.SCHEDULED : prev, feed.status());
     statusByGame.put(gamePk, current);
+    if (current != GameStatus.UNKNOWN) {
+      lastNonUnknownStatus.put(gamePk, current);
+    }
     Instant polledAt = Instant.now();
     lastPollAt.put(gamePk, polledAt);
     metrics.markPollCompleted(polledAt);
@@ -456,14 +464,27 @@ public class LivePollingService {
     lastPredictedKeyByGame.keySet().retainAll(active);
     lastPostPredictedKeyByGame.keySet().retainAll(active);
     lastFailedKeyByGame.keySet().retainAll(active);
+    lastNonUnknownStatus.keySet().retainAll(active);
     battedBallWritten.keySet().retainAll(active);
+  }
+
+  Duration effectivePollInterval(long gamePk, GameStatus status) {
+    if (status == GameStatus.UNKNOWN) {
+      GameStatus inherited = lastNonUnknownStatus.get(gamePk);
+      if (inherited != null) {
+        return GameStateMachine.pollIntervalFor(inherited);
+      }
+    }
+    return GameStateMachine.pollIntervalFor(status);
   }
 
   private boolean isDue(long gamePk, GameStatus status) {
     Instant last = lastPollAt.get(gamePk);
-    return last == null
-        || Duration.between(last, Instant.now()).compareTo(GameStateMachine.pollIntervalFor(status))
-            >= 0;
+    if (last == null) {
+      return true;
+    }
+    return Duration.between(last, Instant.now()).compareTo(effectivePollInterval(gamePk, status))
+        >= 0;
   }
 
   /**
