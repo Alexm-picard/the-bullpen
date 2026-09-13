@@ -306,6 +306,43 @@ groups:
           summary: "pitch-type prior coverage gap grew {{ $value | printf \"%.1f\" }} days over the last 3d"
           description: "The hole between the pitches corpus edge and the pitches_live TTL floor is GROWING - the manual backfill has not run and each day of growth is history leaving both tables permanently (prior_n biases lower for every pitcher active in the gap). The accepted standing level does not fire this; growth does. Run the pitch backfill. The min_over_time guard keeps the -1 boot state from reading as growth after a worker restart."
 
+      # --- Step 3 diffPatch ingest watchdogs ---------------------------------------------------
+
+      # pitches_behind sustained > 1 for 5m means the poller is not keeping up with the live feed.
+      # The gauge is updated per tick with the max across all live games; 0 = caught up, 1 = normal
+      # pipeline delay. > 1 sustained means incremental polling is structurally lagging.
+      - alert: IngestPitchesBehind
+        expr: bullpen_ingest_pitches_behind > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Live ingest is {{ $value }} pitches behind the feed"
+          description: "bullpen_ingest_pitches_behind has been > 1 for 5m. The poller is not keeping pace with the live feed. Check diffPatch latency, MLB API response times, and tick duration."
+
+      # diffPatch fallback rate > 1 per game per 10m. Every fallback is a full-fetch resync, which
+      # is expensive and means the incremental path is unreliable. One occasional fallback (consistency
+      # timer, game end) is normal; sustained fallbacks mean a patch application bug or feed instability.
+      - alert: DiffPatchFallbackRateHigh
+        expr: sum(rate(bullpen_ingest_diffpatch_fallback_total[10m])) > 0.0017
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "diffPatch fallback rate is elevated (> 1/10m)"
+          description: "The diffPatch applier is falling back to full fetches at {{ $value | printf \"%.4f\" }}/s (> ~1 per 10m). Check the reason label breakdown on bullpen_ingest_diffpatch_fallback_total for the failure mode."
+
+      # Any 429 from MLB is an immediate concern: the API is rate-limiting us, which means we are
+      # polling too aggressively or there is a CDN/edge issue.
+      - alert: Mlb429Observed
+        expr: increase(bullpen_ingest_mlb_429_total[10m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "MLB Stats API returned 429 (rate limited)"
+          description: "{{ $value | printf \"%.0f\" }} 429 responses in the last 10m. The live poller is being rate-limited by MLB. Check polling cadence and whether multiple instances are running."
+
   # ── prediction_log writer surface (issue 405) ──────────────────────────────────────────────────
   #
   # NOTE THE PREFIX. Every rule above targets `bullpen_*` (ingest + freshness). The rules below

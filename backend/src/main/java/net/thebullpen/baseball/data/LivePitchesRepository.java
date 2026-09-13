@@ -24,6 +24,7 @@ import net.thebullpen.baseball.domain.BattedBall;
 import net.thebullpen.baseball.domain.CurrentMatchup;
 import net.thebullpen.baseball.domain.GameStatus;
 import net.thebullpen.baseball.domain.GameSummary;
+import net.thebullpen.baseball.domain.LiveGameState;
 import net.thebullpen.baseball.domain.LivePitch;
 import net.thebullpen.baseball.domain.LivePitchRow;
 import net.thebullpen.baseball.domain.PagedRows;
@@ -312,6 +313,35 @@ public class LivePitchesRepository {
           + " current_pitcher_id, current_bat_side, current_pitch_hand, current_at_bat_index)"
           + " VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
 
+  private static final String INSERT_GAME_STATUS_WITH_PREDICTION =
+      "INSERT INTO live_game_status (game_id, game_date, status, current_batter_id,"
+          + " current_pitcher_id, current_bat_side, current_pitch_hand, current_at_bat_index,"
+          + " upcoming_at_bat_index, upcoming_pitch_number, upcoming_balls, upcoming_strikes,"
+          + " upcoming_outs, upcoming_base_state, pre_prediction, pitch_type_prediction,"
+          + " pre_model_version, pitch_type_model_version, predicted_at)"
+          + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+  private static final String FIND_LIVE_STATE =
+      "SELECT argMax(status, updated_at) AS status,"
+          + " argMax(current_batter_id, updated_at) AS current_batter_id,"
+          + " argMax(current_pitcher_id, updated_at) AS current_pitcher_id,"
+          + " argMax(current_bat_side, updated_at) AS current_bat_side,"
+          + " argMax(current_pitch_hand, updated_at) AS current_pitch_hand,"
+          + " argMax(current_at_bat_index, updated_at) AS current_at_bat_index,"
+          + " argMax(upcoming_at_bat_index, updated_at) AS upcoming_at_bat_index,"
+          + " argMax(upcoming_pitch_number, updated_at) AS upcoming_pitch_number,"
+          + " argMax(upcoming_balls, updated_at) AS upcoming_balls,"
+          + " argMax(upcoming_strikes, updated_at) AS upcoming_strikes,"
+          + " argMax(upcoming_outs, updated_at) AS upcoming_outs,"
+          + " argMax(upcoming_base_state, updated_at) AS upcoming_base_state,"
+          + " argMax(pre_prediction, updated_at) AS pre_prediction,"
+          + " argMax(pitch_type_prediction, updated_at) AS pitch_type_prediction,"
+          + " argMax(pre_model_version, updated_at) AS pre_model_version,"
+          + " argMax(pitch_type_model_version, updated_at) AS pitch_type_model_version,"
+          + " argMax(predicted_at, updated_at) AS predicted_at,"
+          + " max(updated_at) AS as_of"
+          + " FROM live_game_status WHERE game_id = ? GROUP BY game_id";
+
   private static final String INSERT_SCHEDULED_GAME =
       "INSERT INTO scheduled_games"
           + " (game_id, game_date, game_time_utc, home_team, away_team, home_name, away_name,"
@@ -490,6 +520,125 @@ public class LivePitchesRepository {
         usable ? nz(matchup.batSide()) : "",
         usable ? nz(matchup.pitchHand()) : "",
         usable ? matchup.atBatIndex() : 0);
+  }
+
+  /**
+   * Upsert a game's status row with the worker-computed predictions (V034, decision [194]).
+   *
+   * <p>Carries the full column set (status + matchup + upcoming pitch + predictions) so the
+   * ReplacingMergeTree row is complete regardless of whether a status-only row also landed in the
+   * same tick. The matchup and status values mirror what {@link #upsertGameStatus} wrote moments
+   * earlier in the same poll tick - the duplication is intentional: the RMT's argMax picks the
+   * latest, and both shapes are consistent.
+   */
+  public void upsertUpcomingPitch(
+      long gameId,
+      LocalDate gameDate,
+      String status,
+      CurrentMatchup matchup,
+      int upcomingAtBatIndex,
+      int upcomingPitchNumber,
+      int balls,
+      int strikes,
+      int outs,
+      int baseState,
+      String prePrediction,
+      String pitchTypePrediction,
+      String preModelVersion,
+      String pitchTypeModelVersion,
+      Instant predictedAt) {
+    boolean usable = matchup != null && matchup.isPopulated();
+    jdbc.update(
+        INSERT_GAME_STATUS_WITH_PREDICTION,
+        gameId,
+        gameDate.toString(),
+        status,
+        usable ? matchup.batterId() : 0L,
+        usable ? matchup.pitcherId() : 0L,
+        usable ? nz(matchup.batSide()) : "",
+        usable ? nz(matchup.pitchHand()) : "",
+        usable ? matchup.atBatIndex() : 0,
+        upcomingAtBatIndex,
+        upcomingPitchNumber,
+        balls,
+        strikes,
+        outs,
+        baseState,
+        prePrediction,
+        pitchTypePrediction,
+        preModelVersion,
+        pitchTypeModelVersion,
+        Timestamp.from(predictedAt));
+  }
+
+  /**
+   * Read the live state for a single game (decision [194]): status, matchup, upcoming-pitch
+   * context, and both predictions. Returns empty when the game has no status row at all (pre-game
+   * with no poller data).
+   */
+  public java.util.Optional<LiveGameState> findLiveState(long gameId) {
+    List<LiveGameState> hits =
+        jdbc.query(
+            FIND_LIVE_STATE,
+            (ResultSet rs, int n) -> {
+              CurrentMatchup m = readMatchup(rs);
+              String status = rs.getString("status");
+
+              int pitchNumber = rs.getInt("upcoming_pitch_number");
+              String prePred = rs.getString("pre_prediction");
+              boolean hasPrediction = pitchNumber > 0 && prePred != null && !prePred.isEmpty();
+
+              LiveGameState.UpcomingPitch upcoming =
+                  hasPrediction
+                      ? new LiveGameState.UpcomingPitch(
+                          rs.getInt("upcoming_at_bat_index"),
+                          pitchNumber,
+                          rs.getInt("upcoming_balls"),
+                          rs.getInt("upcoming_strikes"),
+                          rs.getInt("upcoming_outs"),
+                          rs.getInt("upcoming_base_state"))
+                      : null;
+
+              Prediction pre =
+                  hasPrediction ? parsePrediction(prePred) : new Prediction(null, null);
+              Prediction pt =
+                  hasPrediction
+                      ? parsePrediction(rs.getString("pitch_type_prediction"))
+                      : new Prediction(null, null);
+
+              String preVersion = rs.getString("pre_model_version");
+              String ptVersion = rs.getString("pitch_type_model_version");
+              LiveGameState.ModelVersions versions =
+                  hasPrediction && preVersion != null && !preVersion.isEmpty()
+                      ? new LiveGameState.ModelVersions(preVersion, ptVersion)
+                      : null;
+
+              LocalDateTime predictedAtRaw = rs.getObject("predicted_at", LocalDateTime.class);
+              Instant predictedAt =
+                  hasPrediction && predictedAtRaw != null
+                      ? predictedAtRaw.toInstant(ZoneOffset.UTC)
+                      : null;
+
+              LocalDateTime updatedAtRaw = rs.getObject("as_of", LocalDateTime.class);
+              Instant asOf =
+                  updatedAtRaw != null ? updatedAtRaw.toInstant(ZoneOffset.UTC) : Instant.now();
+
+              return new LiveGameState(
+                  status == null || status.isEmpty() ? "UNKNOWN" : status,
+                  m,
+                  upcoming,
+                  pre.classes() != null
+                      ? new LiveGameState.Prediction(pre.classes(), pre.winner())
+                      : null,
+                  pt.classes() != null
+                      ? new LiveGameState.Prediction(pt.classes(), pt.winner())
+                      : null,
+                  versions,
+                  predictedAt,
+                  asOf);
+            },
+            gameId);
+    return hits.isEmpty() ? java.util.Optional.empty() : java.util.Optional.of(hits.get(0));
   }
 
   /**

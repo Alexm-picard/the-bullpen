@@ -140,6 +140,36 @@ export type LivePitchRow = {
 
 export class GameApiError extends ApiError {}
 
+// ── decision [194]: worker-computed live state, polled at 2s ─────────────────
+
+/** Mirrors backend LiveGameState (GET /v1/games/{id}/live). */
+export type LiveGameState = {
+  status: string;
+  matchup: CurrentMatchup | null;
+  upcomingPitch: {
+    atBatIndex: number;
+    pitchNumber: number;
+    balls: number;
+    strikes: number;
+    outs: number;
+    baseState: number;
+  } | null;
+  prePrediction: {
+    probabilities: Record<string, number>;
+    winner: string;
+  } | null;
+  pitchTypePrediction: {
+    probabilities: Record<string, number>;
+    winner: string;
+  } | null;
+  modelVersions: {
+    pre: string;
+    pitchType: string;
+  } | null;
+  predictedAt: string | null;
+  asOf: string;
+};
+
 /** Map the backend GameStatus enum into the polling interval the leaf body specifies. */
 export function statusPollIntervalMs(
   status: string | undefined,
@@ -262,6 +292,36 @@ export function useLivePitches(id: number | null, status: string | undefined) {
   // Stable array reference for downstream memoisation: same instance on poll-with-no-new-data.
   const pitches = useMemo(() => query.data ?? [], [query.data]);
   return { ...query, pitches };
+}
+
+// ── useLiveState: the decision-[194] hook ───────────────────────────────────────
+
+const LIVE_STATE_ENABLED = import.meta.env.VITE_LIVE_STATE_ENDPOINT === "true";
+
+export const fetchLiveState = (id: number) =>
+  get<LiveGameState>(`/v1/games/${id}/live`);
+
+/**
+ * Poll the worker-computed live state (decision [194]) at 2s while the game is live. The endpoint
+ * returns the same predictions the worker already computed, so the api no longer re-infers for the
+ * game page. Gated on VITE_LIVE_STATE_ENDPOINT; when off the current derive-and-POST path stays.
+ *
+ * Unlike the prediction hooks this does NOT write to prediction_log, so the enabled gate is about
+ * cost/relevance, not pollution. retry is on (default): a transient failure at 2s cadence retries
+ * on the next tick, and the endpoint does not 503-by-design the way the predict endpoints do.
+ */
+export function useLiveState(id: number | null, status: string | undefined) {
+  const live = status === "IN_PROGRESS" || status === "MID_INNING";
+  return useQuery<LiveGameState, GameApiError>({
+    queryKey: ["games", "live-state", id],
+    queryFn: () => {
+      if (id == null) throw new Error("id required");
+      return fetchLiveState(id);
+    },
+    enabled: LIVE_STATE_ENABLED && id != null && live,
+    refetchInterval: live ? 2_000 : false,
+    staleTime: 1_000,
+  });
 }
 
 /**

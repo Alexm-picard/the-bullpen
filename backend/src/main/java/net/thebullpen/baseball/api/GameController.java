@@ -6,10 +6,14 @@ import java.util.List;
 import net.thebullpen.baseball.api.dto.PostPredictionsPage;
 import net.thebullpen.baseball.data.LivePitchesRepository;
 import net.thebullpen.baseball.domain.GameSummary;
+import net.thebullpen.baseball.domain.LiveGameState;
 import net.thebullpen.baseball.domain.LivePitchRow;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -52,10 +56,15 @@ public class GameController {
 
   private final LivePitchesRepository repo;
   private final TeamContactAggregator aggregator;
+  private final boolean liveStateEnabled;
 
-  public GameController(LivePitchesRepository repo, TeamContactAggregator aggregator) {
+  public GameController(
+      LivePitchesRepository repo,
+      TeamContactAggregator aggregator,
+      @Value("${bullpen.live.state-endpoint.enabled:false}") boolean liveStateEnabled) {
     this.aggregator = aggregator;
     this.repo = repo;
+    this.liveStateEnabled = liveStateEnabled;
   }
 
   @GetMapping("/today")
@@ -140,5 +149,30 @@ public class GameController {
     }
     var preds = repo.findPostPredictions(id, page, size);
     return new PostPredictionsPage(preds.rows(), page, size, preds.hasNext());
+  }
+
+  /**
+   * Live state of a single game: status, matchup, upcoming-pitch context, and the worker-computed
+   * predictions (decision [194]). Polled at 2s by the frontend, roughly 1 KB on the wire.
+   *
+   * <p>Cache-Control: public, max-age=1, s-maxage=1 so Cloudflare absorbs multiple viewers per
+   * second per game. Gated on {@code bullpen.live.state-endpoint.enabled}; returns 404 when
+   * disabled so the frontend falls back to the derive-and-POST path.
+   */
+  @GetMapping("/{id}/live")
+  public ResponseEntity<LiveGameState> liveState(@PathVariable("id") long id) {
+    if (!liveStateEnabled) {
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "live state endpoint is disabled");
+    }
+    LiveGameState state =
+        repo.findLiveState(id)
+            .orElseThrow(
+                () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "game not found: " + id));
+    return ResponseEntity.ok()
+        .cacheControl(
+            CacheControl.maxAge(java.time.Duration.ofSeconds(1))
+                .sMaxAge(java.time.Duration.ofSeconds(1))
+                .cachePublic())
+        .body(state);
   }
 }

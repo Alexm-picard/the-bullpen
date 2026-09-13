@@ -37,7 +37,7 @@ class PlayersRefreshJobTest {
   /** Ingest props carrying just the players.force-refresh-on-boot flag this suite varies. */
   private static IngestProperties props(boolean forceRefreshOnBoot) {
     return new IngestProperties(
-        new IngestProperties.Live("https://statsapi.mlb.com", "ua", 5000, 3, 500L, 15L, 30L),
+        new IngestProperties.Live("https://statsapi.mlb.com", "ua", 5000, 3, 500L, 15L, 30L, false),
         new IngestProperties.Players(forceRefreshOnBoot));
   }
 

@@ -36,13 +36,23 @@ public class IngestMetrics {
   static final String POST_TIER4_INCOMPLETE_METRIC = "bullpen_ingest_post_tier4_incomplete_total";
 
   static final String BIP_BACKFILLS_METRIC = "bullpen_ingest_bip_backfills_total";
+  static final String DIFFPATCH_FALLBACK_METRIC = "bullpen_ingest_diffpatch_fallback_total";
+  static final String MLB_429_METRIC = "bullpen_ingest_mlb_429_total";
+  static final String TICK_DURATION_METRIC = "bullpen_ingest_tick_duration_seconds";
+  static final String PITCHES_BEHIND_METRIC = "bullpen_ingest_pitches_behind";
+  static final String CDN_AGE_METRIC = "bullpen_ingest_cdn_age_seconds";
 
   private final MeterRegistry registry;
   private final AtomicLong lastPollEpochSeconds = new AtomicLong(0);
+  private final AtomicLong pitchesBehind = new AtomicLong(0);
+  private final AtomicLong cdnAgeMs = new AtomicLong(0);
   private final Counter pitchesIngested;
   private final Counter bipBackfills;
   private final Counter postTier4Incomplete;
+  private final Counter mlb429;
+  private final io.micrometer.core.instrument.Timer tickDuration;
   private final ConcurrentHashMap<String, Counter> anomalies = new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<String, Counter> diffPatchFallbacks = new ConcurrentHashMap<>();
 
   public IngestMetrics(MeterRegistry registry) {
     this.registry = registry;
@@ -67,6 +77,20 @@ public class IngestMetrics {
                 "Completed pitches skipped for post prediction because their Tier-4 fit was"
                     + " incomplete")
             .register(registry);
+    this.mlb429 =
+        Counter.builder(MLB_429_METRIC)
+            .description("MLB Stats API 429 responses observed by the live poller")
+            .register(registry);
+    this.tickDuration =
+        io.micrometer.core.instrument.Timer.builder(TICK_DURATION_METRIC)
+            .description("Wall-clock duration of a single live-poll tick")
+            .register(registry);
+    Gauge.builder(PITCHES_BEHIND_METRIC, pitchesBehind, AtomicLong::get)
+        .description("Max pitches behind across live games (0 = caught up)")
+        .register(registry);
+    Gauge.builder(CDN_AGE_METRIC, cdnAgeMs, v -> v.get() / 1000.0)
+        .description("Observed CDN cache age on the last diffPatch response (seconds)")
+        .register(registry);
   }
 
   /** A game poll fetched and parsed successfully (regardless of whether it carried new pitches). */
@@ -118,5 +142,29 @@ public class IngestMetrics {
         .computeIfAbsent(
             reason, r -> Counter.builder(ANOMALY_METRIC).tag("reason", r).register(registry))
         .increment(count);
+  }
+
+  public void incrementDiffPatchFallback(String reason) {
+    diffPatchFallbacks
+        .computeIfAbsent(
+            reason,
+            r -> Counter.builder(DIFFPATCH_FALLBACK_METRIC).tag("reason", r).register(registry))
+        .increment();
+  }
+
+  public void incrementMlb429() {
+    mlb429.increment();
+  }
+
+  public void setPitchesBehind(long count) {
+    pitchesBehind.set(count);
+  }
+
+  public void setCdnAgeMs(long ms) {
+    cdnAgeMs.set(ms);
+  }
+
+  public io.micrometer.core.instrument.Timer tickTimer() {
+    return tickDuration;
   }
 }

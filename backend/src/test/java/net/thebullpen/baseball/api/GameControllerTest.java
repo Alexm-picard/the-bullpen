@@ -15,11 +15,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import net.thebullpen.baseball.data.LivePitchesRepository;
+import net.thebullpen.baseball.domain.CurrentMatchup;
 import net.thebullpen.baseball.domain.GameSummary;
+import net.thebullpen.baseball.domain.LiveGameState;
 import net.thebullpen.baseball.domain.LivePitchRow;
 import net.thebullpen.baseball.domain.PagedRows;
 import net.thebullpen.baseball.domain.PostPredictionRow;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -35,7 +38,7 @@ class GameControllerTest {
     repo = mock(LivePitchesRepository.class);
     aggregator = mock(TeamContactAggregator.class);
     mvc =
-        MockMvcBuilders.standaloneSetup(new GameController(repo, aggregator))
+        MockMvcBuilders.standaloneSetup(new GameController(repo, aggregator, false))
             .setControllerAdvice(new ApiErrorAdvice())
             .build();
   }
@@ -234,5 +237,58 @@ class GameControllerTest {
   void postPredictions_size_below_min_rejected_with_400() throws Exception {
     mvc.perform(get("/v1/games/777001/post-predictions").param("size", "0"))
         .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void live_returns_404_when_flag_disabled() throws Exception {
+    mvc.perform(get("/v1/games/777001/live")).andExpect(status().isNotFound());
+  }
+
+  @Nested
+  class LiveStateEnabled {
+    private MockMvc enabledMvc;
+
+    @BeforeEach
+    void setup() {
+      enabledMvc =
+          MockMvcBuilders.standaloneSetup(new GameController(repo, aggregator, true))
+              .setControllerAdvice(new ApiErrorAdvice())
+              .build();
+    }
+
+    @Test
+    void live_returns_state_with_cache_headers() throws Exception {
+      var matchup = new CurrentMatchup(545361L, 660271L, "L", "R", 5);
+      var state =
+          new LiveGameState(
+              "IN_PROGRESS",
+              matchup,
+              new LiveGameState.UpcomingPitch(5, 3, 1, 1, 0, 0),
+              new LiveGameState.Prediction(Map.of("ball", 0.35, "in_play", 0.15), "ball"),
+              new LiveGameState.Prediction(Map.of("FF", 0.4, "SL", 0.2), "FF"),
+              new LiveGameState.ModelVersions("v2", "v1"),
+              Instant.parse("2026-09-12T22:00:00Z"),
+              Instant.parse("2026-09-12T22:00:01Z"));
+      when(repo.findLiveState(777001L)).thenReturn(Optional.of(state));
+
+      enabledMvc
+          .perform(get("/v1/games/777001/live"))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.status").value("IN_PROGRESS"))
+          .andExpect(jsonPath("$.matchup.batterId").value(545361))
+          .andExpect(jsonPath("$.upcomingPitch.balls").value(1))
+          .andExpect(jsonPath("$.prePrediction.winner").value("ball"))
+          .andExpect(jsonPath("$.pitchTypePrediction.probabilities.FF").value(0.4))
+          .andExpect(jsonPath("$.modelVersions.pre").value("v2"))
+          .andExpect(
+              org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                  .string("Cache-Control", "max-age=1, public, s-maxage=1"));
+    }
+
+    @Test
+    void live_returns_404_when_game_not_found() throws Exception {
+      when(repo.findLiveState(9_999_999L)).thenReturn(Optional.empty());
+      enabledMvc.perform(get("/v1/games/9999999/live")).andExpect(status().isNotFound());
+    }
   }
 }

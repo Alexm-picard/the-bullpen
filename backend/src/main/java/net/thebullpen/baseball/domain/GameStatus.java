@@ -15,10 +15,10 @@ public enum GameStatus {
   SCHEDULED(Duration.ofMinutes(5), true),
   /** Warm-up / batting practice / national anthem. Polls in case of early start. */
   WARMUP(Duration.ofSeconds(60), true),
-  /** Live. The hot path — 12 s default per leaf body. */
-  IN_PROGRESS(Duration.ofSeconds(12), true),
-  /** Between innings. Polling stays at 12 s — the next pitch could land any second. */
-  MID_INNING(Duration.ofSeconds(12), true),
+  /** Live. The hot path - 2s for diffPatch, fast enough to land within one pitch interval. */
+  IN_PROGRESS(Duration.ofSeconds(2), true),
+  /** Between innings. 10s is enough; the next half-inning start is visible in the feed. */
+  MID_INNING(Duration.ofSeconds(10), true),
   /** Rain / delay. Slow poll waiting for resume. */
   DELAYED(Duration.ofMinutes(2), true),
   /** Suspended mid-game; will resume later (sometimes next day). */

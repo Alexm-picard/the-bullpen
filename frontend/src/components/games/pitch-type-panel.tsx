@@ -167,8 +167,13 @@ export function PitchTypePanel({
       </ul>
       <p style={{ ...mutedMono, marginTop: 8 }}>
         {prior.modelName} {prior.servingVersion} &middot; calibrated pitch-type
-        prior (ECE &lt; 0.02) &mdash; not a top-1 prediction. Computed over{" "}
-        {prior.priorPitches.toLocaleString()} career pitches.
+        prior (ECE &lt; 0.02) &mdash; not a top-1 prediction.
+        {prior.priorPitches > 0 && (
+          <>
+            {" "}
+            Computed over {prior.priorPitches.toLocaleString()} career pitches.
+          </>
+        )}
       </p>
     </div>
   );

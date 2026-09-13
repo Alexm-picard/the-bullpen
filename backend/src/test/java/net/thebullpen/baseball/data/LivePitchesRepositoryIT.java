@@ -1115,6 +1115,95 @@ class LivePitchesRepositoryIT {
     }
   }
 
+  // --- V034: upcoming-pitch predictions on the live_game_status row (decision [194]) -----------
+
+  @Test
+  void upsertUpcomingPitch_round_trips_through_findLiveState() throws Exception {
+    LocalDate date = LocalDate.of(2026, 9, 12);
+    insertPitch(800L, date, 1, 1, "BOS", "NYY", 1);
+    CurrentMatchup matchup = new CurrentMatchup(545361L, 660271L, "L", "R", 5);
+    Instant predictedAt = Instant.parse("2026-09-12T22:00:00Z");
+    String prePred =
+        "{\"probabilities\":{\"ball\":0.35,\"called_strike\":0.2,\"swinging_strike\":0.1,"
+            + "\"foul\":0.2,\"in_play\":0.15},\"winner\":\"ball\"}";
+    String ptPred =
+        "{\"probabilities\":{\"FF\":0.4,\"SI\":0.2,\"SL\":0.15,\"CU\":0.1,\"CH\":0.1,"
+            + "\"FC\":0.03,\"OFF\":0.02},\"winner\":\"FF\"}";
+
+    repo.upsertUpcomingPitch(
+        800L,
+        date,
+        "IN_PROGRESS",
+        matchup,
+        5,
+        3,
+        1,
+        1,
+        0,
+        0,
+        prePred,
+        ptPred,
+        "v2",
+        "v1",
+        predictedAt);
+
+    var state = repo.findLiveState(800L);
+    assertTrue(state.isPresent(), "a game with an upserted prediction must be findable");
+    var s = state.get();
+    assertEquals("IN_PROGRESS", s.status());
+    assertNotNull(s.matchup());
+    assertEquals(545361L, s.matchup().batterId());
+    assertEquals(660271L, s.matchup().pitcherId());
+    assertEquals("L", s.matchup().batSide());
+    assertEquals("R", s.matchup().pitchHand());
+    assertEquals(5, s.matchup().atBatIndex());
+
+    assertNotNull(s.upcomingPitch());
+    assertEquals(5, s.upcomingPitch().atBatIndex());
+    assertEquals(3, s.upcomingPitch().pitchNumber());
+    assertEquals(1, s.upcomingPitch().balls());
+    assertEquals(1, s.upcomingPitch().strikes());
+    assertEquals(0, s.upcomingPitch().outs());
+    assertEquals(0, s.upcomingPitch().baseState());
+
+    assertNotNull(s.prePrediction());
+    assertEquals("ball", s.prePrediction().winner());
+    assertEquals(0.35, s.prePrediction().probabilities().get("ball"), 1e-9);
+    assertEquals(0.15, s.prePrediction().probabilities().get("in_play"), 1e-9);
+
+    assertNotNull(s.pitchTypePrediction());
+    assertEquals("FF", s.pitchTypePrediction().winner());
+    assertEquals(0.4, s.pitchTypePrediction().probabilities().get("FF"), 1e-9);
+
+    assertNotNull(s.modelVersions());
+    assertEquals("v2", s.modelVersions().pre());
+    assertEquals("v1", s.modelVersions().pitchType());
+
+    assertEquals(predictedAt, s.predictedAt());
+    assertNotNull(s.asOf());
+  }
+
+  @Test
+  void findLiveState_returns_empty_for_unknown_game() throws Exception {
+    assertTrue(repo.findLiveState(999_999L).isEmpty());
+  }
+
+  @Test
+  void findLiveState_returns_null_predictions_when_only_status_was_written() throws Exception {
+    LocalDate date = LocalDate.of(2026, 9, 12);
+    insertPitch(801L, date, 1, 1, "BOS", "NYY", 1);
+    repo.upsertGameStatus(801L, date, "IN_PROGRESS", null);
+
+    var state = repo.findLiveState(801L);
+    assertTrue(state.isPresent());
+    assertEquals("IN_PROGRESS", state.get().status());
+    assertNull(state.get().upcomingPitch(), "no prediction written -> no upcoming pitch");
+    assertNull(state.get().prePrediction());
+    assertNull(state.get().pitchTypePrediction());
+    assertNull(state.get().modelVersions());
+    assertNull(state.get().predictedAt());
+  }
+
   @Test
   void game_time_utc_round_trips_under_a_non_utc_jvm_timezone() {
     // Regression for the +4h game-time skew. game_time_utc is DateTime('UTC') (V023); the read

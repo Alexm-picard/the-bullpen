@@ -31,7 +31,7 @@ class MlbStatsApiClientTest {
   private static IngestProperties props(
       String baseUrl, String userAgent, int timeoutMs, int maxRetries) {
     return new IngestProperties(
-        new IngestProperties.Live(baseUrl, userAgent, timeoutMs, maxRetries, 500L, 15L, 30L),
+        new IngestProperties.Live(baseUrl, userAgent, timeoutMs, maxRetries, 500L, 15L, 30L, false),
         new IngestProperties.Players(false));
   }
 

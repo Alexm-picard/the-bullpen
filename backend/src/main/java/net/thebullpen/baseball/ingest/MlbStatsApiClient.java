@@ -106,6 +106,36 @@ public class MlbStatsApiClient {
     return parser.parseLiveFeed(getWithRetry(baseUrl + "/api/v1.1/game/" + gamePk + "/feed/live"));
   }
 
+  /**
+   * The raw GUMBO live feed JSON for one game, without parsing. Used by the diffPatch path to
+   * maintain an in-memory document that patches are applied to.
+   */
+  public String fetchLiveFeedRaw(long gamePk) throws IOException {
+    return getWithRetry(baseUrl + "/api/v1.1/game/" + gamePk + "/feed/live");
+  }
+
+  /**
+   * The diffPatch endpoint (step 3): returns the raw JSON response. A JSON array body means patch
+   * ops; a non-array body (the full document) means "resync from full". The caller distinguishes
+   * the two shapes.
+   *
+   * @param cacheBuster when true, appends a unique query parameter so the CDN does not serve a
+   *     cached response for an unchanged timecode polled a second time.
+   */
+  public String fetchDiffPatch(long gamePk, String startTimecode, boolean cacheBuster)
+      throws IOException {
+    String url =
+        baseUrl
+            + "/api/v1.1/game/"
+            + gamePk
+            + "/feed/live/diffPatch?startTimecode="
+            + URLEncoder.encode(startTimecode, StandardCharsets.UTF_8);
+    if (cacheBuster) {
+      url += "&_=" + System.currentTimeMillis();
+    }
+    return getWithRetry(url);
+  }
+
   /** The full player roster for one season, for the players-dimension refresh (DP3). */
   public List<MlbPlayer> fetchPlayers(int season) throws IOException {
     return parser.parsePlayers(getWithRetry(baseUrl + "/api/v1/sports/1/players?season=" + season));

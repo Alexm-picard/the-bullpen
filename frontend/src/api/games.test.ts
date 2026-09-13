@@ -4,12 +4,14 @@ import {
   GameApiError,
   fetchGame,
   fetchLivePitchesSince,
+  fetchLiveState,
   fetchTodaysGames,
   mergePitchesNewestFirst,
   nextPitchRequest,
   statusPollIntervalMs,
   type GameSummary,
   type CurrentMatchup,
+  type LiveGameState,
   type LivePitchRow,
   pitchTypeRequest,
   predictPitchType,
@@ -514,5 +516,82 @@ describe("pitchTypeRequest", () => {
         `disagreement on ${r.description}/${r.balls}-${r.strikes}`,
       ).toBe(a);
     }
+  });
+});
+
+describe("fetchLiveState", () => {
+  const LIVE_STATE: LiveGameState = {
+    status: "IN_PROGRESS",
+    matchup: {
+      batterId: 545361,
+      pitcherId: 660271,
+      batSide: "L",
+      pitchHand: "R",
+      atBatIndex: 5,
+    },
+    upcomingPitch: {
+      atBatIndex: 5,
+      pitchNumber: 3,
+      balls: 1,
+      strikes: 1,
+      outs: 0,
+      baseState: 0,
+    },
+    prePrediction: {
+      probabilities: {
+        ball: 0.35,
+        called_strike: 0.2,
+        swinging_strike: 0.1,
+        foul: 0.2,
+        in_play: 0.15,
+      },
+      winner: "ball",
+    },
+    pitchTypePrediction: {
+      probabilities: {
+        FF: 0.4,
+        SI: 0.2,
+        SL: 0.15,
+        CU: 0.1,
+        CH: 0.1,
+        FC: 0.03,
+        OFF: 0.02,
+      },
+      winner: "FF",
+    },
+    modelVersions: { pre: "v2", pitchType: "v1" },
+    predictedAt: "2026-09-12T22:00:00Z",
+    asOf: "2026-09-12T22:00:01Z",
+  };
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("hits GET /v1/games/{id}/live and returns the live state", async () => {
+    (fetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => LIVE_STATE,
+    });
+    const result = await fetchLiveState(777001);
+    expect(result).toEqual(LIVE_STATE);
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/v1/games/777001/live"),
+    );
+  });
+
+  it("throws GameApiError(404) when the endpoint is disabled or game not found", async () => {
+    (fetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      json: async () => null,
+    });
+    const err = await fetchLiveState(999).catch((e) => e);
+    expect(err).toBeInstanceOf(GameApiError);
+    expect(err.status).toBe(404);
   });
 });
