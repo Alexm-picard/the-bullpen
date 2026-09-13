@@ -73,10 +73,17 @@ public class GameController {
   }
 
   @GetMapping("/{id}")
-  public GameSummary get(@PathVariable("id") long id) {
-    return repo.findGame(id)
-        .orElseThrow(
-            () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "game not found: " + id));
+  public ResponseEntity<GameSummary> get(@PathVariable("id") long id) {
+    GameSummary game =
+        repo.findGame(id)
+            .orElseThrow(
+                () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "game not found: " + id));
+    return ResponseEntity.ok()
+        .cacheControl(
+            CacheControl.maxAge(java.time.Duration.ofSeconds(1))
+                .sMaxAge(java.time.Duration.ofSeconds(1))
+                .cachePublic())
+        .body(game);
   }
 
   @GetMapping("/{id}/pitches")

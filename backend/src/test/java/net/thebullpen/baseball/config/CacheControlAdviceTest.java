@@ -7,8 +7,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import net.thebullpen.baseball.api.ApiErrorAdvice;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -77,6 +79,16 @@ class CacheControlAdviceTest {
     @GetMapping("/v1/ops/latency")
     String latency(@RequestParam("days") int days) {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "bad days");
+    }
+
+    @GetMapping("/v1/games/42/live")
+    ResponseEntity<String> gameLive() {
+      return ResponseEntity.ok()
+          .cacheControl(
+              CacheControl.maxAge(java.time.Duration.ofSeconds(1))
+                  .sMaxAge(java.time.Duration.ofSeconds(1))
+                  .cachePublic())
+          .body("live");
     }
   }
 
@@ -155,6 +167,13 @@ class CacheControlAdviceTest {
     mvc.perform(get("/v1/ops/latency").param("days", "2000000000"))
         .andExpect(status().isBadRequest())
         .andExpect(header().doesNotExist(HttpHeaders.CACHE_CONTROL));
+  }
+
+  @Test
+  void controllerSetCacheControlIsPreservedByAdvice() throws Exception {
+    mvc.perform(get("/v1/games/42/live"))
+        .andExpect(status().isOk())
+        .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "max-age=1, public, s-maxage=1"));
   }
 
   @Test

@@ -537,6 +537,7 @@ describe("fetchLiveState", () => {
       outs: 0,
       baseState: 0,
     },
+    lastPitchCursor: 502,
     prePrediction: {
       probabilities: {
         ball: 0.35,

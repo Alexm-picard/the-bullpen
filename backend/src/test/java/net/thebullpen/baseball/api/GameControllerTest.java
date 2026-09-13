@@ -264,6 +264,7 @@ class GameControllerTest {
               "IN_PROGRESS",
               matchup,
               new LiveGameState.UpcomingPitch(5, 3, 1, 1, 0, 0),
+              101L,
               new LiveGameState.Prediction(Map.of("ball", 0.35, "in_play", 0.15), "ball"),
               new LiveGameState.Prediction(Map.of("FF", 0.4, "SL", 0.2), "FF"),
               new LiveGameState.ModelVersions("v2", "v1"),

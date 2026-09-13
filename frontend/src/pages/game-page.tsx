@@ -246,6 +246,13 @@ export function GamePage() {
   // never render worse than before.
   const liveMatchup = ls?.matchup ?? game.data?.currentMatchup ?? null;
   const rowIsPastTense = matchupIsAheadOf(liveMatchup, mostRecent);
+
+  // Freshness guard: use upcomingPitch only when it describes a pitch AHEAD of the log.
+  const upcomingKey = ls?.upcomingPitch
+    ? ls.upcomingPitch.atBatIndex * 100 + ls.upcomingPitch.pitchNumber
+    : 0;
+  const newestLogCursor = mostRecent?.cursor ?? 0;
+  const upcomingIsFresh = upcomingKey >= newestLogCursor + 1;
   const shownPitcherId =
     liveMatchup?.pitcherId ?? mostRecent?.pitcherId ?? null;
   const shownBatterId = liveMatchup?.batterId ?? mostRecent?.batterId ?? null;
@@ -532,7 +539,7 @@ export function GamePage() {
             value={
               mostRecent && !rowIsPastTense
                 ? `${mostRecent.balls}-${mostRecent.strikes}`
-                : ls?.upcomingPitch
+                : ls?.upcomingPitch && upcomingIsFresh
                   ? `${ls.upcomingPitch.balls}-${ls.upcomingPitch.strikes}`
                   : "—"
             }
@@ -542,7 +549,7 @@ export function GamePage() {
             value={
               mostRecent && !rowIsPastTense
                 ? String(mostRecent.outs)
-                : ls?.upcomingPitch
+                : ls?.upcomingPitch && upcomingIsFresh
                   ? String(ls.upcomingPitch.outs)
                   : "—"
             }
