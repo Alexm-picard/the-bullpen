@@ -532,13 +532,19 @@ export function GamePage() {
             value={
               mostRecent && !rowIsPastTense
                 ? `${mostRecent.balls}-${mostRecent.strikes}`
-                : "—"
+                : ls?.upcomingPitch
+                  ? `${ls.upcomingPitch.balls}-${ls.upcomingPitch.strikes}`
+                  : "—"
             }
           />
           <BigStat
             label="Outs"
             value={
-              mostRecent && !rowIsPastTense ? String(mostRecent.outs) : "—"
+              mostRecent && !rowIsPastTense
+                ? String(mostRecent.outs)
+                : ls?.upcomingPitch
+                  ? String(ls.upcomingPitch.outs)
+                  : "—"
             }
           />
           <BigStat label="Last Pitch" value={lastPitchRead(mostRecent)} />

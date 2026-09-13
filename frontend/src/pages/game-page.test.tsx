@@ -18,7 +18,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { describe, expect, it } from "vitest";
 
-import { type GameSummary, type LivePitchRow } from "../api/games";
+import {
+  type GameSummary,
+  type LiveGameState,
+  type LivePitchRow,
+} from "../api/games";
 import { CANONICAL_BBE_INPUT, type AllParksRequest } from "../api/parks";
 import { colors } from "../design/broadcast";
 import { theme } from "../design/theme";
@@ -649,5 +653,133 @@ describe("GamePage current batter (V031 live matchup)", () => {
     expect(text).not.toContain("Now Batting");
     expect(text).not.toMatch(/#\d/);
     expect(text).toContain("\u2014"); // the em-dash placeholder, not a fabricated id
+  });
+});
+
+describe("GamePage live-state consumer (decision [194])", () => {
+  function makeLiveState(
+    overrides: Partial<LiveGameState> = {},
+  ): LiveGameState {
+    return {
+      status: "IN_PROGRESS",
+      matchup: {
+        batterId: 900001,
+        pitcherId: 900002,
+        batSide: "R",
+        pitchHand: "R",
+        atBatIndex: 2,
+      },
+      upcomingPitch: {
+        atBatIndex: 2,
+        pitchNumber: 1,
+        balls: 0,
+        strikes: 0,
+        outs: 1,
+        baseState: 0,
+      },
+      prePrediction: {
+        probabilities: {
+          ball: 0.35,
+          called_strike: 0.2,
+          swinging_strike: 0.15,
+          foul: 0.15,
+          in_play: 0.15,
+        },
+        winner: "ball",
+      },
+      pitchTypePrediction: {
+        probabilities: { FF: 0.6, SL: 0.2, CH: 0.15, CU: 0.05 },
+        winner: "FF",
+      },
+      modelVersions: { pre: "v2", pitchType: "v1" },
+      predictedAt: "2026-09-13T20:00:00Z",
+      asOf: "2026-09-13T20:00:01Z",
+      ...overrides,
+    };
+  }
+
+  function seedLive(
+    liveState: LiveGameState,
+    pitchOverrides: Partial<LivePitchRow> = {},
+  ) {
+    const client = seededClient();
+    client.setQueryData(
+      ["games", "byId", GAME_ID],
+      makeGame({
+        currentMatchup: liveState.matchup,
+      }),
+    );
+    client.setQueryData(
+      ["games", "pitches", GAME_ID],
+      [makePitch(pitchOverrides)],
+    );
+    client.setQueryData(["games", "live-state", GAME_ID], liveState);
+    client.setQueryData(["players", "byId", 900001], {
+      id: 900001,
+      name: "Live Batter",
+      primaryPosition: "1B",
+      active: true,
+      team: "NYY",
+    });
+    client.setQueryData(["players", "byId", 900002], {
+      id: 900002,
+      name: "Live Pitcher",
+      primaryPosition: "P",
+      active: true,
+      team: "DET",
+    });
+    return render(<GamePage />, `/games/${GAME_ID}`, client);
+  }
+
+  it("fills count and outs from upcomingPitch when the row is past-tense", () => {
+    const html = seedLive(makeLiveState());
+    const text = visibleText(html);
+    expect(text).toMatch(/Count\s+0-0/);
+    expect(text).toMatch(/Outs\s+1/);
+  });
+
+  it("prefers the row's count when the row describes the same at-bat", () => {
+    const html = seedLive(
+      makeLiveState({
+        matchup: {
+          batterId: 900001,
+          pitcherId: 900002,
+          batSide: "R",
+          pitchHand: "R",
+          atBatIndex: 1,
+        },
+        upcomingPitch: {
+          atBatIndex: 1,
+          pitchNumber: 2,
+          balls: 1,
+          strikes: 0,
+          outs: 0,
+          baseState: 0,
+        },
+      }),
+      { balls: 0, strikes: 0, atBatIndex: 1, description: "ball" },
+    );
+    const text = visibleText(html);
+    expect(text).toMatch(/Count\s+0-0/);
+  });
+
+  it("renders live-state predictions in the next-pitch panel", () => {
+    const html = seedLive(makeLiveState());
+    expect(html).toContain("Next-pitch outcome probabilities");
+    expect(html).toContain("LIVE ESTIMATE");
+    expect(html).toContain("35.0%");
+  });
+
+  it("renders live-state predictions in the pitch-type panel", () => {
+    const html = seedLive(makeLiveState());
+    expect(html).toContain("LIVE PRIOR");
+    expect(html).toContain("60.0%");
+  });
+
+  it("falls back to em-dashes when live state has no upcomingPitch", () => {
+    const html = seedLive(makeLiveState({ upcomingPitch: null }));
+    const text = visibleText(html);
+    expect(text).toMatch(/Count\s+\u2014/);
+    expect(text).toMatch(/Outs\s+\u2014/);
   });
 });
