@@ -296,7 +296,7 @@ export function useLivePitches(id: number | null, status: string | undefined) {
 
 // ── useLiveState: the decision-[194] hook ───────────────────────────────────────
 
-const LIVE_STATE_ENABLED = import.meta.env.VITE_LIVE_STATE_ENDPOINT === "true";
+const LIVE_STATE_ENABLED = import.meta.env.VITE_LIVE_STATE_ENDPOINT !== "false";
 
 export const fetchLiveState = (id: number) =>
   get<LiveGameState>(`/v1/games/${id}/live`);
@@ -304,7 +304,8 @@ export const fetchLiveState = (id: number) =>
 /**
  * Poll the worker-computed live state (decision [194]) at 2s while the game is live. The endpoint
  * returns the same predictions the worker already computed, so the api no longer re-infers for the
- * game page. Gated on VITE_LIVE_STATE_ENDPOINT; when off the current derive-and-POST path stays.
+ * game page. Enabled by default; set VITE_LIVE_STATE_ENDPOINT=false to roll back to the
+ * derive-and-POST path.
  *
  * Unlike the prediction hooks this does NOT write to prediction_log, so the enabled gate is about
  * cost/relevance, not pollution. retry is on (default): a transient failure at 2s cadence retries
