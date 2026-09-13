@@ -203,7 +203,11 @@ public class MlbFeedParser {
    * LivePitch}); base occupancy and outs reset at each half-inning boundary.
    */
   public LiveGameFeed parseLiveFeed(String json) throws IOException {
-    JsonNode root = mapper.readTree(json);
+    return parseLiveFeedFromNode(mapper.readTree(json));
+  }
+
+  /** Parse a pre-parsed GUMBO root node. Used by the diffPatch path to avoid re-serializing. */
+  LiveGameFeed parseLiveFeedFromNode(JsonNode root) {
     JsonNode gameData = root.path("gameData");
     long gamePk = root.path("gamePk").asLong(gameData.path("game").path("pk").asLong());
     String rawDetailedState = textOrNull(gameData.path("status").path("detailedState"));

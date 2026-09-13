@@ -1,0 +1,106 @@
+# promtool unit tests for the Step 3 diffPatch ingest watchdogs.
+#
+# Run (CI does this in infra.yml; locally):
+#   docker run --rm -v "$PWD/infra/prometheus/rules:/rules:ro" \
+#     --entrypoint promtool prom/prometheus:v3.0.1 test rules /rules/tests/diffpatch-alerts.test.yml
+
+rule_files:
+  - ../bullpen-alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  # --- IngestPitchesBehind: fires when sustained > 1 for 5m ----------------------------------
+  - interval: 1m
+    input_series:
+      - series: 'bullpen_ingest_pitches_behind{job="thebullpen-worker", instance="w", profile="worker"}'
+        values: "3x20"
+    alert_rule_test:
+      # 4m: pending, not yet firing.
+      - eval_time: 4m
+        alertname: IngestPitchesBehind
+        exp_alerts: []
+      # 6m: the 5m for: has elapsed with the gauge still at 3.
+      - eval_time: 6m
+        alertname: IngestPitchesBehind
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: thebullpen-worker
+              instance: w
+              profile: worker
+            exp_annotations:
+              summary: "Live ingest is 3 pitches behind the feed"
+              description: "bullpen_ingest_pitches_behind has been > 1 for 5m. The poller is not keeping pace with the live feed. Check diffPatch latency, MLB API response times, and tick duration."
+
+  # Caught up (0): must stay silent.
+  - interval: 1m
+    input_series:
+      - series: 'bullpen_ingest_pitches_behind{job="thebullpen-worker", instance="w", profile="worker"}'
+        values: "0x20"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: IngestPitchesBehind
+        exp_alerts: []
+
+  # Normal pipeline delay (1): must stay silent.
+  - interval: 1m
+    input_series:
+      - series: 'bullpen_ingest_pitches_behind{job="thebullpen-worker", instance="w", profile="worker"}'
+        values: "1x20"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: IngestPitchesBehind
+        exp_alerts: []
+
+  # --- DiffPatchFallbackRateHigh: fires when fallbacks are frequent --------------------------
+  # 2 fallbacks in 10m = 0.0033/s > 0.0017/s threshold.
+  - interval: 1m
+    input_series:
+      - series: 'bullpen_ingest_diffpatch_fallback_total{reason="patch_error", job="thebullpen-worker", instance="w"}'
+        values: "0+1x30"
+    alert_rule_test:
+      # 20m: rate over 10m is ~1/min = 0.0167/s, well above threshold. With 10m for: elapsed.
+      - eval_time: 21m
+        alertname: DiffPatchFallbackRateHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "diffPatch fallback rate is elevated (> 1/10m)"
+
+  # Zero fallbacks: must stay silent.
+  - interval: 1m
+    input_series:
+      - series: 'bullpen_ingest_diffpatch_fallback_total{reason="patch_error", job="thebullpen-worker", instance="w"}'
+        values: "0x30"
+    alert_rule_test:
+      - eval_time: 21m
+        alertname: DiffPatchFallbackRateHigh
+        exp_alerts: []
+
+  # --- Mlb429Observed: any 429 fires immediately --------------------------------------------
+  - interval: 1m
+    input_series:
+      - series: 'bullpen_ingest_mlb_429_total{job="thebullpen-worker", instance="w"}'
+        values: "0+1x5"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: Mlb429Observed
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: thebullpen-worker
+              instance: w
+            exp_annotations:
+              summary: "MLB Stats API returned 429 (rate limited)"
+
+  # Zero 429s: must stay silent.
+  - interval: 1m
+    input_series:
+      - series: 'bullpen_ingest_mlb_429_total{job="thebullpen-worker", instance="w"}'
+        values: "0x15"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: Mlb429Observed
+        exp_alerts: []

@@ -236,7 +236,13 @@ class LivePollingServiceTest {
   /** Poller cadence props with a zero API gap so the unit tests don't throttle between polls. */
   private static IngestProperties pollerProps() {
     return new IngestProperties(
-        new IngestProperties.Live("https://statsapi.mlb.com", "ua", 5000, 3, 0L, 15L, 30L),
+        new IngestProperties.Live("https://statsapi.mlb.com", "ua", 5000, 3, 0L, 15L, 30L, false),
+        new IngestProperties.Players(false));
+  }
+
+  private static IngestProperties diffPatchPollerProps() {
+    return new IngestProperties(
+        new IngestProperties.Live("https://statsapi.mlb.com", "ua", 5000, 3, 0L, 15L, 30L, true),
         new IngestProperties.Players(false));
   }
 
@@ -258,6 +264,8 @@ class LivePollingServiceTest {
         Optional.empty(),
         new IngestMetrics(registry),
         heldLease(),
+        new com.fasterxml.jackson.databind.ObjectMapper(),
+        new MlbFeedParser(new com.fasterxml.jackson.databind.ObjectMapper()),
         pollerProps());
   }
 
@@ -371,6 +379,8 @@ class LivePollingServiceTest {
             Optional.empty(),
             new IngestMetrics(new SimpleMeterRegistry()),
             heldLease(),
+            new com.fasterxml.jackson.databind.ObjectMapper(),
+            new MlbFeedParser(new com.fasterxml.jackson.databind.ObjectMapper()),
             pollerProps())
         .pollGame(822810L);
 
@@ -392,6 +402,8 @@ class LivePollingServiceTest {
             Optional.empty(),
             new IngestMetrics(registry),
             heldLease(),
+            new com.fasterxml.jackson.databind.ObjectMapper(),
+            new MlbFeedParser(new com.fasterxml.jackson.databind.ObjectMapper()),
             pollerProps())
         .pollGame(822810L);
 
@@ -427,6 +439,8 @@ class LivePollingServiceTest {
             Optional.empty(),
             new IngestMetrics(registry),
             heldLease(),
+            new com.fasterxml.jackson.databind.ObjectMapper(),
+            new MlbFeedParser(new com.fasterxml.jackson.databind.ObjectMapper()),
             pollerProps())
         .pollGame(822810L);
 
@@ -990,7 +1004,7 @@ class LivePollingServiceTest {
   // --- Cadence inheritance: UNKNOWN inherits the previous state's poll interval ---------------
 
   @Test
-  void effectivePollInterval_unknown_after_in_progress_returns_12s() throws Exception {
+  void effectivePollInterval_unknown_after_in_progress_returns_2s() throws Exception {
     MlbStatsApiClient client = mock(MlbStatsApiClient.class);
     LivePitchesRepository repo = mock(LivePitchesRepository.class);
     LivePitchPredictor predictor = mock(LivePitchPredictor.class);
@@ -1005,8 +1019,8 @@ class LivePollingServiceTest {
     svc.pollGame(822810L); // UNKNOWN: the cadence map must inherit from IN_PROGRESS
 
     assertThat(svc.effectivePollInterval(822810L, GameStatus.UNKNOWN))
-        .as("a game that was IN_PROGRESS 12s ago must keep 12s polling when UNKNOWN")
-        .isEqualTo(Duration.ofSeconds(12));
+        .as("a game that was IN_PROGRESS 2s ago must keep 2s polling when UNKNOWN")
+        .isEqualTo(Duration.ofSeconds(2));
   }
 
   @Test
@@ -1040,10 +1054,10 @@ class LivePollingServiceTest {
 
     assertThat(svc.effectivePollInterval(822810L, GameStatus.IN_PROGRESS))
         .as("once the game returns to IN_PROGRESS, the map holds IN_PROGRESS again")
-        .isEqualTo(Duration.ofSeconds(12));
+        .isEqualTo(Duration.ofSeconds(2));
     assertThat(svc.effectivePollInterval(822810L, GameStatus.UNKNOWN))
-        .as("a future UNKNOWN would still inherit IN_PROGRESS's 12s")
-        .isEqualTo(Duration.ofSeconds(12));
+        .as("a future UNKNOWN would still inherit IN_PROGRESS's 2s")
+        .isEqualTo(Duration.ofSeconds(2));
   }
 
   @Test
@@ -1119,8 +1133,11 @@ class LivePollingServiceTest {
             Optional.empty(),
             new IngestMetrics(new SimpleMeterRegistry()),
             heldLease(),
+            new com.fasterxml.jackson.databind.ObjectMapper(),
+            new MlbFeedParser(new com.fasterxml.jackson.databind.ObjectMapper()),
             new IngestProperties(
-                new IngestProperties.Live("https://statsapi.mlb.com", "ua", 5000, 3, 0L, 0L, 30L),
+                new IngestProperties.Live(
+                    "https://statsapi.mlb.com", "ua", 5000, 3, 0L, 0L, 30L, false),
                 new IngestProperties.Players(false)));
     svc.tick();
     assertThat(svc.trackedGameCount()).isEqualTo(2);
@@ -1173,5 +1190,188 @@ class LivePollingServiceTest {
         false,
         "TOR",
         LocalDate.of(2026, 6, 5));
+  }
+
+  // --- diffPatch path (step 3) ---------------------------------------------------
+
+  private static final String GUMBO_WITH_TIMECODE =
+      """
+      {
+        "gamePk": 822810,
+        "metaData": {"timeStamp": "20260605_230700"},
+        "gameData": {
+          "game": {"pk": 822810},
+          "datetime": {"officialDate": "2026-06-05"},
+          "status": {"detailedState": "In Progress"},
+          "teams": {
+            "home": {"id": 141, "abbreviation": "TOR"},
+            "away": {"id": 110, "abbreviation": "BAL"}
+          }
+        },
+        "liveData": {
+          "plays": {
+            "allPlays": [
+              {
+                "about": {"atBatIndex": 1, "halfInning": "bottom", "isTopInning": false, "inning": 9},
+                "matchup": {
+                  "pitcher": {"id": 689296}, "batter": {"id": 676391},
+                  "pitchHand": {"code": "R"}, "batSide": {"code": "R"},
+                  "postOnFirst": null, "postOnSecond": null, "postOnThird": null
+                },
+                "count": {"outs": 0},
+                "result": {"homeScore": 0, "awayScore": 0},
+                "playEvents": [
+                  {"isPitch": true, "pitchNumber": 1,
+                   "details": {"call": {"code": "B"}, "isInPlay": false},
+                   "pitchData": {"startSpeed": 95.0, "coordinates": {"pX": 0.0, "pZ": 0.0}, "breaks": {}},
+                   "count": {"balls": 1, "strikes": 0}}
+                ]
+              }
+            ],
+            "currentPlay": {
+              "about": {"atBatIndex": 1, "inning": 9, "isTopInning": false, "isComplete": false},
+              "matchup": {
+                "pitcher": {"id": 689296}, "batter": {"id": 676391},
+                "pitchHand": {"code": "R"}, "batSide": {"code": "R"}
+              },
+              "count": {"balls": 1, "strikes": 0, "outs": 0},
+              "playEvents": [
+                {"isPitch": true, "pitchNumber": 1,
+                 "details": {"call": {"code": "B"}, "isInPlay": false},
+                 "pitchData": {"startSpeed": 95.0, "coordinates": {"pX": 0.0, "pZ": 0.0}, "breaks": {}},
+                 "count": {"balls": 1, "strikes": 0}}
+              ]
+            }
+          }
+        }
+      }
+      """;
+
+  private static LivePollingService diffPatchService(
+      MlbStatsApiClient client, LivePitchesRepository repo, LivePitchPredictor predictor) {
+    return diffPatchService(client, repo, predictor, new SimpleMeterRegistry());
+  }
+
+  private static LivePollingService diffPatchService(
+      MlbStatsApiClient client,
+      LivePitchesRepository repo,
+      LivePitchPredictor predictor,
+      MeterRegistry registry) {
+    return new LivePollingService(
+        client,
+        repo,
+        Optional.of(predictor),
+        Optional.empty(),
+        new IngestMetrics(registry),
+        heldLease(),
+        new com.fasterxml.jackson.databind.ObjectMapper(),
+        new MlbFeedParser(new com.fasterxml.jackson.databind.ObjectMapper()),
+        diffPatchPollerProps());
+  }
+
+  @Test
+  void pollGame_uses_the_diffPatch_path_when_flag_is_enabled() throws Exception {
+    MlbStatsApiClient client = mock(MlbStatsApiClient.class);
+    LivePitchesRepository repo = mock(LivePitchesRepository.class);
+    LivePitchPredictor predictor = mock(LivePitchPredictor.class);
+    when(predictor.predictAndLog(any()))
+        .thenReturn(new LivePitchPredictor.PredictionResult(Map.of("ball", 1.0), "v1"));
+    when(client.fetchLiveFeedRaw(822810L)).thenReturn(GUMBO_WITH_TIMECODE);
+
+    diffPatchService(client, repo, predictor).pollGame(822810L);
+
+    verify(client).fetchLiveFeedRaw(822810L);
+    verify(client, never()).fetchLiveFeed(822810L);
+    verify(repo).insertPitches(any());
+  }
+
+  @Test
+  void pollGame_uses_incremental_diff_on_second_poll() throws Exception {
+    MlbStatsApiClient client = mock(MlbStatsApiClient.class);
+    LivePitchesRepository repo = mock(LivePitchesRepository.class);
+    LivePitchPredictor predictor = mock(LivePitchPredictor.class);
+    when(predictor.predictAndLog(any()))
+        .thenReturn(new LivePitchPredictor.PredictionResult(Map.of("ball", 1.0), "v1"));
+    when(client.fetchLiveFeedRaw(822810L)).thenReturn(GUMBO_WITH_TIMECODE);
+    String emptyDiff = "[{\"diff\": []}]";
+    when(client.fetchDiffPatch(eq(822810L), any(), eq(false))).thenReturn(emptyDiff);
+
+    LivePollingService svc = diffPatchService(client, repo, predictor);
+    svc.pollGame(822810L);
+    svc.pollGame(822810L);
+
+    verify(client, times(1)).fetchLiveFeedRaw(822810L);
+    verify(client, times(1)).fetchDiffPatch(eq(822810L), eq("20260605_230700"), eq(false));
+  }
+
+  @Test
+  void pollGame_diffPatch_falls_back_to_full_fetch_on_patch_failure() throws Exception {
+    MlbStatsApiClient client = mock(MlbStatsApiClient.class);
+    LivePitchesRepository repo = mock(LivePitchesRepository.class);
+    LivePitchPredictor predictor = mock(LivePitchPredictor.class);
+    when(predictor.predictAndLog(any()))
+        .thenReturn(new LivePitchPredictor.PredictionResult(Map.of("ball", 1.0), "v1"));
+    when(client.fetchLiveFeedRaw(822810L)).thenReturn(GUMBO_WITH_TIMECODE);
+    String badDiff = "[{\"diff\": [{\"op\": \"move\", \"path\": \"/x\", \"from\": \"/y\"}]}]";
+    when(client.fetchDiffPatch(eq(822810L), any(), eq(false))).thenReturn(badDiff);
+
+    SimpleMeterRegistry registry = new SimpleMeterRegistry();
+    LivePollingService svc = diffPatchService(client, repo, predictor, registry);
+    svc.pollGame(822810L);
+    svc.pollGame(822810L);
+
+    verify(client, times(2)).fetchLiveFeedRaw(822810L);
+    assertThat(
+            registry
+                .get(IngestMetrics.DIFFPATCH_FALLBACK_METRIC)
+                .tag("reason", "unknown_op")
+                .counter()
+                .count())
+        .isEqualTo(1.0);
+  }
+
+  @Test
+  void pollGame_diffPatch_falls_back_when_endpoint_returns_full_document() throws Exception {
+    MlbStatsApiClient client = mock(MlbStatsApiClient.class);
+    LivePitchesRepository repo = mock(LivePitchesRepository.class);
+    LivePitchPredictor predictor = mock(LivePitchPredictor.class);
+    when(predictor.predictAndLog(any()))
+        .thenReturn(new LivePitchPredictor.PredictionResult(Map.of("ball", 1.0), "v1"));
+    when(client.fetchLiveFeedRaw(822810L)).thenReturn(GUMBO_WITH_TIMECODE);
+    when(client.fetchDiffPatch(eq(822810L), any(), eq(false))).thenReturn(GUMBO_WITH_TIMECODE);
+
+    SimpleMeterRegistry registry = new SimpleMeterRegistry();
+    LivePollingService svc = diffPatchService(client, repo, predictor, registry);
+    svc.pollGame(822810L);
+    svc.pollGame(822810L);
+
+    assertThat(
+            registry
+                .get(IngestMetrics.DIFFPATCH_FALLBACK_METRIC)
+                .tag("reason", "full_document_returned")
+                .counter()
+                .count())
+        .isEqualTo(1.0);
+  }
+
+  @Test
+  void pollGame_diffPatch_cache_busts_when_timecode_does_not_advance() throws Exception {
+    MlbStatsApiClient client = mock(MlbStatsApiClient.class);
+    LivePitchesRepository repo = mock(LivePitchesRepository.class);
+    LivePitchPredictor predictor = mock(LivePitchPredictor.class);
+    when(predictor.predictAndLog(any()))
+        .thenReturn(new LivePitchPredictor.PredictionResult(Map.of("ball", 1.0), "v1"));
+    when(client.fetchLiveFeedRaw(822810L)).thenReturn(GUMBO_WITH_TIMECODE);
+    String emptyDiff = "[{\"diff\": []}]";
+    when(client.fetchDiffPatch(eq(822810L), any(), eq(false))).thenReturn(emptyDiff);
+    when(client.fetchDiffPatch(eq(822810L), any(), eq(true))).thenReturn(emptyDiff);
+
+    LivePollingService svc = diffPatchService(client, repo, predictor);
+    svc.pollGame(822810L);
+    svc.pollGame(822810L);
+    svc.pollGame(822810L);
+
+    verify(client, times(1)).fetchDiffPatch(eq(822810L), any(), eq(false));
+    verify(client, times(1)).fetchDiffPatch(eq(822810L), any(), eq(true));
   }
 }

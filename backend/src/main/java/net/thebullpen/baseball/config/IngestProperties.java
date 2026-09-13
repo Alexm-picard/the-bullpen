@@ -39,7 +39,8 @@ public record IngestProperties(
       @DefaultValue("3") @PositiveOrZero int maxRetries,
       @DefaultValue("500") @PositiveOrZero long apiMinGapMs,
       @DefaultValue("15") @Positive long scheduleRefreshMin,
-      @DefaultValue("30") @Positive long leaseStaleSeconds) {}
+      @DefaultValue("30") @Positive long leaseStaleSeconds,
+      @DefaultValue("false") boolean diffPatchEnabled) {}
 
   /** Player-refresh job knobs ({@code bullpen.ingest.players.*}). */
   public record Players(@DefaultValue("false") boolean forceRefreshOnBoot) {}

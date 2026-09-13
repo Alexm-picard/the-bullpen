@@ -58,6 +58,8 @@ public class LivePollingService {
   // D-37: single-owner heartbeat lease so a second worker instance stays dormant instead of
   // double-INSERTing pitches and doubling MLB API load. Renewed at the top of every tick.
   private final JobLeaseRepository jobLease;
+  private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+  private final MlbFeedParser feedParser;
   // Stable per-instance owner id, generated once at construction (NOT static, NOT Math.random) so a
   // restarted process presents a fresh identity and the old lease simply ages out to stale.
   private final String leaseOwner = java.util.UUID.randomUUID().toString();
@@ -65,6 +67,7 @@ public class LivePollingService {
   private final GameStateMachine stateMachine = new GameStateMachine();
   private final long minApiGapMs;
   private final long scheduleRefreshMin;
+  private final boolean diffPatchEnabled;
 
   private final Map<Long, GameStatus> statusByGame = new ConcurrentHashMap<>();
   // L1: games whose status row this PROCESS has written. Empty after a worker restart, so the
@@ -109,6 +112,10 @@ public class LivePollingService {
   // goes silent for a full cycle while pitches keep landing.
   private final Map<Long, GameStatus> lastNonUnknownStatus = new ConcurrentHashMap<>();
   private final java.util.Set<String> seenUnknownStates = ConcurrentHashMap.newKeySet();
+  private final Map<Long, DiffPatchApplier> applierByGame = new ConcurrentHashMap<>();
+  // Per-game flag: true when the last diffPatch poll used an unchanged timecode and should
+  // cache-bust on the next attempt so the CDN does not hide a new event.
+  private final Map<Long, Boolean> needsCacheBuster = new ConcurrentHashMap<>();
   private volatile List<ScheduledGame> schedule = List.of();
   private volatile Instant scheduleFetchedAt = Instant.EPOCH;
   private long lastApiCallMs;
@@ -120,6 +127,8 @@ public class LivePollingService {
       Optional<PitcherFormRepository> formRepo,
       IngestMetrics metrics,
       JobLeaseRepository jobLease,
+      com.fasterxml.jackson.databind.ObjectMapper objectMapper,
+      MlbFeedParser feedParser,
       IngestProperties props) {
     IngestProperties.Live live = props.live();
     this.client = client;
@@ -128,9 +137,12 @@ public class LivePollingService {
     this.formRepo = formRepo;
     this.metrics = metrics;
     this.jobLease = jobLease;
+    this.objectMapper = objectMapper;
+    this.feedParser = feedParser;
     this.minApiGapMs = live.apiMinGapMs();
     this.scheduleRefreshMin = live.scheduleRefreshMin();
     this.leaseStaleSeconds = live.leaseStaleSeconds();
+    this.diffPatchEnabled = live.diffPatchEnabled();
   }
 
   @Scheduled(fixedDelayString = "${bullpen.ingest.live.tick-ms:5000}")
@@ -138,6 +150,10 @@ public class LivePollingService {
     if (!jobLease.tryAcquireOrRenew(LIVE_POLL_LEASE, leaseOwner, leaseStaleSeconds)) {
       return; // another instance holds the live-polling lease; stay dormant (singleton poller)
     }
+    metrics.tickTimer().record(() -> tickBody());
+  }
+
+  private void tickBody() {
     try {
       refreshScheduleIfStale();
       for (ScheduledGame g : schedule) {
@@ -185,11 +201,68 @@ public class LivePollingService {
     return m == null ? "" : m.atBatIndex() + ":" + m.batterId();
   }
 
+  /**
+   * Poll via the diffPatch endpoint: apply incremental patches to the in-memory document. Falls
+   * back to a full fetch on any error, timecode gap, or the 60s consistency timer.
+   */
+  private LiveGameFeed pollViaDiffPatch(long gamePk) throws java.io.IOException {
+    DiffPatchApplier applier =
+        applierByGame.computeIfAbsent(gamePk, k -> new DiffPatchApplier(objectMapper, feedParser));
+
+    // Initial load or consistency check: fetch the full document.
+    if (!applier.isInitialized() || applier.isConsistencyCheckDue()) {
+      String reason = applier.isInitialized() ? "consistency_timer" : "initial_load";
+      if (applier.isInitialized()) {
+        metrics.incrementDiffPatchFallback(reason);
+      }
+      return applier.loadFull(client.fetchLiveFeedRaw(gamePk));
+    }
+
+    // Incremental path: fetch the diff, apply it.
+    String timecode = applier.lastTimecode();
+    if (timecode == null) {
+      metrics.incrementDiffPatchFallback("no_timecode");
+      return applier.loadFull(client.fetchLiveFeedRaw(gamePk));
+    }
+
+    boolean bust = Boolean.TRUE.equals(needsCacheBuster.get(gamePk));
+    String diffJson;
+    try {
+      diffJson = client.fetchDiffPatch(gamePk, timecode, bust);
+    } catch (MlbStatsApiClient.RetryableHttpException e) {
+      if (e.statusCode == 429) {
+        metrics.incrementMlb429();
+      }
+      throw e;
+    }
+
+    try {
+      DiffPatchApplier.ApplyResult result = applier.applyDiff(diffJson);
+      if (result == null) {
+        // Non-array response: the endpoint returned the full document (resync signal).
+        metrics.incrementDiffPatchFallback("full_document_returned");
+        return applier.loadFull(diffJson);
+      }
+      // Track whether the timecode advanced so we know to cache-bust on the next poll.
+      String newTimecode = applier.lastTimecode();
+      needsCacheBuster.put(gamePk, timecode.equals(newTimecode));
+      return result.feed();
+    } catch (DiffPatchApplier.PatchFailedException e) {
+      log.warn(
+          "diffPatch apply failed for game {} ({}); falling back to full fetch",
+          gamePk,
+          e.reason,
+          e);
+      metrics.incrementDiffPatchFallback(e.reason);
+      return applier.loadFull(client.fetchLiveFeedRaw(gamePk));
+    }
+  }
+
   /** Poll one game: fetch the feed, adopt its status, write new pitches, predict the next pitch. */
   void pollGame(long gamePk) {
     LiveGameFeed feed;
     try {
-      feed = client.fetchLiveFeed(gamePk);
+      feed = diffPatchEnabled ? pollViaDiffPatch(gamePk) : client.fetchLiveFeed(gamePk);
     } catch (Exception e) {
       log.warn("live feed fetch failed for game {}", gamePk, e);
       return;
@@ -507,6 +580,8 @@ public class LivePollingService {
     lastFailedKeyByGame.keySet().retainAll(active);
     lastNonUnknownStatus.keySet().retainAll(active);
     battedBallWritten.keySet().retainAll(active);
+    applierByGame.keySet().retainAll(active);
+    needsCacheBuster.keySet().retainAll(active);
   }
 
   Duration effectivePollInterval(long gamePk, GameStatus status) {

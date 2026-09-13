@@ -112,9 +112,9 @@ class GameStateMachineTest {
   // --- polling cadence ----------------------------------------------------
 
   @Test
-  void in_progress_polls_at_12_seconds() {
+  void in_progress_polls_at_2_seconds() {
     assertThat(GameStateMachine.pollIntervalFor(GameStatus.IN_PROGRESS))
-        .isEqualTo(Duration.ofSeconds(12));
+        .isEqualTo(Duration.ofSeconds(2));
   }
 
   @Test
