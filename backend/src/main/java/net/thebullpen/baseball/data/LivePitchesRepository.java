@@ -323,8 +323,11 @@ public class LivePitchesRepository {
 
   private static final String FIND_LIVE_STATE =
       "SELECT argMax(status, updated_at) AS status,"
-          + " argMax(tuple(current_batter_id, current_pitcher_id, current_bat_side,"
-          + "   current_pitch_hand, current_at_bat_index), updated_at) AS matchup,"
+          + " argMax(current_batter_id, updated_at) AS current_batter_id,"
+          + " argMax(current_pitcher_id, updated_at) AS current_pitcher_id,"
+          + " argMax(current_bat_side, updated_at) AS current_bat_side,"
+          + " argMax(current_pitch_hand, updated_at) AS current_pitch_hand,"
+          + " argMax(current_at_bat_index, updated_at) AS current_at_bat_index,"
           + " argMax(upcoming_at_bat_index, updated_at) AS upcoming_at_bat_index,"
           + " argMax(upcoming_pitch_number, updated_at) AS upcoming_pitch_number,"
           + " argMax(upcoming_balls, updated_at) AS upcoming_balls,"
@@ -336,7 +339,7 @@ public class LivePitchesRepository {
           + " argMax(pre_model_version, updated_at) AS pre_model_version,"
           + " argMax(pitch_type_model_version, updated_at) AS pitch_type_model_version,"
           + " argMax(predicted_at, updated_at) AS predicted_at,"
-          + " max(updated_at) AS updated_at"
+          + " max(updated_at) AS as_of"
           + " FROM live_game_status WHERE game_id = ? GROUP BY game_id";
 
   private static final String INSERT_SCHEDULED_GAME =
@@ -616,7 +619,7 @@ public class LivePitchesRepository {
                       ? predictedAtRaw.toInstant(ZoneOffset.UTC)
                       : null;
 
-              LocalDateTime updatedAtRaw = rs.getObject("updated_at", LocalDateTime.class);
+              LocalDateTime updatedAtRaw = rs.getObject("as_of", LocalDateTime.class);
               Instant asOf =
                   updatedAtRaw != null ? updatedAtRaw.toInstant(ZoneOffset.UTC) : Instant.now();
 
