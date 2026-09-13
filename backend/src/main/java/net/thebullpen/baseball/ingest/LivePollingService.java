@@ -410,9 +410,50 @@ public class LivePollingService {
       return; // already predicted (or already failed) this upcoming pitch on an earlier poll
     }
     try {
-      predictor.get().predictAndLog(np);
-      predictor.get().predictPitchTypeAndLog(np);
+      LivePitchPredictor.PredictionResult pre = predictor.get().predictAndLog(np);
+      LivePitchPredictor.PredictionResult pt = predictor.get().predictPitchTypeAndLog(np);
+      if (pt == null) {
+        pt = LivePitchPredictor.PredictionResult.EMPTY;
+      }
       lastPredictedKeyByGame.put(gamePk, key);
+
+      if (!pre.probabilities().isEmpty() && feed.gameDate() != null) {
+        String preJson =
+            LivePitchPredictor.serializePrediction(
+                pre.probabilities(), LivePitchPredictor.argmax(pre.probabilities()));
+        String ptJson =
+            pt.probabilities().isEmpty()
+                ? ""
+                : LivePitchPredictor.serializePrediction(
+                    pt.probabilities(), LivePitchPredictor.argmax(pt.probabilities()));
+        CurrentMatchup matchup = currentMatchupOf(feed);
+        GameStatus status = statusByGame.getOrDefault(gamePk, GameStatus.UNKNOWN);
+        try {
+          repo.upsertUpcomingPitch(
+              gamePk,
+              feed.gameDate(),
+              status.name(),
+              matchup,
+              np.atBatIndex(),
+              np.pitchNumber(),
+              np.balls(),
+              np.strikes(),
+              np.outs(),
+              np.baseState(),
+              preJson,
+              ptJson,
+              pre.modelVersion(),
+              pt.modelVersion(),
+              Instant.now());
+        } catch (Exception upsertEx) {
+          log.warn(
+              "upcoming-pitch upsert failed for game {} at key {}; prediction was logged but"
+                  + " live state may lag",
+              gamePk,
+              key,
+              upsertEx);
+        }
+      }
     } catch (Exception e) {
       // Containment + failure-dedup (C1/C2): any model-load or inference failure - e.g. a stale
       // routing row whose snapshot will not load (ModelUnavailableException) - degrades THIS game's

@@ -25,6 +25,7 @@ import {
   pitchTypeRequest,
   useGame,
   useLivePitches,
+  useLiveState,
   usePitchPrediction,
   usePitchTypePrediction,
   useTeamContact,
@@ -233,41 +234,35 @@ export function GamePage() {
   const game = useGame(valid ? numericId : null);
   const pitches = useLivePitches(valid ? numericId : null, game.data?.status);
   const mostRecent = pitches.pitches[0];
-  // WHO IS BATTING: the live currentPlay matchup when the feed has one, the last thrown pitch
-  // otherwise. The fallback is why this can never render worse than before - it IS the old
-  // behaviour - but when the matchup is present the page flips to the new batter within one poll
-  // of him stepping in, instead of a plate appearance later when his first pitch lands.
-  const liveMatchup = game.data?.currentMatchup ?? null;
-  // The matchup has moved PAST the newest stored pitch: that pitch is now past tense, so anything
-  // derived from it describes a moment that is over. Before this feature the whole page described
-  // one moment - stale, but internally consistent; naming the live batter alongside a finished
-  // at-bat's count would trade that consistency for a confidently wrong composite ("leadoff
-  // hitter, 1-2 count, 2 outs"), which is checkable against the broadcast and worse than stale.
+
+  // Decision [194]: poll the worker-computed live state at 2s. When the flag is off or the
+  // endpoint returns no predictions, fall back to the derive-and-POST path below.
+  const liveState = useLiveState(valid ? numericId : null, game.data?.status);
+  const ls = liveState.data;
+  const lsHasPredictions = ls?.prePrediction != null;
+
+  // WHO IS BATTING: prefer the live-state matchup (2s freshness) when available, else the game
+  // summary's currentPlay matchup, else the last thrown pitch. The fallback chain means this can
+  // never render worse than before.
+  const liveMatchup = ls?.matchup ?? game.data?.currentMatchup ?? null;
   const rowIsPastTense = matchupIsAheadOf(liveMatchup, mostRecent);
   const shownPitcherId =
     liveMatchup?.pitcherId ?? mostRecent?.pitcherId ?? null;
   const shownBatterId = liveMatchup?.batterId ?? mostRecent?.batterId ?? null;
-  // Hooks run before the early return; null id disables them.
   const currentPitcher = usePlayer(shownPitcherId);
   const currentBatter = usePlayer(shownBatterId);
 
-  // A6: the forward-looking next-pitch estimate (ADR-0014). nextPitchRequest returns null unless
-  // the at-bat is settled (mid-at-bat, full V028 context), and the query additionally gates on the
-  // game being live - both required, because every fired request logs to prediction_log.
-  // NOTE the matchup is applied CONDITIONALLY here, unlike the display above: nextPitchRequest
-  // derives the count from the row, so it uses the matchup only when the two describe the same
-  // at-bat, and withholds the request entirely once the matchup has moved past it.
+  // A6: the forward-looking next-pitch estimate (ADR-0014). When live-state predictions are
+  // available, the POST hooks are disabled - the worker already computed them. When the live-state
+  // endpoint is off or has no predictions, the original derive-and-POST path fires.
   const nextReq =
     mostRecent && game.data
       ? nextPitchRequest(mostRecent, game.data.gameDate, liveMatchup)
       : null;
-  const nextPitchEnabled = isLive(game.data) && nextReq != null;
+  const nextPitchEnabled =
+    isLive(game.data) && nextReq != null && !lsHasPredictions;
   const nextPitch = usePitchPrediction(nextReq, { enabled: nextPitchEnabled });
 
-  // The pitch-type PRIOR ([183], champion since 2026-08-02). Built on the SAME derivation as the
-  // next-pitch request, so the two panels cannot disagree about whether an upcoming pitch exists:
-  // both describe one specific pitch in one specific count, so both gate identically. The enabled
-  // gate is equally mandatory here - this endpoint also logs every call to prediction_log.
   const pitchTypeReq =
     mostRecent && game.data
       ? pitchTypeRequest(
@@ -277,10 +272,51 @@ export function GamePage() {
           liveMatchup,
         )
       : null;
-  const pitchTypeEnabled = isLive(game.data) && pitchTypeReq != null;
+  const pitchTypeEnabled =
+    isLive(game.data) && pitchTypeReq != null && !lsHasPredictions;
   const pitchType = usePitchTypePrediction(pitchTypeReq, {
     enabled: pitchTypeEnabled,
   });
+
+  // Synthesize panel-compatible prediction objects from the live-state data when available.
+  // The panels expect PitchPredictionResponse / PitchTypePriorResponse shapes; the live-state
+  // response is a subset (probabilities + winner, no latency/correlation). Fields the panels
+  // don't actually render (latencyMicros, correlationId, elapsedMicros, priorPitches) are filled
+  // with placeholder values. The panel rendering logic only reads probabilities, winner,
+  // modelName, and modelVersion/servingVersion.
+  const nextPitchData = useMemo(() => {
+    if (lsHasPredictions && ls?.prePrediction) {
+      return {
+        probabilities: ls.prePrediction.probabilities,
+        winner: ls.prePrediction.winner,
+        modelName: "pitch_outcome_pre",
+        modelVersion: ls.modelVersions?.pre ?? "",
+        latencyMicros: 0,
+        correlationId: "",
+      };
+    }
+    return nextPitch.data;
+  }, [lsHasPredictions, ls, nextPitch.data]);
+
+  const pitchTypeData = useMemo(() => {
+    if (lsHasPredictions && ls?.pitchTypePrediction) {
+      return {
+        probabilities: ls.pitchTypePrediction.probabilities,
+        modelName: "pitch_type_pre",
+        servingVersion: ls.modelVersions?.pitchType ?? "",
+        priorPitches: 0,
+        elapsedMicros: 0,
+        correlationId: "",
+      };
+    }
+    return pitchType.data;
+  }, [lsHasPredictions, ls, pitchType.data]);
+
+  // The enabled state for the panels: live-state predictions count as "enabled" too.
+  const nextPitchPanelEnabled =
+    (isLive(game.data) && nextReq != null) || lsHasPredictions;
+  const pitchTypePanelEnabled =
+    (isLive(game.data) && pitchTypeReq != null) || lsHasPredictions;
 
   // Phase 1.2: the most recent in-play batted ball carrying launch physics. The
   // pitch store is newest-first, so .find() yields the LATEST qualifying BIP.
@@ -517,7 +553,7 @@ export function GamePage() {
       <section
         aria-labelledby="next-pitch-label"
         style={
-          nextPitchEnabled
+          nextPitchPanelEnabled
             ? {
                 borderLeft: `3px solid ${colors.gold}`,
                 paddingLeft: 16,
@@ -536,7 +572,7 @@ export function GamePage() {
         >
           <LowerThird
             id="next-pitch-label"
-            meta={nextPitchEnabled ? "LIVE ESTIMATE" : "GATED"}
+            meta={nextPitchPanelEnabled ? "LIVE ESTIMATE" : "GATED"}
           >
             Next-Pitch Model
           </LowerThird>
@@ -557,10 +593,10 @@ export function GamePage() {
           </a>
         </div>
         <NextPitchPanel
-          prediction={nextPitch.data}
-          isLoading={nextPitch.isLoading}
-          error={nextPitch.error}
-          enabled={nextPitchEnabled}
+          prediction={nextPitchData}
+          isLoading={lsHasPredictions ? false : nextPitch.isLoading}
+          error={lsHasPredictions ? null : nextPitch.error}
+          enabled={nextPitchPanelEnabled}
         />
       </section>
 
@@ -575,7 +611,7 @@ export function GamePage() {
         >
           <LowerThird
             id="pitch-type-label"
-            meta={pitchTypeEnabled ? "LIVE PRIOR" : "GATED"}
+            meta={pitchTypePanelEnabled ? "LIVE PRIOR" : "GATED"}
           >
             Pitch-Type Model
           </LowerThird>
@@ -596,10 +632,10 @@ export function GamePage() {
           </a>
         </div>
         <PitchTypePanel
-          prior={pitchType.data}
-          isLoading={pitchType.isLoading}
-          error={pitchType.error}
-          enabled={pitchTypeEnabled}
+          prior={pitchTypeData}
+          isLoading={lsHasPredictions ? false : pitchType.isLoading}
+          error={lsHasPredictions ? null : pitchType.error}
+          enabled={pitchTypePanelEnabled}
         />
       </section>
 

@@ -75,6 +75,10 @@ public class LivePitchPredictor {
   static final String POST_MODEL_NAME = "pitch_outcome_post";
   static final String PITCH_TYPE_MODEL_NAME = "pitch_type_pre";
 
+  public record PredictionResult(Map<String, Double> probabilities, String modelVersion) {
+    static final PredictionResult EMPTY = new PredictionResult(Map.of(), "");
+  }
+
   private final InferenceRouter router;
   private final ModelLoader modelLoader;
   private final RegistryService registry;
@@ -126,10 +130,10 @@ public class LivePitchPredictor {
   /**
    * Route the next pitch through the {@code pitch_outcome_pre} champion and enqueue a keyed {@code
    * prediction_log} row carrying the real {@code model_version_id}. Returns the calibrated 5-class
-   * distribution (the poller may surface it for live display). Returns an empty map when no
-   * champion / routing exists (degrade, never throw on the poll path).
+   * distribution plus the serving model's version label. Returns {@link PredictionResult#EMPTY}
+   * when no champion / routing exists (degrade, never throw on the poll path).
    */
-  public Map<String, Double> predictAndLog(LiveNextPitch ctx) throws OrtException {
+  public PredictionResult predictAndLog(LiveNextPitch ctx) throws OrtException {
     Instant requestAt = Instant.now();
     long startNanos = System.nanoTime();
     Optional<PitcherForm> form = lookupForm(ctx.pitcherId());
@@ -162,7 +166,7 @@ public class LivePitchPredictor {
               + " game {}",
           MODEL_NAME,
           ctx.gameId());
-      return Map.of();
+      return PredictionResult.EMPTY;
     }
 
     float latencyMs = (System.nanoTime() - startNanos) / 1_000_000.0f;
@@ -212,7 +216,7 @@ public class LivePitchPredictor {
                   });
             });
 
-    return routed.servingResponse();
+    return new PredictionResult(routed.servingResponse(), servingModel.version());
   }
 
   /**
@@ -221,13 +225,13 @@ public class LivePitchPredictor {
    * reads its own poll, not a public request, and the keys are structurally pre-pitch.
    *
    * <p>Graceful degradation: when the arsenal deriver is absent (ClickHouse down), no champion
-   * exists, or the prior is unavailable for this pitcher, the method returns an empty map and logs
-   * nothing. A {@link PitchTypeArsenalDeriver.PriorUnavailable} skips the pitch honestly rather
-   * than fabricating a prior.
+   * exists, or the prior is unavailable for this pitcher, the method returns {@link
+   * PredictionResult#EMPTY} and logs nothing. A {@link PitchTypeArsenalDeriver.PriorUnavailable}
+   * skips the pitch honestly rather than fabricating a prior.
    */
-  public Map<String, Double> predictPitchTypeAndLog(LiveNextPitch ctx) {
+  public PredictionResult predictPitchTypeAndLog(LiveNextPitch ctx) {
     if (arsenal == null) {
-      return Map.of();
+      return PredictionResult.EMPTY;
     }
     Instant requestAt = Instant.now();
     long startNanos = System.nanoTime();
@@ -254,10 +258,10 @@ public class LivePitchPredictor {
           ctx.pitcherId(),
           ctx.gameId(),
           e.getMessage());
-      return Map.of();
+      return PredictionResult.EMPTY;
     } catch (RuntimeException e) {
       log.warn("pitch-type derivation failed for game {}: {}", ctx.gameId(), e.getMessage());
-      return Map.of();
+      return PredictionResult.EMPTY;
     }
 
     String stand =
@@ -306,11 +310,11 @@ public class LivePitchPredictor {
               });
     } catch (RuntimeException e) {
       log.warn("pitch-type routing failed for game {}: {}", ctx.gameId(), e.getMessage());
-      return Map.of();
+      return PredictionResult.EMPTY;
     }
 
     if (routed.servingResponse() == null) {
-      return Map.of();
+      return PredictionResult.EMPTY;
     }
 
     float latencyMs = (System.nanoTime() - startNanos) / 1_000_000.0f;
@@ -356,7 +360,7 @@ public class LivePitchPredictor {
                   });
             });
 
-    return routed.servingResponse();
+    return new PredictionResult(routed.servingResponse(), servingModel.version());
   }
 
   private Map<String, Double> predictPitchType(
@@ -760,7 +764,7 @@ public class LivePitchPredictor {
     }
   }
 
-  private static String serializePrediction(Map<String, Double> probs, String winner) {
+  static String serializePrediction(Map<String, Double> probs, String winner) {
     try {
       return MAPPER.writeValueAsString(Map.of("probabilities", probs, "winner", winner));
     } catch (JsonProcessingException e) {

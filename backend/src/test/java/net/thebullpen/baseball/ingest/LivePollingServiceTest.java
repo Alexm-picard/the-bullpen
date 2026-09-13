@@ -83,7 +83,8 @@ class LivePollingServiceTest {
     MlbStatsApiClient client = mock(MlbStatsApiClient.class);
     LivePitchesRepository repo = mock(LivePitchesRepository.class);
     LivePitchPredictor predictor = mock(LivePitchPredictor.class);
-    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(predictor.predictAndLog(any()))
+        .thenReturn(new LivePitchPredictor.PredictionResult(Map.of("ball", 1.0), "v1"));
     when(client.fetchLiveFeed(822810L)).thenReturn(feed(List.of(pitch(1, 1)), nextPitch(1, 2)));
 
     service(client, repo, predictor).pollGame(822810L);
@@ -109,7 +110,8 @@ class LivePollingServiceTest {
     MlbStatsApiClient client = mock(MlbStatsApiClient.class);
     LivePitchesRepository repo = mock(LivePitchesRepository.class);
     LivePitchPredictor predictor = mock(LivePitchPredictor.class);
-    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(predictor.predictAndLog(any()))
+        .thenReturn(new LivePitchPredictor.PredictionResult(Map.of("ball", 1.0), "v1"));
     when(client.fetchLiveFeed(822810L))
         .thenReturn(feed(List.of(pitch(1, 1)), nextPitch(1, 2)))
         .thenReturn(feed(List.of(pitch(1, 1)), nextPitchWithBatter(2, 1, 700000L)));
@@ -134,7 +136,8 @@ class LivePollingServiceTest {
     MlbStatsApiClient client = mock(MlbStatsApiClient.class);
     LivePitchesRepository repo = mock(LivePitchesRepository.class);
     LivePitchPredictor predictor = mock(LivePitchPredictor.class);
-    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(predictor.predictAndLog(any()))
+        .thenReturn(new LivePitchPredictor.PredictionResult(Map.of("ball", 1.0), "v1"));
     when(client.fetchLiveFeed(822810L))
         .thenReturn(feed(List.of(pitch(1, 1)), nextPitchWithBatter(1, 2, 676391L)))
         .thenReturn(feed(List.of(pitch(1, 1)), nextPitchWithBatter(1, 2, 999111L)));
@@ -159,7 +162,8 @@ class LivePollingServiceTest {
     MlbStatsApiClient client = mock(MlbStatsApiClient.class);
     LivePitchesRepository repo = mock(LivePitchesRepository.class);
     LivePitchPredictor predictor = mock(LivePitchPredictor.class);
-    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(predictor.predictAndLog(any()))
+        .thenReturn(new LivePitchPredictor.PredictionResult(Map.of("ball", 1.0), "v1"));
     when(client.fetchLiveFeed(822810L))
         .thenReturn(feed(List.of(pitch(1, 1)), nextPitch(1, 2)))
         .thenReturn(feed(List.of(pitch(1, 1)), null)); // play complete / game over
@@ -182,7 +186,8 @@ class LivePollingServiceTest {
     MlbStatsApiClient client = mock(MlbStatsApiClient.class);
     LivePitchesRepository repo = mock(LivePitchesRepository.class);
     LivePitchPredictor predictor = mock(LivePitchPredictor.class);
-    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(predictor.predictAndLog(any()))
+        .thenReturn(new LivePitchPredictor.PredictionResult(Map.of("ball", 1.0), "v1"));
     when(client.fetchLiveFeed(822810L))
         .thenReturn(feed(List.of(pitch(1, 1)), nextPitchWithBatter(0, 1, 0L)));
 
@@ -272,7 +277,8 @@ class LivePollingServiceTest {
     MlbStatsApiClient client = mock(MlbStatsApiClient.class);
     LivePitchesRepository repo = mock(LivePitchesRepository.class);
     LivePitchPredictor predictor = mock(LivePitchPredictor.class);
-    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(predictor.predictAndLog(any()))
+        .thenReturn(new LivePitchPredictor.PredictionResult(Map.of("ball", 1.0), "v1"));
     when(client.fetchLiveFeed(822810L))
         .thenReturn(feed(List.of(pitch(1, 1), pitch(1, 2)), nextPitch(1, 3)));
 
@@ -315,7 +321,8 @@ class LivePollingServiceTest {
     MlbStatsApiClient client = mock(MlbStatsApiClient.class);
     LivePitchesRepository repo = mock(LivePitchesRepository.class);
     LivePitchPredictor predictor = mock(LivePitchPredictor.class);
-    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(predictor.predictAndLog(any()))
+        .thenReturn(new LivePitchPredictor.PredictionResult(Map.of("ball", 1.0), "v1"));
     when(client.fetchLiveFeed(822810L))
         .thenReturn(feed(List.of(pitch(1, 1), pitch(1, 2)), nextPitch(1, 3)));
 
@@ -335,7 +342,8 @@ class LivePollingServiceTest {
     MlbStatsApiClient client = mock(MlbStatsApiClient.class);
     LivePitchesRepository repo = mock(LivePitchesRepository.class);
     LivePitchPredictor predictor = mock(LivePitchPredictor.class);
-    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(predictor.predictAndLog(any()))
+        .thenReturn(new LivePitchPredictor.PredictionResult(Map.of("ball", 1.0), "v1"));
     when(client.fetchLiveFeed(822810L))
         .thenReturn(feed(List.of(pitch(1, 1), pitch(1, 2)), nextPitch(1, 3))) // next = pitch 3
         .thenReturn(
@@ -439,7 +447,8 @@ class LivePollingServiceTest {
     MlbStatsApiClient client = mock(MlbStatsApiClient.class);
     LivePitchesRepository repo = mock(LivePitchesRepository.class);
     LivePitchPredictor predictor = mock(LivePitchPredictor.class);
-    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(predictor.predictAndLog(any()))
+        .thenReturn(new LivePitchPredictor.PredictionResult(Map.of("ball", 1.0), "v1"));
     // Restart-mid-game shape (L1): the schedule already reports the game IN_PROGRESS, so the
     // prime sets prev == current and the old transition-only persistence never wrote the row -
     // the game stayed invisible to /v1/games/today until its NEXT transition.
@@ -513,7 +522,7 @@ class LivePollingServiceTest {
     when(predictor.predictAndLog(argThat(np -> np != null && np.gameId() == gameA)))
         .thenThrow(new ModelUnavailableException("stale routing row for game A"));
     when(predictor.predictAndLog(argThat(np -> np != null && np.gameId() == gameB)))
-        .thenReturn(Map.of("ball", 1.0));
+        .thenReturn(new LivePitchPredictor.PredictionResult(Map.of("ball", 1.0), "v1"));
 
     // The whole tick must not abort on game A's failure.
     assertThatCode(() -> service(client, repo, predictor).tick()).doesNotThrowAnyException();
@@ -670,7 +679,8 @@ class LivePollingServiceTest {
     MlbStatsApiClient client = mock(MlbStatsApiClient.class);
     LivePitchesRepository repo = mock(LivePitchesRepository.class);
     LivePitchPredictor predictor = mock(LivePitchPredictor.class);
-    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(predictor.predictAndLog(any()))
+        .thenReturn(new LivePitchPredictor.PredictionResult(Map.of("ball", 1.0), "v1"));
     LiveNextPitch np = nextPitchWithBatter(3, 1, 555000L);
     when(client.fetchLiveFeed(822810L))
         .thenReturn(
@@ -710,7 +720,8 @@ class LivePollingServiceTest {
     MlbStatsApiClient client = mock(MlbStatsApiClient.class);
     LivePitchesRepository repo = mock(LivePitchesRepository.class);
     LivePitchPredictor predictor = mock(LivePitchPredictor.class);
-    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(predictor.predictAndLog(any()))
+        .thenReturn(new LivePitchPredictor.PredictionResult(Map.of("ball", 1.0), "v1"));
     doNothing()
         .doThrow(new RuntimeException("clickhouse down"))
         .doNothing()
@@ -787,7 +798,8 @@ class LivePollingServiceTest {
     MlbStatsApiClient client = mock(MlbStatsApiClient.class);
     LivePitchesRepository repo = mock(LivePitchesRepository.class);
     LivePitchPredictor predictor = mock(LivePitchPredictor.class);
-    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(predictor.predictAndLog(any()))
+        .thenReturn(new LivePitchPredictor.PredictionResult(Map.of("ball", 1.0), "v1"));
     when(client.fetchLiveFeed(822810L))
         .thenReturn(feed(List.of(pitch(1, 1)), nextPitch(1, 2))) // in flight: no physics yet
         .thenReturn(feed(List.of(bipPitch(1, 1, HOMER)), nextPitch(2, 1))); // play completed
@@ -823,7 +835,8 @@ class LivePollingServiceTest {
     MlbStatsApiClient client = mock(MlbStatsApiClient.class);
     LivePitchesRepository repo = mock(LivePitchesRepository.class);
     LivePitchPredictor predictor = mock(LivePitchPredictor.class);
-    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(predictor.predictAndLog(any()))
+        .thenReturn(new LivePitchPredictor.PredictionResult(Map.of("ball", 1.0), "v1"));
     when(client.fetchLiveFeed(822810L))
         .thenReturn(feed(List.of(bipPitch(1, 1, HOMER)), nextPitch(2, 1)))
         .thenReturn(feed(List.of(bipPitch(1, 1, HOMER)), nextPitch(2, 1)));
@@ -847,7 +860,8 @@ class LivePollingServiceTest {
     MlbStatsApiClient client = mock(MlbStatsApiClient.class);
     LivePitchesRepository repo = mock(LivePitchesRepository.class);
     LivePitchPredictor predictor = mock(LivePitchPredictor.class);
-    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(predictor.predictAndLog(any()))
+        .thenReturn(new LivePitchPredictor.PredictionResult(Map.of("ball", 1.0), "v1"));
     LivePitch early = pitch(2, 1); // in play, physics not yet attached
     LivePitch earlyWithPhysics = bipPitch(2, 1, HOMER);
     LivePitch laterWithPhysics = bipPitch(4, 1, HOMER);
@@ -882,7 +896,8 @@ class LivePollingServiceTest {
     MlbStatsApiClient client = mock(MlbStatsApiClient.class);
     LivePitchesRepository repo = mock(LivePitchesRepository.class);
     LivePitchPredictor predictor = mock(LivePitchPredictor.class);
-    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(predictor.predictAndLog(any()))
+        .thenReturn(new LivePitchPredictor.PredictionResult(Map.of("ball", 1.0), "v1"));
     when(client.fetchLiveFeed(822810L))
         .thenReturn(feed(List.of(bipPitch(3, 1, HOMER)), nextPitch(4, 1)))
         .thenReturn(feed(List.of(bipPitch(3, 1, HOMER)), nextPitch(4, 1)))
@@ -903,7 +918,8 @@ class LivePollingServiceTest {
     MlbStatsApiClient client = mock(MlbStatsApiClient.class);
     LivePitchesRepository repo = mock(LivePitchesRepository.class);
     LivePitchPredictor predictor = mock(LivePitchPredictor.class);
-    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(predictor.predictAndLog(any()))
+        .thenReturn(new LivePitchPredictor.PredictionResult(Map.of("ball", 1.0), "v1"));
     when(client.fetchLiveFeed(822810L))
         .thenReturn(feed(List.of(pitch(1, 1)), nextPitch(1, 2)))
         .thenReturn(feed(List.of(pitch(1, 1)), null))
@@ -924,7 +940,8 @@ class LivePollingServiceTest {
     MlbStatsApiClient client = mock(MlbStatsApiClient.class);
     LivePitchesRepository repo = mock(LivePitchesRepository.class);
     LivePitchPredictor predictor = mock(LivePitchPredictor.class);
-    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(predictor.predictAndLog(any()))
+        .thenReturn(new LivePitchPredictor.PredictionResult(Map.of("ball", 1.0), "v1"));
     when(client.fetchLiveFeed(822810L))
         .thenReturn(feed(List.of(pitch(1, 1)), nextPitch(1, 2)))
         .thenReturn(
@@ -957,7 +974,8 @@ class LivePollingServiceTest {
     MlbStatsApiClient client = mock(MlbStatsApiClient.class);
     LivePitchesRepository repo = mock(LivePitchesRepository.class);
     LivePitchPredictor predictor = mock(LivePitchPredictor.class);
-    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(predictor.predictAndLog(any()))
+        .thenReturn(new LivePitchPredictor.PredictionResult(Map.of("ball", 1.0), "v1"));
     when(client.fetchLiveFeed(822810L))
         .thenReturn(feed(List.of(pitch(1, 1)), nextPitchWithBatter(4, 2, 610000L)));
 
@@ -976,7 +994,8 @@ class LivePollingServiceTest {
     MlbStatsApiClient client = mock(MlbStatsApiClient.class);
     LivePitchesRepository repo = mock(LivePitchesRepository.class);
     LivePitchPredictor predictor = mock(LivePitchPredictor.class);
-    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(predictor.predictAndLog(any()))
+        .thenReturn(new LivePitchPredictor.PredictionResult(Map.of("ball", 1.0), "v1"));
     when(client.fetchLiveFeed(822810L))
         .thenReturn(feed(List.of(pitch(1, 1)), nextPitch(1, 2)))
         .thenReturn(unknownFeed(List.of(pitch(1, 1), pitch(1, 2)), nextPitch(1, 3)));
@@ -1007,7 +1026,8 @@ class LivePollingServiceTest {
     MlbStatsApiClient client = mock(MlbStatsApiClient.class);
     LivePitchesRepository repo = mock(LivePitchesRepository.class);
     LivePitchPredictor predictor = mock(LivePitchPredictor.class);
-    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(predictor.predictAndLog(any()))
+        .thenReturn(new LivePitchPredictor.PredictionResult(Map.of("ball", 1.0), "v1"));
     when(client.fetchLiveFeed(822810L))
         .thenReturn(feed(List.of(pitch(1, 1)), nextPitch(1, 2)))
         .thenReturn(unknownFeed(List.of(pitch(1, 1), pitch(1, 2)), nextPitch(1, 3)))
@@ -1031,7 +1051,8 @@ class LivePollingServiceTest {
     MlbStatsApiClient client = mock(MlbStatsApiClient.class);
     LivePitchesRepository repo = mock(LivePitchesRepository.class);
     LivePitchPredictor predictor = mock(LivePitchPredictor.class);
-    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(predictor.predictAndLog(any()))
+        .thenReturn(new LivePitchPredictor.PredictionResult(Map.of("ball", 1.0), "v1"));
     when(client.fetchLiveFeed(822810L))
         .thenReturn(feed(List.of(pitch(1, 1)), nextPitch(1, 2)))
         .thenReturn(unknownFeed(List.of(pitch(1, 1), pitch(1, 2)), nextPitch(1, 3)));
@@ -1070,7 +1091,8 @@ class LivePollingServiceTest {
     MlbStatsApiClient client = mock(MlbStatsApiClient.class);
     LivePitchesRepository repo = mock(LivePitchesRepository.class);
     LivePitchPredictor predictor = mock(LivePitchPredictor.class);
-    when(predictor.predictAndLog(any())).thenReturn(Map.of("ball", 1.0));
+    when(predictor.predictAndLog(any()))
+        .thenReturn(new LivePitchPredictor.PredictionResult(Map.of("ball", 1.0), "v1"));
     when(repo.insertPitches(any())).thenReturn(1);
 
     long gameA = 822810L;
