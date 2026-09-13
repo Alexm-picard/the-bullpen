@@ -339,7 +339,9 @@ public class LivePitchesRepository {
           + " argMax(pre_model_version, updated_at) AS pre_model_version,"
           + " argMax(pitch_type_model_version, updated_at) AS pitch_type_model_version,"
           + " argMax(predicted_at, updated_at) AS predicted_at,"
-          + " max(updated_at) AS as_of"
+          + " max(updated_at) AS as_of,"
+          + " (SELECT max(at_bat_index * 100 + pitch_number)"
+          + "  FROM pitches_live WHERE game_id = ?) AS last_pitch_cursor"
           + " FROM live_game_status WHERE game_id = ? GROUP BY game_id";
 
   private static final String INSERT_SCHEDULED_GAME =
@@ -623,10 +625,13 @@ public class LivePitchesRepository {
               Instant asOf =
                   updatedAtRaw != null ? updatedAtRaw.toInstant(ZoneOffset.UTC) : Instant.now();
 
+              long lastPitchCursor = rs.getLong("last_pitch_cursor");
+
               return new LiveGameState(
                   status == null || status.isEmpty() ? "UNKNOWN" : status,
                   m,
                   upcoming,
+                  lastPitchCursor,
                   pre.classes() != null
                       ? new LiveGameState.Prediction(pre.classes(), pre.winner())
                       : null,
@@ -637,6 +642,7 @@ public class LivePitchesRepository {
                   predictedAt,
                   asOf);
             },
+            gameId,
             gameId);
     return hits.isEmpty() ? java.util.Optional.empty() : java.util.Optional.of(hits.get(0));
   }
@@ -939,14 +945,14 @@ public class LivePitchesRepository {
 
   private static final RowMapper<LivePitchRow> PITCH_MAPPER =
       (ResultSet rs, int n) -> {
-        Timestamp ts = rs.getTimestamp("ingested_at");
+        LocalDateTime ingestedRaw = rs.getObject("ingested_at", LocalDateTime.class);
         Prediction pred = parsePrediction(rs.getString("prediction_json"));
         return new LivePitchRow(
             rs.getLong("game_id"),
             rs.getInt("at_bat_index"),
             rs.getInt("pitch_number"),
             rs.getLong("cursor"),
-            ts == null ? null : ts.toInstant(),
+            ingestedRaw != null ? ingestedRaw.toInstant(ZoneOffset.UTC) : null,
             rs.getLong("pitcher_id"),
             rs.getLong("batter_id"),
             rs.getString("description"),

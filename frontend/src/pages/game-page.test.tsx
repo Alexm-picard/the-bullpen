@@ -677,6 +677,7 @@ describe("GamePage live-state consumer (decision [194])", () => {
         outs: 1,
         baseState: 0,
       },
+      lastPitchCursor: 101,
       prePrediction: {
         probabilities: {
           ball: 0.35,
@@ -778,6 +779,57 @@ describe("GamePage live-state consumer (decision [194])", () => {
 
   it("falls back to em-dashes when live state has no upcomingPitch", () => {
     const html = seedLive(makeLiveState({ upcomingPitch: null }));
+    const text = visibleText(html);
+    expect(text).toMatch(/Count\s+\u2014/);
+    expect(text).toMatch(/Outs\s+\u2014/);
+  });
+
+  it("uses upcomingPitch when its key is ahead of the log cursor", () => {
+    // upcomingPitch key = 2*100+1 = 201, log cursor = 101 (pitch at-bat 1, pitch 1).
+    // 201 >= 101+1 = true, so upcomingPitch wins.
+    const html = seedLive(
+      makeLiveState({
+        upcomingPitch: {
+          atBatIndex: 2,
+          pitchNumber: 1,
+          balls: 3,
+          strikes: 2,
+          outs: 2,
+          baseState: 0,
+        },
+        lastPitchCursor: 101,
+      }),
+      { cursor: 101, atBatIndex: 1, pitchNumber: 1 },
+    );
+    const text = visibleText(html);
+    expect(text).toMatch(/Count\s+3-2/);
+    expect(text).toMatch(/Outs\s+2/);
+  });
+
+  it("em-dashes when upcomingPitch is stale (key behind log cursor)", () => {
+    // upcomingPitch key = 1*100+2 = 102, log cursor = 103 (pitch at-bat 1, pitch 3).
+    // 102 >= 103+1 = false, so upcomingPitch is stale.
+    const html = seedLive(
+      makeLiveState({
+        matchup: {
+          batterId: 900001,
+          pitcherId: 900002,
+          batSide: "R",
+          pitchHand: "R",
+          atBatIndex: 5,
+        },
+        upcomingPitch: {
+          atBatIndex: 1,
+          pitchNumber: 2,
+          balls: 1,
+          strikes: 0,
+          outs: 0,
+          baseState: 0,
+        },
+        lastPitchCursor: 101,
+      }),
+      { cursor: 103, atBatIndex: 1, pitchNumber: 3 },
+    );
     const text = visibleText(html);
     expect(text).toMatch(/Count\s+\u2014/);
     expect(text).toMatch(/Outs\s+\u2014/);

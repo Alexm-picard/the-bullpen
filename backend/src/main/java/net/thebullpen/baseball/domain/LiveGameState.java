@@ -16,6 +16,7 @@ public record LiveGameState(
     String status,
     CurrentMatchup matchup,
     UpcomingPitch upcomingPitch,
+    long lastPitchCursor,
     Prediction prePrediction,
     Prediction pitchTypePrediction,
     ModelVersions modelVersions,

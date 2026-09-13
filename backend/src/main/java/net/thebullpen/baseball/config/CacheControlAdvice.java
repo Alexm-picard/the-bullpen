@@ -82,9 +82,10 @@ public class CacheControlAdvice implements ResponseBodyAdvice<Object> {
     if (!HttpMethod.GET.equals(request.getMethod()) || statusOf(response) != 200) {
       return body;
     }
+    if (headers.getCacheControl() != null) {
+      return body;
+    }
     if (path.equals(ROLLING_ACCURACY_PATH)) {
-      // Must precede the generic ops branch - this advice runs AFTER the controller, so a
-      // controller-set header would be overwritten by the 20s ops default.
       headers.setCacheControl("public, max-age=" + ROLLING_ACCURACY_MAX_AGE_SECONDS);
     } else if (path.startsWith(OPS_PREFIX)) {
       headers.setCacheControl("public, max-age=" + OPS_MAX_AGE_SECONDS);

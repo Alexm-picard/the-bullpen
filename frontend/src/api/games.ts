@@ -154,6 +154,7 @@ export type LiveGameState = {
     outs: number;
     baseState: number;
   } | null;
+  lastPitchCursor: number;
   prePrediction: {
     probabilities: Record<string, number>;
     winner: string;
@@ -236,7 +237,7 @@ export function useGame(id: number | null) {
     },
     enabled: id != null,
     refetchInterval: (query) => statusPollIntervalMs(query.state.data?.status),
-    staleTime: 5_000,
+    staleTime: 1_000,
   });
 }
 

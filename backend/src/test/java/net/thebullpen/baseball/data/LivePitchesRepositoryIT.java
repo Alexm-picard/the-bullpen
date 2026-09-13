@@ -1179,6 +1179,8 @@ class LivePitchesRepositoryIT {
     assertEquals("v2", s.modelVersions().pre());
     assertEquals("v1", s.modelVersions().pitchType());
 
+    assertEquals(101L, s.lastPitchCursor());
+
     assertEquals(predictedAt, s.predictedAt());
     assertNotNull(s.asOf());
   }
