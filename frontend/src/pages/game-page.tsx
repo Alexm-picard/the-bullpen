@@ -23,6 +23,7 @@ import {
   matchupIsAheadOf,
   nextPitchRequest,
   pitchTypeRequest,
+  postPitchCount,
   useGame,
   useLivePitches,
   useLiveState,
@@ -536,23 +537,27 @@ export function GamePage() {
               page's existing way of saying "not known right now". */}
           <BigStat
             label="Count"
-            value={
-              mostRecent && !rowIsPastTense
-                ? `${mostRecent.balls}-${mostRecent.strikes}`
-                : ls?.upcomingPitch && upcomingIsFresh
-                  ? `${ls.upcomingPitch.balls}-${ls.upcomingPitch.strikes}`
-                  : "—"
-            }
+            value={(() => {
+              if (ls?.upcomingPitch && upcomingIsFresh)
+                return `${ls.upcomingPitch.balls}-${ls.upcomingPitch.strikes}`;
+              if (mostRecent && !rowIsPastTense) {
+                const post = postPitchCount(mostRecent);
+                if (post) return `${post.balls}-${post.strikes}`;
+              }
+              return "—";
+            })()}
           />
           <BigStat
             label="Outs"
-            value={
-              mostRecent && !rowIsPastTense
-                ? String(mostRecent.outs)
-                : ls?.upcomingPitch && upcomingIsFresh
-                  ? String(ls.upcomingPitch.outs)
-                  : "—"
-            }
+            value={(() => {
+              if (ls?.upcomingPitch && upcomingIsFresh)
+                return String(ls.upcomingPitch.outs);
+              if (mostRecent && !rowIsPastTense) {
+                const post = postPitchCount(mostRecent);
+                if (post) return String(mostRecent.outs);
+              }
+              return "—";
+            })()}
           />
           <BigStat label="Last Pitch" value={lastPitchRead(mostRecent)} />
           <BigStat

@@ -446,6 +446,35 @@ export function matchupIsAheadOf(
   return matchup != null && row != null && matchup.atBatIndex > row.atBatIndex;
 }
 
+/**
+ * The count AFTER a pitch has been thrown, derived from the row's pre-pitch count and its
+ * outcome. Returns null when the pitch ended the at-bat (walk, strikeout, in-play,
+ * hit-by-pitch) or the outcome is unknown.
+ */
+export function postPitchCount(
+  row: LivePitchRow,
+): { balls: number; strikes: number } | null {
+  let balls = row.balls;
+  let strikes = row.strikes;
+  switch (row.description) {
+    case "ball":
+      balls += 1;
+      if (balls >= 4) return null;
+      break;
+    case "called_strike":
+    case "swinging_strike":
+      strikes += 1;
+      if (strikes >= 3) return null;
+      break;
+    case "foul":
+      if (strikes < 2) strikes += 1;
+      break;
+    default:
+      return null;
+  }
+  return { balls, strikes };
+}
+
 export function nextPitchRequest(
   row: LivePitchRow,
   gameDate: string,
