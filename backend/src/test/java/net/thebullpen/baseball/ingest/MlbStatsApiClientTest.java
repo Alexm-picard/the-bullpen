@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -38,7 +39,8 @@ class MlbStatsApiClientTest {
   private static MlbStatsApiClient client(int maxRetries, HttpStub stub) {
     return new MlbStatsApiClient(
         new MlbFeedParser(new ObjectMapper()),
-        props("https://statsapi.mlb.com", "ua", 1000, maxRetries)) {
+        props("https://statsapi.mlb.com", "ua", 1000, maxRetries),
+        new IngestMetrics(new SimpleMeterRegistry())) {
       @Override
       String httpGet(String url) throws IOException {
         return stub.get(url);
