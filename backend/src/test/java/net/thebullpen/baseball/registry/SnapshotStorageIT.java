@@ -24,6 +24,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.MinIOContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.utility.DockerImageName;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
@@ -56,7 +57,10 @@ class SnapshotStorageIT {
 
   @Container
   static final MinIOContainer MINIO =
-      new MinIOContainer("minio/minio:RELEASE.2024-12-18T13-15-44Z")
+      new MinIOContainer(
+              DockerImageName.parse(
+                      "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z.hotfix.7aa24e772")
+                  .asCompatibleSubstituteFor("minio/minio"))
           .withUserName("itadmin")
           .withPassword("it-password");
 

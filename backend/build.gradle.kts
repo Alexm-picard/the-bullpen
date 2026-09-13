@@ -49,12 +49,16 @@ tasks.register("resolveAndLockAll") {
 }
 
 // Security override: netty is pulled transitively (the AWS S3 client's netty-nio-client) and
-// Spring Boot 3.5.x's BOM manages it at 4.1.135.Final, which carries CVE-2026-59901 (netty-codec)
-// + CVE-2026-55831 / -55833 / -56745 (netty-codec-http), all HIGH, fixed in 4.1.136.Final.
-// Overriding the BOM's `netty.version` property (the io.spring.dependency-management idiom) bumps
-// every netty module coherently - they ship as one coordinated release. Drop this once a managed
-// Boot patch catches up. Regenerate the lock after changing: ./gradlew resolveAndLockAll --write-locks
-extra["netty.version"] = "4.1.136.Final"
+// Spring Boot 3.5.x's BOM manages it at 4.1.135.Final. 4.1.136 fixed the earlier CVEs;
+// 4.1.137.Final fixes CVE-2026-75595 (CRITICAL, netty-codec-http2 HPACK decoder). Drop this once
+// a managed Boot patch catches up. Regenerate the lock after changing:
+//   ./gradlew resolveAndLockAll --write-locks
+extra["netty.version"] = "4.1.137.Final"
+
+// Security override: Spring Boot 3.5.x's BOM manages Tomcat at 10.1.55, which carries
+// CVE-2026-65182 + CVE-2026-68525 (CRITICAL). 10.1.58 was never released; 10.1.59 is the fix.
+// Same BOM-property idiom as netty.
+extra["tomcat.version"] = "10.1.59"
 
 // Security override: clickhouse-jdbc 0.9.8 pulls httpcore5 5.3.x transitively, which carries
 // CVE-2026-54399 + CVE-2026-54428 (HIGH). httpclient5 5.4.3 (declared above) depends on
