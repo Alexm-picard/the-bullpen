@@ -542,9 +542,9 @@ describe("GamePage current batter (V031 live matchup)", () => {
     expect(visibleText(html)).toMatch(/Outs\s+—/);
   });
 
-  it("uses the row's count when the matchup describes the SAME at-bat", () => {
-    // The agreeing-index path, which no page-level test covered: the live batter is shown AND
-    // the row's count still describes him, so it must render rather than em-dash.
+  it("shows the POST-pitch count when the matchup describes the SAME at-bat", () => {
+    // The row's balls/strikes is the PRE-pitch count; after a ball on 2-1 the current count
+    // is 3-1. The tile must show postPitchCount, not the raw pre-pitch field.
     const html = seed(
       makeGame({
         currentMatchup: {
@@ -555,10 +555,10 @@ describe("GamePage current batter (V031 live matchup)", () => {
           atBatIndex: 1,
         },
       }),
-      { balls: 2, strikes: 1, atBatIndex: 1 },
+      { balls: 2, strikes: 1, atBatIndex: 1, description: "ball" },
     );
     expect(html).toContain("Now Batting");
-    expect(visibleText(html)).toMatch(/Count\s+2-1/);
+    expect(visibleText(html)).toMatch(/Count\s+3-1/);
   });
 
   it("resolves a switch hitter's side against the current pitcher, never showing a raw (S)", () => {
@@ -739,7 +739,10 @@ describe("GamePage live-state consumer (decision [194])", () => {
     expect(text).toMatch(/Outs\s+1/);
   });
 
-  it("prefers the row's count when the row describes the same at-bat", () => {
+  it("prefers fresh /live over the log even on the same at-bat", () => {
+    // upcomingPitch key = 1*100+2 = 102, log cursor = 1 (default). 102 >= 2 = true,
+    // so /live wins. The row's post-pitch count (1-0) happens to agree, but the tile
+    // must show /live's value, not derive its own.
     const html = seedLive(
       makeLiveState({
         matchup: {
@@ -761,7 +764,7 @@ describe("GamePage live-state consumer (decision [194])", () => {
       { balls: 0, strikes: 0, atBatIndex: 1, description: "ball" },
     );
     const text = visibleText(html);
-    expect(text).toMatch(/Count\s+0-0/);
+    expect(text).toMatch(/Count\s+1-0/);
   });
 
   it("renders live-state predictions in the next-pitch panel", () => {
@@ -833,5 +836,136 @@ describe("GamePage live-state consumer (decision [194])", () => {
     const text = visibleText(html);
     expect(text).toMatch(/Count\s+\u2014/);
     expect(text).toMatch(/Outs\s+\u2014/);
+  });
+
+  it("log resolving after /live on the same at-bat does not regress the count", () => {
+    // The reported symptom: /live shows 3-2 (correct), the log resolves with the
+    // same at-bat's most recent pitch (a ball on 3-1), and the tile drops to 3-1
+    // because it was showing mostRecent.balls raw. With postPitchCount the log
+    // branch shows 3-2 (the advanced count) too, and /live takes priority when fresh.
+    const html = seedLive(
+      makeLiveState({
+        matchup: {
+          batterId: 900001,
+          pitcherId: 900002,
+          batSide: "R",
+          pitchHand: "R",
+          atBatIndex: 1,
+        },
+        upcomingPitch: {
+          atBatIndex: 1,
+          pitchNumber: 5,
+          balls: 3,
+          strikes: 2,
+          outs: 1,
+          baseState: 0,
+        },
+        lastPitchCursor: 104,
+      }),
+      // Log's newest pitch: ball on 3-1 (pre-pitch), cursor 104. Post-pitch = 3-2 (full count).
+      {
+        cursor: 104,
+        atBatIndex: 1,
+        pitchNumber: 4,
+        balls: 2,
+        strikes: 2,
+        description: "ball",
+      },
+    );
+    const text = visibleText(html);
+    // /live upcomingPitch key = 1*100+5 = 105 >= 104+1 = true, so /live wins.
+    expect(text).toMatch(/Count\s+3-2/);
+    expect(text).toMatch(/Outs\s+1/);
+  });
+
+  it("shows post-pitch count from the log when /live has no upcomingPitch mid-at-bat", () => {
+    // Mid-at-bat, matchup on the same at-bat (rowIsPastTense = false), no upcomingPitch.
+    // The tile must show postPitchCount(mostRecent), not the raw pre-pitch count.
+    const html = seedLive(
+      makeLiveState({
+        matchup: {
+          batterId: 900001,
+          pitcherId: 900002,
+          batSide: "R",
+          pitchHand: "R",
+          atBatIndex: 1,
+        },
+        upcomingPitch: null,
+      }),
+      {
+        cursor: 101,
+        atBatIndex: 1,
+        pitchNumber: 1,
+        balls: 1,
+        strikes: 0,
+        description: "called_strike",
+      },
+    );
+    const text = visibleText(html);
+    expect(text).toMatch(/Count\s+1-1/);
+  });
+
+  it("em-dashes count when the log's pitch ended the at-bat (strikeout)", () => {
+    // A swinging strike on 0-2: postPitchCount returns null (3 strikes = at-bat over).
+    // The tile must em-dash, not show 0-2 or 0-3.
+    const html = seedLive(
+      makeLiveState({
+        matchup: {
+          batterId: 900001,
+          pitcherId: 900002,
+          batSide: "R",
+          pitchHand: "R",
+          atBatIndex: 1,
+        },
+        upcomingPitch: null,
+      }),
+      {
+        cursor: 103,
+        atBatIndex: 1,
+        pitchNumber: 3,
+        balls: 0,
+        strikes: 2,
+        description: "swinging_strike",
+      },
+    );
+    const text = visibleText(html);
+    expect(text).toMatch(/Count\s+\u2014/);
+  });
+
+  it("fresh /live shows 0-0 after a strikeout when the log alone would em-dash", () => {
+    // The log's last pitch is strike three (at-bat over), so postPitchCount = null.
+    // But /live already knows the NEXT batter is up with a 0-0 count. Fresh /live wins.
+    const html = seedLive(
+      makeLiveState({
+        matchup: {
+          batterId: 900001,
+          pitcherId: 900002,
+          batSide: "R",
+          pitchHand: "R",
+          atBatIndex: 2,
+        },
+        upcomingPitch: {
+          atBatIndex: 2,
+          pitchNumber: 1,
+          balls: 0,
+          strikes: 0,
+          outs: 2,
+          baseState: 0,
+        },
+        lastPitchCursor: 103,
+      }),
+      {
+        cursor: 103,
+        atBatIndex: 1,
+        pitchNumber: 3,
+        balls: 0,
+        strikes: 2,
+        description: "swinging_strike",
+      },
+    );
+    const text = visibleText(html);
+    // upcomingPitch key = 2*100+1 = 201 >= 103+1 = true.
+    expect(text).toMatch(/Count\s+0-0/);
+    expect(text).toMatch(/Outs\s+2/);
   });
 });

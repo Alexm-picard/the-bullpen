@@ -8,6 +8,7 @@ import {
   fetchTodaysGames,
   mergePitchesNewestFirst,
   nextPitchRequest,
+  postPitchCount,
   statusPollIntervalMs,
   type GameSummary,
   type CurrentMatchup,
@@ -380,6 +381,66 @@ describe("nextPitchRequest (A6 settled-at-bat gate)", () => {
     expect(nextPitchRequest(row({ pitcherThrows: "" }), GAME_DATE)).toBeNull();
     expect(nextPitchRequest(row({ batterStand: "" }), GAME_DATE)).toBeNull();
     expect(nextPitchRequest(row({ baseState: null }), GAME_DATE)).toBeNull();
+  });
+});
+
+describe("postPitchCount", () => {
+  function row(overrides: Partial<LivePitchRow> = {}): LivePitchRow {
+    return { ...PITCH, ...overrides };
+  }
+
+  it("advances balls on a ball", () => {
+    const r = postPitchCount(
+      row({ balls: 2, strikes: 1, description: "ball" }),
+    );
+    expect(r).toEqual({ balls: 3, strikes: 1 });
+  });
+
+  it("returns null on ball four (walk)", () => {
+    expect(
+      postPitchCount(row({ balls: 3, strikes: 0, description: "ball" })),
+    ).toBeNull();
+  });
+
+  it("advances strikes on a called strike", () => {
+    const r = postPitchCount(
+      row({ balls: 1, strikes: 0, description: "called_strike" }),
+    );
+    expect(r).toEqual({ balls: 1, strikes: 1 });
+  });
+
+  it("returns null on strikeout (swinging)", () => {
+    expect(
+      postPitchCount(
+        row({ balls: 0, strikes: 2, description: "swinging_strike" }),
+      ),
+    ).toBeNull();
+  });
+
+  it("advances strikes on a foul below 2", () => {
+    const r = postPitchCount(
+      row({ balls: 0, strikes: 1, description: "foul" }),
+    );
+    expect(r).toEqual({ balls: 0, strikes: 2 });
+  });
+
+  it("does not advance strikes on a foul at 2 strikes", () => {
+    const r = postPitchCount(
+      row({ balls: 1, strikes: 2, description: "foul" }),
+    );
+    expect(r).toEqual({ balls: 1, strikes: 2 });
+  });
+
+  it("returns null on in_play", () => {
+    expect(
+      postPitchCount(row({ description: "in_play" as string })),
+    ).toBeNull();
+  });
+
+  it("returns null on hit_by_pitch", () => {
+    expect(
+      postPitchCount(row({ description: "hit_by_pitch" as string })),
+    ).toBeNull();
   });
 });
 
