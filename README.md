@@ -24,7 +24,8 @@ of silently degraded features on the live pitch path
 - **Model guide**: https://thebullpen.net/models/guide
 - **Repo**: https://github.com/Alexm-picard/the-bullpen
 
-Jump to: [the models, honestly](#the-models-honestly) ·
+Jump to: [the 25-second tour](#the-25-second-tour) ·
+[the models, honestly](#the-models-honestly) ·
 [architecture](#architecture) · [how this was built](#how-this-was-built) ·
 [known limitations](#known-limitations) · [operating evidence](#operating-evidence)
 
@@ -106,6 +107,15 @@ linked artifact disagree, the artifact wins.
 > `/v1/ops/drift` and renders an honest em-dash skeleton until `drift_metrics` fills in;
 > drill-tagged rows are labeled so a synthetic PSI spike is never shown as organic.
 > See [Known limitations](#known-limitations) for the honest caveats.
+
+## The 25-second tour
+
+[![The Bullpen - 25-second launch video](brag-output/brag.jpg)](brag-output/brag.mp4)
+
+[`brag-output/brag.mp4`](brag-output/brag.mp4) - the live pitch path, the ML systems wrapper,
+and the retrain that finished unattended in 96.8 minutes and still was not promoted. Built from
+this repo's own tokens, fonts and components; source and build notes in
+[`brag-output/composition/`](brag-output/composition/README.md).
 
 ## Screenshots
 

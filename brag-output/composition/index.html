@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en" data-resolution="landscape">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1920, height=1080">
+    <title>The Bullpen - brag</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      /* ── The Bullpen's own self-hosted woff2 subsets (frontend/public/fonts) ── */
+      @font-face { font-family: "Barlow Condensed"; font-style: italic; font-weight: 600; font-display: block; src: url("assets/fonts/barlow-condensed-italic-600-latin.woff2") format("woff2"); }
+      @font-face { font-family: "Barlow Condensed"; font-style: italic; font-weight: 700; font-display: block; src: url("assets/fonts/barlow-condensed-italic-700-latin.woff2") format("woff2"); }
+      @font-face { font-family: "Barlow Condensed"; font-style: italic; font-weight: 800; font-display: block; src: url("assets/fonts/barlow-condensed-italic-800-latin.woff2") format("woff2"); }
+      @font-face { font-family: "Barlow Condensed"; font-style: normal; font-weight: 500; font-display: block; src: url("assets/fonts/barlow-condensed-normal-500-latin.woff2") format("woff2"); }
+      @font-face { font-family: "Barlow Condensed"; font-style: normal; font-weight: 600; font-display: block; src: url("assets/fonts/barlow-condensed-normal-600-latin.woff2") format("woff2"); }
+      @font-face { font-family: "Barlow Condensed"; font-style: normal; font-weight: 700; font-display: block; src: url("assets/fonts/barlow-condensed-normal-700-latin.woff2") format("woff2"); }
+      @font-face { font-family: "Barlow Condensed"; font-style: normal; font-weight: 800; font-display: block; src: url("assets/fonts/barlow-condensed-normal-800-latin.woff2") format("woff2"); }
+      @font-face { font-family: "Inter"; font-style: normal; font-weight: 400; font-display: block; src: url("assets/fonts/inter-normal-400-latin.woff2") format("woff2"); }
+      @font-face { font-family: "Inter"; font-style: normal; font-weight: 500; font-display: block; src: url("assets/fonts/inter-normal-500-latin.woff2") format("woff2"); }
+      @font-face { font-family: "Inter"; font-style: normal; font-weight: 600; font-display: block; src: url("assets/fonts/inter-normal-600-latin.woff2") format("woff2"); }
+      @font-face { font-family: "Inter"; font-style: normal; font-weight: 700; font-display: block; src: url("assets/fonts/inter-normal-700-latin.woff2") format("woff2"); }
+      @font-face { font-family: "JetBrains Mono"; font-style: normal; font-weight: 400; font-display: block; src: url("assets/fonts/jetbrains-mono-normal-400-latin.woff2") format("woff2"); }
+      @font-face { font-family: "JetBrains Mono"; font-style: normal; font-weight: 500; font-display: block; src: url("assets/fonts/jetbrains-mono-normal-500-latin.woff2") format("woff2"); }
+      @font-face { font-family: "JetBrains Mono"; font-style: normal; font-weight: 700; font-display: block; src: url("assets/fonts/jetbrains-mono-normal-700-latin.woff2") format("woff2"); }
+      @font-face { font-family: "JetBrains Mono"; font-style: normal; font-weight: 800; font-display: block; src: url("assets/fonts/jetbrains-mono-normal-800-latin.woff2") format("woff2"); }
+
+      /* ── Broadcast tokens, mirrored from frontend/src/design/tokens.css (dark) ── */
+      :root {
+        --bp-field: #080f1f;
+        --bp-field-hi: #0e1b33;
+        --bp-panel: #101d38;
+        --bp-panel-edge: #26365c;
+        --bp-rule: #1c2a4a;
+        --bp-ink: #f4f6fa;
+        --bp-text: #c9d1e0;
+        --bp-muted: #95a0b3;
+        --bp-chrome: #0e1b33;
+        --bp-chrome-edge: #26365c;
+        --bp-on-chrome-muted: #9da9bf;
+        --bp-steel: #8b95a7;
+        --bp-gold: #f2a900;
+        --bp-gold-deep: #c98d00;
+        --bp-live: #39d98a;
+        --font-display: "Barlow Condensed", sans-serif;
+        --font-body: "Inter", system-ui, sans-serif;
+        --font-mono: "JetBrains Mono", ui-monospace, monospace;
+      }
+
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--bp-field); }
+      #root { position: relative; width: 100%; height: 100%; overflow: hidden; background: var(--bp-field); font-family: var(--font-body); }
+
+      /* ── Persistent ground (untimed: needs its own absolute box) ── */
+      #bg { position: absolute; inset: 0; background: var(--bp-field); }
+      #bg-glow { position: absolute; left: 50%; top: 50%; width: 2400px; height: 1700px; margin: -850px 0 0 -1200px;
+        background: radial-gradient(ellipse at center, rgba(38, 54, 92, 0.55) 0%, rgba(14, 27, 51, 0.30) 42%, rgba(8, 15, 31, 0) 72%); opacity: 0.45; }
+      #bg-vignette { position: absolute; inset: 0;
+        background: radial-gradient(ellipse at center, rgba(8, 15, 31, 0) 45%, rgba(4, 8, 17, 0.62) 100%); }
+      #frame-rule { position: absolute; top: 0; left: 0; width: 100%; height: 4px; background: var(--bp-gold); }
+
+      .clip { position: absolute; inset: 0; }
+      .scene { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 96px 160px 84px; }
+
+      /* ── Broadcast chrome primitives ── */
+      .plate { position: relative; background: var(--bp-chrome); border: 1px solid var(--bp-chrome-edge);
+        clip-path: polygon(0 0, 100% 0, calc(100% - 20px) 100%, 0 100%); }
+      .plate::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; background: var(--bp-gold); }
+      .panel { background: var(--bp-panel); border: 1px solid var(--bp-panel-edge); }
+      .kicker { font-family: var(--font-body); font-weight: 600; font-size: 16px; letter-spacing: 0.16em;
+        text-transform: uppercase; color: var(--bp-muted); }
+      .display { font-family: var(--font-display); font-style: italic; font-weight: 700; color: var(--bp-ink); line-height: 1.04; }
+      .mono { font-family: var(--font-mono); font-feature-settings: "tnum" 1; }
+
+      /* ── Scene 1 ── */
+      #s1 .scene { gap: 40px; }
+      #s1-bug { display: flex; align-items: center; gap: 30px; padding: 20px 52px 20px 34px; }
+      #s1-bug .team { font-family: var(--font-mono); font-weight: 800; font-size: 42px; color: var(--bp-ink); letter-spacing: 0.05em; }
+      #s1-bug .sep { width: 1px; height: 34px; background: var(--bp-chrome-edge); }
+      #s1-bug .inn { font-family: var(--font-mono); font-weight: 700; font-size: 36px; color: var(--bp-on-chrome-muted); letter-spacing: 0.10em; }
+      #s1-bug .livewrap { display: flex; align-items: center; gap: 12px; }
+      #s1-bug .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--bp-live); }
+      #s1-bug .live { font-family: var(--font-mono); font-weight: 800; font-size: 30px; color: var(--bp-live); letter-spacing: 0.18em; }
+      #s1-count { display: grid; grid-template-columns: auto auto auto auto; gap: 0 84px; padding: 34px 64px; }
+      #s1-count .cell { display: flex; flex-direction: column; gap: 14px; align-items: flex-start; }
+      #s1-count .val { font-family: var(--font-mono); font-weight: 800; font-size: 92px; color: var(--bp-ink); line-height: 1; letter-spacing: 0.01em; }
+      #s1-count .val.gold { color: var(--bp-gold); }
+      #s1-hook { font-size: 84px; text-align: center; max-width: 1400px; }
+
+      /* ── Scene 2 (two panels, exactly as the game page pairs them) ── */
+      #s2 .scene { align-items: center; justify-content: center; }
+      #s2-cols { display: flex; align-items: flex-start; gap: 44px; width: 1600px; }
+      #s2-left { width: 900px; }
+      #s2-right { width: 656px; }
+      .phead { display: inline-flex; align-items: center; gap: 22px; padding: 12px 42px 12px 28px; margin-bottom: 22px; }
+      .phead .t { font-family: var(--font-display); font-style: italic; font-weight: 700; font-size: 42px;
+        letter-spacing: 0.05em; color: var(--bp-ink); text-transform: uppercase; }
+      .phead .tag { font-family: var(--font-mono); font-weight: 500; font-size: 18px; letter-spacing: 0.15em;
+        color: var(--bp-on-chrome-muted); }
+      /* Outcome head: its argmax IS a meaningful read, so it earns gold + weight. */
+      #s2l-panel { padding: 34px 40px 38px; }
+      .prow { display: grid; grid-template-columns: 280px 1fr 128px; align-items: center; gap: 20px;
+        padding: 15px 0; border-bottom: 1px solid var(--bp-rule); }
+      .prow:last-of-type { border-bottom: 0; }
+      .prow .lab { font-family: var(--font-body); font-weight: 400; font-size: 28px; color: var(--bp-text); }
+      .prow .track { display: block; width: 100%; height: 20px; background: var(--bp-field-hi); overflow: hidden; }
+      .prow .fill { display: block; width: 100%; height: 100%; background: var(--bp-steel); transform-origin: left center; }
+      .prow .val { font-family: var(--font-mono); font-feature-settings: "tnum" 1; font-weight: 400; font-size: 26px;
+        color: var(--bp-muted); text-align: right; }
+      /* Pitch-type prior, decision [183]: EVERY row styled identically, no argmax
+         emphasis anywhere. Rank order is the only signal this panel may send. */
+      #s2r-panel { padding: 28px 34px 32px; }
+      .trow { display: grid; grid-template-columns: 212px 1fr 104px; align-items: center; gap: 16px;
+        padding: 9px 0; border-bottom: 1px solid var(--bp-rule); }
+      .trow:last-of-type { border-bottom: 0; }
+      .trow .lab { font-family: var(--font-body); font-weight: 400; font-size: 24px; color: var(--bp-text); }
+      .trow .track { display: block; width: 100%; height: 16px; background: var(--bp-field-hi); overflow: hidden; }
+      .trow .fill { display: block; width: 100%; height: 100%; background: var(--bp-steel); transform-origin: left center; }
+      .trow .val { font-family: var(--font-mono); font-feature-settings: "tnum" 1; font-weight: 400; font-size: 22px;
+        color: var(--bp-muted); text-align: right; }
+      .pcap { margin-top: 24px; display: flex; flex-direction: column; gap: 9px; }
+      .pcap .model { font-family: var(--font-mono); font-weight: 500; font-size: 20px; letter-spacing: 0.06em; color: var(--bp-muted); }
+      .pcap .claim { font-family: var(--font-body); font-weight: 500; font-size: 28px; color: var(--bp-text); white-space: nowrap; }
+      .pcap .claim b { font-weight: 700; color: var(--bp-ink); }
+
+      /* ── Scene 3 ── */
+      #s3 .scene { gap: 76px; }
+      #s3-head { font-size: 76px; text-align: center; }
+      #s3-head span { color: var(--bp-gold); }
+      #s3-chain { display: flex; align-items: center; justify-content: center; }
+      .chip { padding: 30px 42px 30px 38px; }
+      .chip .cl { font-family: var(--font-mono); font-weight: 700; font-size: 30px; letter-spacing: 0.09em; color: var(--bp-ink); white-space: nowrap; }
+      .link { display: block; width: 76px; height: 3px; background: var(--bp-gold); transform-origin: left center; }
+
+      /* ── Scene 4 ── */
+      #s4 .scene { gap: 46px; }
+      #s4-reg { position: relative; width: 1540px; padding: 0 0 4px; }
+      #s4-reg .hrow, #s4-reg .drow { display: grid; grid-template-columns: 1fr 260px 270px 440px; align-items: center; gap: 24px; padding: 0 40px; }
+      #s4-reg .hrow { height: 70px; border-bottom: 1px solid var(--bp-panel-edge); }
+      #s4-reg .drow { height: 124px; }
+      #s4-reg .h { font-family: var(--font-mono); font-weight: 500; font-size: 18px; letter-spacing: 0.16em; color: var(--bp-muted); }
+      #s4-reg .name { font-family: var(--font-body); font-weight: 600; font-size: 40px; color: var(--bp-ink); white-space: nowrap; }
+      #s4-reg .cellmono { font-family: var(--font-mono); font-feature-settings: "tnum" 1; font-weight: 700; font-size: 28px; letter-spacing: 0.10em; color: var(--bp-muted); }
+      #s4-stage { color: var(--bp-muted); }
+      #s4-metrics { display: flex; gap: 92px; align-items: flex-end; }
+      #s4-metrics .cell { display: flex; flex-direction: column; gap: 12px; }
+      #s4-metrics .val { font-family: var(--font-mono); font-weight: 800; font-size: 84px; color: var(--bp-ink); line-height: 1; }
+      #s4-metrics .val .u { font-size: 38px; color: var(--bp-muted); font-weight: 700; }
+      #s4-line { font-size: 66px; text-align: center; }
+      #s4-stamp { position: absolute; right: 24px; top: 88px; display: block; width: 462px; text-align: center;
+        padding: 16px 0; border: 4px solid var(--bp-gold); background: rgba(8, 15, 31, 0.90);
+        font-family: var(--font-mono); font-weight: 800; font-size: 48px; letter-spacing: 0.10em; color: var(--bp-gold); }
+
+      /* ── Scene 5 ── */
+      #s5 .scene { justify-content: center; }
+      #s5-strip { position: absolute; left: 0; right: 0; top: 50%; margin-top: -22px; text-align: center;
+        font-family: var(--font-mono); font-weight: 500; font-size: 34px; letter-spacing: 0.03em; color: var(--bp-muted); }
+      #s5-strip i { font-style: normal; color: var(--bp-gold); padding: 0 12px; }
+      #s5-lock { position: absolute; left: 0; right: 0; top: 50%; margin-top: -196px; display: flex;
+        flex-direction: column; align-items: center; }
+      #s5-glow { position: absolute; left: 50%; top: 40px; width: 1300px; height: 420px; margin-left: -650px;
+        background: radial-gradient(ellipse at center, rgba(242, 169, 0, 0.26) 0%, rgba(242, 169, 0, 0) 68%); opacity: 0; }
+      #s5-mark { position: relative; display: flex; align-items: center; gap: 30px; }
+      #s5-mark .tick { display: block; width: 14px; height: 128px; background: var(--bp-gold); }
+      #s5-mark .wm { font-family: var(--font-display); font-style: italic; font-weight: 800; font-size: 152px;
+        color: var(--bp-ink); letter-spacing: 0.012em; line-height: 1; text-transform: uppercase; }
+      #s5-rule { display: block; width: 880px; height: 3px; background: var(--bp-gold); margin: 34px 0 30px; transform-origin: left center; }
+      #s5-tag1 { font-family: var(--font-display); font-style: italic; font-weight: 600; font-size: 62px; color: var(--bp-text); line-height: 1.16; }
+      #s5-tag2 { font-family: var(--font-display); font-style: italic; font-weight: 600; font-size: 62px; color: var(--bp-gold); line-height: 1.16; }
+      #s5-url { margin-top: 32px; font-family: var(--font-mono); font-weight: 500; font-size: 29px; letter-spacing: 0.14em; color: var(--bp-muted); }
+    </style>
+  </head>
+  <body>
+    <div data-hf-id="hf-6g10" id="root" data-composition-id="main" data-start="0" data-duration="25" data-width="1920" data-height="1080" data-fps="30">
+      <div data-hf-id="hf-2xc0" id="bg">
+        <div data-hf-id="hf-isbq" id="bg-glow"></div>
+        <div data-hf-id="hf-s60r" id="bg-vignette"></div>
+        <div data-hf-id="hf-b9d3" id="frame-rule"></div>
+      </div>
+
+      <!-- ── Scene 1: HOOK - live, mid-at-bat ─────────────────────────────── -->
+      <section data-hf-id="hf-8lqu" id="s1" class="clip" data-start="0" data-duration="4.65" data-track-index="0">
+        <div data-hf-id="hf-rb5y" class="scene" id="s1-in">
+          <div data-hf-id="hf-lrpb" id="s1-bug" class="plate">
+            <span data-hf-id="hf-5l2p" class="team">MIL 3</span>
+            <span data-hf-id="hf-cva3" class="sep"></span>
+            <span data-hf-id="hf-byi6" class="team">STL 3</span>
+            <span data-hf-id="hf-z4ij" class="sep"></span>
+            <span data-hf-id="hf-v833" class="inn">INN 6</span>
+            <span data-hf-id="hf-zv6f" class="livewrap"><span data-hf-id="hf-jkr6" class="dot" id="s1-dot"></span><span data-hf-id="hf-234l" class="live">LIVE</span></span>
+          </div>
+          <div data-hf-id="hf-xexu" id="s1-count" class="panel">
+            <div data-hf-id="hf-7184" class="cell"><span data-hf-id="hf-7yy9" class="kicker">Count</span><span data-hf-id="hf-21nk" class="val">0-1</span></div>
+            <div data-hf-id="hf-am8c" class="cell"><span data-hf-id="hf-gy7b" class="kicker">Outs</span><span data-hf-id="hf-0z95" class="val">1</span></div>
+            <div data-hf-id="hf-9fb9" class="cell"><span data-hf-id="hf-c96w" class="kicker">Last pitch</span><span data-hf-id="hf-orf8" class="val">FC · 95.0</span></div>
+            <div data-hf-id="hf-9tma" class="cell"><span data-hf-id="hf-5xat" class="kicker">Pitcher pitches</span><span data-hf-id="hf-zmms" class="val gold">79</span></div>
+          </div>
+          <p data-hf-id="hf-rmj9" id="s1-hook" class="display">The pitch hasn’t been thrown yet.</p>
+        </div>
+      </section>
+
+      <!-- ── Scene 2: THE PREDICTION - both live pitch panels ─────────── -->
+      <section data-hf-id="hf-evjq" id="s2" class="clip" data-start="4.30" data-duration="7.35" data-track-index="1">
+        <div data-hf-id="hf-0nmf" class="scene" id="s2-in">
+          <div data-hf-id="hf-nymi" id="s2-cols">
+            <div data-hf-id="hf-ug0w" id="s2-left">
+              <div data-hf-id="hf-x494" class="phead plate" id="s2l-head">
+                <span data-hf-id="hf-j32k" class="t">Next pitch</span><span data-hf-id="hf-h6e7" class="tag">PRE-PITCH HEAD</span>
+              </div>
+              <div data-hf-id="hf-kfng" id="s2l-panel" class="panel">
+                <div data-hf-id="hf-by0g" class="prow" id="pr0"><span data-hf-id="hf-4c81" class="lab" id="pl0">Ball</span><span data-hf-id="hf-ms6a" class="track"><span data-hf-id="hf-djii" class="fill" id="pf0"></span></span><span data-hf-id="hf-euq4" class="val" id="pv0">34.2%</span></div>
+                <div data-hf-id="hf-cpo9" class="prow" id="pr1"><span data-hf-id="hf-dwvu" class="lab" id="pl1">Called strike</span><span data-hf-id="hf-en7q" class="track"><span data-hf-id="hf-jp8b" class="fill" id="pf1"></span></span><span data-hf-id="hf-kb15" class="val" id="pv1">18.6%</span></div>
+                <div data-hf-id="hf-gnsa" class="prow" id="pr2"><span data-hf-id="hf-479e" class="lab" id="pl2">Swinging strike</span><span data-hf-id="hf-f1ir" class="track"><span data-hf-id="hf-8tqo" class="fill" id="pf2"></span></span><span data-hf-id="hf-pioy" class="val" id="pv2">11.9%</span></div>
+                <div data-hf-id="hf-klwb" class="prow" id="pr3"><span data-hf-id="hf-w3zh" class="lab" id="pl3">Foul</span><span data-hf-id="hf-ffts" class="track"><span data-hf-id="hf-9leh" class="fill" id="pf3"></span></span><span data-hf-id="hf-ewjx" class="val" id="pv3">21.4%</span></div>
+                <div data-hf-id="hf-x4es" class="prow" id="pr4"><span data-hf-id="hf-qzrn" class="lab" id="pl4">In play</span><span data-hf-id="hf-cnol" class="track"><span data-hf-id="hf-0xim" class="fill" id="pf4"></span></span><span data-hf-id="hf-t8ry" class="val" id="pv4">13.9%</span></div>
+              </div>
+              <div data-hf-id="hf-xayg" class="pcap" id="s2l-cap">
+                <span data-hf-id="hf-3h3t" class="model">pitch_outcome_pre v2</span>
+                <span data-hf-id="hf-44zl" class="claim">Calibrated estimate - <b data-hf-id="hf-pkh0">not an accuracy claim.</b></span>
+              </div>
+            </div>
+            <div data-hf-id="hf-0sr3" id="s2-right">
+              <div data-hf-id="hf-rrfu" class="phead plate" id="s2r-head">
+                <span data-hf-id="hf-ucjp" class="t">Pitch type</span><span data-hf-id="hf-ox5o" class="tag">CALIBRATED PRIOR</span>
+              </div>
+              <div data-hf-id="hf-z07q" id="s2r-panel" class="panel">
+                <div data-hf-id="hf-yfxs" class="trow" id="tr0"><span data-hf-id="hf-y8l7" class="lab">Four-seam</span><span data-hf-id="hf-d1zm" class="track"><span data-hf-id="hf-bas6" class="fill" id="tf0"></span></span><span data-hf-id="hf-6e9r" class="val">31.8%</span></div>
+                <div data-hf-id="hf-z7ll" class="trow" id="tr1"><span data-hf-id="hf-nwsf" class="lab">Slider</span><span data-hf-id="hf-dgan" class="track"><span data-hf-id="hf-hghz" class="fill" id="tf1"></span></span><span data-hf-id="hf-1j4t" class="val">20.4%</span></div>
+                <div data-hf-id="hf-5dbe" class="trow" id="tr2"><span data-hf-id="hf-xgka" class="lab">Sinker</span><span data-hf-id="hf-dulo" class="track"><span data-hf-id="hf-6l0c" class="fill" id="tf2"></span></span><span data-hf-id="hf-olgo" class="val">15.1%</span></div>
+                <div data-hf-id="hf-9bff" class="trow" id="tr3"><span data-hf-id="hf-xtfv" class="lab">Changeup</span><span data-hf-id="hf-b2gh" class="track"><span data-hf-id="hf-7co5" class="fill" id="tf3"></span></span><span data-hf-id="hf-jm7g" class="val">12.6%</span></div>
+                <div data-hf-id="hf-ltxw" class="trow" id="tr4"><span data-hf-id="hf-84dg" class="lab">Curveball</span><span data-hf-id="hf-bgri" class="track"><span data-hf-id="hf-q4du" class="fill" id="tf4"></span></span><span data-hf-id="hf-ozo1" class="val">9.7%</span></div>
+                <div data-hf-id="hf-mllp" class="trow" id="tr5"><span data-hf-id="hf-ytid" class="lab">Cutter</span><span data-hf-id="hf-9pmq" class="track"><span data-hf-id="hf-u2hv" class="fill" id="tf5"></span></span><span data-hf-id="hf-4owo" class="val">6.9%</span></div>
+                <div data-hf-id="hf-qjpq" class="trow" id="tr6"><span data-hf-id="hf-hlpc" class="lab">Other</span><span data-hf-id="hf-9bbp" class="track"><span data-hf-id="hf-lem0" class="fill" id="tf6"></span></span><span data-hf-id="hf-3pd5" class="val">3.5%</span></div>
+              </div>
+              <div data-hf-id="hf-u75i" class="pcap" id="s2r-cap">
+                <span data-hf-id="hf-guea" class="model">pitch_type_pre v1</span>
+                <span data-hf-id="hf-d79j" class="claim">Calibrated prior - <b data-hf-id="hf-0yhd">not a top-1 prediction.</b></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Scene 3: THE WRAPPER ──────────────────────────────────────────── -->
+      <section data-hf-id="hf-pp95" id="s3" class="clip" data-start="11.30" data-duration="4.65" data-track-index="2">
+        <div data-hf-id="hf-6wek" class="scene" id="s3-in">
+          <p data-hf-id="hf-2kk6" id="s3-head" class="display">Written from scratch in Java. <span data-hf-id="hf-zbj7">No MLflow.</span></p>
+          <div data-hf-id="hf-mk63" id="s3-chain">
+            <div data-hf-id="hf-52er" class="chip plate" id="ch0"><span data-hf-id="hf-nmw7" class="cl">REGISTRY</span></div>
+            <span data-hf-id="hf-52v8" class="link" id="lk0"></span>
+            <div data-hf-id="hf-14aq" class="chip plate" id="ch1"><span data-hf-id="hf-zs0b" class="cl">SHADOW A/B ROUTER</span></div>
+            <span data-hf-id="hf-5uj1" class="link" id="lk1"></span>
+            <div data-hf-id="hf-x66p" class="chip plate" id="ch2"><span data-hf-id="hf-zw0b" class="cl">DRIFT</span></div>
+            <span data-hf-id="hf-9sn2" class="link" id="lk2"></span>
+            <div data-hf-id="hf-weiw" class="chip plate" id="ch3"><span data-hf-id="hf-5tie" class="cl">RETRAIN QUEUE</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Scene 4: HELD BACK ────────────────────────────────────────────── -->
+      <section data-hf-id="hf-mcla" id="s4" class="clip" data-start="15.60" data-duration="4.55" data-track-index="3">
+        <div data-hf-id="hf-bot1" class="scene" id="s4-in">
+          <div data-hf-id="hf-i26k" id="s4-reg" class="panel">
+            <div data-hf-id="hf-xhto" class="hrow">
+              <span data-hf-id="hf-twxo" class="h">MODEL</span><span data-hf-id="hf-81m3" class="h">STAGE</span><span data-hf-id="hf-wc1v" class="h">REGISTERED</span><span data-hf-id="hf-zajj" class="h"></span>
+            </div>
+            <div data-hf-id="hf-zmao" class="drow">
+              <span data-hf-id="hf-24kx" class="name">battedball_outcome v3</span>
+              <span data-hf-id="hf-7q9d" class="cellmono" id="s4-stage">PENDING</span>
+              <span data-hf-id="hf-hsix" class="cellmono">2026-07-15</span>
+              <span data-hf-id="hf-gkqk" class="cellmono"></span>
+            </div>
+            <span data-hf-id="hf-q1aq" id="s4-stamp">NOT PROMOTED</span>
+          </div>
+          <div data-hf-id="hf-dk08" id="s4-metrics">
+            <div data-hf-id="hf-bt5f" class="cell"><span data-hf-id="hf-zat5" class="kicker">Unattended retrain</span><span data-hf-id="hf-jdrm" class="val"><span data-hf-id="hf-3tku" id="s4-num">0.0</span> <span data-hf-id="hf-oj7q" class="u">MIN</span></span></div>
+            <div data-hf-id="hf-s6ev" class="cell" id="s4-int"><span data-hf-id="hf-8taw" class="kicker">Interventions</span><span data-hf-id="hf-1dk6" class="val">0</span></div>
+          </div>
+          <p data-hf-id="hf-904n" id="s4-line" class="display">Promotion stays human-gated.</p>
+        </div>
+      </section>
+
+      <!-- ── Scene 5: LOCKUP ───────────────────────────────────────────────── -->
+      <section data-hf-id="hf-hv1o" id="s5" class="clip" data-start="19.80" data-duration="5.20" data-track-index="4">
+        <div data-hf-id="hf-tf0i" class="scene" id="s5-in">
+          <p data-hf-id="hf-h7ok" id="s5-strip" class="mono">p99 34 ms<i data-hf-id="hf-orwx">·</i>300 req/s<i data-hf-id="hf-vd8l">·</i>2,400+ tests<i data-hf-id="hf-wk5o">·</i>193 decisions<i data-hf-id="hf-w5un">·</i>6 postmortems</p>
+          <div data-hf-id="hf-n5qf" id="s5-lock">
+            <div data-hf-id="hf-gkvx" id="s5-glow"></div>
+            <div data-hf-id="hf-le2p" id="s5-mark"><span data-hf-id="hf-coyi" class="tick"></span><span data-hf-id="hf-lhfk" class="wm">The Bullpen</span></div>
+            <span data-hf-id="hf-veip" id="s5-rule"></span>
+            <p data-hf-id="hf-rtwb" id="s5-tag1">The wrapper is the project;</p>
+            <p data-hf-id="hf-rnug" id="s5-tag2">the models are the excuse.</p>
+            <p data-hf-id="hf-fl94" id="s5-url">thebullpen.net</p>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ── Audio: music bed on track 10, SFX 11+ ──────────────────── -->
+    <audio data-hf-id="hf-2qri" id="music-bed" src="assets/music/happy-beats-business-moves-vol-12-by-ende-dot-app.mp3" data-start="0" data-duration="25" data-track-index="10" data-volume="1" data-automation="{&quot;version&quot;:1,&quot;lanes&quot;:[{&quot;target&quot;:&quot;volume&quot;,&quot;points&quot;:[{&quot;t&quot;:0,&quot;v&quot;:0},{&quot;t&quot;:0.5,&quot;v&quot;:0.30},{&quot;t&quot;:23.8,&quot;v&quot;:0.30},{&quot;t&quot;:25,&quot;v&quot;:0}]}]}"></audio>
+
+    <audio data-hf-id="hf-iqjj" id="sfx-bug" src="assets/sfx/impact/impactSoft_medium_000.ogg" data-start="0.20" data-track-index="11" data-volume="0.50"></audio>
+    <audio data-hf-id="hf-vqer" id="sfx-count" src="assets/sfx/impact/impactSoft_medium_002.ogg" data-start="0.98" data-track-index="12" data-volume="0.55"></audio>
+    <audio data-hf-id="hf-0gt0" id="sfx-row" src="assets/sfx/interface/drop_001.ogg" data-start="4.83" data-track-index="13" data-volume="0.42"></audio>
+    <audio data-hf-id="hf-3m6d" id="sfx-gold" src="assets/sfx/impact/impactSoft_medium_003.ogg" data-start="6.48" data-track-index="14" data-volume="0.58"></audio>
+    <audio data-hf-id="hf-qoxw" id="sfx-prior" src="assets/sfx/interface/drop_002.ogg" data-start="7.16" data-track-index="15" data-volume="0.40"></audio>
+    <audio data-hf-id="hf-cx8a" id="sfx-chip1" src="assets/sfx/interface/drop_002.ogg" data-start="11.44" data-track-index="16" data-volume="0.40"></audio>
+    <audio data-hf-id="hf-o1n4" id="sfx-chip4" src="assets/sfx/impact/impactSoft_medium_004.ogg" data-start="14.71" data-track-index="17" data-volume="0.52"></audio>
+    <audio data-hf-id="hf-8csv" id="sfx-tick1" src="assets/sfx/casino/chip-lay-1.ogg" data-start="16.10" data-track-index="18" data-volume="0.32"></audio>
+    <audio data-hf-id="hf-va9y" id="sfx-tick2" src="assets/sfx/casino/chip-lay-1.ogg" data-start="16.95" data-track-index="19" data-volume="0.32"></audio>
+    <audio data-hf-id="hf-0ryz" id="sfx-stamp" src="assets/sfx/impact/impactSoft_medium_001.ogg" data-start="18.46" data-track-index="20" data-volume="0.68"></audio>
+    <audio data-hf-id="hf-c0u3" id="sfx-lock" src="assets/sfx/interface/bong_001.ogg" data-start="22.12" data-track-index="21" data-volume="0.60"></audio>
+
+    <script>
+      // Per-frame music energy for the subtle audio-reactive layer (pre-extracted,
+      // trimmed to this render's window - no runtime analysis, no fetch).
+      var AUDIO_REACTIVE = {"fps":30,"totalFrames":750,"rms":[0.418,0.411,0.394,0.379,0.35,0.326,0.297,0.26,0.217,0.216,0.21,0.199,0.169,0.199,0.221,0.249,0.237,0.223,0.216,0.209,0.148,0.128,0.12,0.106,0.101,0.124,0.172,0.208,0.215,0.21,0.205,0.195,0.167,0.121,0.142,0.149,0.154,0.169,0.181,0.186,0.189,0.14,0.152,0.162,0.174,0.198,0.249,0.291,0.319,0.306,0.3,0.294,0.281,0.225,0.21,0.215,0.213,0.207,0.2,0.189,0.193,0.172,0.177,0.179,0.178,0.179,0.197,0.236,0.259,0.243,0.245,0.254,0.261,0.244,0.23,0.234,0.231,0.212,0.214,0.238,0.265,0.27,0.253,0.234,0.222,0.187,0.131,0.146,0.172,0.203,0.236,0.277,0.307,0.336,0.303,0.257,0.207,0.167,0.119,0.123,0.136,0.148,0.163,0.183,0.196,0.203,0.171,0.167,0.175,0.182,0.185,0.225,0.263,0.294,0.287,0.273,0.268,0.276,0.246,0.206,0.224,0.23,0.231,0.223,0.208,0.201,0.21,0.167,0.185,0.217,0.254,0.289,0.329,0.36,0.388,0.354,0.325,0.293,0.26,0.212,0.208,0.197,0.185,0.156,0.19,0.217,0.253,0.259,0.254,0.248,0.242,0.177,0.153,0.138,0.109,0.099,0.132,0.177,0.213,0.218,0.212,0.206,0.197,0.16,0.129,0.148,0.153,0.157,0.169,0.179,0.182,0.172,0.127,0.144,0.157,0.173,0.205,0.255,0.294,0.32,0.302,0.293,0.286,0.267,0.213,0.206,0.211,0.211,0.208,0.201,0.188,0.191,0.164,0.171,0.173,0.17,0.171,0.198,0.236,0.26,0.244,0.25,0.261,0.268,0.245,0.236,0.24,0.235,0.21,0.213,0.238,0.267,0.268,0.251,0.23,0.22,0.184,0.129,0.149,0.171,0.201,0.238,0.284,0.314,0.342,0.302,0.257,0.209,0.166,0.114,0.12,0.131,0.141,0.158,0.176,0.189,0.195,0.161,0.162,0.177,0.187,0.196,0.237,0.274,0.304,0.295,0.277,0.272,0.275,0.244,0.208,0.228,0.234,0.233,0.224,0.211,0.206,0.209,0.208,0.293,0.369,0.417,0.445,0.486,0.534,0.54,0.462,0.403,0.374,0.365,0.35,0.345,0.33,0.325,0.318,0.386,0.455,0.489,0.487,0.482,0.472,0.465,0.388,0.325,0.29,0.272,0.264,0.283,0.301,0.312,0.312,0.358,0.447,0.501,0.507,0.495,0.509,0.526,0.495,0.417,0.369,0.35,0.348,0.325,0.323,0.317,0.32,0.349,0.414,0.481,0.52,0.505,0.498,0.492,0.461,0.386,0.337,0.319,0.335,0.355,0.365,0.383,0.407,0.402,0.452,0.507,0.532,0.527,0.521,0.527,0.528,0.467,0.401,0.361,0.361,0.354,0.346,0.343,0.339,0.328,0.356,0.417,0.471,0.491,0.475,0.459,0.45,0.405,0.32,0.302,0.3,0.332,0.357,0.387,0.414,0.44,0.417,0.463,0.509,0.534,0.513,0.512,0.517,0.517,0.45,0.382,0.344,0.345,0.332,0.328,0.334,0.331,0.335,0.389,0.458,0.507,0.512,0.498,0.502,0.504,0.446,0.377,0.338,0.333,0.336,0.331,0.326,0.333,0.329,0.347,0.411,0.468,0.497,0.505,0.52,0.537,0.524,0.457,0.402,0.37,0.362,0.346,0.341,0.331,0.323,0.317,0.389,0.457,0.495,0.491,0.479,0.472,0.463,0.384,0.317,0.278,0.264,0.265,0.284,0.301,0.316,0.317,0.376,0.457,0.508,0.51,0.5,0.5,0.502,0.444,0.364,0.313,0.292,0.282,0.269,0.28,0.289,0.303,0.339,0.411,0.484,0.524,0.509,0.504,0.499,0.471,0.405,0.351,0.333,0.352,0.37,0.377,0.392,0.425,0.435,0.492,0.549,0.564,0.564,0.559,0.546,0.542,0.479,0.418,0.392,0.388,0.374,0.364,0.356,0.348,0.331,0.367,0.437,0.487,0.51,0.497,0.49,0.486,0.437,0.358,0.353,0.364,0.404,0.436,0.465,0.486,0.503,0.476,0.518,0.544,0.553,0.523,0.525,0.53,0.534,0.472,0.435,0.406,0.416,0.396,0.406,0.411,0.401,0.368,0.411,0.45,0.489,0.493,0.493,0.486,0.487,0.436,0.392,0.361,0.329,0.304,0.299,0.304,0.301,0.292,0.312,0.401,0.483,0.538,0.59,0.65,0.708,0.701,0.583,0.485,0.412,0.342,0.269,0.225,0.188,0.191,0.193,0.304,0.409,0.463,0.46,0.469,0.484,0.475,0.345,0.246,0.192,0.167,0.144,0.162,0.201,0.248,0.266,0.347,0.456,0.531,0.528,0.503,0.49,0.484,0.413,0.33,0.319,0.339,0.378,0.411,0.439,0.473,0.498,0.511,0.583,0.618,0.615,0.581,0.554,0.536,0.494,0.409,0.391,0.408,0.468,0.505,0.525,0.558,0.583,0.572,0.604,0.633,0.643,0.631,0.612,0.603,0.593,0.549,0.498,0.454,0.432,0.401,0.353,0.315,0.272,0.225,0.308,0.408,0.486,0.525,0.545,0.562,0.561,0.435,0.34,0.317,0.347,0.369,0.409,0.47,0.551,0.593,0.588,0.626,0.679,0.66,0.647,0.63,0.587,0.535,0.433,0.405,0.41,0.427,0.428,0.468,0.508,0.557,0.537,0.583,0.612,0.625,0.602,0.591,0.594,0.585,0.538,0.494,0.501,0.523,0.55,0.541,0.552,0.56,0.572,0.579,0.627,0.651,0.65,0.641,0.637,0.629,0.606,0.544,0.489,0.44,0.383,0.335,0.298,0.251,0.206,0.196,0.312,0.42,0.456,0.456,0.456,0.461,0.44,0.306,0.216,0.177,0.159,0.149,0.176,0.203,0.24,0.252,0.345,0.451,0.511,0.505,0.491,0.483,0.471,0.382,0.315,0.319,0.346,0.39,0.427,0.464,0.503,0.508,0.529,0.577,0.592,0.582,0.54,0.523,0.507,0.454,0.385,0.378,0.402,0.463,0.498,0.521,0.546,0.566,0.554,0.593,0.637,0.62,0.609,0.598,0.594,0.594,0.546,0.475,0.46,0.44,0.409,0.365,0.326,0.28,0.247,0.309,0.401,0.456,0.485,0.489,0.497,0.509,0.418,0.326,0.334,0.344,0.385,0.413,0.466,0.515,0.559,0.534],"bass":[0.276,0.284,0.266,0.245,0.184,0.117,0.058,0.02,0.009,0.005,0.006,0.005,0.004,0.004,0.005,0.005,0.005,0.006,0.006,0.004,0.003,0.002,0.004,0.006,0.007,0.007,0.008,0.007,0.005,0.005,0.005,0.004,0.002,0.002,0.002,0.003,0.003,0.003,0.003,0.003,0.003,0.003,0.005,0.008,0.008,0.007,0.008,0.009,0.007,0.007,0.007,0.006,0.003,0.003,0.002,0.003,0.004,0.004,0.004,0.004,0.001,0.0,0.001,0.002,0.003,0.003,0.004,0.007,0.009,0.008,0.009,0.011,0.008,0.005,0.005,0.006,0.004,0.003,0.003,0.005,0.005,0.005,0.005,0.005,0.003,0.001,0.001,0.004,0.032,0.08,0.127,0.166,0.183,0.157,0.11,0.064,0.027,0.008,0.007,0.008,0.008,0.008,0.008,0.009,0.01,0.011,0.011,0.012,0.014,0.015,0.012,0.011,0.011,0.007,0.005,0.005,0.005,0.003,0.003,0.002,0.003,0.005,0.005,0.005,0.005,0.003,0.001,0.001,0.004,0.038,0.106,0.174,0.235,0.266,0.24,0.176,0.11,0.051,0.017,0.009,0.006,0.006,0.004,0.003,0.004,0.006,0.005,0.005,0.005,0.004,0.002,0.001,0.001,0.004,0.005,0.005,0.005,0.006,0.004,0.004,0.004,0.004,0.003,0.002,0.001,0.003,0.005,0.005,0.005,0.005,0.004,0.003,0.004,0.005,0.007,0.006,0.006,0.006,0.006,0.005,0.005,0.005,0.004,0.003,0.002,0.002,0.004,0.005,0.005,0.005,0.004,0.002,0.001,0.001,0.004,0.005,0.006,0.006,0.01,0.011,0.009,0.009,0.012,0.009,0.005,0.005,0.007,0.005,0.004,0.004,0.006,0.005,0.005,0.004,0.004,0.002,0.001,0.001,0.005,0.038,0.088,0.136,0.178,0.197,0.167,0.119,0.073,0.032,0.01,0.009,0.008,0.008,0.007,0.007,0.007,0.009,0.01,0.011,0.012,0.015,0.015,0.012,0.011,0.01,0.006,0.005,0.005,0.005,0.004,0.003,0.002,0.003,0.004,0.004,0.004,0.004,0.002,0.001,0.001,0.032,0.182,0.376,0.507,0.56,0.569,0.47,0.334,0.264,0.269,0.288,0.296,0.3,0.303,0.307,0.311,0.314,0.385,0.499,0.597,0.627,0.622,0.542,0.419,0.315,0.279,0.28,0.28,0.28,0.279,0.276,0.27,0.27,0.304,0.445,0.577,0.641,0.64,0.604,0.472,0.35,0.291,0.295,0.3,0.293,0.287,0.285,0.282,0.28,0.272,0.329,0.468,0.563,0.574,0.569,0.501,0.356,0.252,0.209,0.192,0.179,0.168,0.169,0.193,0.209,0.213,0.288,0.432,0.555,0.597,0.583,0.481,0.295,0.13,0.046,0.022,0.012,0.009,0.01,0.01,0.009,0.01,0.051,0.196,0.368,0.471,0.497,0.461,0.314,0.142,0.046,0.063,0.119,0.183,0.24,0.284,0.287,0.269,0.257,0.345,0.484,0.6,0.639,0.636,0.535,0.389,0.274,0.239,0.239,0.244,0.246,0.244,0.24,0.237,0.232,0.277,0.405,0.529,0.593,0.595,0.54,0.407,0.278,0.212,0.208,0.212,0.217,0.22,0.223,0.226,0.228,0.232,0.339,0.478,0.553,0.561,0.549,0.446,0.316,0.253,0.258,0.28,0.293,0.302,0.31,0.316,0.321,0.323,0.402,0.522,0.618,0.638,0.632,0.544,0.416,0.314,0.286,0.287,0.289,0.287,0.284,0.282,0.278,0.275,0.318,0.462,0.585,0.641,0.632,0.578,0.425,0.296,0.238,0.246,0.253,0.257,0.258,0.257,0.255,0.255,0.258,0.337,0.485,0.571,0.579,0.571,0.491,0.351,0.268,0.236,0.225,0.215,0.201,0.195,0.221,0.243,0.251,0.325,0.463,0.568,0.586,0.558,0.447,0.264,0.109,0.037,0.017,0.01,0.009,0.009,0.009,0.007,0.008,0.069,0.242,0.414,0.521,0.557,0.505,0.331,0.16,0.065,0.085,0.146,0.215,0.278,0.32,0.31,0.284,0.276,0.359,0.488,0.591,0.619,0.601,0.499,0.362,0.264,0.245,0.249,0.255,0.255,0.248,0.243,0.235,0.207,0.203,0.226,0.24,0.265,0.298,0.277,0.217,0.16,0.097,0.043,0.021,0.014,0.011,0.009,0.008,0.007,0.069,0.235,0.434,0.585,0.697,0.75,0.686,0.544,0.41,0.3,0.184,0.081,0.023,0.006,0.004,0.004,0.024,0.178,0.362,0.509,0.569,0.558,0.405,0.221,0.075,0.02,0.016,0.014,0.014,0.014,0.008,0.004,0.008,0.108,0.294,0.47,0.548,0.559,0.459,0.274,0.098,0.035,0.075,0.136,0.2,0.262,0.31,0.323,0.331,0.341,0.443,0.556,0.598,0.564,0.528,0.423,0.307,0.263,0.293,0.314,0.317,0.317,0.298,0.27,0.252,0.237,0.299,0.426,0.524,0.548,0.547,0.472,0.35,0.267,0.249,0.228,0.183,0.133,0.081,0.035,0.011,0.009,0.118,0.309,0.498,0.594,0.614,0.506,0.315,0.124,0.058,0.144,0.25,0.348,0.446,0.516,0.504,0.491,0.503,0.583,0.676,0.729,0.729,0.685,0.539,0.355,0.219,0.204,0.23,0.287,0.368,0.445,0.462,0.47,0.472,0.511,0.586,0.636,0.628,0.593,0.53,0.436,0.366,0.343,0.343,0.332,0.311,0.296,0.294,0.313,0.336,0.396,0.516,0.624,0.679,0.686,0.659,0.565,0.483,0.45,0.438,0.391,0.315,0.225,0.129,0.056,0.019,0.033,0.198,0.387,0.518,0.57,0.549,0.383,0.193,0.062,0.017,0.016,0.015,0.015,0.015,0.009,0.005,0.01,0.125,0.313,0.48,0.553,0.56,0.446,0.258,0.091,0.05,0.117,0.201,0.282,0.363,0.411,0.411,0.407,0.41,0.488,0.577,0.593,0.548,0.507,0.404,0.287,0.245,0.265,0.275,0.271,0.269,0.249,0.233,0.219,0.22,0.328,0.478,0.565,0.585,0.568,0.453,0.314,0.236,0.221,0.207,0.169,0.124,0.076,0.032,0.01,0.007,0.104,0.28,0.445,0.526,0.541,0.447,0.273,0.108,0.066,0.147,0.234,0.317,0.403,0.455,0.443,0.439]};
+    </script>
+    <script>
+      document.fonts.ready.then(function () {
+        var tl = gsap.timeline({ paused: true });
+        var EASE = "power3.out";
+
+        // ── Pre-states CSS cannot express (kept off CSS transform to avoid the
+        //    gsap/css transform conflict) ─────────────────────────────────────
+        var OUTCOME = [0.342, 0.186, 0.119, 0.214, 0.139];              // pitch_outcome_pre, canonical class order
+        var PTYPE   = [0.318, 0.204, 0.151, 0.126, 0.097, 0.069, 0.035]; // pitch_type_pre, ranked desc
+        var i;
+        for (i = 0; i < OUTCOME.length; i++) tl.set("#pf" + i, { scaleX: 0 }, 0);
+        for (i = 0; i < PTYPE.length; i++)   tl.set("#tf" + i, { scaleX: 0 }, 0);
+        tl.set(["#lk0", "#lk1", "#lk2"], { scaleX: 0 }, 0);
+        tl.set("#s5-rule", { scaleX: 0 }, 0);
+
+        // ══ Scene 1 - HOOK (0.00 -> 4.30, clip holds to 4.65) ═══════════════
+        tl.fromTo("#s1-bug",   { x: -70, opacity: 0 }, { x: 0, opacity: 1, duration: 0.45, ease: EASE }, 0.20);
+        tl.fromTo("#s1-count", { y: 34, opacity: 0 },  { y: 0, opacity: 1, duration: 0.45, ease: EASE }, 0.95);
+        tl.fromTo("#s1-count .cell", { opacity: 0 }, { opacity: 1, duration: 0.30, stagger: 0.07, ease: "power2.out" }, 1.10);
+        tl.to("#s1-dot", { opacity: 0.32, duration: 0.5, yoyo: true, repeat: 3, ease: "sine.inOut" }, 1.20);
+        tl.fromTo("#s1-hook",  { y: 26, opacity: 0 }, { y: 0, opacity: 1, duration: 0.40, ease: EASE }, 2.05);
+        tl.to("#s1-in", { opacity: 0, duration: 0.35, ease: "power1.inOut" }, 4.30);
+
+        // ══ Scene 2 - BOTH PITCH PANELS (4.30 -> 11.30, clip holds to 11.65) ═
+        tl.fromTo("#s2-in",     { opacity: 0 }, { opacity: 1, duration: 0.35, ease: "power1.inOut" }, 4.30);
+        // Left: the pre-pitch outcome head.
+        tl.fromTo("#s2l-head",  { x: -46, opacity: 0 }, { x: 0, opacity: 1, duration: 0.40, ease: EASE }, 4.35);
+        tl.fromTo("#s2l-panel", { y: 24, opacity: 0 },  { y: 0, opacity: 1, duration: 0.40, ease: EASE }, 4.50);
+        for (i = 0; i < 5; i++) {
+          var ot = 4.85 + i * 0.28;
+          tl.fromTo("#pr" + i, { x: -22, opacity: 0 }, { x: 0, opacity: 1, duration: 0.32, ease: EASE }, ot);
+          tl.fromTo("#pf" + i, { scaleX: 0 }, { scaleX: OUTCOME[i], duration: 0.55, ease: "power2.out" }, ot + 0.04);
+        }
+        // beat-locked: 6.56s - the outcome head's argmax IS a meaningful read, so it
+        // resolves gold. This is the ONLY highlighted row in the video, on purpose.
+        tl.to("#pf0", { backgroundColor: "#f2a900", duration: 0.30, ease: "power2.out" }, 6.52);
+        tl.to("#pv0", { color: "#f2a900", duration: 0.30, ease: "power2.out" }, 6.52);
+        tl.to("#pl0", { color: "#f4f6fa", duration: 0.30, ease: "power2.out" }, 6.52);
+        tl.set("#pl0", { fontWeight: 700 }, 6.58);
+        tl.set("#pv0", { fontWeight: 700 }, 6.58);
+        tl.fromTo("#s2l-cap", { y: 16, opacity: 0 }, { y: 0, opacity: 1, duration: 0.38, ease: EASE }, 6.90);
+        // Right: the pitch-type PRIOR. Rows arrive ranked and stay uniformly styled -
+        // decision [183] forbids any argmax emphasis here, so nothing ever turns gold.
+        tl.fromTo("#s2r-head",  { x: -40, opacity: 0 }, { x: 0, opacity: 1, duration: 0.40, ease: EASE }, 7.05);
+        tl.fromTo("#s2r-panel", { y: 22, opacity: 0 },  { y: 0, opacity: 1, duration: 0.40, ease: EASE }, 7.18);
+        for (i = 0; i < 7; i++) {                                        // quick set, then a long hold to read
+          var tt = 7.60 + i * 0.14;
+          tl.fromTo("#tr" + i, { x: -16, opacity: 0 }, { x: 0, opacity: 1, duration: 0.26, ease: EASE }, tt);
+          tl.fromTo("#tf" + i, { scaleX: 0 }, { scaleX: PTYPE[i], duration: 0.45, ease: "power2.out" }, tt + 0.03);
+        }
+        // beat-locked: 8.74s (strong cue) - the honesty caption lands on the strongest
+        // beat in the window instead of a highlighted row.
+        tl.fromTo("#s2r-cap", { y: 16, opacity: 0 }, { y: 0, opacity: 1, duration: 0.40, ease: EASE }, 8.74);
+        tl.to("#s2-in", { opacity: 0, duration: 0.35, ease: "power1.inOut" }, 11.30);
+
+        // ══ Scene 3 - THE WRAPPER (11.30 -> 15.60, clip holds to 15.95) ═════
+        tl.fromTo("#s3-in",   { opacity: 0 }, { opacity: 1, duration: 0.35, ease: "power1.inOut" }, 11.30);
+        tl.fromTo("#s3-head", { y: 22, opacity: 0 }, { y: 0, opacity: 1, duration: 0.45, ease: EASE }, 11.50);
+        // beat-grid: chip 1 at 11.46s, chip 2 at 12.55s, chip 3 at 13.64s, chip 4 at 14.73s
+        var CHIP_T = [11.46, 12.55, 13.64, 14.73];
+        for (i = 0; i < 4; i++) {
+          tl.fromTo("#ch" + i, { y: 20, opacity: 0 }, { y: 0, opacity: 1, duration: 0.30, ease: EASE }, CHIP_T[i]);
+          if (i > 0) tl.fromTo("#lk" + (i - 1), { scaleX: 0 }, { scaleX: 1, duration: 0.26, ease: "power2.inOut" }, CHIP_T[i] - 0.24);
+        }
+        tl.to("#s3-in", { opacity: 0, duration: 0.35, ease: "power1.inOut" }, 15.60);
+
+        // ══ Scene 4 - HELD BACK (15.60 -> 19.80, clip holds to 20.15) ═══════
+        tl.fromTo("#s4-in",  { opacity: 0 }, { opacity: 1, duration: 0.35, ease: "power1.inOut" }, 15.60);
+        tl.fromTo("#s4-reg", { y: 24, opacity: 0 }, { y: 0, opacity: 1, duration: 0.40, ease: EASE }, 15.70);
+        tl.set("#s4-stamp", { opacity: 0 }, 0);
+        tl.fromTo("#s4-metrics", { y: 18, opacity: 0 }, { y: 0, opacity: 1, duration: 0.32, ease: EASE }, 15.92);
+        tl.set("#s4-int", { opacity: 0 }, 0);
+        var counter = { v: 0 };
+        var numEl = document.getElementById("s4-num");
+        tl.to(counter, {                                                 // deterministic: driven by timeline progress
+          v: 96.8, duration: 1.25, ease: "power2.out",
+          onUpdate: function () { numEl.textContent = counter.v.toFixed(1); }
+        }, 16.05);
+        tl.fromTo("#s4-int", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.30, ease: EASE }, 17.32);
+        tl.fromTo("#s4-line", { y: 20, opacity: 0 }, { y: 0, opacity: 1, duration: 0.40, ease: EASE }, 17.60);
+        // beat-locked: 18.56s (strong cue) - the stage resolves and the decision lands
+        tl.call(function () { document.getElementById("s4-stage").textContent = "CANDIDATE"; }, [], 18.50);
+        tl.to("#s4-stage", { color: "#f2a900", duration: 0.25, ease: "power2.out" }, 18.50);
+        tl.fromTo("#s4-stamp", { opacity: 0, scale: 1.26, rotation: -16 },
+                               { opacity: 1, scale: 1, rotation: -7, duration: 0.35, ease: "back.out(1.6)" }, 18.50);
+        tl.to("#s4-in", { opacity: 0, duration: 0.35, ease: "power1.inOut" }, 19.80);
+
+        // ══ Scene 5 - LOCKUP (19.80 -> 25.00) ═══════════════════════════════
+        tl.fromTo("#s5-in",    { opacity: 0 }, { opacity: 1, duration: 0.35, ease: "power1.inOut" }, 19.80);
+        tl.fromTo("#s5-strip", { y: 14, opacity: 0 }, { y: 0, opacity: 1, duration: 0.40, ease: EASE }, 19.95);
+        tl.set("#s5-lock", { opacity: 0 }, 0);
+        tl.to("#s5-strip", { opacity: 0, duration: 0.30, ease: "power1.inOut" }, 21.95);
+        tl.set("#s5-lock", { opacity: 1 }, 22.08);
+        tl.fromTo("#s5-mark", { scale: 0.955, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.45, ease: EASE }, 22.15);
+        tl.fromTo("#s5-rule", { scaleX: 0 }, { scaleX: 1, duration: 0.55, ease: "power2.inOut" }, 22.45);
+        tl.fromTo("#s5-tag1", { y: 16, opacity: 0 }, { y: 0, opacity: 1, duration: 0.36, ease: EASE }, 22.55);
+        // beat-locked: 22.93s (strong cue) - the project's own line settles
+        tl.fromTo("#s5-tag2", { y: 16, opacity: 0 }, { y: 0, opacity: 1, duration: 0.36, ease: EASE }, 22.93);
+        tl.fromTo("#s5-url",  { opacity: 0 }, { opacity: 1, duration: 0.35, ease: "power1.out" }, 23.55);
+
+        // ══ Audio-reactive: subtle only - field depth breathes with RMS, the gold
+        //    lockup gains presence on the low band. No visualiser graphics. ══════
+        if (AUDIO_REACTIVE && AUDIO_REACTIVE.rms) {
+          var glow = document.getElementById("bg-glow");
+          var lockGlow = document.getElementById("s5-glow");
+          var N = AUDIO_REACTIVE.totalFrames;
+          for (var f = 0; f < N; f++) {
+            tl.call(
+              (function (rms, bass) {
+                return function () {
+                  glow.style.opacity = (0.38 + rms * 0.22).toFixed(3);
+                  glow.style.transform = "scale(" + (1 + rms * 0.035).toFixed(4) + ")";
+                  lockGlow.style.opacity = (bass * 0.30).toFixed(3);
+                };
+              })(AUDIO_REACTIVE.rms[f], AUDIO_REACTIVE.bass[f]),
+              [],
+              f / AUDIO_REACTIVE.fps
+            );
+          }
+        }
+
+        window.__timelines["main"] = tl;
+        if (window.__hfForceTimelineRebind) window.__hfForceTimelineRebind();
+      });
+    </script>
+  </body>
+</html>
