@@ -1,0 +1,5 @@
+The Bullpen is a self-hosted baseball analytics platform where the real project is the ML systems wrapper: model registry, shadow A/B router, drift detection and a retraining queue, all hand-written in Java around four calibrated models.
+
+It scores the next pitch before it's thrown and tells you that's a calibrated estimate, not an accuracy claim. A retrain finished unattended in 96.8 minutes and still wasn't promoted, because promotion stays human-gated.
+
+thebullpen.net

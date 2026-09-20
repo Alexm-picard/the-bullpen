@@ -1,0 +1,13 @@
+# Vendored media is deliberately NOT committed - see composition/README.md.
+#  - the music track's license terms are unverified upstream, so this public
+#    repo does not redistribute the .mp3 itself
+#  - the SFX are CC0 (Kenney.nl) but come from the /brag skill, not from here
+#  - the fonts are byte-identical copies of frontend/public/fonts/*.woff2
+composition/assets/
+
+# Build artifacts from `npx hyperframes snapshot`.
+composition/snapshots/
+
+# Studio preview caches.
+composition/.thumbnails/
+composition/.waveform-cache/
