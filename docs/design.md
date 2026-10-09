@@ -1015,6 +1015,14 @@ metric)` function (§8); pure CSS/React, no chart library.
 
 ### Visual identity (LOCKED — re-pitched 2026-05-29)
 
+> **Superseded direction (2026-10-09, decision [195]).** The broadcast /
+> scouting-report identity described in this section is being replaced by an
+> editorial "Front Page" identity (Source Serif 4 display, Inter body,
+> JetBrains Mono figures, warm paper ground by default with a designed dark
+> variant, one scorecard-red accent). Migration is in progress, home first;
+> this section will be rewritten as the implementation lands. See ADR-0017's
+> 2026-10-09 revision.
+
 **Scouting report / broadcast graphics.** The interface looks like a
 printed MLB advance-scouting packet crossed with a broadcast lower-third:
 dense conditionally-formatted stat sheets, field and zone heatmaps, 20–80
@@ -1363,6 +1371,11 @@ would reduce a flagship subsystem to "an integration."
 of WebSockets isn't justified by the polling-cadence-equivalent UX.
 
 ### Editorial-data visual identity (the original §8 direction)
+
+> **Note (2026-10-09):** decision [195] knowingly returns partway to an
+> editorial direction (the "Front Page" identity), chosen for voice after the
+> [160] craft pass read as too little change. The reasoning below is kept as
+> the historical record of why it was set aside in 2026-05.
 
 **Rejected** and replaced by the scouting-report identity (§8). The
 editorial-data direction — Observable structure + Pudding ambition +
