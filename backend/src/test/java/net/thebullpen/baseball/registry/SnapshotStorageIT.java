@@ -55,11 +55,15 @@ import software.amazon.awssdk.services.s3.model.CreateBucketRequest;
             + " or on a fixed Docker host.")
 class SnapshotStorageIT {
 
+  // MinIO withdrew its public images (quay.io/minio and Docker Hub minio/minio both 401/404 as of
+  // 2026-10-09), which red every PR's backend-test. Chainguard's build of the same server is
+  // public;
+  // pinned by digest (RELEASE.2026-09-22T19-25-18Z) because Chainguard only publishes :latest.
   @Container
   static final MinIOContainer MINIO =
       new MinIOContainer(
               DockerImageName.parse(
-                      "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z.hotfix.7aa24e772")
+                      "chainguard/minio@sha256:6476f81b9739912fa9f50ceae2bb049a30336527cccd24beccfbeb4145f8f696")
                   .asCompatibleSubstituteFor("minio/minio"))
           .withUserName("itadmin")
           .withPassword("it-password");
