@@ -1,0 +1,11 @@
+# Trivy exceptions. Every entry needs: the CVE, why it is not reachable here, and an expiry
+# (exp:YYYY-MM-DD) after which Trivy reports it again so the exception gets re-justified.
+
+# Spring Framework 6.2.x (spring-webmvc 6.2.19, via Spring Boot 3.5.16). No open-source 6.2.x fix
+# exists: the only fixed release is 7.0.9 (Spring Boot 4), and Spring Boot 3.x is a locked choice.
+# Neither is reachable in this backend (verified 2026-10-09: no XsltView, no SseEmitter / event
+# streams, no view templates - the API is JSON over Spring MVC, and polling, not SSE, is locked).
+#   CVE-2026-47884: RCE/SSRF via XsltView with a "/**" mapping that renders views.
+#   CVE-2026-47890: stream corruption in SSE with view fragments.
+CVE-2026-47884 exp:2027-01-09
+CVE-2026-47890 exp:2027-01-09

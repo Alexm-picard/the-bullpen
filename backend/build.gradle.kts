@@ -60,6 +60,11 @@ extra["netty.version"] = "4.1.137.Final"
 // Same BOM-property idiom as netty.
 extra["tomcat.version"] = "10.1.59"
 
+// Security override: Boot 3.5.16 manages Jackson at 2.21.4, which carries CVE-2026-89407 /
+// CVE-2026-89425 (jackson-core) and CVE-2026-68497 / CVE-2026-91776 / CVE-2026-91777
+// (jackson-databind), all HIGH. 2.21.7 is the fixed patch on the same minor. Same BOM idiom.
+extra["jackson-bom.version"] = "2.21.7"
+
 // Security override: clickhouse-jdbc 0.9.8 pulls httpcore5 5.3.x transitively, which carries
 // CVE-2026-54399 + CVE-2026-54428 (HIGH). httpclient5 5.4.3 (declared above) depends on
 // httpcore5 5.4.3, but the CH driver's 5.3.x wins Gradle's resolution. Force all httpcore5
@@ -70,6 +75,12 @@ configurations.all {
             && requested.name.startsWith("httpcore5")) {
             useVersion("5.4.3")
             because("CVE-2026-54399 / CVE-2026-54428 fixed in 5.4.3")
+        }
+        // lz4-java arrives transitively (ClickHouse client compression) at 1.10.4, which carries
+        // CVE-2026-106451 (HIGH). 1.11.4 is the fix, same group/artifact.
+        if (requested.group == "at.yawk.lz4" && requested.name == "lz4-java") {
+            useVersion("1.11.4")
+            because("CVE-2026-106451 fixed in 1.11.4")
         }
     }
 }
