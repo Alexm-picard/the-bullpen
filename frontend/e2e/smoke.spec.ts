@@ -24,9 +24,9 @@ test("fixture pages render via header nav without crashing", async ({
   const errors = trackPageErrors(page);
   await page.goto("/");
   const header = page.locator("header");
-  for (const link of ["parks", "ops", "about", "games"]) {
+  for (const link of ["Parks", "Ops", "About", "Games"]) {
     await header.getByRole("link", { name: link, exact: true }).click();
-    await expect(page).toHaveURL(new RegExp(`/${link}$`));
+    await expect(page).toHaveURL(new RegExp(`/${link.toLowerCase()}$`));
     await expect(page.locator("h1").first()).toBeVisible();
   }
   expect(errors, "uncaught errors during nav").toEqual([]);
@@ -162,12 +162,23 @@ test("browser back/forward re-renders routes cleanly (BrowserRouter history)", a
   // Scoping clicks to <header> matters too - the mobile Drawer portals links with the
   // same accessible names outside the header, which would trip strict mode.
   const errors = trackPageErrors(page);
+  // Pin the front page to its offline posture so the home h1 is deterministic even when a dev
+  // backend happens to be listening on the preview's API base.
+  for (const path of ["**/v1/matchups/today", "**/v1/games/today"]) {
+    await page.route(path, (route) =>
+      route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: "{}",
+      }),
+    );
+  }
 
   await page.goto("/");
   const header = page.locator("header");
-  await header.getByRole("link", { name: "parks", exact: true }).click();
+  await header.getByRole("link", { name: "Parks", exact: true }).click();
   await expect(page).toHaveURL(/\/parks$/);
-  await header.getByRole("link", { name: "about", exact: true }).click();
+  await header.getByRole("link", { name: "About", exact: true }).click();
   await expect(page).toHaveURL(/\/about$/);
   await expect(page.locator("h1").first()).toHaveText(/about/i);
 
@@ -177,7 +188,9 @@ test("browser back/forward re-renders routes cleanly (BrowserRouter history)", a
 
   await page.goBack();
   await expect(page).toHaveURL(/localhost:\d+\/$/);
-  await expect(page.locator("h1").first()).toHaveText(/slate/i);
+  // No backend behind the preview server: the front page settles on the labelled showcase slate,
+  // whose featured matchup heads the page ([195]).
+  await expect(page.locator("h1").first()).toHaveText(/Cole and Skubal/);
 
   await page.goForward();
   await expect(page).toHaveURL(/\/parks$/);

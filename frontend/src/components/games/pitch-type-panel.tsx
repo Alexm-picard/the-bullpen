@@ -38,19 +38,12 @@
 import type { PitchTypePriorResponse } from "../../api/games";
 import { GameApiError } from "../../api/games";
 import { colors, motion, typography } from "../../design/broadcast";
+import { PITCH_TYPE_CLASS_LABELS } from "../../lib/pitch-type-prior";
 
 import { DISTRIBUTION_COLUMNS, DistributionShell } from "./distribution-shell";
 
-/** The seven classes the model emits, with display names. Order here is not display order. */
-const CLASS_LABELS: Record<string, string> = {
-  FF: "Four-seam",
-  SI: "Sinker",
-  FC: "Cutter",
-  SL: "Slider",
-  CU: "Curveball",
-  CH: "Changeup",
-  OFF: "Other",
-};
+/** The seven classes the model emits - the shared label map (see lib/pitch-type-prior). */
+const CLASS_LABELS = PITCH_TYPE_CLASS_LABELS;
 
 /** Caption sentences: body face (design.md §8 - the mono never sets sentences). */
 const caption: React.CSSProperties = {

@@ -5,4 +5,4 @@ type Theme = "light" | "dark";
 export const ThemeContext = createContext<{
   theme: Theme;
   toggle: () => void;
-}>({ theme: "dark", toggle: () => {} });
+}>({ theme: "light", toggle: () => {} });

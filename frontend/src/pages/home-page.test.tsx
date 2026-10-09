@@ -1,8 +1,8 @@
 /**
- * Page-level smoke test for /home on the BROADCAST identity (redesign PR-4,
- * decision [160]). Narrow: the fleet strip wires live registry hooks, so we
- * assert chrome, the one-h1 rule, the fixture sections, and the honest
- * showcase captions. Component behavior lives in the per-component tests.
+ * Static-render smoke for the FRONT PAGE ([195]). A static render leaves every query in flight, so
+ * this pins the loading-first contract (D3): one h1, no showcase flash, the colophon. The settled
+ * states (pre-game, live prior, no games, offline showcase) run against stubbed fetches in
+ * home-page.interaction.test.tsx.
  */
 import { MantineProvider } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -11,7 +11,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 
-import { colors } from "../design/broadcast";
 import { theme } from "../design/theme";
 
 import HomePage from "./home-page";
@@ -29,36 +28,34 @@ function render(node: ReactNode): string {
   );
 }
 
-describe("HomePage (broadcast)", () => {
-  it("renders the light field under broadcast chrome", () => {
+describe("HomePage (front page, loading-first)", () => {
+  it("renders on the editorial ground, not the broadcast field", () => {
     const html = render(<HomePage />);
-    expect(html.toLowerCase()).toContain(colors.field.toLowerCase());
-    expect(html.toLowerCase()).toContain(colors.chrome.toLowerCase());
+    expect(html).toContain('class="ed-page"');
+    expect(html).not.toContain("var(--bp-field)");
   });
 
-  it("renders exactly one h1 (the slate masthead)", () => {
+  it("renders exactly one h1", () => {
     const html = render(<HomePage />);
-    const matches = html.match(/<h1\b/g) ?? [];
-    expect(matches.length).toBe(1);
-    expect(html).toContain("Slate");
+    expect((html.match(/<h1\b/g) ?? []).length).toBe(1);
   });
 
-  it("renders loading-first on a cold load - never the showcase flash (D3)", () => {
-    // A static render leaves every query in-flight: the fleet strip and the matchups board must
-    // read as LOADING, and no section may claim "showcase data (backend unreachable)" yet. The
-    // settled-empty showcase fallback (with its honest captions) is unchanged and exercised by the
-    // interaction path once queries resolve empty.
+  it("never flashes showcase content while the slate is still in flight (D3)", () => {
     const html = render(<HomePage />);
-    expect(html).toContain("Matchups");
-    expect(html).toContain("Model fleet · loading");
-    expect(html).toMatch(/Loading tonight.s matchups/);
-    expect(html).toContain("LOADING");
-    expect(html).not.toContain("showcase data");
-    expect(html).not.toContain("Featured Matchup"); // no fixture flash mid-load
+    expect(html).toContain("Slate loading");
+    expect(html).toContain('aria-busy="true"');
+    expect(html).not.toContain("Showcase data");
+    expect(html).not.toContain("Skubal"); // the showcase featured matchup
   });
 
-  it("renders the chrome footer", () => {
+  it("does not put the prior above the figures before there is a live prior", () => {
     const html = render(<HomePage />);
-    expect(html).toContain("THE BULLPEN");
+    expect(html).toContain('data-live="false"');
+  });
+
+  it("renders the colophon with the build stamp", () => {
+    const html = render(<HomePage />);
+    expect(html).toContain("The Bullpen. Self-hosted, honestly scored.");
+    expect(html).toMatch(/build [^<]+/);
   });
 });

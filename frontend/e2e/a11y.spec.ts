@@ -54,3 +54,24 @@ for (const route of ROUTES) {
     ).toEqual([]);
   });
 }
+
+// [195]: the front page ships two designed editions; audit the night edition too (an OS dark
+// preference selects it on first paint, before any toggle).
+test("no critical or serious a11y violations on / (night edition)", async ({
+  page,
+}) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.goto("/");
+  await page.locator("h1").first().waitFor();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  const results = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .analyze();
+  const blocking = results.violations.filter(
+    (v) => v.impact === "critical" || v.impact === "serious",
+  );
+  expect(
+    blocking.map((v) => `${v.id} [${v.impact}] x${v.nodes.length}`),
+    "axe critical/serious violations on / (night edition)",
+  ).toEqual([]);
+});

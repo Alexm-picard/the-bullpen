@@ -7,10 +7,20 @@
       name="viewport"
       content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
     />
-    <!-- Browser chrome matches the header: --color-chrome (src/design/tokens.css), the
-         constant dark chrome in BOTH themes, so one value is right. A meta cannot read a CSS var. -->
-    <meta name="theme-color" content="#0e1b33" />
-    <meta name="color-scheme" content="dark light" />
+    <!-- Browser chrome matches the editorial header ([195]): --ed-ground from
+         src/design/editorial.css, paper by default and the night edition under an OS dark
+         preference. A meta cannot read a CSS var, so the two values are mirrored here. -->
+    <meta
+      name="theme-color"
+      content="#eceee6"
+      media="(prefers-color-scheme: light)"
+    />
+    <meta
+      name="theme-color"
+      content="#141612"
+      media="(prefers-color-scheme: dark)"
+    />
+    <meta name="color-scheme" content="light dark" />
     <!-- Fonts are self-hosted woff2 under /fonts/ (M1 task 9) - no third-party origins. -->
     <title>The Bullpen</title>
   </head>
