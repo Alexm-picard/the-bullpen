@@ -119,12 +119,14 @@ export default function AdminRoutingPage() {
         <Card withBorder padding="lg">
           <Stack>
             <TextInput
+              size="md"
               label="User"
               value={user}
               onChange={(e) => setUser(e.currentTarget.value)}
               autoComplete="username"
             />
             <PasswordInput
+              size="md"
               label="Password"
               value={password}
               onChange={(e) => setPassword(e.currentTarget.value)}
@@ -176,6 +178,7 @@ export default function AdminRoutingPage() {
       )}
 
       <Select
+        size="md"
         label="Model"
         placeholder={routing.isLoading ? "Loading…" : "Select a routed model"}
         data={(routing.data ?? []).map((r) => r.modelName)}
@@ -199,6 +202,7 @@ export default function AdminRoutingPage() {
             </Group>
 
             <TextInput
+              size="md"
               label="Reason (audit log)"
               placeholder="why this change"
               value={reason}
@@ -212,6 +216,7 @@ export default function AdminRoutingPage() {
                   Mode
                 </Text>
                 <SegmentedControl
+                  size="md"
                   fullWidth
                   value={mode}
                   onChange={(v) => setMode(v as "SHADOW" | "AB")}
@@ -219,6 +224,7 @@ export default function AdminRoutingPage() {
                 />
               </div>
               <Button
+                size="md"
                 loading={modeMut.isPending}
                 disabled={anyPending || reasonMissing || noModel}
                 onClick={() => modeMut.mutate()}
@@ -229,6 +235,7 @@ export default function AdminRoutingPage() {
 
             <Group align="flex-end" grow>
               <NumberInput
+                size="md"
                 label="Challenger traffic %"
                 min={0}
                 max={100}
@@ -236,6 +243,7 @@ export default function AdminRoutingPage() {
                 onChange={setPct}
               />
               <Button
+                size="md"
                 loading={trafficMut.isPending}
                 disabled={anyPending || reasonMissing || noModel}
                 onClick={() => trafficMut.mutate()}
@@ -246,12 +254,14 @@ export default function AdminRoutingPage() {
 
             <Group align="flex-end" grow>
               <NumberInput
+                size="md"
                 label="Challenger version id"
                 min={1}
                 value={challengerId}
                 onChange={setChallengerId}
               />
               <Button
+                size="md"
                 loading={challengerMut.isPending}
                 disabled={
                   anyPending || reasonMissing || noModel || !challengerId

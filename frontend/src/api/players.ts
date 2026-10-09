@@ -6,7 +6,7 @@
  * (player roster doesn't change mid-day). The debounce of typed input is the caller's
  * responsibility — see `<PlayerSearch />` which uses `useDebouncedValue` from Mantine.
  */
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
 import { API_BASE, ApiError } from "./base";
 
@@ -60,6 +60,9 @@ export function usePlayerSearch(q: string, limit = 10) {
     queryFn: () => searchPlayers(trimmed, limit),
     enabled: trimmed.length >= 1,
     staleTime: 60_000,
+    // Keep the previous result list up while the next keystroke's fetch is in
+    // flight (the dropdown dims it via isPlaceholderData).
+    placeholderData: keepPreviousData,
   });
 }
 

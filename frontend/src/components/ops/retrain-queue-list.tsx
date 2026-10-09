@@ -21,6 +21,12 @@ import { radii, colors, typography } from "../../design/broadcast";
 
 export type RetrainQueueListProps = {
   entries: RetrainEntry[];
+  /**
+   * When the last drift sweep ran, e.g. "19:00 ET". Optional and omitted until
+   * an endpoint actually reports it: the empty state must not print a sweep
+   * time nothing produced.
+   */
+  lastSweepAt?: string;
 };
 
 // All triggers currently share the scarlet badge — the action color in the
@@ -42,7 +48,10 @@ function statusAbbrTitle(status: RetrainStatus): string | undefined {
   return undefined;
 }
 
-export function RetrainQueueList({ entries }: RetrainQueueListProps) {
+export function RetrainQueueList({
+  entries,
+  lastSweepAt,
+}: RetrainQueueListProps) {
   return (
     <section
       style={{
@@ -76,7 +85,8 @@ export function RetrainQueueList({ entries }: RetrainQueueListProps) {
             color: colors.textMuted,
           }}
         >
-          No retrain jobs in queue · last drift sweep 19:00 ET
+          No retrain jobs in queue
+          {lastSweepAt ? ` · last drift sweep ${lastSweepAt}` : ""}
         </div>
       ) : (
         <ol

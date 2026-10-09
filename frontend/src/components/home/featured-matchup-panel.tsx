@@ -25,6 +25,7 @@ function Nameplate({ side }: { side: MatchupSide }) {
   return (
     <Link
       to={`/players/${side.playerId}`}
+      className="bp-pressable"
       style={{
         display: "flex",
         alignItems: "center",
@@ -158,15 +159,15 @@ export function FeaturedMatchupPanel({ matchup }: FeaturedMatchupPanelProps) {
         <div style={{ marginTop: 18 }}>
           <Link
             to={`/games/${matchup.gameId}`}
+            className="bp-link bp-pressable"
             style={{
+              display: "inline-block",
               fontFamily: typography.fonts.display,
               fontStyle: "italic",
               fontWeight: typography.weights.bold,
               fontSize: 14,
               letterSpacing: "0.08em",
               textTransform: "uppercase",
-              color: colors.goldInk,
-              textDecoration: "none",
             }}
           >
             Open the game &rarr;

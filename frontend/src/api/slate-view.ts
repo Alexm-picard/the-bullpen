@@ -23,6 +23,12 @@ export type SlateCard = {
   awayTeam: string;
   homeTeam: string;
   status: SlateStatus;
+  /**
+   * True for a started game that is not currently being played (DELAYED /
+   * SUSPENDED). It still sorts with the live bucket (it has scores and an
+   * inning), but the card shows the delay state instead of the on-air LIVE dot.
+   */
+  paused: boolean;
   /** Scores are null until the game has live/final state. */
   awayScore: number | null;
   homeScore: number | null;
@@ -38,11 +44,39 @@ export type SlateCard = {
   home: MatchupSide | null;
 };
 
-const LIVE_STATUSES = new Set(["IN_PROGRESS", "MID_INNING"]);
-const FINAL_STATUSES = new Set(["COMPLETED", "GAME_OVER", "FINAL"]);
+const PAUSED_STATUSES = new Set(["DELAYED", "SUSPENDED"]);
+const LIVE_STATUSES = new Set([
+  "IN_PROGRESS",
+  "MID_INNING",
+  ...PAUSED_STATUSES,
+]);
+/** POSTPONED is terminal for today's slate: no first pitch is coming. */
+const FINAL_STATUSES = new Set([
+  "COMPLETED",
+  "GAME_OVER",
+  "FINAL",
+  "POSTPONED",
+]);
 
-/** Collapse the backend GameStatus enum into the board's three coarse buckets. */
-export function slateStatus(status: string | undefined): SlateStatus {
+/** True when a started game is halted (rain delay, suspension). */
+export function slatePaused(status: string | undefined): boolean {
+  return status !== undefined && PAUSED_STATUSES.has(status);
+}
+
+/**
+ * Collapse the backend GameStatus enum into the board's three coarse buckets.
+ * DELAYED / SUSPENDED stay with live (see {@link SlateCard.paused}); POSTPONED
+ * buckets as final so a postponed card never prints a first-pitch time.
+ */
+export function slateStatus(
+  status: string | undefined,
+  inning?: number | null,
+): SlateStatus {
+  // A delay before first pitch ("Delayed Start") is still a scheduled game: keep its first-pitch
+  // time on the card. Only a game that has started (inning > 0) buckets as live-but-paused.
+  if (status === "DELAYED" && !inning) {
+    return "scheduled";
+  }
   if (status && LIVE_STATUSES.has(status)) {
     return "live";
   }
@@ -66,7 +100,8 @@ function fromMatchup(m: MatchupSummary, g: GameSummary | undefined): SlateCard {
     gameId: m.gameId,
     awayTeam: m.awayTeam,
     homeTeam: m.homeTeam,
-    status: slateStatus(g?.status),
+    status: slateStatus(g?.status, g?.inning),
+    paused: slatePaused(g?.status),
     awayScore: g ? g.awayScore : null,
     homeScore: g ? g.homeScore : null,
     inning: g && g.inning > 0 ? g.inning : null,
@@ -84,7 +119,8 @@ function fromGameOnly(g: GameSummary): SlateCard {
     gameId: g.gameId,
     awayTeam: g.awayTeam,
     homeTeam: g.homeTeam,
-    status: slateStatus(g.status),
+    status: slateStatus(g.status, g.inning),
+    paused: slatePaused(g.status),
     awayScore: g.awayScore,
     homeScore: g.homeScore,
     inning: g.inning > 0 ? g.inning : null,

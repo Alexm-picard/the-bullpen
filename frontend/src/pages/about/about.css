@@ -8,8 +8,10 @@
  *
  * Breakpoints:
  *   - 900px : page just narrows; the prose column stays 62ch
- *   - 600px : facts ribbon stacks to 2×2 grid; masthead h1 64px → 48px;
- *             footer wraps vertically
+ *   - 600px : facts ribbon stacks to 2×2 grid; footer wraps vertically
+ *
+ * The masthead h1 is fluid (typography.heroSize clamp), so it needs no
+ * breakpoint here.
  */
 
 /* The editorial measure — every prose-heavy block on /about clamps its width
@@ -21,9 +23,6 @@
 }
 
 @media (max-width: 600px) {
-  .about-cover__title {
-    font-size: 48px !important;
-  }
   .about-facts-ribbon {
     grid-template-columns: repeat(2, 1fr) !important;
   }

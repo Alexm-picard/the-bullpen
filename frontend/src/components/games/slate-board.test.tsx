@@ -22,6 +22,7 @@ function card(o: Partial<SlateCard> = {}): SlateCard {
     awayTeam: "NYY",
     homeTeam: "DET",
     status: "live",
+    paused: false,
     awayScore: 2,
     homeScore: 1,
     inning: 5,
@@ -36,9 +37,11 @@ function card(o: Partial<SlateCard> = {}): SlateCard {
 }
 
 describe("SlateBoard", () => {
-  it("renders a live card with the gold on-air dot, inning, lean, and battle", () => {
+  it("renders a live card with the static gold dot, inning, lean, and battle", () => {
     const html = render(<SlateBoard cards={[card()]} />);
-    expect(html).toContain("broadcast-live-dot");
+    expect(html).toContain('data-slate-live-dot="true"');
+    // The grid does not pulse: the Scorebug owns the one on-air pulse.
+    expect(html).not.toContain("broadcast-live-dot");
     expect(html).toContain("Inn 5");
     expect(html).toContain("Pitching Duel");
     expect(html).toContain("8.6");
@@ -66,7 +69,7 @@ describe("SlateBoard", () => {
       />,
     );
     expect(html).toContain("7:10 PM ET");
-    expect(html).not.toContain("broadcast-live-dot");
+    expect(html).not.toContain("data-slate-live-dot");
   });
 
   it("renders a final with both scores and the final state (no live dot)", () => {
@@ -85,12 +88,72 @@ describe("SlateBoard", () => {
     expect(html).toContain("Final");
     expect(html).toContain(">6<");
     expect(html).toContain(">3<");
-    expect(html).not.toContain("broadcast-live-dot");
+    expect(html).not.toContain("data-slate-live-dot");
+  });
+
+  it("renders a delayed game's state (no live dot, no first-pitch time)", () => {
+    const html = render(
+      <SlateBoard
+        cards={[
+          card({ paused: true, detailedState: "Delayed: Rain", inning: 5 }),
+        ]}
+      />,
+    );
+    expect(html).toContain("Delayed: Rain");
+    expect(html).toContain("Inn 5");
+    expect(html).not.toContain("data-slate-live-dot");
+    expect(html).not.toContain("7:10 PM ET");
+    expect(html).not.toContain(">Live");
+  });
+
+  it("falls back to 'Delayed' when a paused game has no detailed state", () => {
+    const html = render(
+      <SlateBoard cards={[card({ paused: true, detailedState: null })]} />,
+    );
+    expect(html).toContain("Delayed");
+    expect(html).not.toContain("data-slate-live-dot");
+  });
+
+  it("renders a postponed game as its state, never a first-pitch time", () => {
+    const html = render(
+      <SlateBoard
+        cards={[
+          card({
+            status: "final",
+            detailedState: "Postponed: Rain",
+            awayScore: null,
+            homeScore: null,
+            inning: null,
+          }),
+        ]}
+      />,
+    );
+    expect(html).toContain("Postponed: Rain");
+    expect(html).not.toContain("7:10 PM ET");
+  });
+
+  it("gives each card the pressable surface classes (state lives in CSS)", () => {
+    const html = render(<SlateBoard cards={[card()]} />);
+    expect(html).toContain(
+      'class="bp-surface bp-pressable bp-pressable--soft bp-pressable--inset"',
+    );
+    // An inline background would outrank the surface hover rule.
+    expect(html).not.toMatch(/<a[^>]*style="[^"]*background-color/);
   });
 
   it("renders the first-class empty state when no cards match the filter", () => {
     const html = render(<SlateBoard cards={[]} />);
     expect(html).toContain("No games in this view");
     expect(html).not.toContain("href=");
+    expect(html).not.toContain("Show all games");
+  });
+
+  it("names the active filter and offers a reset when a filtered view is empty", () => {
+    const html = render(
+      <SlateBoard cards={[]} filterLabel="Live" onReset={() => {}} />,
+    );
+    expect(html).toContain("No live games right now.");
+    expect(html).toContain("Show all games");
+    expect(html).not.toContain("No games in this view");
   });
 });

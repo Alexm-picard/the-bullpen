@@ -34,7 +34,7 @@ export function LowerThird({
       style={{
         display: "inline-flex",
         alignItems: "stretch",
-        minWidth: 260,
+        minWidth: "min(260px, 100%)",
         maxWidth: "100%",
         backgroundColor: colors.chrome,
         clipPath: cuts.lowerThirdEdge,
@@ -48,13 +48,14 @@ export function LowerThird({
         id={id}
         style={{
           margin: 0,
+          minWidth: 0,
           padding: "7px 26px 7px 12px",
           fontFamily: typography.fonts.display,
           fontStyle: "italic",
           fontWeight: typography.weights.bold,
-          fontSize: 17,
+          fontSize: 16,
           lineHeight: typography.lineHeights.display,
-          letterSpacing: "0.06em",
+          letterSpacing: typography.tracking.section,
           textTransform: "uppercase",
           color: colors.textOnChrome,
         }}
@@ -73,6 +74,8 @@ export function LowerThird({
             fontFeatureSettings: '"tnum" 1',
             letterSpacing: "0.04em",
             color: colors.textOnChromeMuted,
+            whiteSpace: "nowrap",
+            flexShrink: 0,
           }}
         >
           {meta}

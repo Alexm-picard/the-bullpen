@@ -22,7 +22,7 @@ import {
 
 import HomePage from "./pages/home-page";
 import { ErrorBoundary } from "./components/shared/error-boundary";
-import { colors, typography } from "./design/broadcast";
+import { colors, motion, radii, typography } from "./design/broadcast";
 import { ThemeProvider } from "./design/theme-provider";
 import { useTheme } from "./design/use-theme";
 
@@ -62,21 +62,32 @@ const navLinkStyle: React.CSSProperties = {
   fontFamily: typography.fonts.display,
   fontWeight: typography.weights.semibold,
   fontSize: 15,
-  letterSpacing: "0.08em",
+  letterSpacing: typography.tracking.chip,
   textTransform: "uppercase",
-  color: colors.steel,
-  textDecoration: "none",
   height: 56,
   display: "inline-flex",
   alignItems: "center",
   padding: "0 2px",
-  borderBottom: "3px solid transparent",
   marginBottom: -2,
+  whiteSpace: "nowrap",
+  flexShrink: 0,
 };
 
-const navLinkActiveStyle: React.CSSProperties = {
-  color: colors.textOnChrome,
-  borderBottomColor: colors.gold,
+// Color, the 3px rule and the current-page state live in `.bp-navlink`
+// (interaction.css): an inline color would outrank its :hover rule.
+// No `padding` shorthand here: `.bp-navlink--drawer` owns padding-left (the
+// gap beside its gold current-page rail).
+const drawerLinkStyle: React.CSSProperties = {
+  fontFamily: typography.fonts.display,
+  fontWeight: typography.weights.semibold,
+  fontSize: 20,
+  letterSpacing: typography.tracking.section,
+  textTransform: "uppercase",
+  display: "inline-flex",
+  alignItems: "center",
+  paddingTop: 6,
+  paddingBottom: 6,
+  whiteSpace: "nowrap",
 };
 
 type NavItem = { to: string; label: string; end?: boolean };
@@ -109,8 +120,10 @@ const ALL_NAV_ITEMS: NavItem[] = NAV_ENTRIES.flatMap((e) =>
 
 const groupLabelStyle: React.CSSProperties = {
   fontFamily: typography.fonts.mono,
-  fontSize: 9,
-  letterSpacing: "0.18em",
+  fontSize: 11,
+  letterSpacing: typography.tracking.eyebrow,
+  fontWeight: typography.weights.semibold,
+  whiteSpace: "nowrap",
   color: colors.textOnChromeMuted,
   textTransform: "uppercase",
 };
@@ -127,19 +140,20 @@ function ThemeToggleButton() {
       onClick={toggle}
       aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
       title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+      // `.bp-theme-toggle` owns the border (and its gold :hover) and the
+      // transition; `.bp-pressable` owns the press scale. 44px hit box.
+      className="bp-pressable bp-theme-toggle"
       style={{
         background: "none",
-        border: `1px solid ${colors.chromeEdge}`,
-        borderRadius: 4,
-        width: 40,
-        height: 32,
-        cursor: "pointer",
+        borderRadius: radii.sm,
+        width: 44,
+        height: 44,
+        flexShrink: 0,
         fontSize: 18,
         color: colors.gold,
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
-        transition: "border-color 0.15s",
       }}
     >
       {theme === "dark" ? "☀" : "☾"}
@@ -148,7 +162,7 @@ function ThemeToggleButton() {
 }
 
 function Layout() {
-  // D1: below the `sm` breakpoint the 7-link bar cannot fit the 56px header, so the horizontal
+  // D1: below the `md` breakpoint (62em) the 8-link bar cannot fit the 56px header, so the horizontal
   // group swaps for a burger + chrome drawer (Mantine visibleFrom/hiddenFrom - no JS media logic).
   const [navOpen, { toggle: toggleNav, close: closeNav }] =
     useDisclosure(false);
@@ -162,10 +176,12 @@ function Layout() {
         style={{
           backgroundColor: colors.chrome,
           borderBottom: `2px solid ${colors.gold}`,
+          paddingLeft: "env(safe-area-inset-left)",
+          paddingRight: "env(safe-area-inset-right)",
         }}
       >
         <Container size="lg" h="100%">
-          <Group h="100%" justify="space-between">
+          <Group h="100%" justify="space-between" wrap="nowrap">
             <Title
               order={3}
               style={{
@@ -175,16 +191,19 @@ function Layout() {
                 letterSpacing: "0.03em",
                 textTransform: "uppercase",
                 color: colors.textOnChrome,
+                whiteSpace: "nowrap",
+                flexShrink: 0,
               }}
             >
               The <span style={{ color: colors.gold }}>Bullpen</span>
             </Title>
-            <Group gap="md" visibleFrom="sm">
+            <Group gap="md" wrap="nowrap" visibleFrom="md">
               {NAV_ENTRIES.map((entry) =>
                 isGroup(entry) ? (
                   <Group
                     key={entry.groupLabel}
                     gap="md"
+                    wrap="nowrap"
                     style={groupSeparatorStyle}
                   >
                     <span style={groupLabelStyle}>{entry.groupLabel}</span>
@@ -194,10 +213,9 @@ function Layout() {
                         component={NavLink}
                         to={item.to}
                         end={item.end}
-                        style={({ isActive }: { isActive: boolean }) => ({
-                          ...navLinkStyle,
-                          ...(isActive ? navLinkActiveStyle : {}),
-                        })}
+                        className="bp-navlink"
+                        underline="never"
+                        style={navLinkStyle}
                       >
                         {item.label}
                       </Anchor>
@@ -209,11 +227,9 @@ function Layout() {
                     component={NavLink}
                     to={entry.to}
                     end={entry.end}
-                    style={({ isActive }: { isActive: boolean }) => ({
-                      ...navLinkStyle,
-                      ...(isActive ? navLinkActiveStyle : {}),
-                      ...(entry.label === "about" ? { fontSize: 13 } : {}),
-                    })}
+                    className="bp-navlink"
+                    underline="never"
+                    style={navLinkStyle}
                   >
                     {entry.label}
                   </Anchor>
@@ -222,12 +238,24 @@ function Layout() {
             </Group>
             <ThemeToggleButton />
             <Burger
-              hiddenFrom="sm"
+              hiddenFrom="md"
               opened={navOpen}
               onClick={toggleNav}
               aria-label="Toggle navigation"
               color={colors.textOnChrome}
               size="sm"
+              transitionDuration={motion.durationsMs.press}
+              transitionTimingFunction={motion.easing.out}
+              styles={{
+                root: {
+                  width: 44,
+                  height: 44,
+                  flexShrink: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                },
+              }}
             />
           </Group>
         </Container>
@@ -237,10 +265,20 @@ function Layout() {
         onClose={closeNav}
         position="right"
         size="xs"
-        hiddenFrom="sm"
+        hiddenFrom="md"
         title="The Bullpen"
+        transitionProps={{
+          duration: motion.durationsMs.slow,
+          exitDuration: motion.durationsMs.base,
+          timingFunction: motion.easing.drawer,
+        }}
+        overlayProps={{ backgroundOpacity: 0.55, blur: 2 }}
         styles={{
-          content: { backgroundColor: colors.chrome },
+          content: {
+            backgroundColor: colors.chrome,
+            paddingRight: "env(safe-area-inset-right)",
+            paddingBottom: "env(safe-area-inset-bottom)",
+          },
           header: {
             backgroundColor: "var(--bp-field-hi)",
             borderBottom: `2px solid ${colors.gold}`,
@@ -264,14 +302,9 @@ function Layout() {
               to={item.to}
               end={item.end}
               onClick={closeNav}
-              style={{
-                ...navLinkStyle,
-                fontSize: 20,
-                padding: "6px 0",
-                height: "auto",
-                borderBottom: "none",
-                marginBottom: 0,
-              }}
+              className="bp-navlink bp-navlink--drawer"
+              underline="never"
+              style={drawerLinkStyle}
             >
               {item.label}
             </Anchor>
@@ -302,9 +335,17 @@ function RouteBoundary({ children }: { children: ReactNode }) {
 
 function RoutePending() {
   return (
-    <Container size="lg" py="xl">
-      <Group justify="center" py="xl">
-        <Loader size="sm" />
+    <Container
+      size="lg"
+      py="xl"
+      role="status"
+      aria-label="Loading page"
+      style={{ minHeight: "60vh" }}
+    >
+      {/* `.route-pending` stays invisible for 300ms: a chunk that resolves
+          inside that window never flashes a spinner. */}
+      <Group justify="center" py="xl" className="route-pending">
+        <Loader size="sm" color="gold" />
       </Group>
     </Container>
   );

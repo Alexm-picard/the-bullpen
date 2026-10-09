@@ -36,12 +36,13 @@ function ReportCard({ report }: { report: FeaturedReport }) {
     <Link
       to={`/players/${report.playerId}`}
       aria-label={`Open scouting report for ${report.name}`}
+      // Surface color, hover, press and the inset focus ring (the corner-cut
+      // clips an outset one) come from interaction.css.
+      className="bp-surface bp-pressable bp-pressable--soft bp-pressable--inset"
       style={{
         position: "relative",
         display: "block",
         textDecoration: "none",
-        backgroundColor: colors.panel,
-        border: `1px solid ${colors.rule}`,
         clipPath: cuts.panelCorner,
         padding: "16px 16px 14px 18px",
       }}

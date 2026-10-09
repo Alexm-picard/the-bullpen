@@ -18,7 +18,15 @@
  * the theme. No hex in this file.
  */
 
-import { Button, Container, Stack, Text, Title } from "@mantine/core";
+import {
+  Anchor,
+  Button,
+  Container,
+  Group,
+  Stack,
+  Text,
+  Title,
+} from "@mantine/core";
 import { Component, type ErrorInfo, type ReactNode } from "react";
 
 import { colors } from "../../design/broadcast";
@@ -38,6 +46,12 @@ export class ErrorBoundary extends Component<Props, State> {
     // uncaught errors on its own when a DSN is configured. Log for local dev.
     console.error("ErrorBoundary caught a render error:", error, info);
   }
+
+  // Re-render the subtree in place: a transient throw (a chunk that failed to
+  // evaluate once, a momentary bad payload) recovers without a full reload.
+  private handleRetry = (): void => {
+    this.setState({ error: null });
+  };
 
   private handleReload = (): void => {
     this.setState({ error: null });
@@ -65,9 +79,16 @@ export class ErrorBoundary extends Component<Props, State> {
             The rest of the site is fine — reloading usually clears it. If it
             keeps happening, the backend may be briefly unavailable.
           </Text>
-          <Button onClick={this.handleReload} mt="xs">
-            Reload the page
-          </Button>
+          <Group gap="sm" mt="xs" justify="center">
+            <Button onClick={this.handleRetry}>Try again</Button>
+            <Button variant="default" onClick={this.handleReload}>
+              Reload the page
+            </Button>
+          </Group>
+          {/* Plain href: the root boundary sits outside the router. */}
+          <Anchor href="/" size="sm" className="bp-link bp-pressable">
+            Back to home
+          </Anchor>
         </Stack>
       </Container>
     );

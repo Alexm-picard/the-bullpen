@@ -16,8 +16,8 @@
  * only. This page imports ONLY the broadcast token namespace ([160] migration
  * rule: one namespace per screen).
  */
-import { useMemo } from "react";
-import { useParams } from "react-router";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useParams } from "react-router";
 
 import {
   matchupIsAheadOf,
@@ -44,7 +44,10 @@ import { BigStat } from "../components/broadcast/big-stat";
 import { BroadcastPanel } from "../components/broadcast/broadcast-panel";
 import { LowerThird } from "../components/broadcast/lower-third";
 import { Scorebug } from "../components/broadcast/scorebug";
-import { TickerStrip } from "../components/broadcast/ticker-strip";
+import {
+  TickerStrip,
+  type TickerItem,
+} from "../components/broadcast/ticker-strip";
 import { BattedBallExplorer } from "../components/games/batted-ball-explorer";
 import { LivePitchBoard } from "../components/games/live-pitch-board";
 import { NextPitchPanel } from "../components/games/next-pitch-panel";
@@ -59,17 +62,22 @@ import { PARK_ROWS } from "../data/parks-fixtures";
 import { BroadcastFooter, PageChrome } from "../components/shared/page-chrome";
 import { colors, typography } from "../design/broadcast";
 
+// Hoisted: constructing an Intl formatter is not free, and the page re-renders on every poll.
+const ISSUE_DATE = new Intl.DateTimeFormat("en-US", {
+  weekday: "short",
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+});
+
 function todayIssueDate(): string {
-  return new Intl.DateTimeFormat("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(new Date());
+  return ISSUE_DATE.format(new Date());
 }
 
 /** Scorebug state read. The API exposes `inning` but not top/bottom - the
- * neutral "INN n" marker carries over from the paper-era page. */
+ * neutral "INN n" marker carries over from the paper-era page. Only a game
+ * actually in play reads an inning: a postponed game must not print "INN 0",
+ * nor a rain delay "INN 5" as if play were on. */
 function scorebugState(summary: GameSummary | undefined): string {
   if (!summary) return "—";
   switch (summary.status) {
@@ -79,9 +87,24 @@ function scorebugState(summary: GameSummary | undefined): string {
       return "WARMUP";
     case "SCHEDULED":
       return "PREGAME";
-    default:
+    case "IN_PROGRESS":
+    case "MID_INNING":
       return `INN ${summary.inning}`;
+    case "DELAYED":
+      return "DELAY";
+    case "SUSPENDED":
+      return "SUSP";
+    case "POSTPONED":
+      return "PPD";
+    default:
+      return "—";
   }
+}
+
+/** Stopped-play statuses: the scorebug's detail reads MLB's own description
+ * ("Delayed Start: Rain") instead of a stale last pitch. */
+function isStoppedPlay(summary: GameSummary | undefined): boolean {
+  return summary?.status === "DELAYED" || summary?.status === "SUSPENDED";
 }
 
 function isLive(summary: GameSummary | undefined): boolean {
@@ -96,15 +119,62 @@ function lastPitchRead(p: LivePitchRow | undefined): string {
     : type;
 }
 
-function tickerItems(pitches: LivePitchRow[]): string[] {
-  return pitches
-    .slice(0, 12)
-    .map(
-      (p) =>
-        `${p.pitchType || "?"} ${
-          p.releaseSpeedMph != null ? p.releaseSpeedMph.toFixed(1) : "—"
-        } → ${p.description.replace(/_/g, " ")}`,
-    );
+function tickerItems(pitches: LivePitchRow[]): TickerItem[] {
+  // Keyed by the pitch cursor: two pitches can read identically ("FF 94.8 → ball").
+  return pitches.slice(0, 12).map((p) => ({
+    key: p.cursor,
+    text: `${p.pitchType || "?"} ${
+      p.releaseSpeedMph != null ? p.releaseSpeedMph.toFixed(1) : "—"
+    } → ${p.description.replace(/_/g, " ")}`,
+  }));
+}
+
+/** The "What" link to the model guide: a client-side route change, so the live
+ * page's polling and cache survive the round trip. */
+function GuideLink({ anchor }: { anchor: string }) {
+  return (
+    <Link
+      to={`/models/guide#${anchor}`}
+      className="bp-link bp-pressable"
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+        minHeight: 32,
+        fontFamily: typography.fonts.mono,
+        fontSize: 12,
+        letterSpacing: typography.tracking.eyebrow,
+        textTransform: "uppercase",
+        border: `1px solid ${colors.rule}`,
+        padding: "6px 10px",
+      }}
+    >
+      <span style={{ color: colors.gold, fontSize: 11 }}>{"ⓘ"}</span> What
+    </Link>
+  );
+}
+
+/** Section header row: the lower third plus its guide link, wrapping the link
+ * under the bar at phone width instead of overflowing. */
+const sectionHeaderRow: React.CSSProperties = {
+  marginBottom: 12,
+  display: "flex",
+  flexWrap: "wrap",
+  alignItems: "center",
+  gap: 12,
+};
+
+/** The gold "primary" rail: 3px border + 13px pad = the 16px gutter exactly,
+ * so the rail never pokes past the page edge. */
+const primaryRail: React.CSSProperties = {
+  borderLeft: `3px solid ${colors.gold}`,
+  paddingLeft: 13,
+  marginLeft: -16,
+};
+
+/** Stable identity of a batted ball across polls (the summary object can be re-created). */
+function bipKeyOf(bb: RecentBattedBall | null): string | null {
+  return bb ? `${bb.batterId}-${bb.atBatIndex}-${bb.pitchNumber}` : null;
 }
 
 // ── Phase 1.2: live batted-ball -> BattedBall mapping ────────────────────────
@@ -236,6 +306,15 @@ export function GamePage() {
   const pitches = useLivePitches(valid ? numericId : null, game.data?.status);
   const mostRecent = pitches.pitches[0];
 
+  // The fan-facing error copy drops the raw message; keep it for whoever opens the console. Logged
+  // once per distinct error object, not on every re-render.
+  useEffect(() => {
+    if (game.error) console.error("game summary failed to load", game.error);
+  }, [game.error]);
+  useEffect(() => {
+    if (pitches.error) console.error("pitch log failed to load", pitches.error);
+  }, [pitches.error]);
+
   // Decision [194]: poll the worker-computed live state at 2s. When the flag is off or the
   // endpoint returns no predictions, fall back to the derive-and-POST path below.
   const liveState = useLiveState(valid ? numericId : null, game.data?.status);
@@ -333,6 +412,25 @@ export function GamePage() {
   // batted ball only while it happened to still be inside, and failed by looking like "no batted
   // ball yet" rather than like a bug.
   const inPlay = game.data?.mostRecentBattedBall ?? null;
+  // ADR-0017 §3 entrance, gated by [112]: only a ball that arrives WHILE the page is open animates.
+  // The baseline is the ball (or absence of one) in the FIRST loaded summary - not the first
+  // render, which has no summary yet and would make a mid-game page load look like a new ball.
+  const bipKey = bipKeyOf(inPlay);
+  // Keyed to the game: back/forward between two /games/:id URLs keeps this component mounted, so
+  // the baseline must re-seed when the game changes or the other game's ball would animate in.
+  const [bipBaseline, setBipBaseline] = useState<{
+    gameId: number;
+    key: string | null;
+  } | null>(null);
+  const summaryGameId = game.data?.gameId ?? null;
+  if (summaryGameId != null && bipBaseline?.gameId !== summaryGameId) {
+    setBipBaseline({ gameId: summaryGameId, key: bipKey });
+  }
+  const bipArrivedLive =
+    bipKey != null &&
+    bipBaseline != null &&
+    bipBaseline.gameId === summaryGameId &&
+    bipKey !== bipBaseline.key;
   // The BIP's batter, keyed to the in-play pitch (NOT mostRecent, which may be a
   // later non-BIP pitch in the same at-bat or a new one).
   const inPlayBatter = usePlayer(inPlay?.batterId ?? null);
@@ -497,15 +595,29 @@ export function GamePage() {
         >
           {todayIssueDate()} · live ingest
         </p>
-        <Scorebug
-          awayTeam={summary?.awayTeam ?? "—"}
-          homeTeam={summary?.homeTeam ?? "—"}
-          awayScore={summary?.awayScore ?? 0}
-          homeScore={summary?.homeScore ?? 0}
-          state={scorebugState(summary)}
-          live={isLive(summary)}
-          detail={mostRecent ? lastPitchRead(mostRecent) : undefined}
-        />
+        {summary ? (
+          <Scorebug
+            awayTeam={summary.awayTeam}
+            homeTeam={summary.homeTeam}
+            awayScore={summary.awayScore}
+            homeScore={summary.homeScore}
+            state={scorebugState(summary)}
+            live={isLive(summary)}
+            detail={
+              isStoppedPlay(summary)
+                ? summary.detailedState || undefined
+                : mostRecent
+                  ? lastPitchRead(mostRecent)
+                  : undefined
+            }
+            announceDetail={isStoppedPlay(summary)}
+          />
+        ) : (
+          // Reserve the scorebug's height (18px line + 12px well padding + 2px border, rounded to
+          // the rendered box) so the masthead does not jump when the summary lands - and print no
+          // score at all rather than a fabricated 0-0.
+          <div aria-hidden="true" style={{ height: 41 }} />
+        )}
         <p
           style={{
             margin: "10px 0 0",
@@ -521,14 +633,13 @@ export function GamePage() {
       </header>
 
       {game.isError ? (
-        <p style={errorTextStyle}>
-          Could not load game
-          {game.error instanceof Error ? `: ${game.error.message}` : ""}.
+        <p role="alert" style={errorTextStyle}>
+          Could not load this game right now. Retrying automatically.
         </p>
       ) : null}
 
       <BroadcastPanel cut>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 40 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "16px 40px" }}>
           {/* Count and Outs are derived from the newest STORED pitch, so once the live matchup
               has moved past that pitch's at-bat they describe a moment that is over. Naming the
               live batter beside a finished at-bat's count would read as one confident composite
@@ -537,6 +648,7 @@ export function GamePage() {
               page's existing way of saying "not known right now". */}
           <BigStat
             label="Count"
+            minCh={3}
             value={(() => {
               if (ls?.upcomingPitch && upcomingIsFresh)
                 return `${ls.upcomingPitch.balls}-${ls.upcomingPitch.strikes}`;
@@ -549,6 +661,7 @@ export function GamePage() {
           />
           <BigStat
             label="Outs"
+            minCh={1}
             value={(() => {
               if (ls?.upcomingPitch && upcomingIsFresh)
                 return String(ls.upcomingPitch.outs);
@@ -559,9 +672,19 @@ export function GamePage() {
               return "—";
             })()}
           />
-          <BigStat label="Last Pitch" value={lastPitchRead(mostRecent)} />
+          {/* Speed is the numeral, type the sub-line: the 48px figure stays <= 5 chars. */}
+          <BigStat
+            label="Last Pitch"
+            value={
+              mostRecent?.releaseSpeedMph != null
+                ? mostRecent.releaseSpeedMph.toFixed(1)
+                : "—"
+            }
+            sub={mostRecent ? mostRecent.pitchType || "—" : undefined}
+          />
           <BigStat
             label="Pitch Count"
+            minCh={3}
             value={String(pitcherPitchCount)}
             tone="gold"
           />
@@ -570,45 +693,16 @@ export function GamePage() {
 
       <section
         aria-labelledby="next-pitch-label"
-        style={
-          nextPitchPanelEnabled
-            ? {
-                borderLeft: `3px solid ${colors.gold}`,
-                paddingLeft: 16,
-                marginLeft: -19,
-              }
-            : undefined
-        }
+        style={nextPitchPanelEnabled ? primaryRail : undefined}
       >
-        <div
-          style={{
-            marginBottom: 12,
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-          }}
-        >
+        <div style={sectionHeaderRow}>
           <LowerThird
             id="next-pitch-label"
             meta={nextPitchPanelEnabled ? "LIVE ESTIMATE" : "GATED"}
           >
             Next-Pitch Model
           </LowerThird>
-          <a
-            href="/models/guide#next-pitch"
-            style={{
-              fontFamily: typography.fonts.mono,
-              fontSize: 10,
-              letterSpacing: "0.12em",
-              color: colors.textMuted,
-              textDecoration: "none",
-              textTransform: "uppercase",
-              border: `1px solid ${colors.rule}`,
-              padding: "4px 10px",
-            }}
-          >
-            <span style={{ color: colors.gold, fontSize: 11 }}>{"ⓘ"}</span> What
-          </a>
+          <GuideLink anchor="next-pitch" />
         </div>
         <NextPitchPanel
           prediction={nextPitchData}
@@ -619,35 +713,14 @@ export function GamePage() {
       </section>
 
       <section aria-labelledby="pitch-type-label">
-        <div
-          style={{
-            marginBottom: 12,
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-          }}
-        >
+        <div style={sectionHeaderRow}>
           <LowerThird
             id="pitch-type-label"
             meta={pitchTypePanelEnabled ? "LIVE PRIOR" : "GATED"}
           >
             Pitch-Type Model
           </LowerThird>
-          <a
-            href="/models/guide#pitch-type"
-            style={{
-              fontFamily: typography.fonts.mono,
-              fontSize: 10,
-              letterSpacing: "0.12em",
-              color: colors.textMuted,
-              textDecoration: "none",
-              textTransform: "uppercase",
-              border: `1px solid ${colors.rule}`,
-              padding: "4px 10px",
-            }}
-          >
-            <span style={{ color: colors.gold, fontSize: 11 }}>{"ⓘ"}</span> What
-          </a>
+          <GuideLink anchor="pitch-type" />
         </div>
         <PitchTypePanel
           prior={pitchTypeData}
@@ -659,24 +732,9 @@ export function GamePage() {
 
       <section
         aria-labelledby="batted-ball-label"
-        style={
-          battedBallLive
-            ? {
-                borderLeft: `3px solid ${colors.gold}`,
-                paddingLeft: 16,
-                marginLeft: -19,
-              }
-            : undefined
-        }
+        style={battedBallLive ? primaryRail : undefined}
       >
-        <div
-          style={{
-            marginBottom: 12,
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-          }}
-        >
+        <div style={sectionHeaderRow}>
           <LowerThird
             id="batted-ball-label"
             // Not "MODEL EXAMPLE" any more - there is no example. The fixture is retired, so
@@ -695,21 +753,7 @@ export function GamePage() {
           >
             Batted-Ball Model
           </LowerThird>
-          <a
-            href="/models/guide#batted-ball"
-            style={{
-              fontFamily: typography.fonts.mono,
-              fontSize: 10,
-              letterSpacing: "0.12em",
-              color: colors.textMuted,
-              textDecoration: "none",
-              textTransform: "uppercase",
-              border: `1px solid ${colors.rule}`,
-              padding: "4px 10px",
-            }}
-          >
-            <span style={{ color: colors.gold, fontSize: 11 }}>{"ⓘ"}</span> What
-          </a>
+          <GuideLink anchor="batted-ball" />
         </div>
         <p
           style={{
@@ -751,8 +795,15 @@ export function GamePage() {
           )}
         </p>
         {battedBall ? (
-          <BattedBallExplorer data={battedBall} />
-        ) : inPlay == null ? (
+          // Keyed per ball, so each new ball remounts and (when it arrived live) enters.
+          <BattedBallExplorer
+            key={bipKey ?? undefined}
+            data={battedBall}
+            enter={bipArrivedLive}
+          />
+        ) : inPlay == null && !game.isError ? (
+          // Not while the game itself failed to load: the comparison never fires then, and its
+          // panel would read "Scoring..." under a caption that already says the load failed.
           <TeamContactPanel
             data={teamContact.data}
             isLoading={teamContact.isLoading}
@@ -771,13 +822,14 @@ export function GamePage() {
           </LowerThird>
         </div>
         {pitches.isError ? (
-          <p style={errorTextStyle}>
-            Could not load pitches
-            {pitches.error instanceof Error ? `: ${pitches.error.message}` : ""}
-            .
+          <p role="alert" style={errorTextStyle}>
+            Could not load pitches right now. Retrying automatically.
           </p>
         ) : (
-          <LivePitchBoard pitches={pitches.pitches} />
+          <LivePitchBoard
+            pitches={pitches.pitches}
+            isPending={pitches.isPending}
+          />
         )}
       </section>
 

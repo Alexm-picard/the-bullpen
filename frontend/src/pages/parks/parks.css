@@ -9,7 +9,7 @@
  *
  * Breakpoints:
  *   - 900px : spotlight two-column collapses to one column
- *   - 600px : masthead h1 down-shifts 64px → 48px, corner shrinks
+ * (The masthead h1 scales fluidly via typography.heroSize; no breakpoint.)
  */
 
 .parks-spotlight__cols {
@@ -42,18 +42,40 @@
   }
 }
 
-/* Park-mini-thumb hover + focus chrome */
+/* Park-mini-thumb hover, press + focus chrome. The !importants beat the inline
+ * background/outline in park-mini-thumb.tsx; hover is gated to real pointers so
+ * touch never gets a sticky hover. */
 .park-mini-thumb {
   transition:
-    background-color 200ms cubic-bezier(0.4, 0, 0.2, 1),
-    outline-color 200ms cubic-bezier(0.4, 0, 0.2, 1);
+    background-color var(--duration-fast) var(--ease-color),
+    transform var(--duration-press) var(--ease-out),
+    outline-color var(--duration-fast) var(--ease-color);
 }
-.park-mini-thumb:hover {
-  background-color: var(--color-bgSubtle) !important;
+@media (hover: hover) and (pointer: fine) {
+  .park-mini-thumb:hover {
+    background-color: var(--bp-field-hi) !important;
+  }
+}
+.park-mini-thumb:active {
+  transform: scale(0.97);
+  background-color: var(--bp-field-hi) !important;
 }
 .park-mini-thumb:focus-visible {
-  outline: 2px solid var(--color-scarlet) !important;
+  outline: 2px solid var(--bp-focus) !important;
   outline-offset: 2px !important;
+}
+
+/* The overview row the switcher last jumped to. The cells paint their own
+ * (inline) backgrounds, so the mark lands on the row-label cell. */
+.parks-overview tr[data-active="true"] > td:first-child {
+  background-color: var(--bp-panel-hover) !important;
+  box-shadow: inset 3px 0 0 var(--color-gold);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .park-mini-thumb:active {
+    transform: none;
+  }
 }
 
 @media (max-width: 900px) {
@@ -65,11 +87,5 @@
     border-bottom: 1px solid var(--color-bgEmphasis);
     padding-right: 0;
     padding-bottom: 20px;
-  }
-}
-
-@media (max-width: 600px) {
-  .parks__title {
-    font-size: 48px !important;
   }
 }

@@ -5,7 +5,12 @@ import { describe, expect, it } from "vitest";
 
 import type { GameSummary } from "./games";
 import type { MatchupSummary } from "./matchups";
-import { mergeSlate, slateCounts, slateStatus } from "./slate-view";
+import {
+  mergeSlate,
+  slateCounts,
+  slatePaused,
+  slateStatus,
+} from "./slate-view";
 
 function matchup(o: Partial<MatchupSummary> = {}): MatchupSummary {
   return {
@@ -52,6 +57,62 @@ describe("slateStatus", () => {
     expect(slateStatus("SCHEDULED")).toBe("scheduled");
     expect(slateStatus("WARMUP")).toBe("scheduled");
     expect(slateStatus(undefined)).toBe("scheduled");
+  });
+
+  it("keeps a started DELAYED game in the live bucket, flagged paused", () => {
+    expect(slateStatus("DELAYED", 5)).toBe("live");
+    expect(slatePaused("DELAYED")).toBe(true);
+    const c = mergeSlate(
+      [matchup({ gameId: 5 })],
+      [
+        game({
+          gameId: 5,
+          status: "DELAYED",
+          inning: 5,
+          detailedState: "Delayed: Rain",
+        }),
+      ],
+    )[0]!;
+    expect(c.status).toBe("live");
+    expect(c.paused).toBe(true);
+    expect(c.detailedState).toBe("Delayed: Rain");
+  });
+
+  it("keeps a delay before first pitch in the scheduled bucket", () => {
+    expect(slateStatus("DELAYED", 0)).toBe("scheduled");
+    expect(slateStatus("DELAYED", null)).toBe("scheduled");
+    expect(slateStatus("DELAYED")).toBe("scheduled");
+  });
+
+  it("keeps a SUSPENDED game in the live bucket, flagged paused", () => {
+    expect(slateStatus("SUSPENDED")).toBe("live");
+    expect(slatePaused("SUSPENDED")).toBe(true);
+    const c = mergeSlate([], [game({ gameId: 6, status: "SUSPENDED" })])[0]!;
+    expect(c.status).toBe("live");
+    expect(c.paused).toBe(true);
+  });
+
+  it("buckets a POSTPONED game as final (never a first-pitch time slot)", () => {
+    expect(slateStatus("POSTPONED")).toBe("final");
+    expect(slatePaused("POSTPONED")).toBe(false);
+    const c = mergeSlate(
+      [matchup({ gameId: 8 })],
+      [
+        game({
+          gameId: 8,
+          status: "POSTPONED",
+          detailedState: "Postponed: Rain",
+        }),
+      ],
+    )[0]!;
+    expect(c.status).toBe("final");
+    expect(c.paused).toBe(false);
+  });
+
+  it("does not flag an in-progress or scheduled game as paused", () => {
+    expect(slatePaused("IN_PROGRESS")).toBe(false);
+    expect(slatePaused(undefined)).toBe(false);
+    expect(mergeSlate([matchup()], [])[0]!.paused).toBe(false);
   });
 });
 

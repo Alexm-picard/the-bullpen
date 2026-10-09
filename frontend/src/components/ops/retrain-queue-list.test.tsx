@@ -69,6 +69,17 @@ describe("RetrainQueueList", () => {
   it("renders an empty-state line when entries is empty", () => {
     const html = render(<RetrainQueueList entries={[]} />);
     expect(html).toContain("No retrain jobs in queue");
+    // Honesty: no endpoint reports a sweep time yet, so none is printed.
+    expect(html).not.toContain("last drift sweep");
+  });
+
+  it("appends the last drift sweep time only when one is supplied", () => {
+    const html = render(
+      <RetrainQueueList entries={[]} lastSweepAt="19:00 ET" />,
+    );
+    expect(html).toContain(
+      "No retrain jobs in queue · last drift sweep 19:00 ET",
+    );
   });
 
   it("renders the labelled section landmark", () => {

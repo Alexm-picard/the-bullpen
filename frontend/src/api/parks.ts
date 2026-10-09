@@ -5,7 +5,7 @@
  * 30-entry map keyed by park id with the model's P(HR) for the given launch
  * parameters at that park.
  */
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
 import { API_BASE, ApiError } from "./base";
 
@@ -100,6 +100,13 @@ export function useAllParksPrediction(
   opts: {
     enabled?: boolean;
     context?: { gameId?: number; parkId?: string };
+    /**
+     * Keep the previous request's result up while the next one is in flight
+     * (isPlaceholderData marks it stale). /parks ONLY: its inputs are a what-if
+     * slider, so the old ball's parks are a fair "still computing" frame. The
+     * game page must never pass this - it would show a previous ball's parks.
+     */
+    keepPrevious?: boolean;
   } = {},
 ) {
   return useQuery<AllParksResponse, ParksApiError>({
@@ -117,6 +124,7 @@ export function useAllParksPrediction(
       return predictAllParks(req, opts.context);
     },
     staleTime: 30_000,
+    placeholderData: opts.keepPrevious ? keepPreviousData : undefined,
     // POST /v1/predict/batted-ball/all-parks logs EVERY request to prediction_log (the drift
     // baseline source). /parks shows the prediction, so it always fetches; callers that would
     // otherwise fire a throwaway prediction (e.g. the game page with no live BIP) must pass

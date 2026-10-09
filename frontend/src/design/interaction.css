@@ -100,6 +100,13 @@ button,
 .bp-surface {
   background-color: var(--bp-panel);
   border: 1px solid var(--bp-rule);
+  color: var(--bp-text);
+}
+
+/* A filled chrome button (empty-state resets and similar one-off actions). */
+.bp-button-chrome {
+  background-color: var(--color-chrome);
+  color: var(--color-textOnChrome);
 }
 .bp-surface[aria-pressed="true"],
 .bp-surface--current {
@@ -120,6 +127,7 @@ button,
   text-decoration-color: var(--bp-rule);
   text-underline-offset: 3px;
   transition:
+    transform var(--duration-press) var(--ease-out),
     color var(--duration-fast) var(--ease-color),
     text-decoration-color var(--duration-fast) var(--ease-color);
 }
@@ -236,6 +244,9 @@ button,
   }
   .bp-row:hover {
     background-color: var(--bp-panel-hover);
+  }
+  .bp-button-chrome:hover {
+    background-color: var(--color-chromeEdge);
   }
   .bp-theme-toggle:hover {
     border-color: var(--color-gold);

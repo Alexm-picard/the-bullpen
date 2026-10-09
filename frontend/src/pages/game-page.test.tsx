@@ -124,9 +124,77 @@ describe("GamePage (broadcast identity)", () => {
   });
 
   it("renders the scorebug as a status element and the pitch-log lower third", () => {
-    const html = render(<GamePage />, "/games/12345");
-    expect(html).toMatch(/role="status"[^>]*aria-label="[^"]+, [^"]+,/);
+    const client = seededClient();
+    client.setQueryData(["games", "byId", GAME_ID], makeGame());
+    client.setQueryData(
+      ["games", "pitches", GAME_ID],
+      [makePitch({ pitchType: "SL", releaseSpeedMph: 86.4 })],
+    );
+    const html = render(<GamePage />, `/games/${GAME_ID}`, client);
+    expect(html).toMatch(
+      /role="status" aria-label="NYY 2, DET 1, INN 5, live"/,
+    );
+    // The per-pitch detail is visible but OUTSIDE the live region, so a new pitch does not
+    // re-announce the whole scorebug.
+    expect(html).toMatch(/<span aria-hidden="true"[^>]*>SL · 86\.4<\/span>/);
     expect(html).toContain("Live Pitch Log");
+  });
+
+  it("prints no score at all, not a fabricated 0-0, before the summary loads", () => {
+    const html = render(<GamePage />, "/games/12345");
+    expect(html).not.toMatch(/role="status" aria-label="[^"]*, [^"]*,/);
+    expect(html).not.toContain("broadcast-live-dot");
+  });
+
+  it.each([
+    ["DELAYED", "DELAY", "Delayed Start: Rain"],
+    ["SUSPENDED", "SUSP", "Suspended: Rain"],
+  ])(
+    "reads %s as stopped play with MLB's own description, never an inning",
+    (status, state, detailedState) => {
+      const client = seededClient();
+      client.setQueryData(
+        ["games", "byId", GAME_ID],
+        makeGame({ status, detailedState, inning: 5 }),
+      );
+      client.setQueryData(["games", "pitches", GAME_ID], [makePitch()]);
+      const html = render(<GamePage />, `/games/${GAME_ID}`, client);
+      expect(html).toContain(
+        `aria-label="NYY 2, DET 1, ${state}, ${detailedState}"`,
+      );
+      expect(html).not.toContain("INN 5");
+      expect(html).not.toContain("broadcast-live-dot"); // stopped play is not live
+    },
+  );
+
+  it.each([
+    ["POSTPONED", "PPD"],
+    ["UNKNOWN", "—"],
+  ])("reads %s as %s, never INN 0", (status, state) => {
+    const client = seededClient();
+    client.setQueryData(
+      ["games", "byId", GAME_ID],
+      makeGame({ status, inning: 0 }),
+    );
+    client.setQueryData(["games", "pitches", GAME_ID], []);
+    const html = render(<GamePage />, `/games/${GAME_ID}`, client);
+    expect(html).toContain(`aria-label="NYY 2, DET 1, ${state}"`);
+    expect(html).not.toContain("INN 0");
+  });
+
+  it("routes the What guide links client-side, not as full document loads", () => {
+    const html = render(<GamePage />, "/games/12345");
+    for (const anchor of ["next-pitch", "pitch-type", "batted-ball"]) {
+      // One <a> carrying both the route and the interaction-layer class (a router <Link> renders
+      // an <a href>; the client-side behaviour itself is react-router's, not re-tested here).
+      const tag = html.match(
+        new RegExp(`<a [^>]*href="/models/guide#${anchor}"[^>]*>`),
+      )?.[0];
+      expect(tag).toBeDefined();
+      expect(tag).toContain('class="bp-link bp-pressable"');
+      // The class owns the link colour; an inline colour would outrank its hover state.
+      expect(tag).not.toMatch(/style="[^"]*(?<![-\w])color:/);
+    }
   });
 
   it("renders the honest next-pitch gated state (ADR-0014 supersedes the [154] pending line)", () => {

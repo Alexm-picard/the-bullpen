@@ -56,6 +56,15 @@ describe("FeaturedMatchupPanel", () => {
     expect(html).toContain("Open the game");
   });
 
+  it("puts link color and press state on the interaction classes", () => {
+    const html = render();
+    expect(html.match(/class="bp-pressable"/g)).toHaveLength(2);
+    expect(html).toMatch(
+      /<a class="bp-link bp-pressable"[^>]*href="\/games\/823370"/,
+    );
+    expect(html).not.toMatch(/<a[^>]*style="[^"]*[;"]color:/);
+  });
+
   it("notes the stage (probables vs lineup confirmed)", () => {
     expect(render()).toContain("probables");
     expect(render({ ...VIEW, stage: "lineup" })).toContain("lineup confirmed");

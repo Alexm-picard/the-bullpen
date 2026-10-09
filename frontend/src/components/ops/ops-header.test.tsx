@@ -48,6 +48,15 @@ describe("OpsHeader", () => {
     expect(html).toContain("4 models");
   });
 
+  it("pluralizes the model and alert counts through Intl", () => {
+    const html = render(
+      <OpsHeader {...BASE_PROPS} modelCount={1} alertCount={1} />,
+    );
+    expect(html).toContain("1 model<");
+    expect(html).not.toContain("1 models");
+    expect(html).toContain("1 alert<");
+  });
+
   it("uses scarlet for alert count when > 0", () => {
     const html = render(<OpsHeader {...BASE_PROPS} />);
     expect(html).toContain("2 alerts");

@@ -75,5 +75,8 @@ describe("PlayerSearch", () => {
 
     await user.type(screen.getByPlaceholderText(/search players/i), "trout");
     expect(await screen.findByText(/search unavailable/i)).toBeInTheDocument();
+    // A failed fetch says nothing about the data: the error line renders ALONE,
+    // never beside a false "No players match".
+    expect(screen.queryByText(/no players match/i)).not.toBeInTheDocument();
   });
 });

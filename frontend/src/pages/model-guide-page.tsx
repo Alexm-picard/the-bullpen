@@ -1,4 +1,5 @@
-import type { CSSProperties } from "react";
+import { useEffect, type CSSProperties } from "react";
+import { useLocation } from "react-router";
 
 import { colors, layouts, typography } from "../design/broadcast";
 
@@ -74,6 +75,18 @@ const CALLOUT: CSSProperties = {
 };
 
 export default function ModelGuidePage() {
+  // BrowserRouter does not scroll to a hash on client navigation, so the game page's "What" links
+  // (/models/guide#next-pitch etc.) would land at the top. Instant, not smooth: the jump is
+  // URL/keyboard-initiated, and smooth scrolling would ignore reduced motion.
+  const { hash } = useLocation();
+  useEffect(() => {
+    if (hash) {
+      document
+        .getElementById(hash.slice(1))
+        ?.scrollIntoView({ block: "start" });
+    }
+  }, [hash]);
+
   return (
     <div style={FIELD}>
       <div style={COLUMN}>

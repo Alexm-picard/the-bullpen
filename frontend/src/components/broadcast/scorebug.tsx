@@ -15,14 +15,20 @@ import "../../design/broadcast.css";
 export type ScorebugProps = {
   awayTeam: string;
   homeTeam: string;
-  awayScore: number;
-  homeScore: number;
+  /** Null when the score is not known yet: renders an en-dash, never a fabricated 0. */
+  awayScore: number | null;
+  homeScore: number | null;
   /** Short state read, e.g. "TOP 6", "FINAL", "WARMUP". */
   state: string;
   /** Renders the pulsing on-air dot + LIVE wordmark. */
   live?: boolean;
-  /** Optional trailing detail, e.g. last pitch "94.8 FF". */
+  /** Optional trailing detail, e.g. last pitch "94.8 FF". Rendered OUTSIDE the
+   * live region so a new pitch does not re-announce the whole scorebug. */
   detail?: string;
+  /** Fold `detail` into the announced label. For a detail that appears nowhere
+   * else on the page (e.g. MLB's "Delayed Start: Rain"); a per-pitch detail
+   * must stay unannounced. */
+  announceDetail?: boolean;
 };
 
 const wellStyle: React.CSSProperties = {
@@ -41,6 +47,8 @@ const abbrevStyle: React.CSSProperties = {
   textTransform: "uppercase",
   letterSpacing: "0.04em",
   color: colors.textOnChrome,
+  whiteSpace: "nowrap",
+  flexShrink: 0,
 };
 
 const scoreStyle: React.CSSProperties = {
@@ -49,9 +57,18 @@ const scoreStyle: React.CSSProperties = {
   fontWeight: typography.weights.heavy,
   fontFeatureSettings: '"tnum" 1',
   color: colors.textOnChrome,
+  whiteSpace: "nowrap",
+  flexShrink: 0,
+  // A 9 -> 10 score must not shove the diamond sideways.
+  minWidth: "2ch",
+  textAlign: "right",
 };
 
-function TeamWell({ team, score }: { team: string; score: number }) {
+/** The score as shown and announced: an en-dash until it is actually known. */
+const scoreText = (score: number | null): string =>
+  score == null ? "–" : String(score);
+
+function TeamWell({ team, score }: { team: string; score: number | null }) {
   return (
     <span style={wellStyle}>
       <span
@@ -63,7 +80,7 @@ function TeamWell({ team, score }: { team: string; score: number }) {
         }}
       />
       <span style={abbrevStyle}>{team}</span>
-      <span style={scoreStyle}>{score}</span>
+      <span style={scoreStyle}>{scoreText(score)}</span>
     </span>
   );
 }
@@ -76,76 +93,95 @@ export function Scorebug({
   state,
   live = false,
   detail,
+  announceDetail = false,
 }: ScorebugProps) {
   return (
+    // The chrome box wraps BOTH parts; only the wells + state are the live
+    // region. Wrapping (flexWrap) drops the detail to a second row on a phone
+    // instead of fracturing glyphs.
     <div
-      role="status"
-      aria-label={`${awayTeam} ${awayScore}, ${homeTeam} ${homeScore}, ${state}${live ? ", live" : ""}`}
       style={{
-        display: "inline-flex",
+        display: "flex",
+        flexWrap: "wrap",
         alignItems: "stretch",
+        width: "fit-content",
+        maxWidth: "100%",
         backgroundColor: colors.chrome,
         border: `1px solid ${colors.chromeEdge}`,
         overflow: "hidden",
       }}
     >
-      <TeamWell team={awayTeam} score={awayScore} />
-      <span
-        aria-hidden="true"
+      <div
+        role="status"
+        aria-label={`${awayTeam} ${scoreText(awayScore)}, ${homeTeam} ${scoreText(homeScore)}, ${state}${live ? ", live" : ""}${announceDetail && detail ? `, ${detail}` : ""}`}
         style={{
-          alignSelf: "center",
-          padding: "0 8px",
-          color: colors.steel,
-          fontSize: 11,
+          display: "flex",
+          flexWrap: "wrap",
+          alignItems: "stretch",
+          maxWidth: "100%",
         }}
       >
-        ◆
-      </span>
-      <TeamWell team={homeTeam} score={homeScore} />
-      <span
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 8,
-          padding: "0 14px 0 18px",
-          marginLeft: 4,
-          backgroundColor: colors.chromeEdge,
-          clipPath: cuts.wedge,
-          fontFamily: typography.fonts.display,
-          fontStyle: "italic",
-          fontWeight: typography.weights.bold,
-          fontSize: 15,
-          letterSpacing: "0.06em",
-          textTransform: "uppercase",
-          color: colors.textOnChrome,
-        }}
-      >
-        {state}
-        {live && (
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 5,
-              color: colors.gold,
-            }}
-          >
+        <TeamWell team={awayTeam} score={awayScore} />
+        <span
+          aria-hidden="true"
+          style={{
+            alignSelf: "center",
+            padding: "0 8px",
+            color: colors.steel,
+            fontSize: 11,
+          }}
+        >
+          ◆
+        </span>
+        <TeamWell team={homeTeam} score={homeScore} />
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "0 14px 0 18px",
+            marginLeft: 4,
+            backgroundColor: colors.chromeEdge,
+            clipPath: cuts.wedge,
+            fontFamily: typography.fonts.display,
+            fontStyle: "italic",
+            fontWeight: typography.weights.bold,
+            fontSize: 15,
+            letterSpacing: typography.tracking.colHead,
+            textTransform: "uppercase",
+            color: colors.textOnChrome,
+            whiteSpace: "nowrap",
+            flexShrink: 0,
+          }}
+        >
+          {state}
+          {live && (
             <span
-              className="broadcast-live-dot"
-              aria-hidden="true"
               style={{
-                width: 8,
-                height: 8,
-                borderRadius: radii.pill,
-                backgroundColor: colors.gold,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                color: colors.gold,
               }}
-            />
-            LIVE
-          </span>
-        )}
-      </span>
+            >
+              <span
+                className="broadcast-live-dot"
+                aria-hidden="true"
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: radii.pill,
+                  backgroundColor: colors.gold,
+                }}
+              />
+              LIVE
+            </span>
+          )}
+        </span>
+      </div>
       {detail && (
         <span
+          aria-hidden="true"
           style={{
             display: "inline-flex",
             alignItems: "center",
@@ -154,6 +190,8 @@ export function Scorebug({
             fontSize: 12,
             fontFeatureSettings: '"tnum" 1',
             color: colors.textOnChromeMuted,
+            whiteSpace: "nowrap",
+            flexShrink: 0,
           }}
         >
           {detail}

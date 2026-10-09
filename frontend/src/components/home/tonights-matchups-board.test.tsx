@@ -60,4 +60,11 @@ describe("TonightsMatchupsBoard", () => {
     expect(html).toContain('href="/games/823412"');
     expect(html).toContain("Open game for NYY at DET");
   });
+
+  it("marks each body row for the row hover + focus ring, link color on the class", () => {
+    const html = render();
+    expect(html).toContain('<tr class="bp-row">');
+    expect(html).toContain('class="bp-link bp-pressable"');
+    expect(html).not.toMatch(/<a[^>]*style="[^"]*[;"]color:/);
+  });
 });

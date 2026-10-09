@@ -292,7 +292,14 @@ export function useLivePitches(id: number | null, status: string | undefined) {
 
   // Stable array reference for downstream memoisation: same instance on poll-with-no-new-data.
   const pitches = useMemo(() => query.data ?? [], [query.data]);
-  return { ...query, pitches };
+  // Explicit fields, not `...query`: spreading the result reads every tracked property, which
+  // subscribes the caller to re-render on each poll's fetchStatus/dataUpdatedAt churn.
+  return {
+    pitches,
+    isPending: query.isPending,
+    isError: query.isError,
+    error: query.error,
+  };
 }
 
 // ── useLiveState: the decision-[194] hook ───────────────────────────────────────
@@ -314,7 +321,7 @@ export const fetchLiveState = (id: number) =>
  */
 export function useLiveState(id: number | null, status: string | undefined) {
   const live = status === "IN_PROGRESS" || status === "MID_INNING";
-  return useQuery<LiveGameState, GameApiError>({
+  return useQuery<LiveGameState, GameApiError, LiveGameStateView>({
     queryKey: ["games", "live-state", id],
     queryFn: () => {
       if (id == null) throw new Error("id required");
@@ -323,7 +330,19 @@ export function useLiveState(id: number | null, status: string | undefined) {
     enabled: LIVE_STATE_ENABLED && id != null && live,
     refetchInterval: live ? 2_000 : false,
     staleTime: 1_000,
+    // `asOf` changes on every 2s poll, so it would defeat structural sharing and hand the page a
+    // new object (and a re-render) even when nothing the page reads has changed. Dropping it lets
+    // an unchanged state return the previous reference.
+    select: dropAsOf,
   });
+}
+
+/** The live state as the page consumes it: everything except the per-poll `asOf` stamp. */
+export type LiveGameStateView = Omit<LiveGameState, "asOf">;
+
+function dropAsOf({ asOf, ...rest }: LiveGameState): LiveGameStateView {
+  void asOf; // deliberately discarded - see the select comment above
+  return rest;
 }
 
 /**

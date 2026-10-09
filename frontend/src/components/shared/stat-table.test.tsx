@@ -118,4 +118,21 @@ describe("StatTable", () => {
     const html = render(<StatTable columns={COLUMNS} rows={ROWS} />);
     expect(html).toContain("aria-sort");
   });
+  it("marks only the activeRowId row with data-active", () => {
+    const rows: StatTableRow[] = [
+      { id: "row-a", label: "A", values: { pa: 1, whiff: 0.2 } },
+      { id: "row-b", label: "B", values: { pa: 2, whiff: 0.3 } },
+    ];
+    const html = render(
+      <StatTable columns={COLUMNS} rows={rows} activeRowId="row-b" />,
+    );
+    expect(html.match(/data-active="true"/g) ?? []).toHaveLength(1);
+    expect(html).toMatch(/<tr id="row-b" data-active="true">/);
+  });
+
+  it("sortable headers carry the interaction classes and no inline outline reset", () => {
+    const html = render(<StatTable columns={COLUMNS} rows={[]} />);
+    expect(html).toContain('class="bp-th bp-pressable--inset"');
+    expect(html).not.toMatch(/outline:\s*none/);
+  });
 });

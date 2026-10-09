@@ -36,4 +36,17 @@ describe("ErrorBoundary", () => {
     const err = new Error("boom");
     expect(ErrorBoundary.getDerivedStateFromError(err)).toEqual({ error: err });
   });
+
+  it("fallback offers an in-place retry, a full reload, and a router-free way home", () => {
+    // SSR cannot drive the catch path, so render the fallback branch directly
+    // from an instance whose state already holds an error.
+    const boundary = new ErrorBoundary({ children: null });
+    boundary.state = { error: new Error("boom") };
+    const html = render(<>{boundary.render()}</>);
+    expect(html).toContain("SOMETHING WENT WRONG");
+    expect(html).toContain("This page hit an unexpected error");
+    expect(html).toContain("Try again");
+    expect(html).toContain("Reload the page");
+    expect(html).toMatch(/<a[^>]*href="\/"[^>]*>Back to home<\/a>/);
+  });
 });

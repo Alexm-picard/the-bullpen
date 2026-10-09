@@ -15,7 +15,9 @@
  */
 import type { PitchPredictionResponse } from "../../api/games";
 import { GameApiError } from "../../api/games";
-import { colors, typography } from "../../design/broadcast";
+import { colors, motion, typography } from "../../design/broadcast";
+
+import { DISTRIBUTION_COLUMNS, DistributionShell } from "./distribution-shell";
 
 /** Canonical 5-class display order - matches the pitches-table outcome vocabulary. */
 const CLASS_ORDER = [
@@ -34,13 +36,20 @@ const CLASS_LABELS: Record<string, string> = {
   in_play: "In play",
 };
 
-const mutedMono: React.CSSProperties = {
+/** Caption sentences: body face (design.md §8 - the mono never sets sentences). */
+const caption: React.CSSProperties = {
   margin: 0,
-  fontFamily: typography.fonts.mono,
-  fontSize: 12,
-  letterSpacing: "0.02em",
+  fontFamily: typography.fonts.body,
+  fontSize: 13,
+  lineHeight: typography.leading.dense,
+  letterSpacing: 0,
   color: colors.textMuted,
 };
+
+const SHELL_ROWS = CLASS_ORDER.map((cls) => CLASS_LABELS[cls] ?? cls);
+
+/** Bars move by transform (compositor-only), cross-fading on each new estimate. */
+const barTransition = `transform ${motion.durationsMs.base}ms ${motion.easing.standard}, background-color ${motion.durationsMs.base}ms ${motion.easing.standard}`;
 
 export type NextPitchPanelProps = {
   prediction: PitchPredictionResponse | undefined;
@@ -58,28 +67,46 @@ export function NextPitchPanel({
 }: NextPitchPanelProps) {
   if (!enabled) {
     return (
-      <p style={mutedMono}>
-        Awaiting a settled at-bat &mdash; the next-pitch estimate fires only
-        mid-at-bat, on live pitches with full context.
-      </p>
+      <DistributionShell
+        rows={SHELL_ROWS}
+        note={
+          <>
+            Awaiting a settled at-bat &mdash; the next-pitch estimate fires only
+            mid-at-bat, on live pitches with full context.
+          </>
+        }
+      />
     );
   }
   if (error instanceof GameApiError && error.status === 503) {
     return (
-      <p data-testid="next-pitch-unpromoted" style={mutedMono}>
-        Pitch model not yet promoted &mdash; the pre-pitch head serves once its
-        calibration gate passes review (promotion is human-gated).
-      </p>
+      <DistributionShell
+        rows={SHELL_ROWS}
+        testId="next-pitch-unpromoted"
+        note={
+          <>
+            Pitch model not yet promoted &mdash; the pre-pitch head serves once
+            its calibration gate passes review (promotion is human-gated).
+          </>
+        }
+      />
     );
   }
   if (error) {
-    return <p style={mutedMono}>Next-pitch estimate unavailable right now.</p>;
+    return (
+      <DistributionShell
+        rows={SHELL_ROWS}
+        note="Next-pitch estimate unavailable right now."
+      />
+    );
   }
   if (isLoading || !prediction) {
     return (
-      <p aria-busy="true" style={mutedMono}>
-        Scoring the next pitch&hellip;
-      </p>
+      <DistributionShell
+        rows={SHELL_ROWS}
+        busy
+        note={<>Scoring the next pitch&hellip;</>}
+      />
     );
   }
 
@@ -97,7 +124,7 @@ export function NextPitchPanel({
               key={cls}
               style={{
                 display: "grid",
-                gridTemplateColumns: "130px 1fr 56px",
+                gridTemplateColumns: DISTRIBUTION_COLUMNS,
                 alignItems: "center",
                 gap: 10,
                 padding: "3px 0",
@@ -105,6 +132,8 @@ export function NextPitchPanel({
             >
               <span
                 style={{
+                  minWidth: 0,
+                  overflowWrap: "anywhere",
                   fontFamily: typography.fonts.body,
                   fontSize: 13,
                   fontWeight: isWinner ? 700 : 400,
@@ -126,8 +155,11 @@ export function NextPitchPanel({
                   style={{
                     display: "block",
                     height: "100%",
-                    width: `${Math.round(p * 1000) / 10}%`,
+                    width: "100%",
+                    transform: `scaleX(${Math.max(0, Math.min(1, p))})`,
+                    transformOrigin: "left",
                     background: isWinner ? colors.gold : colors.steel,
+                    transition: barTransition,
                   }}
                 />
               </span>
@@ -147,10 +179,12 @@ export function NextPitchPanel({
           );
         })}
       </ul>
-      <p style={{ ...mutedMono, marginTop: 8 }}>
-        {prediction.modelName} {prediction.modelVersion} &middot; calibrated
-        pre-pitch estimate; passes calibration (ECE&lt;0.02), not an accuracy
-        claim.
+      <p style={{ ...caption, marginTop: 8 }}>
+        <span style={{ fontFamily: typography.fonts.mono }}>
+          {prediction.modelName} {prediction.modelVersion}
+        </span>{" "}
+        &middot; calibrated pre-pitch estimate; passes calibration
+        (ECE&lt;0.02), not an accuracy claim.
       </p>
     </div>
   );

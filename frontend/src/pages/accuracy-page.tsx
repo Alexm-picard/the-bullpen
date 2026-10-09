@@ -55,6 +55,7 @@ import {
   DEFAULT_WINDOW_DAYS,
   LiveScorecard,
 } from "../components/accuracy/live-scorecard";
+import { Eyebrow } from "../components/broadcast/eyebrow";
 import { LowerThird } from "../components/broadcast/lower-third";
 import { NoHistoryNote } from "../components/scouting/no-history-note";
 import { ConfusionMatrix } from "../components/accuracy/confusion-matrix";
@@ -66,6 +67,7 @@ import {
 import type { MetricMeta } from "../design/cellColor";
 import { BroadcastFooter, PageChrome } from "../components/shared/page-chrome";
 import { colors, typography } from "../design/broadcast";
+import { plural } from "../design/plural";
 
 const noteStyle: React.CSSProperties = {
   margin: "0 0 8px",
@@ -263,7 +265,7 @@ function LiveRetrospective({
               }}
             >
               rolling {windowDays}d top-1 realized accuracy - 5 classes -{" "}
-              {(post.n ?? 0).toLocaleString()} truth-joined predictions
+              {`${(post.n ?? 0).toLocaleString()} truth-joined ${plural(post.n ?? 0, "prediction")}`}
             </div>
           </>
         ) : (
@@ -319,27 +321,16 @@ export default function AccuracyPage() {
   return (
     <PageChrome>
       <header>
-        <span
-          style={{
-            fontFamily: typography.fonts.mono,
-            fontSize: 12,
-            fontWeight: typography.weights.semibold,
-            letterSpacing: "0.12em",
-            textTransform: "uppercase",
-            color: colors.goldInk,
-          }}
-        >
-          Live + Held-Out Scorecards
-        </span>
+        <Eyebrow as="p">Live + Held-Out Scorecards</Eyebrow>
         <h1
           style={{
             margin: "8px 0 0",
             fontFamily: typography.fonts.display,
             fontStyle: "italic",
             fontWeight: typography.weights.heavy,
-            fontSize: typography.scale[6],
+            fontSize: typography.h1Size,
             lineHeight: typography.lineHeights.display,
-            letterSpacing: "0.01em",
+            letterSpacing: typography.tracking.h1,
             textTransform: "uppercase",
             color: colors.ink,
           }}
@@ -432,8 +423,7 @@ export default function AccuracyPage() {
           <p style={sectionNoteStyle}>Loading held-out scorecard...</p>
         ) : scorecard.isError ? (
           <p style={sectionNoteStyle}>
-            Could not load the held-out scorecard
-            {scorecard.error ? `: ${scorecard.error.message}` : ""}.
+            Could not load the held-out scorecard right now.
           </p>
         ) : hasScores ? (
           <>
@@ -497,10 +487,7 @@ export default function AccuracyPage() {
         {backfill.isLoading ? (
           <p style={sectionNoteStyle}>Loading backfill...</p>
         ) : backfill.isError ? (
-          <p style={sectionNoteStyle}>
-            Could not load the backfill
-            {backfill.error ? `: ${backfill.error.message}` : ""}.
-          </p>
+          <p style={sectionNoteStyle}>Could not load the backfill right now.</p>
         ) : report ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <ConfusionMatrix

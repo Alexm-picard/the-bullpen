@@ -11,6 +11,7 @@
  *
  * This page imports ONLY the broadcast token namespace ([160] migration rule).
  */
+import { VisuallyHidden } from "@mantine/core";
 import { useMemo, useState } from "react";
 
 import { useTodaysGames } from "../api/games";
@@ -26,15 +27,19 @@ import { SlateBoard } from "../components/games/slate-board";
 import { SHOWCASE_MATCHUPS } from "../data/matchups-showcase";
 import { SHOWCASE_GAMES } from "../data/slate-fixtures";
 import { BroadcastFooter, PageChrome } from "../components/shared/page-chrome";
+import { SegmentedToggle } from "../components/shared/segmented-toggle";
 import { colors, typography } from "../design/broadcast";
 
+// Built once: constructing an Intl formatter is the expensive part.
+const ISSUE_DATE_FORMAT = new Intl.DateTimeFormat("en-US", {
+  weekday: "short",
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+});
+
 function todayIssueDate(): string {
-  return new Intl.DateTimeFormat("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(new Date());
+  return ISSUE_DATE_FORMAT.format(new Date());
 }
 
 type Filter = "all" | SlateStatus;
@@ -54,18 +59,34 @@ function countTag(counts: Record<SlateStatus, number>): string {
   return parts.join(" · ").toUpperCase();
 }
 
-function filterButtonStyle(active: boolean): React.CSSProperties {
-  return {
-    fontFamily: typography.fonts.mono,
-    fontWeight: typography.weights.medium,
-    fontSize: 12,
-    letterSpacing: "0.04em",
-    padding: "6px 15px",
-    border: "none",
-    cursor: "pointer",
-    backgroundColor: active ? colors.chrome : "transparent",
-    color: active ? colors.textOnChrome : colors.textMuted,
-  };
+const SKELETON_CARDS = [0, 1, 2, 3, 4, 5];
+
+/** Same-shell loading state: the slate grid with static (no shimmer) boxes. */
+function SlateSkeleton() {
+  return (
+    <div
+      role="status"
+      aria-busy="true"
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fill, minmax(min(330px, 100%), 1fr))",
+        gap: 14,
+      }}
+    >
+      <VisuallyHidden>Loading today&rsquo;s slate&hellip;</VisuallyHidden>
+      {SKELETON_CARDS.map((i) => (
+        <div
+          key={i}
+          aria-hidden="true"
+          style={{
+            minHeight: 150,
+            backgroundColor: colors.panel,
+            border: `1px solid ${colors.rule}`,
+          }}
+        />
+      ))}
+    </div>
+  );
 }
 
 export default function GamesPage() {
@@ -97,6 +118,8 @@ export default function GamesPage() {
   const counts = slateCounts(cards);
   const filtered =
     filter === "all" ? cards : cards.filter((c) => c.status === filter);
+  const activeFilterLabel =
+    filter === "all" ? undefined : FILTERS.find((f) => f.key === filter)?.label;
 
   return (
     <PageChrome gap={22} bottomPad={48}>
@@ -140,30 +163,12 @@ export default function GamesPage() {
           </p>
         </div>
 
-        <div
-          role="group"
-          aria-label="Filter games by status"
-          style={{
-            display: "inline-flex",
-            border: `1px solid ${colors.rule}`,
-            backgroundColor: colors.panel,
-          }}
-        >
-          {FILTERS.map((f, i) => (
-            <button
-              key={f.key}
-              type="button"
-              aria-pressed={filter === f.key}
-              onClick={() => setFilter(f.key)}
-              style={{
-                ...filterButtonStyle(filter === f.key),
-                borderLeft: i > 0 ? `1px solid ${colors.rule}` : "none",
-              }}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
+        <SegmentedToggle
+          options={FILTERS}
+          value={filter}
+          onChange={setFilter}
+          ariaLabel="Filter games by status"
+        />
       </header>
 
       <section aria-labelledby="games-slate-label">
@@ -177,17 +182,14 @@ export default function GamesPage() {
         </div>
 
         {loading ? (
-          <p
-            style={{
-              fontFamily: typography.fonts.body,
-              color: colors.textMuted,
-            }}
-          >
-            Loading today&rsquo;s slate&hellip;
-          </p>
+          <SlateSkeleton />
         ) : (
           <>
-            <SlateBoard cards={filtered} />
+            <SlateBoard
+              cards={filtered}
+              filterLabel={activeFilterLabel}
+              onReset={() => setFilter("all")}
+            />
             {usingShowcase && (
               <p
                 style={{

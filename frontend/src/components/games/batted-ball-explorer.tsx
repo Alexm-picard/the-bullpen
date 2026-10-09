@@ -24,7 +24,7 @@ import type {
   ParkOutcome,
   ParkOutcomeTone,
 } from "../../data/batted-ball-fixtures";
-import { colors, cuts, typography } from "../../design/broadcast";
+import { colors, cuts, motion, typography } from "../../design/broadcast";
 
 const TONE: Record<ParkOutcomeTone, { bg: string; fg: string }> = {
   hr: { bg: colors.gold, fg: colors.ink },
@@ -144,17 +144,23 @@ function ParkRow({
         {onRemove && (
           <button
             type="button"
+            className="bp-pressable"
             onClick={onRemove}
             aria-label={`Remove ${park.park}`}
             style={{
+              // WCAG 2.5.8: a 24px target, glyph centred.
+              minWidth: 24,
+              minHeight: 24,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 0,
               fontFamily: typography.fonts.mono,
               fontSize: 15,
               lineHeight: 1,
               color: colors.textMuted,
               background: "none",
               border: "none",
-              cursor: "pointer",
-              padding: "0 1px",
             }}
           >
             ×
@@ -165,7 +171,15 @@ function ParkRow({
   );
 }
 
-export function BattedBallExplorer({ data }: { data: BattedBall }) {
+export function BattedBallExplorer({
+  data,
+  enter = false,
+}: {
+  data: BattedBall;
+  /** True only when this ball arrived in-session: plays the ADR-0017 §3
+   * entrance. A card present at first paint never animates ([112]). */
+  enter?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [shown, setShown] = useState<string[]>(data.defaultShown);
   const [selectOpen, setSelectOpen] = useState(false);
@@ -178,6 +192,7 @@ export function BattedBallExplorer({ data }: { data: BattedBall }) {
 
   return (
     <div
+      className={enter ? "bp-enter" : undefined}
       style={{
         backgroundColor: colors.panel,
         border: `1px solid ${colors.rule}`,
@@ -260,9 +275,13 @@ export function BattedBallExplorer({ data }: { data: BattedBall }) {
 
       <button
         type="button"
+        className="bp-pressable"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
         style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 8,
           marginTop: 16,
           fontFamily: typography.fonts.mono,
           fontWeight: typography.weights.medium,
@@ -273,156 +292,174 @@ export function BattedBallExplorer({ data }: { data: BattedBall }) {
           backgroundColor: colors.chrome,
           border: "none",
           padding: "9px 16px",
-          cursor: "pointer",
         }}
       >
-        {open ? "Hide park comparison" : "Compare across parks →"}
-      </button>
-
-      {open && (
-        <div
+        {open ? "Hide park comparison" : "Compare across parks"}
+        <span
+          aria-hidden="true"
           style={{
-            marginTop: 16,
-            borderTop: `1px solid ${colors.rule}`,
-            paddingTop: 14,
+            display: "inline-block",
+            transform: open ? "rotate(180deg)" : "none",
+            transition: `transform ${motion.durationsMs.base}ms ${motion.easing.standard}`,
           }}
         >
+          ▾
+        </span>
+      </button>
+
+      {/* Stays mounted so open/close retargets mid-motion (0fr <-> 1fr); `inert`
+          keeps the collapsed rows out of the tab order and the accessibility tree. */}
+      <div
+        className="bp-collapse"
+        data-open={open ? "true" : "false"}
+        inert={!open}
+      >
+        <div>
           <div
             style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              marginBottom: 8,
+              marginTop: 16,
+              borderTop: `1px solid ${colors.rule}`,
+              paddingTop: 14,
             }}
           >
-            <span
-              style={{
-                fontFamily: typography.fonts.mono,
-                fontWeight: typography.weights.bold,
-                fontSize: 12,
-                color: colors.ink,
-              }}
-            >
-              {data.modelName ?? "batted_ball"} {data.modelVersion ?? "v1.4"} ·
-              per-park heads
-            </span>
-            <span
-              style={{
-                fontFamily: typography.fonts.mono,
-                fontSize: 10,
-                fontWeight: typography.weights.bold,
-                letterSpacing: "0.1em",
-                backgroundColor: colors.condFormat.good1,
-                color: colors.condFormat.good3,
-                border: `1px solid ${colors.condFormat.good3}`,
-                padding: "2px 8px",
-              }}
-            >
-              LIVE
-            </span>
-          </div>
-
-          <p
-            style={{
-              margin: "0 0 12px",
-              fontFamily: typography.fonts.body,
-              fontSize: 13,
-              lineHeight: 1.5,
-              color: colors.text,
-            }}
-          >
-            The same struck ball, scored at every park:{" "}
-            <strong>
-              home run in {data.hrParkCount} of {data.parkCount}
-            </strong>
-            .{data.narrative ? ` ${data.narrative}` : ""}
-          </p>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
-              gap: 7,
-            }}
-          >
-            {shown.map((name) => {
-              const park = byName.get(name);
-              if (!park) return null;
-              return (
-                <ParkRow
-                  key={name}
-                  park={park}
-                  onRemove={
-                    park.here
-                      ? undefined
-                      : () => setShown((s) => s.filter((n) => n !== name))
-                  }
-                />
-              );
-            })}
-          </div>
-
-          {addable.length > 0 && (
             <div
               style={{
-                marginTop: 10,
                 display: "flex",
                 alignItems: "center",
-                gap: 10,
+                justifyContent: "space-between",
+                marginBottom: 8,
               }}
             >
-              <button
-                type="button"
-                aria-expanded={selectOpen}
-                onClick={() => setSelectOpen((s) => !s)}
+              <span
                 style={{
                   fontFamily: typography.fonts.mono,
-                  fontSize: 11,
-                  fontWeight: typography.weights.medium,
-                  letterSpacing: "0.06em",
-                  textTransform: "uppercase",
-                  color: colors.goldInk,
-                  background: "none",
-                  border: `1px dashed ${colors.rule}`,
-                  padding: "6px 12px",
-                  cursor: "pointer",
+                  fontWeight: typography.weights.bold,
+                  fontSize: 12,
+                  color: colors.ink,
                 }}
               >
-                + Add park
-              </button>
-              {selectOpen && (
-                <select
-                  aria-label="Add a park to the comparison"
-                  defaultValue=""
-                  onChange={(e) => {
-                    if (e.target.value) {
-                      setShown((s) => [...s, e.target.value]);
-                      setSelectOpen(false);
+                {data.modelName ?? "batted_ball"} {data.modelVersion ?? "v1.4"}{" "}
+                · per-park heads
+              </span>
+              <span
+                style={{
+                  fontFamily: typography.fonts.mono,
+                  fontSize: 10,
+                  fontWeight: typography.weights.bold,
+                  letterSpacing: "0.1em",
+                  backgroundColor: colors.condFormat.good1,
+                  color: colors.condFormat.good3,
+                  border: `1px solid ${colors.condFormat.good3}`,
+                  padding: "2px 8px",
+                }}
+              >
+                LIVE
+              </span>
+            </div>
+
+            <p
+              style={{
+                margin: "0 0 12px",
+                fontFamily: typography.fonts.body,
+                fontSize: 13,
+                lineHeight: 1.5,
+                color: colors.text,
+              }}
+            >
+              The same struck ball, scored at every park:{" "}
+              <strong>
+                home run in {data.hrParkCount} of {data.parkCount}
+              </strong>
+              .{data.narrative ? ` ${data.narrative}` : ""}
+            </p>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+                gap: 7,
+              }}
+            >
+              {shown.map((name) => {
+                const park = byName.get(name);
+                if (!park) return null;
+                return (
+                  <ParkRow
+                    key={name}
+                    park={park}
+                    onRemove={
+                      park.here
+                        ? undefined
+                        : () => setShown((s) => s.filter((n) => n !== name))
                     }
-                  }}
+                  />
+                );
+              })}
+            </div>
+
+            {addable.length > 0 && (
+              <div
+                style={{
+                  marginTop: 10,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                }}
+              >
+                <button
+                  type="button"
+                  className="bp-pressable"
+                  aria-expanded={selectOpen}
+                  onClick={() => setSelectOpen((s) => !s)}
                   style={{
                     fontFamily: typography.fonts.mono,
-                    fontSize: 12,
-                    padding: "6px 10px",
-                    border: `1px solid ${colors.rule}`,
-                    backgroundColor: colors.panel,
-                    color: colors.text,
+                    fontSize: 11,
+                    fontWeight: typography.weights.medium,
+                    letterSpacing: "0.06em",
+                    textTransform: "uppercase",
+                    color: colors.goldInk,
+                    background: "none",
+                    border: `1px dashed ${colors.rule}`,
+                    padding: "6px 12px",
                   }}
                 >
-                  <option value="" disabled>
-                    Choose a park…
-                  </option>
-                  {addable.map((p) => (
-                    <option key={p.park} value={p.park}>
-                      {p.park} · {p.team}
+                  + Add park
+                </button>
+                {selectOpen && (
+                  <select
+                    className="bp-reveal"
+                    aria-label="Add a park to the comparison"
+                    defaultValue=""
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        setShown((s) => [...s, e.target.value]);
+                        setSelectOpen(false);
+                      }
+                    }}
+                    style={{
+                      fontFamily: typography.fonts.mono,
+                      fontSize: 12,
+                      padding: "6px 10px",
+                      border: `1px solid ${colors.rule}`,
+                      backgroundColor: colors.panel,
+                      color: colors.text,
+                    }}
+                  >
+                    <option value="" disabled>
+                      Choose a park…
                     </option>
-                  ))}
-                </select>
-              )}
-            </div>
-          )}
+                    {addable.map((p) => (
+                      <option key={p.park} value={p.park}>
+                        {p.park} · {p.team}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

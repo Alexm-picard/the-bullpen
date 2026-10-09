@@ -8,8 +8,8 @@
  * Layout (top → bottom):
  *   1. HeroEyebrow: "THE BULLPEN · PARK FACTORS · APPENDIX A".
  *   2. Two-line nameplate h1 — "PARK" / "FACTORS" each on its own line via
- *      display:block spans. Saira Condensed heavy 64px → 48px <600px (the
- *      down-shift lives in parks.css under .parks__title).
+ *      display:block spans. Display face heavy at the fluid
+ *      typography.heroSize (40px on phones up to 64px).
  *   3. Byline strip: edition · 30 parks · 3-yr rolling · n=437,210, with the
  *      same border-top/-bottom bgEmphasis 1-px treatment as the home masthead.
  *   4. Mono context line: data-window + model tag.
@@ -52,11 +52,11 @@ export function ParksHeader({
         className="parks__title"
         style={{
           fontFamily: typography.fonts.display,
-          fontSize: typography.scale[7], // 64
+          fontSize: typography.heroSize,
           fontWeight: typography.weights.heavy,
           color: colors.ink,
           textTransform: "uppercase",
-          letterSpacing: "0.005em",
+          letterSpacing: typography.tracking.hero,
           lineHeight: typography.lineHeights.display,
           margin: 0,
         }}

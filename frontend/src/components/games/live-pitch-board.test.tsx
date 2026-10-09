@@ -123,4 +123,23 @@ describe("LivePitchBoard", () => {
     );
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
+
+  it("does not claim the game is waiting while the first fetch is in flight", () => {
+    // A 300-pitch game opened cold has an empty list for one round-trip. Saying "Waiting for the
+    // first pitch" then asserts a fact about the game the page does not know.
+    render(<LivePitchBoard pitches={[]} isPending />);
+    const status = screen.getByRole("status", {
+      name: "Loading the pitch log",
+    });
+    expect(status).toHaveAttribute("aria-busy", "true");
+    expect(document.body.textContent).not.toContain(
+      "Waiting for the first pitch",
+    );
+  });
+
+  it("shows real rows, not the loading shell, once pitches exist", () => {
+    render(<LivePitchBoard pitches={[pitch()]} isPending />);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("row")).toHaveLength(2);
+  });
 });

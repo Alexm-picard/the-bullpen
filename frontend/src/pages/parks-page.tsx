@@ -12,7 +12,7 @@
  */
 
 import { NumberInput, SegmentedControl } from "@mantine/core";
-import { useDebouncedValue } from "@mantine/hooks";
+import { useDebouncedValue, useReducedMotion } from "@mantine/hooks";
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
 
@@ -33,7 +33,7 @@ import {
   PARKS_META,
 } from "../data/parks-fixtures";
 import { BroadcastFooter, PageChrome } from "../components/shared/page-chrome";
-import { colors, typography } from "../design/broadcast";
+import { colors, motion, typography } from "../design/broadcast";
 
 import "./parks/parks.css";
 
@@ -116,14 +116,20 @@ export default function ParksPage() {
     [launchSpeedMph, launchAngleDeg, sprayAngleDeg, stand],
   );
   const [debouncedReq] = useDebouncedValue(req, 300);
-  const allParks = useAllParksPrediction(debouncedReq);
+  // keepPrevious: a slider change keeps the 30-row heatmap mounted (dimmed) while
+  // the next request is in flight instead of unmounting it for a one-line note.
+  const allParks = useAllParksPrediction(debouncedReq, { keepPrevious: true });
+  const reduceMotion = useReducedMotion();
 
   const handleSelect = (parkId: string) => {
     setActiveParkId(parkId);
     if (typeof document !== "undefined") {
       const el = document.getElementById(`park-row-${parkId}`);
       if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.scrollIntoView({
+          behavior: reduceMotion ? "auto" : "smooth",
+          block: "center",
+        });
       }
     }
   };
@@ -140,7 +146,10 @@ export default function ParksPage() {
       <ParksMethodology line={PARKS_META.methodologyLine} />
       <p style={noteStyle}>{SHOWCASE_NOTE}</p>
 
-      <section aria-labelledby="parks-hr-label">
+      <section
+        aria-labelledby="parks-hr-label"
+        aria-busy={allParks.isPlaceholderData ? true : undefined}
+      >
         <div style={{ marginBottom: 12 }}>
           <LowerThird id="parks-hr-label" meta="LIVE · 30 PARKS">
             Home-Run Probability by Park
@@ -219,10 +228,13 @@ export default function ParksPage() {
               : ""}
             .
           </p>
-        ) : allParks.isLoading ? (
-          <p style={noteStyle}>Computing P(HR) across the 30 parks&hellip;</p>
         ) : allParks.data ? (
-          <>
+          <div
+            style={{
+              opacity: allParks.isPlaceholderData ? 0.6 : 1,
+              transition: `opacity ${motion.durationsMs.fast}ms ${motion.easing.color}`,
+            }}
+          >
             <p style={noteStyle}>
               Live: {allParks.data.modelName} {allParks.data.modelVersion} -
               estimated P(HR) for a {launchSpeedMph} mph / {launchAngleDeg}
@@ -239,18 +251,10 @@ export default function ParksPage() {
               carryFtByPark={allParks.data.carryFtByPark}
               parkRows={PARK_ROWS}
             />
-          </>
+          </div>
+        ) : allParks.isLoading ? (
+          <p style={noteStyle}>Computing P(HR) across the 30 parks&hellip;</p>
         ) : null}
-      </section>
-
-      <section aria-labelledby="parks-overview-label">
-        <div style={{ marginBottom: 12 }}>
-          <LowerThird id="parks-overview-label" meta="30 PARKS">
-            Overview
-          </LowerThird>
-        </div>
-        <p style={noteStyle}>{SHOWCASE_NOTE}</p>
-        <OverviewParksTable rows={PARK_ROWS} />
       </section>
 
       <section aria-labelledby="parks-switcher-label">
@@ -266,6 +270,16 @@ export default function ParksPage() {
           activeParkId={activeParkId}
           onSelect={handleSelect}
         />
+      </section>
+
+      <section aria-labelledby="parks-overview-label">
+        <div style={{ marginBottom: 12 }}>
+          <LowerThird id="parks-overview-label" meta="30 PARKS">
+            Overview
+          </LowerThird>
+        </div>
+        <p style={noteStyle}>{SHOWCASE_NOTE}</p>
+        <OverviewParksTable rows={PARK_ROWS} activeParkId={activeParkId} />
       </section>
 
       <section aria-labelledby="parks-spotlight-label">

@@ -28,27 +28,24 @@ const h3Style: React.CSSProperties = {
   margin: "0 0 10px",
   fontFamily: typography.fonts.mono,
   fontSize: 11,
-  letterSpacing: "0.12em",
+  letterSpacing: typography.tracking.eyebrow,
   textTransform: "uppercase",
   color: colors.textMuted,
 };
 
-function pillStyle(active: boolean): React.CSSProperties {
-  return {
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    fontFamily: typography.fonts.mono,
-    fontSize: 12,
-    fontWeight: typography.weights.medium,
-    padding: "5px 11px",
-    cursor: "pointer",
-    border: `1px solid ${active ? colors.chrome : colors.rule}`,
-    backgroundColor: active ? colors.chrome : colors.panel,
-    color: active ? colors.textOnChrome : colors.text,
-  };
-}
+// Layout and type only: border, background and color (including the pressed
+// state via [aria-pressed="true"]) belong to .bp-surface in interaction.css, so
+// its hover and press rules are not outranked by an inline style.
+const pillStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 6,
+  fontFamily: typography.fonts.mono,
+  fontSize: 12,
+  fontWeight: typography.weights.medium,
+  padding: "5px 11px",
+};
 
 const noteStyle: React.CSSProperties = {
   fontFamily: typography.fonts.body,
@@ -88,7 +85,8 @@ export function BrowsePlayers() {
             type="button"
             aria-pressed={isActive("position", p)}
             onClick={() => toggle("position", p)}
-            style={pillStyle(isActive("position", p))}
+            className="bp-surface bp-pressable"
+            style={pillStyle}
           >
             {p}
           </button>
@@ -109,7 +107,8 @@ export function BrowsePlayers() {
             type="button"
             aria-pressed={isActive("team", t)}
             onClick={() => toggle("team", t)}
-            style={pillStyle(isActive("team", t))}
+            className="bp-surface bp-pressable"
+            style={pillStyle}
           >
             <span
               aria-hidden="true"
@@ -150,22 +149,17 @@ export function BrowsePlayers() {
                 <Link
                   key={p.id}
                   to={`/players/${p.id}`}
+                  className="bp-link--ink bp-pressable"
                   style={{
                     display: "flex",
                     alignItems: "baseline",
                     justifyContent: "space-between",
                     gap: 8,
                     padding: "6px 8px",
-                    textDecoration: "none",
                     borderBottom: `1px solid ${colors.fieldSubtle}`,
                   }}
                 >
-                  <span
-                    style={{
-                      fontWeight: typography.weights.semibold,
-                      color: colors.ink,
-                    }}
-                  >
+                  <span style={{ fontWeight: typography.weights.semibold }}>
                     {p.name}
                   </span>
                   <span

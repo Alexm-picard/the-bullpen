@@ -15,8 +15,6 @@ import type { SlateCard } from "../../api/slate-view";
 import { colors, cuts, radii, typography } from "../../design/broadcast";
 import { teamColor } from "../../design/teamColors";
 
-import "../../design/broadcast.css";
-
 const abbrevStyle: React.CSSProperties = {
   fontFamily: typography.fonts.display,
   fontStyle: "italic",
@@ -36,6 +34,24 @@ const scoreStyle: React.CSSProperties = {
 };
 
 function StatusBlock({ card }: { card: SlateCard }) {
+  if (card.status === "live" && card.paused) {
+    // A halted game (rain delay, suspension): its state, not the on-air dot.
+    return (
+      <span
+        style={{
+          fontFamily: typography.fonts.mono,
+          fontWeight: typography.weights.bold,
+          fontSize: 11,
+          letterSpacing: typography.tracking.label,
+          textTransform: "uppercase",
+          color: colors.textMuted,
+        }}
+      >
+        {card.detailedState ?? "Delayed"}
+        {card.inning ? ` · Inn ${card.inning}` : ""}
+      </span>
+    );
+  }
   if (card.status === "live") {
     return (
       <span
@@ -51,8 +67,10 @@ function StatusBlock({ card }: { card: SlateCard }) {
           color: colors.goldInk,
         }}
       >
+        {/* Static dot: ~15 synchronized pulses in a scanned grid is noise; the
+            Scorebug keeps the one pulsing on-air dot. */}
         <span
-          className="broadcast-live-dot"
+          data-slate-live-dot="true"
           aria-hidden="true"
           style={{
             width: 7,
@@ -135,11 +153,10 @@ function SlateCardView({ card }: { card: SlateCard }) {
     <Link
       to={`/games/${card.gameId}`}
       aria-label={`Open game for ${card.awayTeam} at ${card.homeTeam}`}
+      className="bp-surface bp-pressable bp-pressable--soft bp-pressable--inset"
       style={{
         display: "block",
         textDecoration: "none",
-        backgroundColor: colors.panel,
-        border: `1px solid ${colors.rule}`,
         clipPath: cuts.panelCorner,
         padding: "14px 16px 12px",
       }}
@@ -167,8 +184,8 @@ function SlateCardView({ card }: { card: SlateCard }) {
               style={{
                 color: colors.textMuted,
                 fontWeight: typography.weights.medium,
-                fontSize: 9,
-                letterSpacing: "0.1em",
+                fontSize: 10,
+                letterSpacing: typography.tracking.label,
               }}
             >
               BTL{" "}
@@ -239,12 +256,26 @@ function SlateCardView({ card }: { card: SlateCard }) {
   );
 }
 
-export function SlateBoard({ cards }: { cards: SlateCard[] }) {
+export function SlateBoard({
+  cards,
+  filterLabel,
+  onReset,
+}: {
+  cards: SlateCard[];
+  /** The active status filter's label; absent when the view is unfiltered. */
+  filterLabel?: string;
+  /** Clears the filter; renders a "Show all games" control when present. */
+  onReset?: () => void;
+}) {
   if (cards.length === 0) {
     return (
       <div
         role="status"
         style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 12,
           backgroundColor: colors.panel,
           border: `1px solid ${colors.rule}`,
           padding: 24,
@@ -254,7 +285,29 @@ export function SlateBoard({ cards }: { cards: SlateCard[] }) {
           textAlign: "center",
         }}
       >
-        No games in this view.
+        <span>
+          {filterLabel
+            ? `No ${filterLabel.toLowerCase()} games right now.`
+            : "No games in this view."}
+        </span>
+        {filterLabel && onReset && (
+          <button
+            type="button"
+            className="bp-button-chrome bp-pressable"
+            onClick={onReset}
+            style={{
+              fontFamily: typography.fonts.mono,
+              fontWeight: typography.weights.medium,
+              fontSize: 12,
+              letterSpacing: typography.tracking.label,
+              textTransform: "uppercase",
+              padding: "6px 14px",
+              border: "none",
+            }}
+          >
+            Show all games
+          </button>
+        )}
       </div>
     );
   }
@@ -262,7 +315,7 @@ export function SlateBoard({ cards }: { cards: SlateCard[] }) {
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "repeat(auto-fill, minmax(330px, 1fr))",
+        gridTemplateColumns: "repeat(auto-fill, minmax(min(330px, 100%), 1fr))",
         gap: 14,
       }}
     >

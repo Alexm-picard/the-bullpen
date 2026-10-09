@@ -14,6 +14,7 @@
 import { useNavigate } from "react-router";
 
 import { BroadcastPanel } from "../components/broadcast/broadcast-panel";
+import { Eyebrow } from "../components/broadcast/eyebrow";
 import { LowerThird } from "../components/broadcast/lower-third";
 import { BrowsePlayers } from "../components/players/browse-players";
 import { FeaturedReports } from "../components/players/featured-reports";
@@ -30,9 +31,9 @@ const h1Style: React.CSSProperties = {
   fontFamily: typography.fonts.display,
   fontStyle: "italic",
   fontWeight: typography.weights.heavy,
-  fontSize: typography.scale[6],
+  fontSize: typography.h1Size,
   lineHeight: typography.lineHeights.display,
-  letterSpacing: "0.01em",
+  letterSpacing: typography.tracking.h1,
   textTransform: "uppercase",
   color: colors.ink,
 };
@@ -44,19 +45,7 @@ export default function PlayersPage() {
   return (
     <PageChrome bottomPad={48}>
       <header>
-        <p
-          style={{
-            margin: "0 0 4px",
-            fontFamily: typography.fonts.mono,
-            fontSize: 12,
-            fontWeight: typography.weights.semibold,
-            letterSpacing: "0.12em",
-            textTransform: "uppercase",
-            color: colors.goldInk,
-          }}
-        >
-          Player Lookup
-        </p>
+        <Eyebrow as="p">Player Lookup</Eyebrow>
         <h1 style={h1Style}>Pull a Scouting Report</h1>
         <p
           style={{

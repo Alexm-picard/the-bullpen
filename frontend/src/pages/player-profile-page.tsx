@@ -26,6 +26,7 @@ import {
 } from "../api/players";
 import { ReliabilityDiagram } from "../components/charts/reliability-diagram";
 import { BroadcastPanel } from "../components/broadcast/broadcast-panel";
+import { Eyebrow } from "../components/broadcast/eyebrow";
 import { LowerThird } from "../components/broadcast/lower-third";
 import {} from "../components/broadcast/palettes";
 import { BattedBallsView } from "../components/players/batted-balls-view";
@@ -61,9 +62,9 @@ const h1Style: React.CSSProperties = {
   fontFamily: typography.fonts.display,
   fontStyle: "italic",
   fontWeight: typography.weights.heavy,
-  fontSize: typography.scale[6],
+  fontSize: typography.h1Size,
   lineHeight: typography.lineHeights.display,
-  letterSpacing: "0.01em",
+  letterSpacing: typography.tracking.h1,
   textTransform: "uppercase",
   color: colors.ink,
 };
@@ -286,19 +287,7 @@ export default function PlayerProfilePage() {
       {isRealPlayer ? (
         <>
           <header>
-            <p
-              style={{
-                margin: "0 0 4px",
-                fontFamily: typography.fonts.mono,
-                fontSize: 12,
-                fontWeight: typography.weights.semibold,
-                letterSpacing: "0.12em",
-                textTransform: "uppercase",
-                color: colors.goldInk,
-              }}
-            >
-              Player Profile
-            </p>
+            <Eyebrow as="p">Player Profile</Eyebrow>
             <h1 style={h1Style}>
               {realPlayer.data?.name ??
                 (realPlayer.isError
@@ -352,10 +341,11 @@ export default function PlayerProfilePage() {
             role="note"
             style={{
               margin: "0 0 4px",
-              fontFamily: typography.fonts.mono,
-              fontSize: 11,
+              fontFamily: typography.fonts.body,
+              fontSize: 13,
               fontStyle: "italic",
-              letterSpacing: "0.02em",
+              lineHeight: typography.leading.dense,
+              letterSpacing: 0,
               color: colors.textMuted,
             }}
           >
@@ -383,11 +373,7 @@ export default function PlayerProfilePage() {
         </div>
         {predictions.isError ? (
           <p style={liveErrorStyle}>
-            Could not load this player&rsquo;s predictions
-            {predictions.error instanceof Error
-              ? `: ${predictions.error.message}`
-              : ""}
-            .
+            Could not load this player&rsquo;s predictions right now.
           </p>
         ) : predictions.isLoading ? (
           <p style={liveLoadingStyle}>Loading recent predictions&hellip;</p>

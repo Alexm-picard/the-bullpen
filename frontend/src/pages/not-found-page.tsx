@@ -39,8 +39,7 @@ const linkStyle: React.CSSProperties = {
   fontFamily: typography.fonts.body,
   fontWeight: typography.weights.medium,
   fontSize: typography.scale[2],
-  color: colors.goldInk,
-  textDecoration: "none",
+  alignSelf: "flex-start",
 };
 
 export default function NotFoundPage() {
@@ -52,7 +51,7 @@ export default function NotFoundPage() {
         That page isn&rsquo;t in the lineup. Check the URL, or head back to
         tonight&rsquo;s slate.
       </p>
-      <Link to="/" style={linkStyle}>
+      <Link to="/" className="bp-link bp-pressable" style={linkStyle}>
         &larr; Back to home
       </Link>
     </PageChrome>
