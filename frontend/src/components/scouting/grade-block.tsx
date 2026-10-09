@@ -12,7 +12,7 @@
  */
 
 import { cellColorWith, rampFrom } from "../../design/cellColor";
-import { radii, colors, typography } from "../../design/broadcast";
+import { motion, radii, colors, typography } from "../../design/broadcast";
 import { METRIC_META } from "../../data/matchup-fixtures";
 import { useTheme } from "../../design/use-theme";
 
@@ -81,13 +81,15 @@ export function GradeBlock({ label, value }: GradeBlockProps) {
       >
         <div
           style={{
+            // Fill by transform, not width: a scaleX change is composited and
+            // never re-runs layout when a grade updates.
             position: "absolute",
-            top: 0,
-            left: 0,
-            bottom: 0,
-            width: `${pct * 100}%`,
+            inset: 0,
+            width: "100%",
+            transform: `scaleX(${pct})`,
+            transformOrigin: "left",
             backgroundColor: fillBg,
-            transition: "width 200ms cubic-bezier(0.4, 0, 0.2, 1)",
+            transition: `transform ${motion.durationsMs.base}ms ${motion.easing.standard}`,
           }}
         />
       </div>

@@ -11,9 +11,17 @@ export type BigStatProps = {
   value: string;
   sub?: string;
   tone?: "default" | "gold";
+  /** Reserve the numeral's width in ch so a changing value does not reflow the row. */
+  minCh?: number;
 };
 
-export function BigStat({ label, value, sub, tone = "default" }: BigStatProps) {
+export function BigStat({
+  label,
+  value,
+  sub,
+  tone = "default",
+  minCh,
+}: BigStatProps) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
       <span
@@ -30,6 +38,9 @@ export function BigStat({ label, value, sub, tone = "default" }: BigStatProps) {
       </span>
       <span
         style={{
+          display: "inline-block",
+          minWidth: minCh ? `${minCh}ch` : undefined,
+          whiteSpace: "nowrap",
           fontFamily: typography.fonts.mono,
           fontWeight: typography.weights.heavy,
           fontSize: typography.scale[6],

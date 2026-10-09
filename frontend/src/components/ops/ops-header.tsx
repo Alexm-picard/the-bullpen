@@ -15,6 +15,7 @@
 import { Stack, Title } from "@mantine/core";
 
 import { colors, typography } from "../../design/broadcast";
+import { plural } from "../../design/plural";
 import { Eyebrow } from "../broadcast/eyebrow";
 
 export type OpsHeaderProps = {
@@ -57,14 +58,13 @@ export function OpsHeader({
       <Eyebrow>The Bullpen · Operations Desk</Eyebrow>
       <Title
         order={1}
-        className="ops-cover__title"
         style={{
           fontFamily: typography.fonts.display,
-          fontSize: typography.scale[7], // 64
+          fontSize: typography.heroSize, // fluid 40 -> 64
           fontWeight: typography.weights.heavy,
           color: colors.ink,
           textTransform: "uppercase",
-          letterSpacing: "0.005em",
+          letterSpacing: typography.tracking.hero,
           lineHeight: typography.lineHeights.display,
           margin: 0,
         }}
@@ -92,11 +92,11 @@ export function OpsHeader({
         </span>
         <span style={{ color: colors.textMuted }}>·</span>
         <span style={{ fontWeight: typography.weights.semibold }}>
-          {modelCount} models
+          {modelCount} {plural(modelCount, "model")}
         </span>
         <span style={{ color: colors.textMuted }}>·</span>
         <span style={{ ...COUNT_LABEL_STYLE, color: alertColor }}>
-          {alertCount} {alertCount === 1 ? "alert" : "alerts"}
+          {alertCount} {plural(alertCount, "alert")}
         </span>
         <span style={{ color: colors.textMuted }}>·</span>
         <span style={{ ...COUNT_LABEL_STYLE, color: awaitingColor }}>

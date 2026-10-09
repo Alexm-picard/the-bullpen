@@ -18,5 +18,7 @@ describe("NotFoundPage", () => {
     expect(html).toContain("404");
     expect(html).toContain("No play at this base.");
     expect(html).toContain('href="/"');
+    // The interaction layer owns the link's color, hover and press states.
+    expect(html).toMatch(/<a[^>]*class="bp-link bp-pressable"[^>]*href="\/"/);
   });
 });

@@ -21,6 +21,10 @@
  * page imports ONLY the broadcast namespace.
  */
 
+import { VisuallyHidden } from "@mantine/core";
+import type { ReactNode } from "react";
+import { Link } from "react-router";
+
 import type { MatchupSummary } from "../api/matchups";
 import { useTodaysMatchups } from "../api/matchups";
 import { firstPitchEt, splitSlate } from "../api/matchups-view";
@@ -106,6 +110,25 @@ const captionStyle: React.CSSProperties = {
   color: colors.textMuted,
 };
 
+/**
+ * Same-shell loading placeholder: a static (no shimmer) box the size of the
+ * content it stands in for, with the loading copy kept for screen readers.
+ */
+function LoadingShell({
+  label,
+  box,
+}: {
+  label: ReactNode;
+  box: React.CSSProperties;
+}) {
+  return (
+    <div role="status" aria-busy="true">
+      <VisuallyHidden>{label}</VisuallyHidden>
+      <div aria-hidden="true" style={box} />
+    </div>
+  );
+}
+
 // ── Page component ────────────────────────────────────────────────────────────
 
 export default function HomePage() {
@@ -162,9 +185,9 @@ export default function HomePage() {
             margin: "0 0 8px",
             fontFamily: typography.fonts.display,
             fontWeight: typography.weights.heavy,
-            fontSize: "clamp(40px, 6vw, 64px)",
-            lineHeight: 0.98,
-            letterSpacing: "0.01em",
+            fontSize: typography.heroSize,
+            lineHeight: typography.leading.hero,
+            letterSpacing: typography.tracking.hero,
             textTransform: "uppercase",
             color: colors.ink,
           }}
@@ -194,25 +217,29 @@ export default function HomePage() {
             Pitch outcome, pitch type, batted-ball carry - self-hosted,
             drift-watched, honestly scored.
           </p>
-          <a
-            href="/models/guide"
+          <Link
+            to="/models/guide"
+            className="bp-link bp-pressable"
             style={{
               display: "inline-flex",
               alignItems: "center",
               gap: 6,
               fontFamily: typography.fonts.mono,
-              fontSize: 10,
-              letterSpacing: "0.12em",
-              color: colors.textMuted,
-              textDecoration: "none",
+              fontSize: 12,
+              letterSpacing: typography.tracking.eyebrow,
               textTransform: "uppercase",
               border: `1px solid ${colors.rule}`,
-              padding: "4px 10px",
+              padding: "6px 10px",
             }}
           >
-            <span style={{ color: colors.gold, fontSize: 11 }}>{"ⓘ"}</span>
+            <span
+              aria-hidden="true"
+              style={{ color: colors.gold, fontSize: 12 }}
+            >
+              {"ⓘ"}
+            </span>
             Model guide
-          </a>
+          </Link>
         </div>
         <p
           style={{
@@ -234,7 +261,10 @@ export default function HomePage() {
           "backend unreachable". */}
       <div>
         {ribbonLoading ? (
-          <p style={captionStyle}>Model fleet · loading&hellip;</p>
+          <LoadingShell
+            label="Model fleet · loading…"
+            box={{ height: 38, backgroundColor: colors.chromeDeep }}
+          />
         ) : (
           <>
             <BroadcastFleetStrip chips={chips} />
@@ -264,7 +294,15 @@ export default function HomePage() {
           </LowerThird>
         </div>
         {todaysGames.isLoading ? (
-          <p style={captionStyle}>Loading tonight&rsquo;s games&hellip;</p>
+          <LoadingShell
+            label="Loading tonight’s games…"
+            box={{
+              height: 54,
+              maxWidth: 220,
+              backgroundColor: colors.panel,
+              border: `1px solid ${colors.rule}`,
+            }}
+          />
         ) : todaysGames.isError ? (
           // Degrade gracefully like the fleet strip + matchups board, instead
           // of a raw "Failed to fetch": show the showcase slate + honest caption.
@@ -310,7 +348,14 @@ export default function HomePage() {
           </LowerThird>
         </div>
         {matchupsLoading ? (
-          <p style={captionStyle}>Loading tonight&rsquo;s matchups&hellip;</p>
+          <LoadingShell
+            label="Loading tonight’s matchups…"
+            box={{
+              minHeight: 160,
+              backgroundColor: colors.panel,
+              border: `1px solid ${colors.rule}`,
+            }}
+          />
         ) : board.length > 0 ? (
           <TonightsMatchupsBoard
             rows={board}

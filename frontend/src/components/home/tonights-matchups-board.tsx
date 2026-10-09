@@ -167,7 +167,7 @@ export function TonightsMatchupsBoard({
         </thead>
         <tbody>
           {rows.map((m) => (
-            <tr key={m.gameId}>
+            <tr key={m.gameId} className="bp-row">
               <th
                 scope="row"
                 style={{ ...cell, whiteSpace: "nowrap", textAlign: "left" }}
@@ -209,15 +209,15 @@ export function TonightsMatchupsBoard({
               <td style={{ ...cell, textAlign: "right", borderRight: "none" }}>
                 <Link
                   to={`/games/${m.gameId}`}
+                  className="bp-link bp-pressable"
                   style={{
+                    display: "inline-block",
                     fontFamily: typography.fonts.display,
                     fontStyle: "italic",
                     fontWeight: typography.weights.bold,
                     fontSize: 13,
                     letterSpacing: "0.08em",
                     textTransform: "uppercase",
-                    color: colors.goldInk,
-                    textDecoration: "none",
                     whiteSpace: "nowrap",
                   }}
                   aria-label={`Open game for ${m.awayTeam} at ${m.homeTeam}`}

@@ -103,17 +103,19 @@ const subStyle: React.CSSProperties = {
   lineHeight: 1.45,
 };
 
-// The qualifier is contractually required reading, not a footnote: mono, full
-// text color, and a hairline rule so it cannot dissolve into the metadata
+// The qualifier is contractually required reading, not a footnote: full text
+// color at a readable 13px body size (sentence-length copy does not belong in
+// the mono face), and a hairline rule so it cannot dissolve into the metadata
 // line above it (the "big claim, small disclaimer" trap).
 const qualifierStyle: React.CSSProperties = {
   margin: "8px 0 0",
   paddingTop: 6,
   borderTop: `1px solid ${colors.rule}`,
-  fontFamily: typography.fonts.mono,
-  fontSize: 11,
+  fontFamily: typography.fonts.body,
+  fontSize: 13,
   color: colors.text,
-  lineHeight: 1.5,
+  lineHeight: typography.leading.dense,
+  letterSpacing: 0,
 };
 
 const detailStyle: React.CSSProperties = {

@@ -9,8 +9,8 @@
  * Layout (top → bottom):
  *   1. HeroEyebrow: "The Bullpen · Colophon · Back Matter" (scarlet mono).
  *   2. Two-line nameplate h1: `ABOUT` / `THE BULLPEN`, each span display:block.
- *      Saira Condensed heavy 64px → 48px below 600px (CSS media query in
- *      about.css). The two-line break is the locked pick — matches /home's
+ *      Barlow Condensed heavy at the fluid hero size (clamp 40 -> 64px,
+ *      typography.heroSize). The two-line break is the locked pick — matches /home's
  *      "TONIGHT'S / SLATE" cadence.
  *   3. Byline strip with the bgEmphasis border-top + border-bottom treatment.
  *   4. Mono context line: ISSUED yyyy-mm-dd, uppercase tracked +0.04em.
@@ -21,6 +21,7 @@
 import { Stack, Title } from "@mantine/core";
 
 import { colors, typography } from "../../design/broadcast";
+import { Eyebrow } from "../broadcast/eyebrow";
 
 export type AboutHeaderProps = {
   /** ISO date, e.g. "2026-05-30". Rendered in the mono context line. */
@@ -44,28 +45,16 @@ export function AboutHeader({
 }: AboutHeaderProps) {
   return (
     <Stack gap={10}>
-      <span
-        style={{
-          fontFamily: typography.fonts.mono,
-          fontSize: 12,
-          fontWeight: typography.weights.semibold,
-          letterSpacing: "0.12em",
-          textTransform: "uppercase",
-          color: colors.goldInk,
-        }}
-      >
-        The Bullpen · Colophon · Back Matter
-      </span>
+      <Eyebrow>The Bullpen · Colophon · Back Matter</Eyebrow>
       <Title
         order={1}
-        className="about-cover__title"
         style={{
           fontFamily: typography.fonts.display,
-          fontSize: typography.scale[7], // 64
+          fontSize: typography.heroSize, // fluid 40 -> 64
           fontWeight: typography.weights.heavy,
           color: colors.ink,
           textTransform: "uppercase",
-          letterSpacing: "0.005em",
+          letterSpacing: typography.tracking.hero,
           lineHeight: typography.lineHeights.display,
           margin: 0,
         }}

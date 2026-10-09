@@ -1,0 +1,343 @@
+/* Interaction-state layer (craft pass 2026-10, Emil Kowalski design-engineering
+ * skills applied within [112]/[160]/[191]/[192]).
+ *
+ * Every pressable surface in the app is an inline-styled <Link> / <button>, and an
+ * inline style cannot express :hover, :active, :focus-visible or @starting-style.
+ * This file owns those states; components opt in with a className and keep their
+ * inline LAYOUT styles. The handful of properties a state must be able to change
+ * (background, border, color) move out of the inline style and into the class.
+ *
+ * Rules of the layer:
+ *   - Feedback on pointer-down (:active): scale(0.97) on 160ms strong ease-out
+ *     (0.985 for large cards). Core navigation (100+/day) snaps its color and
+ *     gets no travel.
+ *   - Hover is gated to real pointers (`hover: hover` + `pointer: fine`); touch
+ *     gets :active only, never a sticky hover.
+ *   - One focus ring everywhere: 2px --bp-focus, outset by 2px; inset on surfaces
+ *     that clip (clip-path cards, overflow-x table headers).
+ *   - Entrances use CSS transitions + @starting-style (interruptible, retargetable),
+ *     never keyframes. The only keyframes in the app are the two continuous loops in
+ *     broadcast.css and the delayed route-pending reveal below.
+ *   - Reduced motion drops TRAVEL and keeps color/opacity feedback - see motion.css.
+ *
+ * Tokens only: every value here is a var() from tokens.css. */
+
+/* ── Platform baseline (mobile-native skill) ──────────────────────────────── */
+
+button,
+[role="button"],
+a[href],
+[role="columnheader"][tabindex] {
+  touch-action: manipulation; /* no double-tap-zoom delay on controls */
+}
+
+button,
+[role="button"],
+[role="columnheader"][tabindex],
+.bp-pressable,
+.bp-navlink {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none; /* no long-press callout on controls; content stays selectable */
+}
+
+/* One focus ring. :where() keeps specificity at zero so Mantine's own focus
+ * styles (inputs, comboboxes) and the per-class inset variants below still win. */
+:where(a[href], button, [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid var(--bp-focus);
+  outline-offset: 2px;
+}
+/* Mantine controls derive their ring from the primary color (gold #f2a900), which
+ * is 1.9:1 on the light field; route them through the per-theme focus token. */
+.mantine-focus-auto:focus-visible,
+.mantine-focus-always:focus-visible {
+  outline-color: var(--bp-focus);
+}
+
+/* iOS Safari zooms the page into any input under 16px and never zooms back out.
+ * Coarse pointers get 16px inputs; desktop keeps Mantine's 14px. Our sheet loads
+ * after @mantine/core/styles.css, so equal specificity resolves in our favor. */
+@media (pointer: coarse) {
+  .mantine-Input-input,
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/* ── Pressable ─────────────────────────────────────────────────────────────── */
+
+.bp-pressable {
+  --bp-press: 0.97;
+  cursor: pointer;
+  transition:
+    transform var(--duration-press) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-color),
+    border-color var(--duration-fast) var(--ease-color),
+    color var(--duration-fast) var(--ease-color),
+    opacity var(--duration-fast) var(--ease-color);
+}
+.bp-pressable--soft {
+  --bp-press: 0.985; /* large cards: the same feedback, less travel */
+}
+.bp-pressable:active:not(:disabled):not([aria-disabled="true"]) {
+  transform: scale(var(--bp-press));
+}
+.bp-pressable:disabled,
+.bp-pressable[aria-disabled="true"] {
+  cursor: default;
+}
+/* Clipped surfaces (clip-path cards, overflow-x table heads) cannot paint an
+ * outset ring: draw it inside the box instead. */
+.bp-pressable--inset:focus-visible {
+  outline: 2px solid var(--bp-focus);
+  outline-offset: -3px;
+}
+
+/* ── Surfaces: panel-colored cards and chips that are links or buttons ─────── */
+
+.bp-surface {
+  background-color: var(--bp-panel);
+  border: 1px solid var(--bp-rule);
+  color: var(--bp-text);
+}
+
+/* A filled chrome button (empty-state resets and similar one-off actions). */
+.bp-button-chrome {
+  background-color: var(--color-chrome);
+  color: var(--color-textOnChrome);
+}
+.bp-surface[aria-pressed="true"],
+.bp-surface--current {
+  background-color: var(--color-chrome);
+  border-color: var(--color-chrome);
+  color: var(--color-textOnChrome);
+}
+
+/* ── Text links ────────────────────────────────────────────────────────────── */
+
+.bp-link {
+  color: var(--bp-gold-ink);
+  text-decoration: none;
+}
+.bp-link--ink {
+  color: var(--bp-ink);
+  text-decoration: underline;
+  text-decoration-color: var(--bp-rule);
+  text-underline-offset: 3px;
+  transition:
+    transform var(--duration-press) var(--ease-out),
+    color var(--duration-fast) var(--ease-color),
+    text-decoration-color var(--duration-fast) var(--ease-color);
+}
+
+/* ── Header navigation (core navigation: color snaps, no travel) ───────────── */
+
+.bp-navlink {
+  color: var(--color-steel);
+  border-bottom: 3px solid transparent;
+  text-decoration: none;
+}
+.bp-navlink[aria-current="page"] {
+  color: var(--color-textOnChrome);
+  border-bottom-color: var(--color-gold);
+}
+.bp-navlink--drawer {
+  border-bottom: none;
+  border-left: 3px solid transparent;
+  padding-left: 10px;
+}
+.bp-navlink--drawer[aria-current="page"] {
+  border-left-color: var(--color-gold);
+}
+.bp-navlink:focus-visible {
+  outline: 2px solid var(--color-gold); /* always on constant-dark chrome */
+  outline-offset: 2px;
+}
+
+/* ── Segmented toggle: a role="group" of aria-pressed buttons ──────────────── */
+
+.bp-seg {
+  display: inline-flex;
+  border: 1px solid var(--bp-rule);
+  background-color: var(--bp-panel);
+}
+.bp-seg__btn {
+  background-color: transparent;
+  color: var(--bp-muted);
+  border: none;
+  border-left: 1px solid var(--bp-rule);
+}
+.bp-seg__btn:first-child {
+  border-left: none;
+}
+.bp-seg__btn[aria-pressed="true"] {
+  background-color: var(--color-chrome);
+  color: var(--color-textOnChrome);
+}
+
+/* ── Theme toggle (icon button in the constant-dark chrome) ────────────────── */
+
+.bp-theme-toggle {
+  border: 1px solid var(--color-chromeEdge);
+  transition:
+    transform var(--duration-press) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-color);
+}
+
+/* ── Sortable table header ─────────────────────────────────────────────────── */
+
+.bp-th {
+  transition: filter var(--duration-fast) var(--ease-color);
+}
+.bp-th > span {
+  transition: transform var(--duration-press) var(--ease-out);
+}
+.bp-th:active > span {
+  transform: scale(0.98);
+}
+.bp-th:focus-visible {
+  outline: 2px solid var(--bp-focus);
+  outline-offset: -2px;
+}
+
+/* ── Table rows whose action is one cell wide ──────────────────────────────── */
+
+.bp-row {
+  transition: background-color var(--duration-fast) var(--ease-color);
+}
+.bp-row:has(a:focus-visible) {
+  outline: 2px solid var(--bp-focus);
+  outline-offset: -2px;
+}
+
+/* ── Hover (real pointers only) ────────────────────────────────────────────── */
+
+@media (hover: hover) and (pointer: fine) {
+  .bp-surface:hover:not([aria-pressed="true"]) {
+    background-color: var(--bp-panel-hover);
+    border-color: var(--bp-panel-edge);
+  }
+  .bp-link:hover {
+    color: var(--bp-link-hover);
+  }
+  .bp-link--ink:hover {
+    color: var(--bp-link-hover);
+    text-decoration-color: var(--bp-link-hover);
+  }
+  .bp-navlink:hover {
+    color: var(--color-textOnChrome);
+  }
+  .bp-navlink:hover:not([aria-current="page"]) {
+    border-bottom-color: var(--color-chromeEdge);
+  }
+  .bp-navlink--drawer:hover:not([aria-current="page"]) {
+    border-left-color: var(--color-chromeEdge);
+  }
+  .bp-seg__btn:hover:not([aria-pressed="true"]) {
+    background-color: var(--bp-panel-hover);
+    color: var(--bp-text);
+  }
+  .bp-th:hover {
+    filter: brightness(1.15);
+  }
+  .bp-row:hover {
+    background-color: var(--bp-panel-hover);
+  }
+  .bp-button-chrome:hover {
+    background-color: var(--color-chromeEdge);
+  }
+  .bp-theme-toggle:hover {
+    border-color: var(--color-gold);
+  }
+}
+
+/* ── Entrances and reveals (transitions + @starting-style; interruptible) ──── */
+
+/* A panel arriving in-session (the ADR-0017 §3 batted-ball entrance). Gate the
+ * class to in-session mounts: an element present at first paint must not carry
+ * it ([112]: no entrance animations on page load). */
+.bp-enter {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity var(--duration-enter) var(--ease-out),
+    transform var(--duration-enter) var(--ease-out);
+}
+@starting-style {
+  .bp-enter {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+/* A small surface summoned by a trigger beside it (a select, an inline form). */
+.bp-reveal {
+  opacity: 1;
+  transform: none;
+  transform-origin: left center;
+  transition:
+    opacity var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+@starting-style {
+  .bp-reveal {
+    opacity: 0;
+    transform: translateX(-4px) scale(0.97);
+  }
+}
+
+/* An expandable block that stays mounted: 0fr <-> 1fr retargets mid-motion. */
+.bp-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows var(--duration-base) var(--ease-out),
+    opacity var(--duration-base) var(--ease-out);
+}
+.bp-collapse > * {
+  min-height: 0;
+  overflow: hidden;
+}
+.bp-collapse[data-open="true"] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+/* Route-chunk fallback: invisible for 300ms, then fades in. A chunk that resolves
+ * inside the window never shows a spinner at all. */
+.route-pending {
+  opacity: 0;
+  animation: bp-fade-in var(--duration-base) var(--ease-out) 300ms forwards;
+}
+@keyframes bp-fade-in {
+  to {
+    opacity: 1;
+  }
+}
+
+/* ── Theme switch ──────────────────────────────────────────────────────────── */
+
+/* While the palette flips, every surface changes in the same frame (otherwise the
+ * 200ms cell cross-fades lag the page). The crossfade itself is a View Transition. */
+:root[data-theme-switching] *,
+:root[data-theme-switching] *::before,
+:root[data-theme-switching] *::after {
+  transition: none !important;
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--duration-base);
+  animation-timing-function: var(--ease-color);
+}
+
+/* ── Translucency ──────────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-transparency: reduce) {
+  .mantine-Overlay-root {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}

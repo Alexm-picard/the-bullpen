@@ -73,8 +73,11 @@ export function ParkMiniThumb({
         appearance: "none",
         background: colors.panel,
         border: `1px solid ${colors.rule}`,
-        outline: isActive ? `2px solid ${colors.gold}` : "none",
-        outlineOffset: isActive ? -1 : 0,
+        // The outline is always present (transparent when inactive) so the
+        // ring's color can transition instead of popping in.
+        outline: "2px solid transparent",
+        outlineOffset: -1,
+        outlineColor: isActive ? colors.gold : "transparent",
         cursor: "pointer",
         padding: 0,
         margin: 0,

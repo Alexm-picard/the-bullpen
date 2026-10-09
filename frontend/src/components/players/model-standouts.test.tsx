@@ -36,6 +36,16 @@ describe("ModelStandouts", () => {
     expect(html).toContain("no live leaders endpoint yet");
   });
 
+  it("uses the shared segmented toggle and the ink link class for names", () => {
+    const html = render(<ModelStandouts />);
+    expect(html).toContain('aria-label="Leaderboard metric"');
+    expect(html).toContain('class="bp-seg"');
+    expect(html).toContain('aria-pressed="true"');
+    expect(html).toMatch(
+      /<a class="bp-link--ink"[^>]*href="\/players\/592450"/,
+    );
+  });
+
   it("carries a distinct pitcher board on the xFIP metric (fixture contract)", () => {
     const topPitcher = MODEL_STANDOUTS.xfip.rows[0];
     const topHitter = MODEL_STANDOUTS.xwoba.rows[0];

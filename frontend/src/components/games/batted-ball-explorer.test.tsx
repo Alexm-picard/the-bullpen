@@ -24,8 +24,10 @@ describe("BattedBallExplorer", () => {
     expect(html).toContain("402");
     expect(html).toContain(".540");
     expect(html).toContain("Compare across parks");
-    // collapsed: the per-park grid is not rendered until opened
-    expect(html).not.toContain("per-park heads");
+    // Collapsed: the per-park block stays MOUNTED (so open/close can retarget mid-motion) but is
+    // closed and inert - out of the tab order and the accessibility tree until opened.
+    expect(html).toContain('class="bp-collapse" data-open="false" inert=""');
+    expect(html).toContain('aria-expanded="false"');
   });
 
   it("keeps the full-30 headline decoupled from the displayed subset", () => {

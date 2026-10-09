@@ -18,24 +18,13 @@ import {
 } from "../../data/players-landing-fixtures";
 import { colors, typography } from "../../design/broadcast";
 import { LowerThird } from "../broadcast/lower-third";
+import { SegmentedToggle } from "../shared/segmented-toggle";
 
 type MetricKey = "xwoba" | "xfip";
 
-const METRICS: MetricKey[] = ["xwoba", "xfip"];
-
-function toggleButtonStyle(active: boolean): React.CSSProperties {
-  return {
-    fontFamily: typography.fonts.mono,
-    fontWeight: typography.weights.medium,
-    fontSize: 12,
-    letterSpacing: "0.04em",
-    padding: "5px 14px",
-    border: "none",
-    cursor: "pointer",
-    backgroundColor: active ? colors.chrome : "transparent",
-    color: active ? colors.textOnChrome : colors.textMuted,
-  };
-}
+const METRIC_OPTIONS: { key: MetricKey; label: string }[] = (
+  ["xwoba", "xfip"] as const
+).map((key) => ({ key, label: MODEL_STANDOUTS[key].label }));
 
 const headCellStyle: React.CSSProperties = {
   backgroundColor: colors.chrome,
@@ -86,30 +75,12 @@ export function ModelStandouts() {
         <LowerThird id="model-standouts-label" meta={metric.tag}>
           Model Standouts
         </LowerThird>
-        <div
-          role="group"
-          aria-label="Leaderboard metric"
-          style={{
-            display: "inline-flex",
-            border: `1px solid ${colors.rule}`,
-            backgroundColor: colors.panel,
-          }}
-        >
-          {METRICS.map((m, i) => (
-            <button
-              key={m}
-              type="button"
-              aria-pressed={metricKey === m}
-              onClick={() => setMetricKey(m)}
-              style={{
-                ...toggleButtonStyle(metricKey === m),
-                borderLeft: i > 0 ? `1px solid ${colors.rule}` : "none",
-              }}
-            >
-              {MODEL_STANDOUTS[m].label}
-            </button>
-          ))}
-        </div>
+        <SegmentedToggle
+          options={METRIC_OPTIONS}
+          value={metricKey}
+          onChange={setMetricKey}
+          ariaLabel="Leaderboard metric"
+        />
       </div>
 
       <table
@@ -154,11 +125,8 @@ export function ModelStandouts() {
               >
                 <Link
                   to={`/players/${row.playerId}`}
-                  style={{
-                    fontWeight: typography.weights.semibold,
-                    color: colors.ink,
-                    textDecoration: "none",
-                  }}
+                  className="bp-link--ink"
+                  style={{ fontWeight: typography.weights.semibold }}
                 >
                   {row.name}
                 </Link>

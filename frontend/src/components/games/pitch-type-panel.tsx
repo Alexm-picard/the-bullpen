@@ -37,7 +37,9 @@
  */
 import type { PitchTypePriorResponse } from "../../api/games";
 import { GameApiError } from "../../api/games";
-import { colors, typography } from "../../design/broadcast";
+import { colors, motion, typography } from "../../design/broadcast";
+
+import { DISTRIBUTION_COLUMNS, DistributionShell } from "./distribution-shell";
 
 /** The seven classes the model emits, with display names. Order here is not display order. */
 const CLASS_LABELS: Record<string, string> = {
@@ -50,13 +52,20 @@ const CLASS_LABELS: Record<string, string> = {
   OFF: "Other",
 };
 
-const mutedMono: React.CSSProperties = {
+/** Caption sentences: body face (design.md §8 - the mono never sets sentences). */
+const caption: React.CSSProperties = {
   margin: 0,
-  fontFamily: typography.fonts.mono,
-  fontSize: 12,
-  letterSpacing: "0.02em",
+  fontFamily: typography.fonts.body,
+  fontSize: 13,
+  lineHeight: typography.leading.dense,
+  letterSpacing: 0,
   color: colors.textMuted,
 };
+
+const SHELL_ROWS = Object.values(CLASS_LABELS);
+
+/** Bars move by transform (compositor-only), cross-fading on each new prior. */
+const barTransition = `transform ${motion.durationsMs.base}ms ${motion.easing.standard}`;
 
 export type PitchTypePanelProps = {
   prior: PitchTypePriorResponse | undefined;
@@ -74,30 +83,48 @@ export function PitchTypePanel({
 }: PitchTypePanelProps) {
   if (!enabled) {
     return (
-      <p style={mutedMono}>
-        Awaiting a settled at-bat &mdash; the pitch-type prior describes one
-        specific upcoming pitch, so it needs the same live context.
-      </p>
+      <DistributionShell
+        rows={SHELL_ROWS}
+        note={
+          <>
+            Awaiting a settled at-bat &mdash; the pitch-type prior describes one
+            specific upcoming pitch, so it needs the same live context.
+          </>
+        }
+      />
     );
   }
   if (error instanceof GameApiError && error.status === 503) {
     // The server's reason, verbatim - the frontend owns no facts about WHY a prior is unavailable.
     const reason = error.message.trim();
     return (
-      <p data-testid="pitch-type-unavailable" style={mutedMono}>
-        Pitch-type prior unavailable &mdash;{" "}
-        {reason === "" ? "the server gave no reason." : reason}
-      </p>
+      <DistributionShell
+        rows={SHELL_ROWS}
+        testId="pitch-type-unavailable"
+        note={
+          <>
+            Pitch-type prior unavailable &mdash;{" "}
+            {reason === "" ? "the server gave no reason." : reason}
+          </>
+        }
+      />
     );
   }
   if (error) {
-    return <p style={mutedMono}>Pitch-type prior unavailable right now.</p>;
+    return (
+      <DistributionShell
+        rows={SHELL_ROWS}
+        note="Pitch-type prior unavailable right now."
+      />
+    );
   }
   if (isLoading || !prior) {
     return (
-      <p aria-busy="true" style={mutedMono}>
-        Composing the pitch-type prior&hellip;
-      </p>
+      <DistributionShell
+        rows={SHELL_ROWS}
+        busy
+        note={<>Composing the pitch-type prior&hellip;</>}
+      />
     );
   }
 
@@ -116,7 +143,7 @@ export function PitchTypePanel({
             key={cls}
             style={{
               display: "grid",
-              gridTemplateColumns: "130px 1fr 56px",
+              gridTemplateColumns: DISTRIBUTION_COLUMNS,
               alignItems: "center",
               gap: 10,
               padding: "3px 0",
@@ -126,6 +153,8 @@ export function PitchTypePanel({
                 including the highest. That uniformity IS the [183] constraint in the DOM. */}
             <span
               style={{
+                minWidth: 0,
+                overflowWrap: "anywhere",
                 fontFamily: typography.fonts.body,
                 fontSize: 13,
                 color: colors.text,
@@ -146,8 +175,11 @@ export function PitchTypePanel({
                 style={{
                   display: "block",
                   height: "100%",
-                  width: `${Math.round(p * 1000) / 10}%`,
+                  width: "100%",
+                  transform: `scaleX(${Math.max(0, Math.min(1, p))})`,
+                  transformOrigin: "left",
                   background: colors.steel,
+                  transition: barTransition,
                 }}
               />
             </span>
@@ -165,9 +197,12 @@ export function PitchTypePanel({
           </li>
         ))}
       </ul>
-      <p style={{ ...mutedMono, marginTop: 8 }}>
-        {prior.modelName} {prior.servingVersion} &middot; calibrated pitch-type
-        prior (ECE &lt; 0.02) &mdash; not a top-1 prediction.
+      <p style={{ ...caption, marginTop: 8 }}>
+        <span style={{ fontFamily: typography.fonts.mono }}>
+          {prior.modelName} {prior.servingVersion}
+        </span>{" "}
+        &middot; calibrated pitch-type prior (ECE &lt; 0.02) &mdash; not a top-1
+        prediction.
         {prior.priorPitches > 0 && (
           <>
             {" "}

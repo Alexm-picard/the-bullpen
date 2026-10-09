@@ -20,11 +20,14 @@ export type TeamContactPanelProps = {
   error: unknown;
 };
 
+/** State lines and the caption are sentences: body face (design.md §8 - the
+ * mono never sets sentences). Figures stay mono in the rows. */
 const muted: React.CSSProperties = {
   margin: 0,
-  fontFamily: typography.fonts.mono,
-  fontSize: 12,
-  letterSpacing: "0.02em",
+  fontFamily: typography.fonts.body,
+  fontSize: 13,
+  lineHeight: typography.leading.dense,
+  letterSpacing: 0,
   color: colors.textMuted,
 };
 

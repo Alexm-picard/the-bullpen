@@ -45,6 +45,33 @@ describe("BattedBallExplorer park rows", () => {
     expect(document.body.textContent).toMatch(/\d+\s*ft/);
   });
 
+  it("opens the park comparison in place and makes it reachable", async () => {
+    const { container } = show(SHOWCASE_BATTED_BALL);
+    const collapse = container.querySelector(".bp-collapse")!;
+    expect(collapse.getAttribute("data-open")).toBe("false");
+    expect(collapse.hasAttribute("inert")).toBe(true);
+    await userEvent.click(
+      screen.getByRole("button", { name: /compare across parks/i }),
+    );
+    expect(collapse.getAttribute("data-open")).toBe("true");
+    expect(collapse.hasAttribute("inert")).toBe(false);
+    expect(
+      screen.getByRole("button", { name: /hide park comparison/i }),
+    ).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("plays the entrance only when the ball arrived in-session", () => {
+    const { container, rerender } = show(SHOWCASE_BATTED_BALL);
+    // [112]: a card present at first paint never animates.
+    expect(container.querySelector(".bp-enter")).toBeNull();
+    rerender(
+      <MantineProvider theme={theme}>
+        <BattedBallExplorer data={SHOWCASE_BATTED_BALL} enter />
+      </MantineProvider>,
+    );
+    expect(container.querySelector(".bp-enter")).not.toBeNull();
+  });
+
   it("still prints the band for the showcase, which says it is an illustration", async () => {
     show(SHOWCASE_BATTED_BALL);
     await userEvent.click(

@@ -19,6 +19,9 @@ export type LivePitchBoardProps = {
   pitches: LivePitchRow[];
   /** Rows rendered (newest N). */
   limit?: number;
+  /** The first fetch is still in flight: an empty list means "not known yet",
+   * not "no pitches", so the board must not claim the game is waiting. */
+  isPending?: boolean;
 };
 
 const cell: React.CSSProperties = {
@@ -64,7 +67,73 @@ function predictionRead(p: LivePitchRow) {
   );
 }
 
-export function LivePitchBoard({ pitches, limit = 50 }: LivePitchBoardProps) {
+function BoardHead() {
+  return (
+    <thead>
+      <tr>
+        <th scope="col" style={headCell} aria-label="just thrown" />
+        <th scope="col" style={headCell}>
+          Inn
+        </th>
+        <th scope="col" style={headCell}>
+          Cnt
+        </th>
+        <th scope="col" style={headCell}>
+          Pitch
+        </th>
+        <th scope="col" style={{ ...headCell, textAlign: "right" }}>
+          Velo
+        </th>
+        <th scope="col" style={headCell}>
+          Result
+        </th>
+        <th scope="col" style={headCell}>
+          Model
+        </th>
+      </tr>
+    </thead>
+  );
+}
+
+const boardFrame: React.CSSProperties = {
+  overflowX: "auto",
+  backgroundColor: colors.panel,
+  border: `1px solid ${colors.rule}`,
+};
+
+const PENDING_ROWS = 6;
+
+export function LivePitchBoard({
+  pitches,
+  limit = 50,
+  isPending = false,
+}: LivePitchBoardProps) {
+  if (isPending && pitches.length === 0) {
+    // Same shell as the data board (header + rows at the row height), so the
+    // log does not jump when the first page lands; says only that it is loading.
+    return (
+      <div
+        role="status"
+        aria-busy="true"
+        aria-label="Loading the pitch log"
+        style={boardFrame}
+      >
+        <table
+          aria-hidden="true"
+          style={{ borderCollapse: "collapse", width: "100%" }}
+        >
+          <BoardHead />
+          <tbody>
+            {Array.from({ length: PENDING_ROWS }, (_, i) => (
+              <tr key={i}>
+                <td colSpan={7} style={{ ...cell, padding: 0, height: 30 }} />
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
   if (pitches.length === 0) {
     return (
       <div
@@ -86,37 +155,9 @@ export function LivePitchBoard({ pitches, limit = 50 }: LivePitchBoardProps) {
 
   const rows = pitches.slice(0, limit);
   return (
-    <div
-      style={{
-        overflowX: "auto",
-        backgroundColor: colors.panel,
-        border: `1px solid ${colors.rule}`,
-      }}
-    >
+    <div style={boardFrame}>
       <table style={{ borderCollapse: "collapse", width: "100%" }}>
-        <thead>
-          <tr>
-            <th scope="col" style={headCell} aria-label="just thrown" />
-            <th scope="col" style={headCell}>
-              Inn
-            </th>
-            <th scope="col" style={headCell}>
-              Cnt
-            </th>
-            <th scope="col" style={headCell}>
-              Pitch
-            </th>
-            <th scope="col" style={{ ...headCell, textAlign: "right" }}>
-              Velo
-            </th>
-            <th scope="col" style={headCell}>
-              Result
-            </th>
-            <th scope="col" style={headCell}>
-              Model
-            </th>
-          </tr>
-        </thead>
+        <BoardHead />
         <tbody>
           {rows.map((p, i) => (
             <tr key={p.cursor}>

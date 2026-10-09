@@ -13,6 +13,7 @@
 
 import type { SprayZone } from "../../data/matchup-fixtures";
 import { radii, colors, typography } from "../../design/broadcast";
+import { plural } from "../../design/plural";
 
 export type SprayChartProps = {
   zones: SprayZone[];
@@ -70,7 +71,7 @@ function describeDominant(zones: SprayZone[]): string {
   const totalCount = zones.reduce((acc, z) => acc + z.count, 0);
   const pct =
     totalCount > 0 ? ((top.count / totalCount) * 100).toFixed(0) : "0";
-  return `dominant sector ${top.label} with ${top.count} balls in play (${pct}% of total)`;
+  return `dominant sector ${top.label} with ${top.count} ${plural(top.count, "ball")} in play (${pct}% of total)`;
 }
 
 export function SprayChart({ zones, caption }: SprayChartProps) {

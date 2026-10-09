@@ -2,7 +2,7 @@
  * <ParkSwitcherStrip> — horizontal scroll strip of 30 <ParkMiniThumb>.
  *
  * Layout: full-width container with overflow-x: auto and scroll-snap-type:
- * x mandatory. 30 thumbs in a flex row with 12 px gap. Each thumb gets
+ * x proximity. 30 thumbs in a flex row with 12 px gap. Each thumb gets
  * scroll-snap-align: start so swipes/wheel scrolls click into a clean tile
  * position on touch + trackpad. Active thumb is highlighted by the thumb
  * itself (scarlet outline ring) — the strip owns no per-tile styling.
@@ -48,8 +48,8 @@ export function ParkSwitcherStrip({
         borderRadius: radii.sm,
         padding: 12,
         overflowX: "auto",
-        scrollSnapType: "x mandatory",
-        WebkitOverflowScrolling: "touch",
+        scrollSnapType: "x proximity",
+        scrollPaddingInline: 12,
       }}
     >
       <div

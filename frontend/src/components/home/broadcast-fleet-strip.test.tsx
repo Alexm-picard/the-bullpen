@@ -39,13 +39,25 @@ describe("BroadcastFleetStrip", () => {
     expect(html.match(/href="\/ops"/g)).toHaveLength(2);
   });
 
-  it("gives only LIVE chips the on-air dot", () => {
+  it("lets the strip class own the chip background (hover must win)", () => {
     const html = renderToStaticMarkup(
       <MemoryRouter>
         <BroadcastFleetStrip chips={CHIPS} />
       </MemoryRouter>,
     );
-    expect(html.match(/broadcast-live-dot/g)).toHaveLength(1);
+    expect(html.match(/class="broadcast-strip bp-pressable"/g)).toHaveLength(2);
+    expect(html).not.toMatch(/<a[^>]*style="[^"]*background-color/);
+  });
+
+  it("gives only LIVE chips the (static) gold dot", () => {
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <BroadcastFleetStrip chips={CHIPS} />
+      </MemoryRouter>,
+    );
+    expect(html.match(/data-fleet-live-dot="true"/g)).toHaveLength(1);
+    // No pulse here: the Scorebug owns the one on-air pulse per screen.
+    expect(html).not.toContain("broadcast-live-dot");
     expect(html).toContain("LIVE");
     expect(html).toContain("SHADOW");
   });

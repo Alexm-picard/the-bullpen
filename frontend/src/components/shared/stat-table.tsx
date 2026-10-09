@@ -26,12 +26,12 @@
  * @module
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import type { CondFormatRamp, MetricMeta } from "../../design/cellColor";
 import { cellColorPairWith } from "../../design/cellColor";
 import { useStatTablePalette } from "../broadcast/use-palette";
-import { radii, typography } from "../../design/broadcast";
+import { motion, radii, typography } from "../../design/broadcast";
 
 // ── Identity palette ([160] migration) ───────────────────────────────────────
 
@@ -100,6 +100,12 @@ export type StatTableProps = {
    * Omit for decorative tables that are already labelled by surrounding context.
    */
   caption?: string;
+  /**
+   * Optional id of the row to mark as the current selection (e.g. the park the
+   * /parks switcher just jumped to). The matching <tr> carries
+   * `data-active="true"`; the page's stylesheet decides how it reads.
+   */
+  activeRowId?: string;
 };
 
 type SortState = { key: string; dir: "asc" | "desc" } | null;
@@ -148,6 +154,7 @@ export function StatTable({
   rows,
   caption,
   palette: paletteProp,
+  activeRowId,
 }: StatTableProps) {
   const themePalette = useStatTablePalette();
   const palette = paletteProp ?? themePalette;
@@ -163,6 +170,25 @@ export function StatTable({
       return { key, dir: "desc" };
     });
   }
+
+  // Stable row keys: the row's own id when it has one, otherwise its label plus an
+  // occurrence counter taken from the UNSORTED rows - so a row keeps the same key
+  // in every sort order (an index-based key re-binds cells to other rows on sort,
+  // which replays the cell cross-fade on the wrong data).
+  const rowKeys = useMemo(() => {
+    const keys = new Map<StatTableRow, string>();
+    const seen = new Map<string, number>();
+    for (const row of rows) {
+      if (row.id != null) {
+        keys.set(row, row.id);
+        continue;
+      }
+      const n = seen.get(row.label) ?? 0;
+      seen.set(row.label, n + 1);
+      keys.set(row, n === 0 ? row.label : `${row.label}#${n}`);
+    }
+    return keys;
+  }, [rows]);
 
   // Sort rows by the active column. String values sort lexicographically.
   const sortedRows = sort
@@ -232,15 +258,15 @@ export function StatTable({
     borderRight: tableBorder,
     verticalAlign: "middle",
     // Smooth cell-color transitions for live data updates (§8 motion rule).
-    transition: "background-color 200ms cubic-bezier(0.4, 0, 0.2, 1)",
-    fontFeatureSettings: '"tnum" 1',
-    tabularNums: true,
-  } as React.CSSProperties;
+    transition: `background-color ${motion.durationsMs.base}ms ${motion.easing.standard}`,
+    fontVariantNumeric: "tabular-nums",
+  };
 
   return (
     <div
       style={{
         overflowX: "auto",
+        scrollbarWidth: "thin",
         border: tableBorder,
         borderRadius: radii.sm,
         backgroundColor: palette.surface,
@@ -297,10 +323,10 @@ export function StatTable({
                   }}
                   tabIndex={0}
                   role="columnheader"
-                  style={{
-                    ...headerCellStyle,
-                    outline: "none",
-                  }}
+                  // Hover brightness, the inset focus ring and the press on the
+                  // inner span all come from interaction.css (.bp-th).
+                  className="bp-th bp-pressable--inset"
+                  style={headerCellStyle}
                 >
                   <span
                     style={{ display: "inline-flex", alignItems: "center" }}
@@ -319,8 +345,16 @@ export function StatTable({
           </tr>
         </thead>
         <tbody>
-          {sortedRows.map((row, rowIdx) => (
-            <tr key={row.label + rowIdx} id={row.id}>
+          {sortedRows.map((row) => (
+            <tr
+              key={rowKeys.get(row) ?? row.label}
+              id={row.id}
+              data-active={
+                activeRowId != null && row.id === activeRowId
+                  ? "true"
+                  : undefined
+              }
+            >
               {/* Row-label cell: silver column */}
               <td style={labelCellStyle}>{row.label}</td>
               {columns.map((col) => {

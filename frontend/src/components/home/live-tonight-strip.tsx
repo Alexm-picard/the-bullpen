@@ -18,23 +18,59 @@ export type LiveTonightStripProps = {
   games: GameSummary[];
 };
 
+// Background + border live in `.bp-surface` so its hover can win.
 const chipStyle: React.CSSProperties = {
   display: "inline-flex",
   flexDirection: "column",
   gap: 2,
   padding: "6px 10px",
-  border: `1px solid ${colors.rule}`,
   borderRadius: 2,
-  backgroundColor: colors.panel,
   textDecoration: "none",
 };
+
+function AllGamesLink() {
+  return (
+    <Link
+      to="/games"
+      className="bp-link bp-pressable"
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        padding: "6px 12px",
+        fontFamily: typography.fonts.mono,
+        fontSize: 12,
+        fontWeight: typography.weights.semibold,
+        letterSpacing: "0.04em",
+        textTransform: "uppercase",
+      }}
+    >
+      View all games &rarr;
+    </Link>
+  );
+}
 
 export function LiveTonightStrip({ games }: LiveTonightStripProps) {
   if (games.length === 0) {
     return (
-      <p style={{ fontFamily: typography.fonts.body, color: colors.textMuted }}>
-        No games tracked yet - the slate fills as today&rsquo;s games go live.
-      </p>
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          alignItems: "center",
+          gap: 8,
+        }}
+      >
+        <p
+          style={{
+            margin: 0,
+            fontFamily: typography.fonts.body,
+            color: colors.textMuted,
+          }}
+        >
+          No games tracked yet - the slate fills as today&rsquo;s games go live.
+        </p>
+        <AllGamesLink />
+      </div>
     );
   }
 
@@ -48,7 +84,12 @@ export function LiveTonightStrip({ games }: LiveTonightStripProps) {
       }}
     >
       {games.map((g) => (
-        <Link key={g.gameId} to={`/games/${g.gameId}`} style={chipStyle}>
+        <Link
+          key={g.gameId}
+          to={`/games/${g.gameId}`}
+          className="bp-surface bp-pressable"
+          style={chipStyle}
+        >
           <span
             style={{
               fontFamily: typography.fonts.display,
@@ -73,23 +114,7 @@ export function LiveTonightStrip({ games }: LiveTonightStripProps) {
           </span>
         </Link>
       ))}
-      <Link
-        to="/games"
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          padding: "6px 12px",
-          fontFamily: typography.fonts.mono,
-          fontSize: 12,
-          fontWeight: typography.weights.semibold,
-          letterSpacing: "0.04em",
-          textTransform: "uppercase",
-          color: colors.goldInk,
-          textDecoration: "none",
-        }}
-      >
-        View all games &rarr;
-      </Link>
+      <AllGamesLink />
     </div>
   );
 }

@@ -20,6 +20,8 @@ import { FACTOR_METRIC } from "../../data/parks-fixtures";
 
 export type OverviewParksTableProps = {
   rows: ParkRow[];
+  /** Park id the switcher last selected; its row is marked active. */
+  activeParkId?: string;
 };
 
 function formatFactor(v: unknown): string {
@@ -67,7 +69,10 @@ const COLUMNS: StatTableColumn[] = [
   },
 ];
 
-export function OverviewParksTable({ rows }: OverviewParksTableProps) {
+export function OverviewParksTable({
+  rows,
+  activeParkId,
+}: OverviewParksTableProps) {
   const tableRows: StatTableRow[] = rows.map((r) => ({
     id: `park-row-${r.id}`,
     label: r.parkName,
@@ -83,5 +88,15 @@ export function OverviewParksTable({ rows }: OverviewParksTableProps) {
     },
   }));
 
-  return <StatTable columns={COLUMNS} rows={tableRows} />;
+  return (
+    <div className="parks-overview">
+      <StatTable
+        columns={COLUMNS}
+        rows={tableRows}
+        activeRowId={
+          activeParkId != null ? `park-row-${activeParkId}` : undefined
+        }
+      />
+    </div>
+  );
 }

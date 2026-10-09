@@ -13,7 +13,7 @@ import "@testing-library/jest-dom/vitest";
 
 import { MantineProvider } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
@@ -120,7 +120,10 @@ describe("GamePage (interaction)", () => {
 
     expect(await screen.findByText(/Live Pitch Log/i)).toBeInTheDocument();
     // The board rendered the polled pitch (its distinctive velo), not the empty waiting state.
-    expect(await screen.findByText("97.3")).toBeInTheDocument();
+    // Scoped to the log's table: the Last Pitch stat now shows the same speed as its numeral.
+    expect(
+      await within(await screen.findByRole("table")).findByText("97.3"),
+    ).toBeInTheDocument();
     // A6: the gated query fired (live + settled) and the 503 renders the clean unpromoted line.
     expect(
       await screen.findByTestId("next-pitch-unpromoted"),

@@ -13,6 +13,7 @@ import { useDebouncedValue } from "@mantine/hooks";
 import { useMemo, useState } from "react";
 
 import { usePlayerSearch, type PlayerSearchResult } from "../../api/players";
+import { motion } from "../../design/broadcast";
 
 export type PlayerSearchProps = {
   /** Called with the chosen row's id when the user picks a result. */
@@ -41,7 +42,9 @@ export function PlayerSearch({
     () =>
       (query.data ?? []).map((p) => ({
         value: String(p.id),
-        label: `${p.name} · ${p.primaryPosition}${p.active ? "" : " (retired)"}`,
+        label:
+          [p.name, p.primaryPosition].filter(Boolean).join(" · ") +
+          (p.active ? "" : " (retired)"),
         player: p,
       })),
     [query.data],
@@ -61,10 +64,13 @@ export function PlayerSearch({
     }
   };
 
+  // Only a SUCCESSFUL empty answer is "no match"; a failed fetch is not a
+  // statement about the data (it renders the error line alone).
   const empty =
     debounced.trim().length >= 1 &&
-    !query.isFetching &&
-    (query.data?.length ?? 0) === 0;
+    query.isSuccess &&
+    !query.isPlaceholderData &&
+    query.data.length === 0;
   const errored = query.isError && debounced.trim().length >= 1;
 
   return (
@@ -77,7 +83,16 @@ export function PlayerSearch({
         placeholder={placeholder}
         autoFocus={autoFocus}
         limit={limit}
+        size="md"
         comboboxProps={{ withinPortal: false }}
+        styles={{
+          dropdown: {
+            // Previous results stay up while the next fetch is in flight; dim
+            // them so a stale list never reads as the answer to the new query.
+            opacity: query.isPlaceholderData ? 0.6 : 1,
+            transition: `opacity ${motion.durationsMs.fast}ms ${motion.easing.color}`,
+          },
+        }}
         rightSection={query.isFetching ? <Text size="xs">…</Text> : null}
       />
       {empty ? (

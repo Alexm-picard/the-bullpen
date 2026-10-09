@@ -45,10 +45,7 @@ describe("ParkSwitcherStrip", () => {
         onSelect={() => {}}
       />,
     );
-    const ringPattern = new RegExp(
-      `outline:\\s*2px\\s+solid\\s+${colors.gold}`,
-      "gi",
-    );
+    const ringPattern = new RegExp(`outline-color:\\s*${colors.gold}`, "gi");
     const ringMatches = html.match(ringPattern) ?? [];
     expect(ringMatches.length).toBe(1);
   });

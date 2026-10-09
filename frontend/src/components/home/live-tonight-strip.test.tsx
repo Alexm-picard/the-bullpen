@@ -37,6 +37,9 @@ describe("LiveTonightStrip", () => {
     expect(html).toContain('href="/games/7"');
     expect(html).toContain('href="/games"');
     expect(html).toContain("View all games");
+    // The chip's surface (and its hover) belongs to the class, not inline style.
+    expect(html).toContain('class="bp-surface bp-pressable"');
+    expect(html).not.toMatch(/<a[^>]*style="[^"]*background-color/);
   });
 
   it("shows an empty state when no games are scheduled", () => {
@@ -46,5 +49,8 @@ describe("LiveTonightStrip", () => {
       </MemoryRouter>,
     );
     expect(html).toContain("No games tracked yet");
+    // Wayfinding survives the empty state.
+    expect(html).toContain('href="/games"');
+    expect(html).toContain("View all games");
   });
 });

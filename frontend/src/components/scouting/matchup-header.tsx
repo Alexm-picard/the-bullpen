@@ -56,11 +56,11 @@ export function MatchupHeader({
         order={1}
         style={{
           fontFamily: typography.fonts.display,
-          fontSize: typography.scale[6], // 48
+          fontSize: typography.h1Size,
           fontWeight: typography.weights.heavy,
           color: colors.ink,
           textTransform: "uppercase",
-          letterSpacing: "0.005em",
+          letterSpacing: typography.tracking.h1,
           lineHeight: typography.lineHeights.display,
           margin: 0,
         }}

@@ -138,7 +138,7 @@ describe("PitchTypePanel", () => {
     // STRUCTURAL INVARIANT over MARKUP AND STYLING, plus a companion pin over TEXT. The first
     // version enumerated the mechanisms I happened to think of and review found seven ways past
     // it: weight 600, a className, gold TEXT colour, a larger font-size, a border, a taller bar,
-    // and a marker glyph. Normalising away the bar width and the text content, then demanding the
+    // and a marker glyph. Normalising away the bar fill and the text content, then demanding the
     // seven rows be byte-identical, closes every markup and styling mechanism - including the
     // gold-text case, which is the one that would really have happened, since NextPitchPanel
     // emphasises with THREE mechanisms including text colour.
@@ -151,9 +151,13 @@ describe("PitchTypePanel", () => {
     const normalised = rows.map((r) =>
       r
         .slice(0, r.indexOf("</li>"))
-        // Anchored to the BAR by its neighbouring declaration: an unanchored width would also
-        // normalise a percentage width applied to the label column, letting that through.
-        .replace(/width:[\d.]+%;background:/g, "width:X;background:")
+        // The bar's fill is a scaleX transform (compositor-only motion). Anchored to the BAR by
+        // its neighbouring declaration: an unanchored pattern would also normalise a transform
+        // applied to the label column, letting that through.
+        .replace(
+          /transform:scaleX\([\d.]+\);transform-origin:left;/g,
+          "transform:scaleX(X);transform-origin:left;",
+        )
         .replace(/>[^<]*</g, "><"),
     );
     for (const row of normalised) {

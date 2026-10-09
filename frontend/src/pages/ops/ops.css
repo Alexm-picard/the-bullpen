@@ -12,8 +12,9 @@
  *           : retrain-queue rows reshape vertical (trigger → modelLabel →
  *             times → status)
  *   - 768px : infra ribbon wraps to repeat(2, 1fr)
- *   - 600px : masthead h1 down-shifts 64 → 48px
- *           : retrain-queue gap tightens
+ *
+ * The masthead h1 is fluid (typography.heroSize clamp), so it needs no
+ * breakpoint here.
  */
 
 .ops-drift__pair {
@@ -46,11 +47,5 @@
 @media (max-width: 768px) {
   .ops-infra-ribbon {
     grid-template-columns: repeat(2, 1fr) !important;
-  }
-}
-
-@media (max-width: 600px) {
-  .ops-cover__title {
-    font-size: 48px !important;
   }
 }

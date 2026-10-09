@@ -3,10 +3,12 @@
 @import "./design/fonts.css";
 @import "./design/tokens.css";
 @import "./design/global.css";
+@import "./design/broadcast.css";
+@import "./design/interaction.css";
 @import "./design/motion.css";
 
 :root {
-  font-family: var(--font-ui);
+  font-family: var(--font-body);
   background-color: var(--bp-field);
   color: var(--bp-text);
   font-size: 16px;
@@ -33,11 +35,12 @@ code,
 kbd,
 samp,
 pre {
-  font-family: var(--font-data);
+  font-family: var(--font-mono);
 }
 
 /* D4 (a11y): skip-to-content - visually hidden until keyboard focus, then a
-   chrome-styled pill above the header so keyboard users can bypass the nav. */
+   chrome-styled pill above the header so keyboard users can bypass the nav.
+   The reveal is keyboard-initiated, so it snaps: no transition. */
 .skip-link {
   position: absolute;
   left: 8px;
@@ -49,7 +52,6 @@ pre {
   font-family: var(--font-mono);
   font-size: 13px;
   text-decoration: none;
-  transition: top 150ms ease;
 }
 .skip-link:focus {
   top: 8px;

@@ -5,7 +5,7 @@
  *   - Renders as a <button> element
  *   - aria-label contains the park name
  *   - 36 (6×6) <rect> cells render in the heatmap
- *   - Scarlet outline ring only present when isActive=true
+ *   - Gold outline-color (the always-present ring) only when isActive=true
  */
 import { MantineProvider } from "@mantine/core";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -96,10 +96,7 @@ describe("ParkMiniThumb", () => {
         onSelect={() => {}}
       />,
     );
-    const scarletPattern = new RegExp(
-      `outline:\\s*2px\\s+solid\\s+${colors.gold}`,
-      "i",
-    );
+    const scarletPattern = new RegExp(`outline-color:\\s*${colors.gold}`, "i");
     expect(scarletPattern.test(activeHtml)).toBe(true);
     // Inactive should NOT have the scarlet outline string.
     expect(scarletPattern.test(inactiveHtml)).toBe(false);
