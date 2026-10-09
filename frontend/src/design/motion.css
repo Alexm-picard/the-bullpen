@@ -1,13 +1,37 @@
-/* Global prefers-reduced-motion gate (leaf 5.5).
- * Disable any non-essential transition / animation when the user has
- * `Reduce motion` enabled at the OS level. Components that need a
- * different reduced-motion treatment can opt out by adding
- * `data-motion-essential` to the element. */
+/* Global prefers-reduced-motion policy.
+ *
+ * Reduced motion means FEWER and GENTLER animations, not zero (Emil Kowalski /
+ * Apple HIG, craft pass 2026-10): comprehension-aiding color and opacity
+ * feedback stays, TRAVEL goes.
+ *
+ *   - Continuous loops (the ticker crawl, the LIVE pulse) stop: [112]/[160].
+ *   - Transitions keep their own duration but may only move color, opacity
+ *     and the like. Anything that would translate, scale or resize snaps to
+ *     its end state while the color/opacity leg still eases: a sliding drawer
+ *     becomes an in-place fade, a @starting-style entrance becomes a fade, the
+ *     signature cell cross-fade (stat-table) keeps working.
+ *   - Press feedback keeps its color leg and drops the scale.
+ *
+ * Elements that need a different treatment opt out with `data-motion-essential`.
+ * JS-driven motion (scrollIntoView, View Transitions) checks the media query
+ * itself - this sheet cannot reach it. */
 @media (prefers-reduced-motion: reduce) {
-  *:not([data-motion-essential="true"]) {
+  *:not([data-motion-essential="true"]),
+  *:not([data-motion-essential="true"])::before,
+  *:not([data-motion-essential="true"])::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+    transition-property:
+      color, background-color, border-color, outline-color,
+      text-decoration-color, opacity, box-shadow, fill, stroke, filter !important;
+  }
+  .bp-pressable:active {
+    transform: none;
+  }
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
   }
 }

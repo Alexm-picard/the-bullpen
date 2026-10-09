@@ -113,43 +113,8 @@ export const colors = {
   },
 } as const;
 
-/** Team-color data tokens (edge bars and fills, never text). */
-export const teamColors: Record<string, string> = {
-  AZ: "#A71930",
-  ATH: "#003831",
-  ATL: "#CE1141",
-  BAL: "#DF4601",
-  BOS: "#E0655F",
-  CHC: "#0E3386",
-  CIN: "#C6011F",
-  CLE: "#00385D",
-  COL: "#333366",
-  CWS: "#27251F",
-  DET: "#0C2340",
-  HOU: "#002D62",
-  KC: "#004687",
-  LAA: "#BA0021",
-  LAD: "#5B9BD5",
-  MIA: "#00A3E0",
-  MIL: "#FFC52F",
-  MIN: "#002B5C",
-  NYM: "#002D72",
-  NYY: "#7BA2D6",
-  PHI: "#E81828",
-  PIT: "#FDB827",
-  SD: "#2F241D",
-  SEA: "#2FBFA8",
-  SF: "#FD5A1E",
-  STL: "#C41E3A",
-  TB: "#8FBCE6",
-  TEX: "#003278",
-  TOR: "#134A8E",
-  WSH: "#AB0003",
-};
-
-export function teamColor(abbrev: string): string {
-  return teamColors[abbrev] ?? colors.steel;
-}
+/* Team colors live in src/design/teamColors.ts (TEAM_PRIMARY + teamColor()); the
+ * copy that used to sit here was unused and had drifted on ten clubs. */
 
 export const typography = {
   fonts: {
@@ -162,6 +127,39 @@ export const typography = {
     body: 1.5,
     display: 1.05,
   },
+  /**
+   * Leading ramp (mirror in tokens.css is intentionally omitted: leading is
+   * only ever composed in TSX). Tracks size inversely: tight on large display,
+   * open on prose.
+   */
+  leading: {
+    hero: 0.98,
+    display: 1.05,
+    heading: 1.15,
+    label: 1.2,
+    dense: 1.4,
+    body: 1.5,
+    prose: 1.6,
+  },
+  /**
+   * Size-keyed tracking (mirror of tokens.css `--tracking-*`). One value per
+   * ROLE, never one value for all sizes: large condensed display runs
+   * untracked (the face is already narrow), small uppercase runs wide.
+   */
+  tracking: {
+    hero: "0",
+    h1: "0",
+    h2: "0",
+    section: "0.04em",
+    colHead: "0.06em",
+    chip: "0.08em",
+    label: "0.08em",
+    eyebrow: "0.12em",
+    meta: "0.02em",
+  },
+  /** Fluid page-hero and h1 sizes (mirror of `--text-hero` / `--text-h1`). */
+  heroSize: "clamp(40px, 6vw, 64px)",
+  h1Size: "clamp(32px, 5vw, 48px)",
   weights: {
     regular: 400,
     medium: 500,
@@ -173,9 +171,29 @@ export const typography = {
 
 export const spacing = [4, 8, 12, 16, 24, 32, 48, 64, 96] as const;
 
+/**
+ * Motion tokens (mirror of tokens.css `--duration-*` / `--ease-*`).
+ *
+ * `easing.standard` is the [112] default and stays the curve for color
+ * cross-fades and value morphs (the StatTable cell fade, the live probability
+ * bars). The strong curves beside it come from the design-engineering craft
+ * pass (2026-10): `out` for entrances, exits and press feedback, `inOut` for
+ * elements moving between on-screen positions, `drawer` for sheets. Every
+ * duration sits inside [112]'s 150-300ms band; `press` is the one exception
+ * below it (feedback must land before the user's finger lifts).
+ *
+ * The CSS classes in interaction.css read the same values via var(); use the
+ * TS object only where a transition must be composed in an inline style.
+ */
 export const motion = {
-  durationsMs: { fast: 150, base: 200, slow: 300 },
-  easing: "cubic-bezier(0.4, 0, 0.2, 1)",
+  durationsMs: { press: 160, fast: 150, base: 200, enter: 240, slow: 300 },
+  easing: {
+    standard: "cubic-bezier(0.4, 0, 0.2, 1)",
+    out: "cubic-bezier(0.23, 1, 0.32, 1)",
+    inOut: "cubic-bezier(0.77, 0, 0.175, 1)",
+    drawer: "cubic-bezier(0.32, 0.72, 0, 1)",
+    color: "ease",
+  },
 } as const;
 
 export const cuts = {

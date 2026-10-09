@@ -2,7 +2,7 @@
  *
  * The ONLY continuous animations in the identity live here, and every one of
  * them dies under prefers-reduced-motion ([112] discipline: motion is
- * functional, never decorative-mandatory). */
+ * functional, never decorative-mandatory). Imported once from index.css. */
 
 /* Ticker: the track holds the item run TWICE; translating -50% loops seamlessly. */
 @keyframes broadcast-ticker-scroll {
@@ -21,11 +21,18 @@
   will-change: transform;
 }
 
-.broadcast-ticker:hover .broadcast-ticker__track {
+/* Pause: a real control (WCAG 2.2.2) sets data-paused; hover-pause is a
+ * pointer-only convenience (a tap must not leave the crawl stuck). */
+.broadcast-ticker[data-paused="true"] .broadcast-ticker__track {
   animation-play-state: paused;
 }
+@media (hover: hover) and (pointer: fine) {
+  .broadcast-ticker:hover .broadcast-ticker__track {
+    animation-play-state: paused;
+  }
+}
 
-/* LIVE dot: a slow on-air pulse. */
+/* LIVE dot: a slow on-air pulse. One instance per screen (the Scorebug). */
 @keyframes broadcast-live-pulse {
   0%,
   100% {
@@ -40,13 +47,21 @@
   animation: broadcast-live-pulse 2s ease-in-out infinite;
 }
 
-/* Slate strips: a quiet hover lift (background only - no motion). */
+/* Fleet-strip chips: the class owns the background so the hover can win over
+ * it (an inline background-color would outrank any stylesheet hover). */
 .broadcast-strip {
-  transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  background-color: var(--color-chromeDeep);
+  transition: background-color var(--duration-fast) var(--ease-color);
 }
-.broadcast-strip:hover,
+@media (hover: hover) and (pointer: fine) {
+  .broadcast-strip:hover {
+    background-color: var(--color-chromeEdge);
+  }
+}
 .broadcast-strip:focus-visible {
-  background-color: var(--color-fieldHi);
+  background-color: var(--color-chromeEdge);
+  outline: 2px solid var(--color-gold);
+  outline-offset: -2px;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -14,7 +14,14 @@
 
 import { createTheme, type MantineColorsTuple } from "@mantine/core";
 
-import { colors, radii, shadows, spacing, typography } from "./broadcast";
+import {
+  colors,
+  motion,
+  radii,
+  shadows,
+  spacing,
+  typography,
+} from "./broadcast";
 
 // 10-shade ramp around #F2A900 broadcast gold.
 // [0..3] tints, [4..6] core (6 = canonical), [7..9] ink shades for text-on-light.
@@ -73,15 +80,42 @@ export const theme = createTheme({
   },
   fontFamilyMonospace: typography.fonts.mono,
   primaryColor: "gold",
+  // One gold in both schemes (Mantine defaults to a darker shade for dark mode).
+  primaryShade: 6,
+  // Filled gold controls get ink text instead of white (white on #F2A900 is 2.0:1).
+  autoContrast: true,
   colors: { gold, chrome },
-  // D4 (AA contrast): Mantine's default InputWrapper description gray (#868e96) sits at 3.1:1 on
-  // the field background - retune to the broadcast textMuted token (5.3:1). Applied at the theme
-  // so every input description inherits it.
+  // Deliberately false: Mantine's reduce-motion path sets every Transition
+  // duration to 0. src/design/motion.css instead turns slides and pops into
+  // in-place opacity fades under prefers-reduced-motion (gentler, not zero).
+  respectReducedMotion: false,
   components: {
+    // D4 (AA contrast): Mantine's default InputWrapper description gray (#868e96) sits at 3.1:1 on
+    // the field background - retune to the broadcast textMuted token (5.3:1). Applied at the theme
+    // so every input description inherits it.
     InputWrapper: {
       styles: {
         description: { color: colors.textMuted },
       },
+    },
+    // Motion defaults for Mantine's own controls (craft pass 2026-10): the
+    // segmented indicator is a tens/day on-screen move, so it gets the fast
+    // clock on the [112] curve; the burger snaps as press feedback before the
+    // drawer it summons settles; Buttons share the kit's press feedback.
+    SegmentedControl: {
+      defaultProps: {
+        transitionDuration: motion.durationsMs.fast,
+        transitionTimingFunction: motion.easing.standard,
+      },
+    },
+    Burger: {
+      defaultProps: {
+        transitionDuration: motion.durationsMs.press,
+        transitionTimingFunction: motion.easing.out,
+      },
+    },
+    Button: {
+      classNames: { root: "bp-pressable" },
     },
   },
   // Spacing maps to the 8-point grid: [4, 8, 12, 16, 24, 32, 48, 64, 96].

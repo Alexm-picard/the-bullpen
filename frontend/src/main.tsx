@@ -33,7 +33,9 @@ const queryClient = new QueryClient({
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <MantineProvider theme={theme}>
+    {/* [192]: the dark broadcast field is the default; ThemeProvider syncs Mantine's
+        color scheme to the toggle so Mantine controls follow the field. */}
+    <MantineProvider theme={theme} defaultColorScheme="dark">
       <QueryClientProvider client={queryClient}>
         <ErrorBoundary>
           <App />
