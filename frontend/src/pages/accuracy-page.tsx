@@ -210,7 +210,7 @@ function backfillAggregateRows(
 // -- Live Retrospective ([191.2] relocation from game page) ---------------
 
 /** Verified 2026-holdout accuracy (PR-210 evidence, pinned to champion v1). */
-// SHELF: 2026-09 experiment_results WHERE model_name='pitch_outcome_post'
+// SHELF: 2027-01 decisions.md [177] + PR 210 holdout evidence (pitch_outcome_post v1)
 const HOLDOUT_ACCURACY = "59.1% top-1 · 80.8% top-2 (verified 2026 holdout)";
 
 function LiveRetrospective({

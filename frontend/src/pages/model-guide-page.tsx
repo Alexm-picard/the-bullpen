@@ -95,12 +95,12 @@ export default function ModelGuidePage() {
               the count, runners, batter/pitcher history (28-day form, target
               encodings), and park - everything available before the windup.
             </p>
-            {/* SHELF: 2026-09 experiment_results WHERE model_name='pitch_outcome_pre' */}
+            {/* SHELF: 2027-01 training/data/eval/promotion/pitch_outcome_pre_promotion_gate.json (experiment_results row id=5) */}
             <div style={CALLOUT}>
-              <strong>Primary metric:</strong> Brier score (lower is better).
-              The champion passed its promotion gate at Brier 0.104 vs the LR
-              baseline's 0.149, with ECE 0.0013 across 710k rolling-origin CV
-              rows.
+              <strong>Primary metric:</strong> calibration (ECE, lower is
+              better). The champion passed its promotion gate at ECE 0.0009 vs
+              the LR baseline&apos;s 0.0016, and beats the baseline on Brier and
+              log-loss, across 710k rolling-origin CV rows.
             </div>
             <p>
               Calibration is isotonic per class: each outcome's predicted
@@ -122,10 +122,11 @@ export default function ModelGuidePage() {
               outing sequence (previous two pitches, pitches into the outing),
               and the batter's handedness.
             </p>
-            {/* SHELF: 2026-09 experiment_results WHERE model_name='pitch_type_pre' */}
+            {/* SHELF: 2027-01 training/data/eval/promotion/pitch_type_pre_promotion_gate.json */}
             <div style={CALLOUT}>
               <strong>Primary metric:</strong> ECE (expected calibration error).
-              The champion passed at ECE 0.0036, well under the 0.02 threshold.
+              The champion passed at ECE 0.016 (mean of four rolling-origin
+              folds; the earliest fold sat at 0.022), under the 0.02 threshold.
               This model is scoped as a calibrated prior, not a top-1 predictor
               - its value is calibration, not accuracy.
             </div>
