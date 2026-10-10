@@ -15,13 +15,15 @@ function getInitialTheme(): Theme {
   } catch {
     // localStorage unavailable
   }
+  // [195]: paper is the default; an OS dark preference is respected as the
+  // initial choice ([192]'s system-preference rule) until the visitor toggles.
   if (
     typeof window !== "undefined" &&
-    window.matchMedia("(prefers-color-scheme: light)").matches
+    window.matchMedia("(prefers-color-scheme: dark)").matches
   ) {
-    return "light";
+    return "dark";
   }
-  return "dark";
+  return "light";
 }
 
 /**

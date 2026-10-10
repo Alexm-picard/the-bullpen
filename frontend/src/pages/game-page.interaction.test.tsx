@@ -2,7 +2,7 @@
 /**
  * Behavioral test for <GamePage> (C-34). The status-driven live view: an IN_PROGRESS game polls its
  * pitch log (poll interval derived by statusPollIntervalMs, unit-tested in api/games.test.ts), and
- * the page renders the live board from the game + pitches queries. This drives the REAL fetch
+ * the page renders the account from the game + pitches queries. This drives the REAL fetch
  * boundary (not the cache seeding the smoke suite uses), so the query -> render flow runs for real,
  * and pins the invalid-id contract text the e2e suite depends on.
  *
@@ -106,7 +106,7 @@ afterEach(() => {
 });
 
 describe("GamePage (interaction)", () => {
-  it("renders the live pitch board from the game + pitches queries for an in-progress game", async () => {
+  it("renders the account from the game + pitches queries for an in-progress game", async () => {
     // "/pitches" ordered first so the pitches URL matches it before the broader "/v1/games/" route.
     // The fixture is a settled at-bat on a live game, so the A6 next-pitch query FIRES - stub it
     // with the honest current-prod reality (503, PRE not yet promoted) and assert the panel shows
@@ -118,16 +118,63 @@ describe("GamePage (interaction)", () => {
     ]);
     renderAt(`/games/${GAME_ID}`);
 
-    expect(await screen.findByText(/Live Pitch Log/i)).toBeInTheDocument();
-    // The board rendered the polled pitch (its distinctive velo), not the empty waiting state.
-    // Scoped to the log's table: the Last Pitch stat now shows the same speed as its numeral.
     expect(
-      await within(await screen.findByRole("table")).findByText("97.3"),
+      await screen.findByText("Every at-bat, newest first"),
     ).toBeInTheDocument();
+    // The account rendered the polled pitch (its distinctive velo) in an at-bat entry, not the
+    // empty waiting state.
+    const entries = await screen.findAllByTestId("account-entry");
+    expect(within(entries[0]!).getByText(/97\.3/)).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Waiting for the first pitch/i),
+    ).not.toBeInTheDocument();
     // A6: the gated query fired (live + settled) and the 503 renders the clean unpromoted line.
     expect(
       await screen.findByTestId("next-pitch-unpromoted"),
     ).toHaveTextContent(/not yet promoted/i);
+  });
+
+  it("does not fire the fallback prediction POSTs until the first /live read settles", async () => {
+    // Every POST to /v1/predict writes a served row to prediction_log. Before the settle gate, a
+    // page open fired them while the first /live response was still in flight - a duplicate
+    // logged prediction per open. Hold /live open, prove nothing posts, then release it.
+    let releaseLive: (value: Response) => void = () => {};
+    const livePending = new Promise<Response>((resolve) => {
+      releaseLive = resolve;
+    });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const json = (body: unknown, status = 200) =>
+        ({ ok: status < 400, status, json: async () => body }) as Response;
+      if (url.includes("/v1/predict/")) return json(null, 503);
+      if (url.includes(`/v1/games/${GAME_ID}/live`)) return livePending;
+      if (url.includes("/pitches")) return json([pitch()]);
+      if (url.includes("/v1/games/")) return json(GAME);
+      throw new Error(`unstubbed ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderAt(`/games/${GAME_ID}`);
+
+    // The account renders from the pitches query while /live is still pending...
+    await screen.findAllByTestId("account-entry");
+    const predictCalls = () =>
+      fetchMock.mock.calls.filter(([u]) => String(u).includes("/v1/predict/"));
+    expect(
+      fetchMock.mock.calls.some(([u]) => String(u).includes("/live")),
+    ).toBe(true);
+    // ...and no prediction has been requested yet.
+    expect(predictCalls()).toHaveLength(0);
+
+    // /live settles with no worker predictions: now the derive-and-POST fallback may fire.
+    releaseLive({
+      ok: true,
+      status: 200,
+      json: async () => ({ gameId: GAME_ID, prePrediction: null }),
+    } as Response);
+    expect(
+      await screen.findByTestId("next-pitch-unpromoted"),
+    ).toBeInTheDocument();
+    expect(predictCalls().length).toBeGreaterThan(0);
   });
 
   it("shows the invalid-id contract message for a non-numeric id", () => {

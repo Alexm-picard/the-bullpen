@@ -1,51 +1,8 @@
-/* Broadcast-kit animation rules (decision [160]).
+/* Broadcast-kit interaction rules (decision [160]). Imported once from index.css.
  *
- * The ONLY continuous animations in the identity live here, and every one of
- * them dies under prefers-reduced-motion ([112] discipline: motion is
- * functional, never decorative-mandatory). Imported once from index.css. */
-
-/* Ticker: the track holds the item run TWICE; translating -50% loops seamlessly. */
-@keyframes broadcast-ticker-scroll {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(-50%);
-  }
-}
-
-.broadcast-ticker__track {
-  display: inline-flex;
-  white-space: nowrap;
-  animation: broadcast-ticker-scroll var(--ticker-duration, 30s) linear infinite;
-  will-change: transform;
-}
-
-/* Pause: a real control (WCAG 2.2.2) sets data-paused; hover-pause is a
- * pointer-only convenience (a tap must not leave the crawl stuck). */
-.broadcast-ticker[data-paused="true"] .broadcast-ticker__track {
-  animation-play-state: paused;
-}
-@media (hover: hover) and (pointer: fine) {
-  .broadcast-ticker:hover .broadcast-ticker__track {
-    animation-play-state: paused;
-  }
-}
-
-/* LIVE dot: a slow on-air pulse. One instance per screen (the Scorebug). */
-@keyframes broadcast-live-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.35;
-  }
-}
-
-.broadcast-live-dot {
-  animation: broadcast-live-pulse 2s ease-in-out infinite;
-}
+ * The ticker crawl and the scorebug's LIVE pulse - this identity's only
+ * continuous animations - retired with the game page's move to the [195]
+ * editorial identity; nothing on a migrated page loops. */
 
 /* Fleet-strip chips: the class owns the background so the hover can win over
  * it (an inline background-color would outrank any stylesheet hover). */
@@ -62,15 +19,4 @@
   background-color: var(--color-chromeEdge);
   outline: 2px solid var(--color-gold);
   outline-offset: -2px;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .broadcast-ticker__track {
-    animation: none;
-    /* Static: show the first run of items, no movement. */
-    transform: none;
-  }
-  .broadcast-live-dot {
-    animation: none;
-  }
 }

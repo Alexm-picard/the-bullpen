@@ -1,5 +1,4 @@
 import {
-  Anchor,
   AppShell,
   Burger,
   Container,
@@ -7,7 +6,6 @@ import {
   Group,
   Loader,
   Stack,
-  Title,
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { lazy, Suspense, type ReactNode } from "react";
@@ -22,7 +20,7 @@ import {
 
 import HomePage from "./pages/home-page";
 import { ErrorBoundary } from "./components/shared/error-boundary";
-import { colors, motion, radii, typography } from "./design/broadcast";
+import { motion } from "./design/broadcast";
 import { ThemeProvider } from "./design/theme-provider";
 import { useTheme } from "./design/use-theme";
 
@@ -55,41 +53,9 @@ const AdminRoutingPage = lazy(() => import("./pages/admin-routing-page"));
 // S6 — catch-all 404 for any unmatched URL (otherwise the shell renders blank).
 const NotFoundPage = lazy(() => import("./pages/not-found-page"));
 
-// Broadcast chrome nav ([160] cleanup PR): the global frame is the dark
-// telecast masthead - wordmark in Barlow italic with a gold tick, nav links
-// [191] journey-order nav: primary surfaces first, Models group second, ops/about last.
-const navLinkStyle: React.CSSProperties = {
-  fontFamily: typography.fonts.display,
-  fontWeight: typography.weights.semibold,
-  fontSize: 15,
-  letterSpacing: typography.tracking.chip,
-  textTransform: "uppercase",
-  height: 56,
-  display: "inline-flex",
-  alignItems: "center",
-  padding: "0 2px",
-  marginBottom: -2,
-  whiteSpace: "nowrap",
-  flexShrink: 0,
-};
-
-// Color, the 3px rule and the current-page state live in `.bp-navlink`
-// (interaction.css): an inline color would outrank its :hover rule.
-// No `padding` shorthand here: `.bp-navlink--drawer` owns padding-left (the
-// gap beside its gold current-page rail).
-const drawerLinkStyle: React.CSSProperties = {
-  fontFamily: typography.fonts.display,
-  fontWeight: typography.weights.semibold,
-  fontSize: 20,
-  letterSpacing: typography.tracking.section,
-  textTransform: "uppercase",
-  display: "inline-flex",
-  alignItems: "center",
-  paddingTop: 6,
-  paddingBottom: 6,
-  whiteSpace: "nowrap",
-};
-
+// [195] editorial chrome: one translucent bar (content scrolls under it, a scroll-edge fade in
+// place of a divider), serif wordmark, sentence-case links in Inter. [191]'s journey-order IA is
+// unchanged: primary surfaces first, the Models group second, ops/about last.
 type NavItem = { to: string; label: string; end?: boolean };
 type NavGroup = { groupLabel: string; items: NavItem[] };
 type NavEntry = NavItem | NavGroup;
@@ -99,71 +65,85 @@ function isGroup(e: NavEntry): e is NavGroup {
 }
 
 const NAV_ENTRIES: ReadonlyArray<NavEntry> = [
-  { to: "/", label: "home", end: true },
-  { to: "/games", label: "games" },
-  { to: "/players", label: "players" },
+  // "Tonight", not "Home": name the page by what is on it (SPEC-home §13 answer 4).
+  { to: "/", label: "Tonight", end: true },
+  { to: "/games", label: "Games" },
+  { to: "/players", label: "Players" },
   {
     groupLabel: "Models",
     items: [
-      { to: "/accuracy", label: "accuracy" },
-      { to: "/parks", label: "parks" },
-      { to: "/models/guide", label: "guide" },
+      { to: "/accuracy", label: "Accuracy" },
+      { to: "/parks", label: "Parks" },
+      { to: "/models/guide", label: "Guide" },
     ],
   },
-  { to: "/ops", label: "ops" },
-  { to: "/about", label: "about" },
+  { to: "/ops", label: "Ops" },
+  { to: "/about", label: "About" },
 ];
 
 const ALL_NAV_ITEMS: NavItem[] = NAV_ENTRIES.flatMap((e) =>
   isGroup(e) ? e.items : [e],
 );
 
-const groupLabelStyle: React.CSSProperties = {
-  fontFamily: typography.fonts.mono,
-  fontSize: 11,
-  letterSpacing: typography.tracking.eyebrow,
-  fontWeight: typography.weights.semibold,
-  whiteSpace: "nowrap",
-  color: colors.textOnChromeMuted,
-  textTransform: "uppercase",
-};
-
-const groupSeparatorStyle: React.CSSProperties = {
-  borderLeft: `1px solid ${colors.chromeEdge}`,
-  paddingLeft: 16,
-};
-
+/**
+ * [192] toggle, [195] labels: the paper is the "Day edition", the dark variant the "Night
+ * edition". The button names the edition it switches TO; aria-pressed reports whether the night
+ * edition is on, so the state is announced without relying on the label alone.
+ */
 function ThemeToggleButton() {
   const { theme, toggle } = useTheme();
+  const night = theme === "dark";
   return (
     <button
+      type="button"
       onClick={toggle}
-      aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-      title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-      // `.bp-theme-toggle` owns the border (and its gold :hover) and the
-      // transition; `.bp-pressable` owns the press scale. 44px hit box.
-      className="bp-pressable bp-theme-toggle"
-      style={{
-        background: "none",
-        borderRadius: radii.sm,
-        width: 44,
-        height: 44,
-        flexShrink: 0,
-        fontSize: 18,
-        color: colors.gold,
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-      }}
+      aria-pressed={night}
+      aria-label="Night edition"
+      className="ed-toggle"
     >
-      {theme === "dark" ? "☀" : "☾"}
+      <span aria-hidden="true">{night ? "Day edition" : "Night edition"}</span>
     </button>
   );
 }
 
+function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
+  return (
+    <>
+      {NAV_ENTRIES.map((entry) =>
+        isGroup(entry) ? (
+          <div key={entry.groupLabel} className="ed-navgroup">
+            <span className="ed-navgroup__label">{entry.groupLabel}</span>
+            {entry.items.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.end}
+                className="ed-navlink"
+                onClick={onNavigate}
+              >
+                {item.label}
+              </NavLink>
+            ))}
+          </div>
+        ) : (
+          <NavLink
+            key={entry.to}
+            to={entry.to}
+            end={entry.end}
+            className="ed-navlink"
+            onClick={onNavigate}
+          >
+            {entry.label}
+          </NavLink>
+        ),
+      )}
+    </>
+  );
+}
+
 function Layout() {
-  // D1: below the `md` breakpoint (62em) the 8-link bar cannot fit the 56px header, so the horizontal
-  // group swaps for a burger + chrome drawer (Mantine visibleFrom/hiddenFrom - no JS media logic).
+  // Below `md` (62em) the link row cannot fit; it moves into a sheet that enters from the right
+  // and leaves to the right (same edge both ways), faster out than in.
   const [navOpen, { toggle: toggleNav, close: closeNav }] =
     useDisclosure(false);
   return (
@@ -173,90 +153,52 @@ function Layout() {
         Skip to content
       </a>
       <AppShell.Header
+        withBorder={false}
+        className="ed-header"
         style={{
-          backgroundColor: colors.chrome,
-          borderBottom: `2px solid ${colors.gold}`,
           paddingLeft: "env(safe-area-inset-left)",
           paddingRight: "env(safe-area-inset-right)",
         }}
       >
-        <Container size="lg" h="100%">
-          <Group h="100%" justify="space-between" wrap="nowrap">
-            <Title
-              order={3}
-              style={{
-                fontFamily: typography.fonts.display,
-                fontWeight: typography.weights.heavy,
-                fontSize: 21,
-                letterSpacing: "0.03em",
-                textTransform: "uppercase",
-                color: colors.textOnChrome,
-                whiteSpace: "nowrap",
-                flexShrink: 0,
-              }}
-            >
-              The <span style={{ color: colors.gold }}>Bullpen</span>
-            </Title>
-            <Group gap="md" wrap="nowrap" visibleFrom="md">
-              {NAV_ENTRIES.map((entry) =>
-                isGroup(entry) ? (
-                  <Group
-                    key={entry.groupLabel}
-                    gap="md"
-                    wrap="nowrap"
-                    style={groupSeparatorStyle}
-                  >
-                    <span style={groupLabelStyle}>{entry.groupLabel}</span>
-                    {entry.items.map((item) => (
-                      <Anchor
-                        key={item.to}
-                        component={NavLink}
-                        to={item.to}
-                        end={item.end}
-                        className="bp-navlink"
-                        underline="never"
-                        style={navLinkStyle}
-                      >
-                        {item.label}
-                      </Anchor>
-                    ))}
-                  </Group>
-                ) : (
-                  <Anchor
-                    key={entry.to}
-                    component={NavLink}
-                    to={entry.to}
-                    end={entry.end}
-                    className="bp-navlink"
-                    underline="never"
-                    style={navLinkStyle}
-                  >
-                    {entry.label}
-                  </Anchor>
-                ),
-              )}
+        <Container size="xl" h="100%">
+          <Group h="100%" justify="space-between" wrap="nowrap" gap="lg">
+            <Group gap="xl" wrap="nowrap">
+              <NavLink
+                to="/"
+                className="ed-wordmark"
+                aria-label="The Bullpen, home"
+              >
+                The Bullpen
+              </NavLink>
+              <nav aria-label="Primary">
+                <Group gap="lg" wrap="nowrap" visibleFrom="md">
+                  <NavLinks />
+                </Group>
+              </nav>
             </Group>
-            <ThemeToggleButton />
-            <Burger
-              hiddenFrom="md"
-              opened={navOpen}
-              onClick={toggleNav}
-              aria-label="Toggle navigation"
-              color={colors.textOnChrome}
-              size="sm"
-              transitionDuration={motion.durationsMs.press}
-              transitionTimingFunction={motion.easing.out}
-              styles={{
-                root: {
-                  width: 44,
-                  height: 44,
-                  flexShrink: 0,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                },
-              }}
-            />
+            <Group gap="xs" wrap="nowrap">
+              <ThemeToggleButton />
+              <Burger
+                hiddenFrom="md"
+                opened={navOpen}
+                onClick={toggleNav}
+                aria-label="Toggle navigation"
+                color="var(--ed-ink)"
+                size="sm"
+                transitionDuration={motion.durationsMs.press}
+                transitionTimingFunction={motion.easing.out}
+                styles={{
+                  root: {
+                    width: 44,
+                    height: 44,
+                    flexShrink: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  },
+                }}
+              />
+            </Group>
           </Group>
         </Container>
       </AppShell.Header>
@@ -272,42 +214,37 @@ function Layout() {
           exitDuration: motion.durationsMs.base,
           timingFunction: motion.easing.drawer,
         }}
-        overlayProps={{ backgroundOpacity: 0.55, blur: 2 }}
+        overlayProps={{ backgroundOpacity: 0.35, blur: 2 }}
         styles={{
           content: {
-            backgroundColor: colors.chrome,
+            backgroundColor: "var(--ed-ground)",
             paddingRight: "env(safe-area-inset-right)",
             paddingBottom: "env(safe-area-inset-bottom)",
           },
           header: {
-            backgroundColor: "var(--bp-field-hi)",
-            borderBottom: `2px solid ${colors.gold}`,
+            backgroundColor: "var(--ed-ground)",
+            borderBottom: "1px solid var(--ed-rule)",
           },
           title: {
-            fontFamily: typography.fonts.display,
-            fontStyle: "italic",
-            fontWeight: typography.weights.heavy,
-            letterSpacing: "0.04em",
-            textTransform: "uppercase",
-            color: colors.textOnChrome,
+            fontFamily: "var(--ed-serif)",
+            fontWeight: 700,
+            fontSize: "1.25rem",
+            color: "var(--ed-ink)",
           },
-          close: { color: colors.textOnChrome },
+          close: { color: "var(--ed-ink)" },
         }}
       >
-        <Stack gap="sm" pt="sm">
+        <Stack gap={0} pt="sm">
           {ALL_NAV_ITEMS.map((item) => (
-            <Anchor
+            <NavLink
               key={item.to}
-              component={NavLink}
               to={item.to}
               end={item.end}
               onClick={closeNav}
-              className="bp-navlink bp-navlink--drawer"
-              underline="never"
-              style={drawerLinkStyle}
+              className="ed-navlink ed-navlink--drawer"
             >
               {item.label}
-            </Anchor>
+            </NavLink>
           ))}
         </Stack>
       </Drawer>

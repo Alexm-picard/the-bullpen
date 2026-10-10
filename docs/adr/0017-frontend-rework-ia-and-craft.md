@@ -1,9 +1,9 @@
 # ADR-0017: Frontend rework - information architecture and craft standard
 
-- **Status**: Accepted
+- **Status**: Accepted (visual identity superseded in part by [195]: section 1 and the [160] identity it evolves within; the IA sections 2-6 stand)
 - **Date**: 2026-08-09
 - **Deciders**: alex
-- **Related**: `decisions.md` entry [191], `docs/design/frontend-ia-audit.md` (PR #437), decision [160] (broadcast identity)
+- **Related**: `decisions.md` entries [191] [192] [195], `docs/design/frontend-ia-audit.md` (PR #437), decision [160] (broadcast identity)
 
 ## Context
 
@@ -81,4 +81,4 @@ The home page leads with the display-scale "Tonight's Slate" treatment, an ident
 
 ## Revision History
 
-(none yet)
+- **2026-10-09** - Visual identity superseded in part by decision [195]. Section 1 (dark broadcast field as the committed ground, already softened by [192]'s light/dark toggle) and the [160] broadcast identity this ADR evolved within (Barlow Condensed display, angled-chip/clip-path kit, gold accent) are replaced by an editorial "Front Page" identity: Source Serif 4 display, Inter body, JetBrains Mono for figures, warm paper ground as the default with a designed dark variant behind the [192] toggle, one scorecard-red accent. Trigger: the 2026-10 craft pass within [160] (PR #501) read to the owner as "very little change"; of three rendered home directions the owner chose the editorial one. The IA sections stand unchanged: journey-order navigation with the Models group (2), the game-page temporal hierarchy (3), the Model Guide page (4), About as a slim colophon (5), and home as portfolio landing (6). Migration is whole-app, home first. Status updated to reflect the partial supersession.

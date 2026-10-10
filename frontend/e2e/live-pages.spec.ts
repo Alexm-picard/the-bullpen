@@ -227,15 +227,18 @@ test("live game page renders the pitch log when the feed has pitches", async ({
   await page.goto(`/games/${GAME_ID}`);
 
   await expect(page.locator("h1").first()).toBeVisible();
-  await expect(page.getByText("Now Batting")).toBeVisible();
-  await expect(page.getByText("Now Pitching")).toBeVisible();
+  // Scoped to the SITUATION: the scorecard rail repeats the names on purpose, and the pin is about
+  // who the top block says is up (strict mode would otherwise match both).
+  const situation = page.getByRole("complementary", { name: "The situation" });
+  await expect(situation.getByText("Now Batting")).toBeVisible();
+  await expect(situation.getByText("Now Pitching")).toBeVisible();
   // The slug-era guard must not fire on a numeric id.
   await expect(page.getByText("Invalid game id")).toHaveCount(0);
-  // The live pitch-log section + the pitch-count stat render against real rows.
+  // The account section + the pitch-count stat render against real rows.
   await expect(
     page.locator('[aria-labelledby="game-pitch-log-label"]'),
   ).toBeVisible();
-  // A6: the Next-Pitch Model section renders its GATED state (strike three ended the at-bat).
+  // A6: the next-pitch (by outcome) section renders its GATED state (strike three ended the at-bat).
   // SCOPED to the section, because the Pitch-Type Model panel gates on the SAME condition and says
   // so in the same words - deliberately, since both describe the one upcoming pitch that does not
   // exist. An unscoped locator matched both and failed strict mode; asserting per section is what
@@ -253,6 +256,13 @@ test("live game page renders the pitch log when the feed has pitches", async ({
   await expect(pitchTypeSection).not.toContainText("%");
   await expect(
     page.getByText("Pitches", { exact: false }).first(),
+  ).toBeVisible();
+  // The account reads strike three on 1-2 as a strikeout, labelled as inferred from the count (the
+  // feed names events only for balls in play), and prints what the model gave the realized result.
+  const account = page.locator('[aria-labelledby="game-pitch-log-label"]');
+  await expect(account.getByText(/strikes out swinging/)).toBeVisible();
+  await expect(
+    account.getByText("result inferred from the count"),
   ).toBeVisible();
   expect(errors, "uncaught errors on populated /games/:id").toEqual([]);
 });
@@ -301,7 +311,7 @@ test("live game page renders the first-class empty pitch-log state when the feed
   await expect(
     page.locator('[aria-labelledby="game-pitch-log-label"]'),
   ).toBeVisible();
-  // ...with the LivePitchBoard's first-class waiting state, not a blank table or an error.
+  // ...with the account's first-class waiting state, not a blank table or an error.
   await expect(page.getByText("Waiting for the first pitch")).toBeVisible();
   expect(errors, "uncaught errors on empty /games/:id").toEqual([]);
 });

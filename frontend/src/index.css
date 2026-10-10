@@ -6,10 +6,13 @@
 @import "./design/broadcast.css";
 @import "./design/interaction.css";
 @import "./design/motion.css";
+@import "./design/editorial.css";
 
 :root {
   font-family: var(--font-body);
-  background-color: var(--bp-field);
+  /* [195]: the shared chrome is editorial, so the ground behind the translucent bar (and any
+     overscroll) is the edition's paper/night, not a page's broadcast field. */
+  background-color: var(--ed-ground);
   color: var(--bp-text);
   font-size: 16px;
   line-height: 1.5;
@@ -17,7 +20,7 @@
 
 body {
   margin: 0;
-  background-color: var(--bp-field);
+  background-color: var(--ed-ground);
   color: var(--bp-text);
 }
 

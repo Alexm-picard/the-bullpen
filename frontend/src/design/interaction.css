@@ -16,8 +16,8 @@
  *   - One focus ring everywhere: 2px --bp-focus, outset by 2px; inset on surfaces
  *     that clip (clip-path cards, overflow-x table headers).
  *   - Entrances use CSS transitions + @starting-style (interruptible, retargetable),
- *     never keyframes. The only keyframes in the app are the two continuous loops in
- *     broadcast.css and the delayed route-pending reveal below.
+ *     never keyframes. The only keyframes left in the app are the delayed
+ *     route-pending reveal below (the [160] ticker and LIVE pulse retired with [195]).
  *   - Reduced motion drops TRAVEL and keeps color/opacity feedback - see motion.css.
  *
  * Tokens only: every value here is a var() from tokens.css. */

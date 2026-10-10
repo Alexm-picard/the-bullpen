@@ -94,7 +94,7 @@ describe("TeamContactPanel", () => {
     const text = visibleText(render());
     expect(text).toContain("since 2026-01-01");
     expect(text).toMatch(/not this game/i);
-    expect(text).toMatch(/REAL batted balls/);
+    expect(text).toMatch(/real batted balls/i);
   });
 
   it("carries the current-team caveat rather than leaving it implied", () => {
