@@ -1,3 +1,4 @@
+import { AxeBuilder } from "@axe-core/playwright";
 import { test, expect, type Page, type Route } from "@playwright/test";
 
 /**
@@ -382,3 +383,160 @@ test("ops dashboard renders LIVE fleet rows when the registry endpoint returns d
   await expect(page.getByText(/pitch_outcome_post\s+v9/).first()).toBeVisible();
   expect(errors, "uncaught errors on /ops (live)").toEqual([]);
 });
+
+// --- /accuracy (decision [199]: live reliability charts + the offline record) ------------
+// Untyped route mocks: tsc cannot force these fields the way it forces the vitest fixtures, so
+// they mirror RollingAccuracyResponse (calibration included) by hand.
+
+const ACC_CAL = {
+  definition: "top_label",
+  binWidth: 0.1,
+  minReadableN: 30,
+  windowDays: 30,
+  windowKind: "calendar",
+  truthFrom: "2026-09-09",
+  truthThrough: "2026-10-08",
+  gameDays: 30,
+  n: 9330,
+  bins: [
+    {
+      lower: 0.3,
+      upper: 0.4,
+      n: 5000,
+      hits: 1750,
+      meanConfidence: 0.35,
+      observed: 0.35,
+    },
+    {
+      lower: 0.6,
+      upper: 0.7,
+      n: 4330,
+      hits: 2598,
+      meanConfidence: 0.65,
+      observed: 0.6,
+    },
+  ],
+};
+
+function rollingAccuracy(calibration: unknown) {
+  return {
+    windowDays: 7,
+    calibrationWindowDays: 30,
+    generatedAt: "2026-10-09T23:30:00Z",
+    models: [
+      "pitch_outcome_pre",
+      "pitch_outcome_post",
+      "battedball_outcome",
+      "pitch_type_pre",
+    ].map((modelName) =>
+      modelName === "battedball_outcome"
+        ? {
+            modelName,
+            status: "no_live_truth",
+            reason: "structurally unavailable",
+            top1: null,
+            n: null,
+            buckets: null,
+            note: null,
+            calibration: null,
+          }
+        : {
+            modelName,
+            status: "live",
+            reason: null,
+            top1: 0.594,
+            n: 18377,
+            buckets: null,
+            note: null,
+            calibration,
+          },
+    ),
+  };
+}
+
+async function mockAccuracy(page: Page, calibration: unknown) {
+  await page.route("**/v1/ops/rolling-accuracy*", (route) =>
+    json(route, rollingAccuracy(calibration)),
+  );
+  await page.route("**/v1/ops/accuracy", (route) => json(route, []));
+  await page.route("**/v1/ops/backfill-accuracy", (route) =>
+    route.fulfill({ status: 204, body: "" }),
+  );
+}
+
+test("accuracy page draws one reliability chart per pitch head from the live bins", async ({
+  page,
+}) => {
+  const errors = trackPageErrors(page);
+  await mockAccuracy(page, ACC_CAL);
+  const requested = page.waitForRequest((r) =>
+    r.url().includes("/v1/ops/rolling-accuracy?days=7&calibrationDays=30"),
+  );
+  await page.goto("/accuracy");
+  await requested;
+
+  const live = page.locator('section[aria-labelledby="live-record"]');
+  await expect(live.getByRole("img")).toHaveCount(3);
+  await expect(
+    live.getByText("Calibration, last 30 days").first(),
+  ).toBeVisible();
+  await expect(live.getByText("Batted balls: no live truth")).toBeVisible();
+  // The holdout lives in Part two only.
+  await expect(live.getByText("59.1% top-1")).toHaveCount(0);
+  await expect(
+    page.locator("#offline-record").getByText("59.1% top-1"),
+  ).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("accuracy page renders the pre-deploy state (n 0, null dates) without a chart or a number", async ({
+  page,
+}) => {
+  const errors = trackPageErrors(page);
+  await mockAccuracy(page, {
+    ...ACC_CAL,
+    n: 0,
+    bins: [],
+    truthFrom: null,
+    truthThrough: null,
+    gameDays: 0,
+  });
+  await page.goto("/accuracy");
+  const live = page.locator('section[aria-labelledby="live-record"]');
+  await expect(
+    live
+      .getByText("No graded calls in this window yet. The chart draws at 300.")
+      .first(),
+  ).toBeVisible();
+  await expect(live.getByRole("img")).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+for (const scheme of ["light", "dark"] as const) {
+  test(`accuracy page with live charts has no critical or serious a11y violations (${scheme === "light" ? "paper" : "night edition"})`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme: scheme });
+    await mockAccuracy(page, ACC_CAL);
+    await page.goto("/accuracy");
+    await expect(
+      page.locator('section[aria-labelledby="live-record"]').getByRole("img"),
+    ).toHaveCount(3);
+    await page
+      .waitForFunction(
+        () => document.getAnimations().every((a) => a.playState !== "running"),
+        undefined,
+        { timeout: 2_000 },
+      )
+      .catch(() => undefined);
+    const results = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+      .analyze();
+    const blocking = results.violations.filter(
+      (v) => v.impact === "critical" || v.impact === "serious",
+    );
+    expect(
+      blocking.map((v) => `${v.id} [${v.impact}] x${v.nodes.length}`),
+    ).toEqual([]);
+  });
+}

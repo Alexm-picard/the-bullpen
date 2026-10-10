@@ -2693,11 +2693,27 @@
                     {
                         "name": "days",
                         "in": "query",
+                        "description": "Top-1 window in ET days (1..30).",
                         "required": false,
                         "schema": {
+                            "maximum": 30,
+                            "minimum": 1,
                             "type": "integer",
                             "format": "int32",
                             "default": 7
+                        }
+                    },
+                    {
+                        "name": "calibrationDays",
+                        "in": "query",
+                        "description": "Live calibration window in ET days through yesterday (1..30).",
+                        "required": false,
+                        "schema": {
+                            "maximum": 30,
+                            "minimum": 1,
+                            "type": "integer",
+                            "format": "int32",
+                            "default": 30
                         }
                     }
                 ],
@@ -6143,6 +6159,62 @@
                     }
                 }
             },
+            "Calibration": {
+                "type": "object",
+                "properties": {
+                    "definition": {
+                        "type": "string",
+                        "enum": [
+                            "top_label"
+                        ]
+                    },
+                    "binWidth": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "minReadableN": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "windowDays": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "windowKind": {
+                        "type": "string",
+                        "enum": [
+                            "calendar",
+                            "last_days_of_play"
+                        ]
+                    },
+                    "truthFrom": {
+                        "type": "string",
+                        "description": "ISO date; null when n == 0",
+                        "nullable": true
+                    },
+                    "truthThrough": {
+                        "type": "string",
+                        "description": "ISO date; null when n == 0",
+                        "nullable": true
+                    },
+                    "gameDays": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "n": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "bins": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ReliabilityBin"
+                        }
+                    }
+                },
+                "description": "Live top-label reliability over the calibration window. Independent of status: present for the three pitch heads even when the top-1 window is no_live_truth; null for battedball_outcome and when the analytical store is not configured or the rollup read failed.",
+                "nullable": true
+            },
             "DailyBucket": {
                 "type": "object",
                 "properties": {
@@ -6193,6 +6265,38 @@
                     "note": {
                         "type": "string",
                         "nullable": true
+                    },
+                    "calibration": {
+                        "$ref": "#/components/schemas/Calibration"
+                    }
+                }
+            },
+            "ReliabilityBin": {
+                "type": "object",
+                "properties": {
+                    "lower": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "upper": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "n": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "hits": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "meanConfidence": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "observed": {
+                        "type": "number",
+                        "format": "double"
                     }
                 }
             },
@@ -6200,6 +6304,10 @@
                 "type": "object",
                 "properties": {
                     "windowDays": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "calibrationWindowDays": {
                         "type": "integer",
                         "format": "int32"
                     },

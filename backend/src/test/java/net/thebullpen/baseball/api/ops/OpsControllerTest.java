@@ -1,5 +1,7 @@
 package net.thebullpen.baseball.api.ops;
 
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -12,12 +14,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
 import java.util.List;
 import net.thebullpen.baseball.api.ApiErrorAdvice;
+import net.thebullpen.baseball.data.LiveReliabilityRepository;
 import net.thebullpen.baseball.data.OpsEventsRepository;
 import net.thebullpen.baseball.data.PredictionLogRepository;
+import net.thebullpen.baseball.data.RollingAccuracyRepository;
 import net.thebullpen.baseball.domain.LatencyStat;
 import net.thebullpen.baseball.domain.OpsEvent;
 import net.thebullpen.baseball.domain.OpsEventType;
 import net.thebullpen.baseball.domain.PagedRows;
+import net.thebullpen.baseball.domain.ReliabilityBinRow;
+import net.thebullpen.baseball.domain.ReliabilityWindow;
 import net.thebullpen.baseball.drift.DriftMetricsRepository;
 import net.thebullpen.baseball.drift.MetricType;
 import net.thebullpen.baseball.drift.TaggedDriftMetric;
@@ -71,6 +77,7 @@ class OpsControllerTest {
                     opsEvents,
                     predictionLog,
                     accuracyService,
+                    null,
                     null))
             .setControllerAdvice(new ApiErrorAdvice())
             .build();
@@ -144,6 +151,7 @@ class OpsControllerTest {
                     opsEvents,
                     predictionLog,
                     accuracyService,
+                    null,
                     null))
             .setControllerAdvice(new ApiErrorAdvice())
             .build();
@@ -340,6 +348,7 @@ class OpsControllerTest {
                     opsEvents,
                     null,
                     accuracyService,
+                    null,
                     null))
             .setControllerAdvice(new ApiErrorAdvice())
             .build();
@@ -380,5 +389,102 @@ class OpsControllerTest {
         .andExpect(jsonPath("$.model_name").value("battedball_outcome"))
         .andExpect(jsonPath("$.season_from").value(2026))
         .andExpect(jsonPath("$.eval_kind").value("offline_holdout_unseen"));
+  }
+
+  // --- live calibration on /rolling-accuracy ---------------------------------------------------
+
+  private MockMvc mvcWithLiveStore(
+      RollingAccuracyRepository rolling, LiveReliabilityRepository reliability) {
+    return MockMvcBuilders.standaloneSetup(
+            new OpsController(
+                driftRepo,
+                routingRepo,
+                retrain,
+                registry,
+                opsEvents,
+                predictionLog,
+                accuracyService,
+                rolling,
+                reliability))
+        .setControllerAdvice(new ApiErrorAdvice())
+        .build();
+  }
+
+  @Test
+  void rollingAccuracy_rejects_calibrationDays_outside_1_to_30() throws Exception {
+    mvc.perform(get("/v1/ops/rolling-accuracy").param("calibrationDays", "0"))
+        .andExpect(status().isBadRequest());
+    mvc.perform(get("/v1/ops/rolling-accuracy").param("calibrationDays", "31"))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void rollingAccuracy_echoesTheDefaultCalibrationWindow_andIsNullWithoutAStore() throws Exception {
+    mvc.perform(get("/v1/ops/rolling-accuracy"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.windowDays").value(7))
+        .andExpect(jsonPath("$.calibrationWindowDays").value(30))
+        .andExpect(jsonPath("$.models[0].calibration").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(
+            jsonPath("$.models[0].reason")
+                .value("analytical store not configured in this environment"))
+        .andExpect(jsonPath("$.models[3].calibration").value(org.hamcrest.Matchers.nullValue()));
+  }
+
+  @Test
+  void rollingAccuracy_servesCalibrationEvenWhenTheTop1WindowHasNoTruth() throws Exception {
+    // Off-day / offseason shape: the 7-day top-1 window is empty, the 30-day rollup is not.
+    RollingAccuracyRepository rolling = mock(RollingAccuracyRepository.class);
+    when(rolling.pitchOutcomeDaily(anyString(), anyInt())).thenReturn(List.of());
+    when(rolling.pitchTypeDaily(anyInt())).thenReturn(List.of());
+    LiveReliabilityRepository reliability = mock(LiveReliabilityRepository.class);
+    when(reliability.window(anyString(), anyInt()))
+        .thenReturn(new ReliabilityWindow(ReliabilityWindow.Kind.CALENDAR, List.of()));
+    when(reliability.window("pitch_outcome_pre", 14))
+        .thenReturn(
+            new ReliabilityWindow(
+                ReliabilityWindow.Kind.LAST_DAYS_OF_PLAY,
+                List.of(
+                    new ReliabilityBinRow(java.time.LocalDate.of(2026, 9, 28), 6, 400, 250, 258.0),
+                    new ReliabilityBinRow(java.time.LocalDate.of(2026, 9, 29), 4, 100, 41, 45.0))));
+
+    mvcWithLiveStore(rolling, reliability)
+        .perform(get("/v1/ops/rolling-accuracy").param("calibrationDays", "14"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.calibrationWindowDays").value(14))
+        .andExpect(jsonPath("$.models[0].status").value("no_live_truth"))
+        .andExpect(jsonPath("$.models[0].calibration.windowDays").value(14))
+        .andExpect(jsonPath("$.models[0].calibration.windowKind").value("last_days_of_play"))
+        .andExpect(jsonPath("$.models[0].calibration.n").value(500))
+        .andExpect(jsonPath("$.models[0].calibration.truthFrom").value("2026-09-28"))
+        .andExpect(jsonPath("$.models[0].calibration.truthThrough").value("2026-09-29"))
+        .andExpect(jsonPath("$.models[0].calibration.gameDays").value(2))
+        .andExpect(jsonPath("$.models[0].calibration.bins.length()").value(2))
+        .andExpect(jsonPath("$.models[0].calibration.bins[0].lower").value(0.4))
+        .andExpect(jsonPath("$.models[0].calibration.bins[1].observed").value(0.625))
+        // an empty window is n = 0 with an empty bin list, never a fabricated bin
+        .andExpect(jsonPath("$.models[1].calibration.n").value(0))
+        .andExpect(jsonPath("$.models[1].calibration.bins.length()").value(0))
+        .andExpect(
+            jsonPath("$.models[1].calibration.truthFrom").value(org.hamcrest.Matchers.nullValue()))
+        // batted-ball is structurally null
+        .andExpect(jsonPath("$.models[2].calibration").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.models[3].calibration.windowKind").value("calendar"));
+  }
+
+  @Test
+  void rollingAccuracy_aFailedCalibrationReadDegradesToNull_notA500() throws Exception {
+    RollingAccuracyRepository rolling = mock(RollingAccuracyRepository.class);
+    when(rolling.pitchOutcomeDaily(anyString(), anyInt())).thenReturn(List.of());
+    when(rolling.pitchTypeDaily(anyInt())).thenReturn(List.of());
+    LiveReliabilityRepository reliability = mock(LiveReliabilityRepository.class);
+    when(reliability.window(anyString(), anyInt()))
+        .thenThrow(new org.springframework.dao.DataAccessResourceFailureException("ch down"));
+
+    mvcWithLiveStore(rolling, reliability)
+        .perform(get("/v1/ops/rolling-accuracy"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.models[0].calibration").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.models[0].status").value("no_live_truth"));
   }
 }

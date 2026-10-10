@@ -984,6 +984,13 @@ metric)` function (§8); pure CSS/React, no chart library.
   **Largest single component, ~50–70 hours.** Highest-variance in visual
   quality. Build basic version first, iterate to polished.
 - **Reliability diagrams** (Ops): Recharts or Mantine charts.
+  > **Note (2026-10-09, decisions [199]/[200]):** `/accuracy` carries LIVE
+  > top-label reliability charts per pitch-side champion (10 bins, 30-day
+  > window via an additive `calibration` object on `/v1/ops/rolling-accuracy`,
+  > rendered only at >= 300 graded calls), read from the
+  > `live_reliability_daily` rollup (worker job 06:30 ET, freshness gauge +
+  > 36h staleness alert). The 2026 offline holdout figure lives in the offline
+  > section, never mixed with live figures. Batted-ball stays chart-free.
 - **Live pitch overlay** (Game view): D3, custom.
 
 ### Performance constraints

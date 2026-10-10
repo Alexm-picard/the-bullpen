@@ -87,6 +87,8 @@ session and most "obvious" alternatives have already been considered and rejecte
   SHELF markers ([190]) seeded on static metric callouts; `lint-unmarked-claims.sh` runs as a
   non-blocking CI check. D4 honesty labels inline on all fixture surfaces. The post-pitch
   retrospective relocated from the game page to /accuracy ([191.2]).
+- **/accuracy gains a live 30-day calibration chart per model ([199]/[200])** and the 2026 holdout
+  figure lives in the offline section.
 
 ## What this project is
 

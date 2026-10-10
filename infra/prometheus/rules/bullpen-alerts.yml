@@ -273,6 +273,32 @@ groups:
           summary: "pitch-type prior nightly refresh has stopped succeeding"
           description: "The 02:50 ET pitcher_pitchtype_prior refresh last succeeded {{ $value | humanizeDuration }} ago in this worker process. The deriver refuses predictions past its staleness bound, so this precedes a serving refusal. Check `journalctl -u bullpen-worker | grep pitcher_pitchtype_prior_refresh`."
 
+      # Live reliability rollup (V035, LiveReliabilityRollupJob, 06:30 ET daily). The /accuracy
+      # calibration charts read only this rollup, so a dead job silently freezes them - the [186]
+      # failure class. 36h = one missed 06:30 run plus slack; the stamp advances only when ALL
+      # three pitch heads rolled up. Never-ran/stale split exactly like the refresh pairs above.
+      - alert: ReliabilityRollupNeverRan
+        expr: |
+          (bullpen_reliability_rollup_last_success_timestamp_seconds == 0)
+            and (time() - process_start_time_seconds{job="thebullpen-worker"} > 36 * 3600)
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "live reliability rollup has never succeeded in this worker process"
+          description: "The worker has been up > 36h and the 06:30 ET live_reliability_daily rollup has not succeeded once since boot. The /accuracy calibration charts are frozen at their last truthThrough date, and pitches_live keeps only ~14 days, so every further missed day risks permanent loss of graded history. Check `journalctl -u bullpen-worker | grep live_reliability_rollup`."
+
+      - alert: ReliabilityRollupStale
+        expr: |
+          (time() - bullpen_reliability_rollup_last_success_timestamp_seconds > 36 * 3600)
+            and (bullpen_reliability_rollup_last_success_timestamp_seconds > 0)
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "live reliability rollup has stopped succeeding"
+          description: "The 06:30 ET live_reliability_daily rollup last succeeded {{ $value | humanizeDuration }} ago in this worker process. The /accuracy calibration charts are frozen at their last truthThrough date, and pitches_live keeps only ~14 days, so every further missed day risks permanent loss of graded history. Check `journalctl -u bullpen-worker | grep live_reliability_rollup`."
+
       - alert: PitcherFormCorpusStale
         expr: |
           (bullpen_pitcher_form_age_days > 3)

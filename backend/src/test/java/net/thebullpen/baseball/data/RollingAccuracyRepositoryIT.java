@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
 import java.util.UUID;
+import net.thebullpen.baseball.domain.ReliabilityBinRow;
 import net.thebullpen.baseball.domain.RollingAccuracyBucket;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -119,20 +120,33 @@ class RollingAccuracyRepositoryIT {
       String prediction,
       int atOffsetSec)
       throws Exception {
+    insertPrediction(modelName, "champion", gameId, abIndex, pitchNumber, prediction, atOffsetSec);
+  }
+
+  private void insertPrediction(
+      String modelName,
+      String role,
+      long gameId,
+      int abIndex,
+      int pitchNumber,
+      String prediction,
+      int atOffsetSec)
+      throws Exception {
     try (var conn = clickhouseDs.getConnection();
         var ps =
             conn.prepareStatement(
                 "INSERT INTO prediction_log (request_id, request_at, model_name, model_version,"
                     + " role, feature_hash, features, prediction, latency_ms, correlation_id,"
                     + " game_id, at_bat_index, pitch_number) VALUES"
-                    + " (generateUUIDv4(), now64(3) - ?, ?, 'v1', 'champion', 'h', '{}', ?, 1.0,"
+                    + " (generateUUIDv4(), now64(3) - ?, ?, 'v1', ?, 'h', '{}', ?, 1.0,"
                     + " 'cid', ?, ?, ?)")) {
       ps.setInt(1, atOffsetSec);
       ps.setString(2, modelName);
-      ps.setString(3, prediction);
-      ps.setLong(4, gameId);
-      ps.setInt(5, abIndex);
-      ps.setInt(6, pitchNumber);
+      ps.setString(3, role);
+      ps.setString(4, prediction);
+      ps.setLong(5, gameId);
+      ps.setInt(6, abIndex);
+      ps.setInt(7, pitchNumber);
       ps.execute();
     }
   }
@@ -326,5 +340,181 @@ class RollingAccuracyRepositoryIT {
     List<RollingAccuracyBucket> buckets = repo.pitchTypeDaily(7);
     assertThat(n(buckets)).isEqualTo(1);
     assertThat(hits(buckets)).isEqualTo(1);
+  }
+
+  // --- live top-label reliability (the /accuracy calibration chart's source) -----------------
+  //
+  // Mutation ledger (which assertion reds under which mutation):
+  //  - floor -> round in the bin expression: binEdges (0.0999 lands in bin 1, 0.3 stays 3 but
+  //    0.0999's bin assertion reds first).
+  //  - confidence re-derived as the max probability instead of the persisted winner's:
+  //    y5ConfidenceIsThePersistedWinnersProbability (bin 7 instead of bin 2).
+  //  - drop role = 'champion': onlyChampionRowsAreBinned (the challenger row adds n).
+  //  - drop the temporal guard: theTemporalGuardExcludesAPredictionLoggedAfterIngest (n 1 not 0).
+  //  - drop LIMIT 1 BY: reliabilityIsStableAcrossARestart_andTheLatestRelogWins (n doubles).
+
+  /** A y5 prediction whose persisted winner is {@code winner} with the given probabilities. */
+  private static String y5With(String winner, String probabilitiesJson) {
+    return "{\"probabilities\":" + probabilitiesJson + ",\"winner\":\"" + winner + "\"}";
+  }
+
+  private static String ballAt(double c) {
+    return y5With("ball", "{\"ball\":" + c + ",\"foul\":0.0}");
+  }
+
+  private static long relN(List<ReliabilityBinRow> rows) {
+    return rows.stream().mapToLong(ReliabilityBinRow::n).sum();
+  }
+
+  private static ReliabilityBinRow onlyRow(List<ReliabilityBinRow> rows) {
+    assertThat(rows).hasSize(1);
+    return rows.getFirst();
+  }
+
+  @Test
+  void binEdges_floorAtTenths_lastBinClosedAtOne() throws Exception {
+    insertRealized(800L, 1, 1, "ball", "FF");
+    insertRealized(800L, 1, 2, "ball", "FF");
+    insertRealized(800L, 1, 3, "ball", "FF");
+    insertRealized(800L, 1, 4, "ball", "FF");
+    insertPrediction("pitch_outcome_pre", 800L, 1, 1, ballAt(0.0999), 60);
+    insertPrediction("pitch_outcome_pre", 800L, 1, 2, ballAt(0.1), 60);
+    insertPrediction("pitch_outcome_pre", 800L, 1, 3, ballAt(0.3), 60);
+    insertPrediction("pitch_outcome_pre", 800L, 1, 4, ballAt(1.0), 60);
+
+    List<ReliabilityBinRow> rows = repo.reliabilityDaily("pitch_outcome_pre", 7);
+    assertThat(rows).extracting(ReliabilityBinRow::bin).containsExactly(0, 1, 3, 9);
+    assertThat(rows).allSatisfy(r -> assertThat(r.n()).isEqualTo(1));
+    assertThat(rows).allSatisfy(r -> assertThat(r.hits()).isEqualTo(1));
+  }
+
+  @Test
+  void y5ConfidenceIsThePersistedWinnersProbability() throws Exception {
+    // The user was shown "foul" at 0.2 even though "ball" carries 0.7 (a tie-break or a serving
+    // rule chose it). Calibration of what was SHOWN means c = 0.2 (bin 2), never the max (bin 7).
+    insertRealized(810L, 1, 1, "foul", "FF");
+    insertPrediction(
+        "pitch_outcome_pre",
+        810L,
+        1,
+        1,
+        y5With("foul", "{\"ball\":0.7,\"foul\":0.2,\"in_play\":0.1}"),
+        60);
+
+    ReliabilityBinRow row = onlyRow(repo.reliabilityDaily("pitch_outcome_pre", 7));
+    assertThat(row.bin()).isEqualTo(2);
+    assertThat(row.hits()).isEqualTo(1);
+    assertThat(row.sumConfidence()).isEqualTo(0.2);
+  }
+
+  @Test
+  void y7LabelAndConfidenceComeFromTheValueThenKeySort_includingATie() throws Exception {
+    // FF and SL tie at 0.4; (-value, key) puts FF first, so the top label is FF at 0.4.
+    insertRealized(820L, 1, 1, "ball", "FF");
+    insertPrediction(
+        "pitch_type_pre", 820L, 1, 1, "{\"probabilities\":{\"SL\":0.4,\"FF\":0.4,\"CH\":0.2}}", 60);
+    // Untied: CH at 0.75 is the top label, realized SI is a miss.
+    insertRealized(820L, 1, 2, "ball", "SI");
+    insertPrediction(
+        "pitch_type_pre", 820L, 1, 2, "{\"probabilities\":{\"SI\":0.25,\"CH\":0.75}}", 60);
+
+    List<ReliabilityBinRow> rows = repo.reliabilityDaily("pitch_type_pre", 7);
+    assertThat(rows).extracting(ReliabilityBinRow::bin).containsExactly(4, 7);
+    assertThat(rows.get(0).hits()).as("FF wins the tie and FF was thrown").isEqualTo(1);
+    assertThat(rows.get(0).sumConfidence()).isEqualTo(0.4);
+    assertThat(rows.get(1).hits()).isZero();
+    assertThat(rows.get(1).sumConfidence()).isEqualTo(0.75);
+  }
+
+  @Test
+  void reliabilityIsStableAcrossARestart_andTheLatestRelogWins() throws Exception {
+    insertRealized(830L, 1, 1, "ball", "FF");
+    insertRealized(830L, 1, 2, "foul", "FF");
+    insertPrediction("pitch_outcome_pre", 830L, 1, 1, ballAt(0.55), 60);
+    insertPrediction("pitch_outcome_pre", 830L, 1, 2, ballAt(0.55), 60);
+    List<ReliabilityBinRow> before = repo.reliabilityDaily("pitch_outcome_pre", 7);
+
+    // Restart: identical re-logs. Bins must not move.
+    insertPrediction("pitch_outcome_pre", 830L, 1, 1, ballAt(0.55), 30);
+    insertPrediction("pitch_outcome_pre", 830L, 1, 2, ballAt(0.55), 30);
+    assertThat(repo.reliabilityDaily("pitch_outcome_pre", 7)).isEqualTo(before);
+    assertThat(relN(before)).isEqualTo(2);
+
+    // A corrected re-log (latest) moves pitch 1 to bin 8: the LATEST row is the scored one.
+    insertPrediction("pitch_outcome_pre", 830L, 1, 1, ballAt(0.85), 10);
+    List<ReliabilityBinRow> after = repo.reliabilityDaily("pitch_outcome_pre", 7);
+    assertThat(after).extracting(ReliabilityBinRow::bin).containsExactly(5, 8);
+    assertThat(relN(after)).isEqualTo(2);
+  }
+
+  @Test
+  void unscorableRowsLeaveBothNAndHits() throws Exception {
+    // One scorable hit at 0.65...
+    insertRealized(840L, 1, 1, "ball", "FF");
+    insertPrediction("pitch_outcome_pre", 840L, 1, 1, ballAt(0.65), 60);
+    // ...an orphan (never landed)...
+    insertPrediction("pitch_outcome_pre", 840L, 9, 9, ballAt(0.65), 60);
+    // ...an out-of-vocabulary truth...
+    insertRealized(840L, 2, 1, "pitchout", "FF");
+    insertPrediction("pitch_outcome_pre", 840L, 2, 1, ballAt(0.65), 60);
+    // ...c = 0 (the winner's probability)...
+    insertRealized(840L, 3, 1, "ball", "FF");
+    insertPrediction("pitch_outcome_pre", 840L, 3, 1, ballAt(0.0), 60);
+    // ...c > 1...
+    insertRealized(840L, 4, 1, "ball", "FF");
+    insertPrediction("pitch_outcome_pre", 840L, 4, 1, ballAt(1.5), 60);
+    // ...a winner absent from the probabilities map (reads 0)...
+    insertRealized(840L, 5, 1, "ball", "FF");
+    insertPrediction("pitch_outcome_pre", 840L, 5, 1, y5With("ball", "{\"foul\":0.9}"), 60);
+    // ...and a NaN token (not valid JSON: the payload is unparseable).
+    insertRealized(840L, 6, 1, "ball", "FF");
+    insertPrediction("pitch_outcome_pre", 840L, 6, 1, y5With("ball", "{\"ball\":NaN}"), 60);
+
+    ReliabilityBinRow row = onlyRow(repo.reliabilityDaily("pitch_outcome_pre", 7));
+    assertThat(row.bin()).isEqualTo(6);
+    assertThat(row.n()).as("only the scorable row counts").isEqualTo(1);
+    assertThat(row.hits()).isEqualTo(1);
+  }
+
+  @Test
+  void onlyChampionRowsAreBinned() throws Exception {
+    insertRealized(850L, 1, 1, "ball", "FF");
+    insertPrediction("pitch_outcome_pre", "challenger", 850L, 1, 1, ballAt(0.65), 60);
+    insertRealized(850L, 1, 2, "ball", "FF");
+    insertPrediction("pitch_outcome_pre", 850L, 1, 2, ballAt(0.35), 60);
+
+    ReliabilityBinRow row = onlyRow(repo.reliabilityDaily("pitch_outcome_pre", 7));
+    assertThat(row.bin()).as("the challenger's 0.65 call is not a served answer").isEqualTo(3);
+    assertThat(row.n()).isEqualTo(1);
+  }
+
+  @Test
+  void theTemporalGuardExcludesAPredictionLoggedAfterIngest() throws Exception {
+    insertRealized(860L, 1, 1, "ball", "FF");
+    // request_at = now + 30s: logged AFTER the truth row was ingested - not a pre-pitch claim.
+    insertPrediction("pitch_outcome_pre", 860L, 1, 1, ballAt(0.65), -30);
+
+    assertThat(repo.reliabilityDaily("pitch_outcome_pre", 7)).isEmpty();
+  }
+
+  @Test
+  void binsCarrySums_soMeansAreComputedFromSumsNotAveraged() throws Exception {
+    insertRealized(870L, 1, 1, "ball", "FF");
+    insertRealized(870L, 1, 2, "foul", "FF");
+    insertRealized(870L, 1, 3, "ball", "FF");
+    insertPrediction("pitch_outcome_pre", 870L, 1, 1, ballAt(0.61), 60);
+    insertPrediction("pitch_outcome_pre", 870L, 1, 2, ballAt(0.69), 60);
+    insertPrediction("pitch_outcome_pre", 870L, 1, 3, ballAt(0.65), 60);
+
+    ReliabilityBinRow row = onlyRow(repo.reliabilityDaily("pitch_outcome_pre", 7));
+    assertThat(row.n()).isEqualTo(3);
+    assertThat(row.hits()).isEqualTo(2);
+    assertThat(row.sumConfidence()).isCloseTo(1.95, org.assertj.core.data.Offset.offset(1e-9));
+  }
+
+  @Test
+  void reliabilityRefusesAFamilyWithoutLiveTruth() {
+    assertThatThrownBy(() -> repo.reliabilityDaily("battedball_outcome", 7))
+        .isInstanceOf(IllegalArgumentException.class);
   }
 }
