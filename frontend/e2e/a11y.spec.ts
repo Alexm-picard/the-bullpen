@@ -1,5 +1,19 @@
 import { AxeBuilder } from "@axe-core/playwright";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+/**
+ * Resolve once no CSS animation or transition is running, or after 2s, whichever is first. A
+ * route with a deliberately infinite animation simply proceeds to the audit after the bound.
+ */
+async function settle(page: Page): Promise<void> {
+  await page
+    .waitForFunction(
+      () => document.getAnimations().every((a) => a.playState !== "running"),
+      undefined,
+      { timeout: 2_000 },
+    )
+    .catch(() => undefined);
+}
 
 /**
  * Real a11y validation (W3.4): runs axe-core against the rendered app on each public route and
@@ -35,6 +49,10 @@ for (const route of ROUTES) {
     await page.goto(route);
     // Wait for the page's first heading so axe audits the rendered view, not a loading shell.
     await page.locator("h1").first().waitFor();
+    // [195] pages fade their edition in once (.ed-enter, 240ms opacity). Axe must audit the
+    // settled page, not a mid-fade frame: a half-transparent h1 reads as a contrast failure that
+    // no reader ever sees. Wait for running animations/transitions to finish (bounded).
+    await settle(page);
 
     // color-contrast is ENFORCED since D4 (the dedicated contrast pass the earlier exclusion
     // deferred to): the broadcast palette's conditional-format cells were brought to AA, so the
@@ -63,6 +81,7 @@ test("no critical or serious a11y violations on / (night edition)", async ({
   await page.emulateMedia({ colorScheme: "dark" });
   await page.goto("/");
   await page.locator("h1").first().waitFor();
+  await settle(page);
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   const results = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])

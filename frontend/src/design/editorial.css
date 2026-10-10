@@ -1286,3 +1286,414 @@
 html:has(.ed-acct) {
   scroll-padding-top: calc(56px + 1.5rem);
 }
+
+/* ══ Accuracy (/accuracy, SPEC-accuracy, decision [199]) ═══════════════════════
+ * Layout B "Report cards": the live reliability chart is the hero of each pitch head's report;
+ * the offline record is one register denser. Data marks in INK, never the accent. */
+
+.acc-head {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: 0 2.5rem;
+  align-items: end;
+  margin-top: 1.75rem;
+}
+.acc-h1 {
+  max-width: 15ch;
+}
+.acc-howto {
+  padding-left: 2.5rem;
+  border-left: 1px solid var(--ed-rule);
+}
+.acc-howto p:not(.ed-label) {
+  margin: 0.375rem 0 0;
+  font: 400 0.875rem/1.55 var(--ed-sans);
+  color: var(--ed-ink2);
+}
+.acc-howto .acc-key {
+  margin-top: 0.75rem;
+  font: italic 400 0.875rem/1.5 var(--ed-serif);
+}
+.acc-key b {
+  font: normal 600 0.8125rem/1 var(--ed-sans);
+  color: var(--ed-ink);
+}
+
+/* Part boundary: the surface label. A double rule and a sentence-case slug, never colour. */
+.acc-part {
+  margin-top: 3rem;
+  padding-top: 1.25rem;
+  border-top: 3px double var(--ed-ink);
+  scroll-margin-top: 4.5rem;
+}
+.acc-part__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+}
+.acc-part__h2 {
+  margin-top: 0.375rem;
+  font-size: 2rem;
+}
+.acc-asof {
+  font: 400 0.6875rem/1.4 var(--ed-mono);
+  color: var(--ed-ink3);
+}
+.acc-slug {
+  margin: 0;
+  font: 500 0.75rem/1.4 var(--ed-mono);
+  color: var(--ed-ink3);
+}
+
+/* The lede report: chart 7fr | words 5fr. */
+.acc-lede {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  margin-top: 1.5rem;
+}
+.acc-lede__chart {
+  padding-right: 2.5rem;
+  min-width: 0;
+}
+.acc-lede__words {
+  padding-left: 2.5rem;
+  border-left: 1px solid var(--ed-rule);
+  min-width: 0;
+}
+.acc-lede__title {
+  margin: 0.375rem 0 0.75rem;
+  font-size: 1.75rem;
+  line-height: 1.12;
+  letter-spacing: var(--ed-track-h2);
+}
+.acc-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 2.5rem;
+  border-top: 1px solid var(--ed-ink);
+}
+.acc-card {
+  padding: 1.25rem 2.5rem 0 0;
+  min-width: 0;
+}
+.acc-card + .acc-card {
+  padding: 1.25rem 0 0 2.5rem;
+  border-left: 1px solid var(--ed-rule);
+}
+.acc-card > .ed-h3 {
+  margin: 0.375rem 0 1rem;
+}
+.acc-stat-wrap {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--ed-rule);
+}
+.acc-stat {
+  margin: 0;
+}
+.acc-stat .ed-fig__value {
+  font-size: 2.25rem;
+  margin-bottom: 0.375rem;
+}
+.acc-lede .acc-stat .ed-fig__value {
+  font-size: 3rem;
+}
+.acc-stat .ed-fig__value.acc-supp {
+  font-size: 1.5rem;
+  color: var(--ed-ink2);
+}
+.acc-links {
+  margin: 1.25rem 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+  font: 400 0.8125rem/1.6 var(--ed-sans);
+}
+.acc-nolive {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: 0 2.5rem;
+  margin-top: 2.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--ed-ink);
+}
+.acc-nolive .ed-h3 {
+  margin: 0.375rem 0 0.5rem;
+}
+.acc-nolive__link {
+  align-self: end;
+}
+
+/* The chart */
+.acc-figure {
+  margin: 0;
+}
+.acc-chart-title {
+  margin: 0 0 0.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+}
+.acc-chart-title__name {
+  font: 500 0.8125rem/1.3 var(--ed-mono);
+  color: var(--ed-ink);
+}
+.acc-chart-title__meta {
+  font: 400 0.6875rem/1.3 var(--ed-mono);
+  color: var(--ed-ink3);
+}
+.acc-chart svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.acc-chart__grid {
+  stroke: var(--ed-rule);
+  stroke-width: 1;
+  stroke-dasharray: 1 3;
+}
+.acc-chart__axis {
+  stroke: var(--ed-ink3);
+  stroke-width: 1;
+}
+.acc-chart__diag {
+  stroke: var(--ed-ink3);
+  stroke-width: 1.25;
+  stroke-dasharray: 4 4;
+  fill: none;
+}
+.acc-chart__vol {
+  fill: color-mix(in srgb, var(--ed-ink3) 30%, transparent);
+}
+.acc-chart__line {
+  stroke: var(--ed-ink);
+  stroke-width: 2;
+  fill: none;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.acc-chart__pt {
+  fill: var(--ed-ink);
+  stroke: var(--ed-ground);
+  stroke-width: 2;
+}
+.acc-chart__pt--thin {
+  fill: var(--ed-ground);
+  stroke: var(--ed-ink);
+  stroke-width: 1.5;
+}
+.acc-chart__tick {
+  font: 400 10px/1 var(--ed-mono);
+  fill: var(--ed-ink3);
+}
+.acc-chart__label {
+  font: 400 10.5px/1 var(--ed-mono);
+  fill: var(--ed-ink2);
+}
+.acc-shell-chart {
+  display: block;
+  width: 100%;
+  max-width: 30rem;
+  aspect-ratio: 1;
+}
+@media (prefers-contrast: more) {
+  .acc-chart__vol {
+    stroke: var(--ed-ink3);
+    stroke-width: 1;
+  }
+  .acc-chart__diag {
+    stroke-width: 1.5;
+  }
+}
+
+/* Part two: one register denser. */
+.acc-offline {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  margin-top: 1.25rem;
+}
+.acc-offline > div:first-child {
+  padding-right: 2.5rem;
+  min-width: 0;
+}
+.acc-offline > div + div {
+  padding-left: 2.5rem;
+  border-left: 1px solid var(--ed-rule);
+  min-width: 0;
+}
+.acc-sec {
+  margin-top: 2rem;
+}
+.acc-sec__h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1.125rem;
+}
+.acc-small {
+  font-size: 0.875rem;
+}
+.acc-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+.ed-agate th.acc-num {
+  text-align: right;
+}
+.acc-heldout th + th,
+.acc-heldout td {
+  padding-left: 1rem;
+}
+.acc-heldout tbody th {
+  padding: 0.5rem 0;
+  border-bottom: 1px dotted var(--ed-rule);
+  font: 500 0.8125rem/1.3 var(--ed-mono);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ed-ink);
+  white-space: nowrap;
+}
+.acc-model {
+  font-family: var(--ed-mono);
+  font-weight: 500;
+}
+.acc-dagger {
+  margin-left: 1px;
+  font-size: 0.75em;
+  vertical-align: 0.35em;
+  color: var(--ed-ink3);
+}
+.acc-phone-only {
+  display: none;
+}
+.acc-agg th,
+.acc-holdout th {
+  padding: 0.5rem 0;
+  border-bottom: 1px dotted var(--ed-rule);
+  font: 400 0.8125rem/1.35 var(--ed-mono);
+  text-align: left;
+  color: var(--ed-ink);
+}
+.acc-sr-caption {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Confusion matrix agate */
+.acc-cm-wrap {
+  margin-top: 0.5rem;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.acc-cm {
+  border-collapse: collapse;
+  font: 400 0.8125rem/1.2 var(--ed-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ed-ink2);
+}
+.acc-cm th {
+  padding: 0.375rem 0.75rem;
+  font: 600 0.625rem/1 var(--ed-sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: right;
+  color: var(--ed-ink2);
+}
+.acc-cm thead th {
+  border-bottom: 1px solid var(--ed-ink);
+}
+.acc-cm thead th:first-child,
+.acc-cm tbody th {
+  padding-left: 0;
+  text-align: left;
+}
+.acc-cm tbody th {
+  padding: 0.5rem 0.75rem 0.5rem 0;
+  border-bottom: 1px dotted var(--ed-rule);
+}
+.acc-cm td {
+  padding: 0.5rem 0.75rem;
+  text-align: right;
+  border-bottom: 1px dotted var(--ed-rule);
+}
+/* Agreement carries INK WEIGHT, never colour (the [180] convention). */
+.acc-cm td.acc-cm__hit {
+  color: var(--ed-ink);
+  font-weight: 700;
+}
+.acc-cm caption {
+  caption-side: bottom;
+  margin-top: 0.75rem;
+  text-align: left;
+  font: italic 400 0.875rem/1.5 var(--ed-serif);
+  color: var(--ed-ink2);
+}
+
+@media (max-width: 48em) {
+  .acc-head,
+  .acc-lede,
+  .acc-pair,
+  .acc-nolive,
+  .acc-offline {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .acc-howto,
+  .acc-lede__words,
+  .acc-offline > div + div {
+    margin-top: 1.5rem;
+    padding: 1.25rem 0 0;
+    border-left: 0;
+    border-top: 1px solid var(--ed-rule);
+  }
+  .acc-lede__chart,
+  .acc-offline > div:first-child {
+    padding-right: 0;
+  }
+  .acc-card,
+  .acc-card + .acc-card {
+    padding: 1.25rem 0 0;
+    border-left: 0;
+  }
+  .acc-card + .acc-card {
+    margin-top: 2rem;
+    border-top: 1px solid var(--ed-ink);
+  }
+  .acc-part__h2 {
+    font-size: 1.625rem;
+  }
+  .acc-lede__title {
+    font-size: 1.5rem;
+  }
+  .acc-nolive__link {
+    margin-top: 0.75rem;
+  }
+  .acc-wide-only {
+    display: none;
+  }
+  .acc-phone-only {
+    display: inline;
+  }
+  .acc-heldout,
+  .acc-cm {
+    font-size: 0.75rem;
+  }
+  .acc-heldout th + th,
+  .acc-heldout td {
+    padding-left: 0.625rem;
+  }
+  .acc-heldout tbody th {
+    font-size: 0.75rem;
+  }
+  .acc-cm th,
+  .acc-cm td {
+    padding-left: 0.45rem;
+    padding-right: 0.45rem;
+  }
+}
