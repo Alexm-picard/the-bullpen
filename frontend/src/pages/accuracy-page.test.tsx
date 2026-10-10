@@ -23,6 +23,7 @@ import { theme } from "../design/theme";
 import { asOfStamp } from "../lib/as-of";
 
 import AccuracyPage from "./accuracy-page";
+import { visibleText } from "../test-support/visible-text";
 
 const HEADS = [
   "pitch_outcome_pre",
@@ -176,10 +177,8 @@ function parts(html: string): { live: string; offline: string } {
   };
 }
 
-/** Visible text only (Mantine style blocks and attributes stripped). */
-function text(html: string): string {
-  return html.replace(/<style[\s\S]*?<\/style>/gi, "").replace(/<[^>]+>/g, " ");
-}
+/** Visible text only (Mantine style blocks and attributes dropped); see test-support/visible-text. */
+const text = visibleText;
 
 describe("asOfStamp", () => {
   it("renders nothing for an unparseable or null stamp - never a 1969 date", () => {
