@@ -271,6 +271,7 @@ bundle < 300KB gzipped initial.**
 
 - Polish phase across all pages: typography, spacing, color, motion, accessibility
 - One specific iteration on Park Explorer heatmap: "fine" → "memorable"
+- `/accuracy` redesign per [199]/[200]: [195] "Report cards" layout with live 30-day top-label reliability charts per pitch-side champion, backed by the `live_reliability_daily` rollup (freshness gauge + 36h staleness alert); the 2026 offline holdout figure moves to the offline section
 - Performance optimizations (bundle audit, image optimization, lazy loading)
 - README rewrite, design decisions doc, methodology page final content
 - **Public launch**: post to r/baseball, r/sabermetrics, r/programming, HN; share to network
