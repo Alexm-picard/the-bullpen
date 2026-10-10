@@ -1,6 +1,8 @@
 package net.thebullpen.baseball.api.ops;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.time.Instant;
 import java.util.List;
@@ -8,7 +10,9 @@ import java.util.Map;
 import net.thebullpen.baseball.api.dto.ModelAccuracyScorecard;
 import net.thebullpen.baseball.api.dto.OpsEventsPage;
 import net.thebullpen.baseball.api.dto.RollingAccuracyResponse;
+import net.thebullpen.baseball.api.dto.RollingAccuracyResponse.Calibration;
 import net.thebullpen.baseball.api.dto.RollingAccuracyResponse.ModelRollingAccuracy;
+import net.thebullpen.baseball.data.LiveReliabilityRepository;
 import net.thebullpen.baseball.data.OpsEventsRepository;
 import net.thebullpen.baseball.data.PredictionLogRepository;
 import net.thebullpen.baseball.data.RollingAccuracyRepository;
@@ -21,6 +25,8 @@ import net.thebullpen.baseball.registry.AccuracyService;
 import net.thebullpen.baseball.registry.RegistryService;
 import net.thebullpen.baseball.retraining.RetrainingQueueService;
 import net.thebullpen.baseball.retraining.dto.RetrainingTrigger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
@@ -62,6 +68,8 @@ import org.springframework.web.server.ResponseStatusException;
 @Profile("api")
 public class OpsController {
 
+  private static final Logger log = LoggerFactory.getLogger(OpsController.class);
+
   private static final int OPS_EVENTS_MIN_SIZE = 1;
   private static final int OPS_EVENTS_MAX_SIZE = 200;
   private static final int LATENCY_MIN_DAYS = 1;
@@ -74,6 +82,10 @@ public class OpsController {
   // 30 caps the truth-join scan; beyond the 14-day pitches_live TTL there is no joinable truth
   // anyway, so a larger window would widen the prediction_log scan for zero additional signal.
   private static final int ROLLING_ACCURACY_MAX_DAYS = 30;
+  // The calibration window reads the tiny live_reliability_daily rollup (V035), not the truth join,
+  // so 30 is the product window rather than a scan fence; it stays capped at the same 30.
+  private static final int CALIBRATION_MIN_DAYS = 1;
+  private static final int CALIBRATION_MAX_DAYS = 30;
 
   private final DriftMetricsRepository driftRepo;
   private final RoutingRepository routingRepo;
@@ -83,6 +95,7 @@ public class OpsController {
   private final PredictionLogRepository predictionLog;
   private final AccuracyService accuracyService;
   private final RollingAccuracyRepository rollingAccuracy;
+  private final LiveReliabilityRepository liveReliability;
 
   public OpsController(
       @Autowired(required = false) DriftMetricsRepository driftRepo,
@@ -92,7 +105,8 @@ public class OpsController {
       OpsEventsRepository opsEvents,
       @Autowired(required = false) PredictionLogRepository predictionLog,
       AccuracyService accuracyService,
-      @Autowired(required = false) RollingAccuracyRepository rollingAccuracy) {
+      @Autowired(required = false) RollingAccuracyRepository rollingAccuracy,
+      @Autowired(required = false) LiveReliabilityRepository liveReliability) {
     this.driftRepo = driftRepo;
     this.routingRepo = routingRepo;
     this.retrain = retrain;
@@ -101,6 +115,7 @@ public class OpsController {
     this.predictionLog = predictionLog;
     this.accuracyService = accuracyService;
     this.rollingAccuracy = rollingAccuracy;
+    this.liveReliability = liveReliability;
   }
 
   /**
@@ -194,10 +209,38 @@ public class OpsController {
    * window; pitch_type_pre is a calibrated PRIOR promoted on calibration ([183]) - its top-1 is
    * supplementary and the frontend captions it as such and floors rendering at n >= 500;
    * battedball's [163] reality-gap framing is restated in its reason string.
+   *
+   * <p>Each pitch head also carries a {@code calibration} object: live top-label reliability bins
+   * over a SEPARATE {@code calibrationDays} window (default 30, max 30) read from the {@code
+   * live_reliability_daily} rollup through yesterday ET. It is independent of the top-1 {@code
+   * status} (present even when the 7-day window is {@code no_live_truth}); when the calendar window
+   * is empty it falls back to the most recent game days with data and says so via {@code
+   * windowKind}. Null for batted-ball and when the store is not configured.
    */
   @GetMapping("/rolling-accuracy")
   public RollingAccuracyResponse rollingAccuracy(
-      @RequestParam(name = "days", defaultValue = "7") int days) {
+      @Parameter(
+              description = "Top-1 window in ET days (1..30).",
+              schema =
+                  @Schema(
+                      type = "integer",
+                      format = "int32",
+                      minimum = "1",
+                      maximum = "30",
+                      defaultValue = "7"))
+          @RequestParam(name = "days", defaultValue = "7")
+          int days,
+      @Parameter(
+              description = "Live calibration window in ET days through yesterday (1..30).",
+              schema =
+                  @Schema(
+                      type = "integer",
+                      format = "int32",
+                      minimum = "1",
+                      maximum = "30",
+                      defaultValue = "30"))
+          @RequestParam(name = "calibrationDays", defaultValue = "30")
+          int calibrationDays) {
     if (days < ROLLING_ACCURACY_MIN_DAYS || days > ROLLING_ACCURACY_MAX_DAYS) {
       throw new ResponseStatusException(
           HttpStatus.BAD_REQUEST,
@@ -206,18 +249,49 @@ public class OpsController {
               + " and "
               + ROLLING_ACCURACY_MAX_DAYS);
     }
+    if (calibrationDays < CALIBRATION_MIN_DAYS || calibrationDays > CALIBRATION_MAX_DAYS) {
+      throw new ResponseStatusException(
+          HttpStatus.BAD_REQUEST,
+          "calibrationDays must be between "
+              + CALIBRATION_MIN_DAYS
+              + " and "
+              + CALIBRATION_MAX_DAYS);
+    }
     List<ModelRollingAccuracy> models =
         List.of(
-            pitchOutcomeEntry("pitch_outcome_pre", days),
-            pitchOutcomeEntry("pitch_outcome_post", days),
+            pitchOutcomeEntry("pitch_outcome_pre", days)
+                .withCalibration(calibration("pitch_outcome_pre", calibrationDays)),
+            pitchOutcomeEntry("pitch_outcome_post", days)
+                .withCalibration(calibration("pitch_outcome_post", calibrationDays)),
             ModelRollingAccuracy.noTruth(
                 "battedball_outcome",
                 "prediction_log rows for this family carry no live pitch keys - the served"
                     + " surface is the park heatmap, a calibrated physics estimate (decision"
                     + " [163]) - so realized live accuracy is structurally unavailable, not"
                     + " merely pending"),
-            pitchTypeEntry(days));
-    return new RollingAccuracyResponse(days, Instant.now(), models);
+            pitchTypeEntry(days)
+                .withCalibration(
+                    calibration(RollingAccuracyRepository.PITCH_TYPE_MODEL, calibrationDays)));
+    return new RollingAccuracyResponse(days, calibrationDays, Instant.now(), models);
+  }
+
+  /**
+   * One pitch head's live calibration, or null when the store is absent or the rollup read fails. A
+   * failed read degrades to null (the frontend's "calibration unavailable" state) rather than
+   * failing the whole scorecard: the top-1 figures do not depend on the rollup.
+   */
+  private Calibration calibration(String modelName, int calibrationDays) {
+    if (liveReliability == null) {
+      return null;
+    }
+    try {
+      return Calibration.from(liveReliability.window(modelName, calibrationDays), calibrationDays);
+    } catch (RuntimeException e) {
+      // Broad on purpose: any rollup fault (JDBC-translated or a mapper surprise) degrades the
+      // calibration to null; it must never take the top-1 scorecard down with it.
+      log.warn("rolling-accuracy: calibration read failed for {}; serving null", modelName, e);
+      return null;
+    }
   }
 
   private ModelRollingAccuracy pitchOutcomeEntry(String modelName, int days) {

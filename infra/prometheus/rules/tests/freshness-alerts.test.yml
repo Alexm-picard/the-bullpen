@@ -107,6 +107,70 @@ tests:
         alertname: PitcherFormRefreshNeverRan
         exp_alerts: []
 
+  # --- live reliability rollup: never-ran before the 36h uptime gate is silent, after it pages -
+  - interval: 1m
+    input_series:
+      - series: 'process_start_time_seconds{job="thebullpen-worker", instance="w", profile="worker"}'
+        values: "0x2500"
+      - series: 'bullpen_reliability_rollup_last_success_timestamp_seconds{job="thebullpen-worker", instance="w", profile="worker"}'
+        values: "0x2500"
+    alert_rule_test:
+      - eval_time: 35h
+        alertname: ReliabilityRollupNeverRan
+        exp_alerts: []
+      - eval_time: 37h
+        alertname: ReliabilityRollupNeverRan
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: thebullpen-worker
+              instance: w
+              profile: worker
+            exp_annotations:
+              summary: "live reliability rollup has never succeeded in this worker process"
+              description:
+                "The worker has been up > 36h and the 06:30 ET live_reliability_daily rollup
+                has not succeeded once since boot. The /accuracy calibration charts are frozen at
+                their last truthThrough date, and pitches_live keeps only ~14 days, so every
+                further missed day risks permanent loss of graded history. Check `journalctl -u
+                bullpen-worker | grep live_reliability_rollup`."
+      # never-ran is not "stale since the epoch"
+      - eval_time: 37h
+        alertname: ReliabilityRollupStale
+        exp_alerts: []
+
+  # --- live reliability rollup: succeeded at t=1h, then died ----------------------------------
+  - interval: 1m
+    input_series:
+      - series: 'process_start_time_seconds{job="thebullpen-worker", instance="w", profile="worker"}'
+        values: "0x2500"
+      - series: 'bullpen_reliability_rollup_last_success_timestamp_seconds{job="thebullpen-worker", instance="w", profile="worker"}'
+        values: "3600x2500"
+    alert_rule_test:
+      # 30h after the success: one missed 06:30 run is inside the 36h budget, silent.
+      - eval_time: 31h
+        alertname: ReliabilityRollupStale
+        exp_alerts: []
+      - eval_time: 38h
+        alertname: ReliabilityRollupStale
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: thebullpen-worker
+              instance: w
+              profile: worker
+            exp_annotations:
+              summary: "live reliability rollup has stopped succeeding"
+              description:
+                "The 06:30 ET live_reliability_daily rollup last succeeded 1d 13h 0m 0s ago in
+                this worker process. The /accuracy calibration charts are frozen at their last
+                truthThrough date, and pitches_live keeps only ~14 days, so every further missed
+                day risks permanent loss of graded history. Check `journalctl -u bullpen-worker |
+                grep live_reliability_rollup`."
+      - eval_time: 38h
+        alertname: ReliabilityRollupNeverRan
+        exp_alerts: []
+
   # --- corpus-stale: the age gauge fires only while the poller gate is open --------------------
   - interval: 1m
     input_series:
