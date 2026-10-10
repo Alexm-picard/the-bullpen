@@ -1,15 +1,13 @@
 /**
- * Smoke tests for /games/:id on the BROADCAST identity (redesign PR-2,
- * decision [160]). Same narrow posture as before: the page wires real
- * TanStack hooks, so we assert the shell + chrome render, the one-h1 rule
- * holds, and the invalid-id contract survives (the e2e suite depends on its
- * exact text). Data-driven states live in live-pitch-board.test.tsx.
+ * Smoke tests for /games/:id on the [195] editorial identity (SPEC-game). The page wires real
+ * TanStack hooks, so we assert the shell renders, the one-h1 rule holds, the invalid-id contract
+ * survives (the e2e suite depends on its exact text), every game state reads as what it is, and the
+ * batted-ball, current-batter and live-state honesty rules carried over from the broadcast page.
+ * The account's derivations (line score, at-bat sentences, model gave it) are unit-tested in
+ * components/games/game-account.test.ts.
  *
- * Phase 1.2 adds two cache-seeded cases for the live batted-ball card: when a
- * recent in-play pitch carries launch physics AND its all-parks prediction is
- * present, the card renders that BIP; otherwise it falls back to the showcase
- * fixture. Seeding (not fetch-mocking) is required because renderToStaticMarkup
- * will not await async queries - the same pattern as accuracy-page.test.tsx.
+ * Seeding (not fetch-mocking) is required because renderToStaticMarkup will not await async
+ * queries - the same pattern as accuracy-page.test.tsx.
  */
 import { MantineProvider } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -24,7 +22,6 @@ import {
   type LivePitchRow,
 } from "../api/games";
 import { CANONICAL_BBE_INPUT, type AllParksRequest } from "../api/parks";
-import { colors } from "../design/broadcast";
 import { theme } from "../design/theme";
 
 import { GamePage } from "./game-page";
@@ -110,113 +107,163 @@ function seededClient(): QueryClient {
   return new QueryClient({ defaultOptions: { queries: { retry: false } } });
 }
 
-describe("GamePage (broadcast identity)", () => {
-  it("renders the light field under broadcast chrome", () => {
+describe("GamePage (editorial identity)", () => {
+  it("renders on the editorial page ground", () => {
     const html = render(<GamePage />, "/games/12345");
-    expect(html.toLowerCase()).toContain(colors.field.toLowerCase());
-    expect(html.toLowerCase()).toContain(colors.chrome.toLowerCase());
+    expect(html).toContain('class="ed-page"');
+    expect(html).not.toContain("broadcast-live-dot");
   });
 
-  it("renders exactly one h1 (the matchup masthead)", () => {
+  it("renders exactly one h1 (the score headline)", () => {
     const html = render(<GamePage />, "/games/12345");
     const h1Count = (html.match(/<h1/g) ?? []).length;
     expect(h1Count).toBe(1);
   });
 
-  it("renders the scorebug as a status element and the pitch-log lower third", () => {
+  it("heads a live game with its score, its inning in words, and the account", () => {
     const client = seededClient();
     client.setQueryData(["games", "byId", GAME_ID], makeGame());
     client.setQueryData(
       ["games", "pitches", GAME_ID],
       [makePitch({ pitchType: "SL", releaseSpeedMph: 86.4 })],
     );
-    const html = render(<GamePage />, `/games/${GAME_ID}`, client);
-    expect(html).toMatch(
-      /role="status" aria-label="NYY 2, DET 1, INN 5, live"/,
-    );
-    // The per-pitch detail is visible but OUTSIDE the live region, so a new pitch does not
-    // re-announce the whole scorebug.
-    expect(html).toMatch(/<span aria-hidden="true"[^>]*>SL · 86\.4<\/span>/);
-    expect(html).toContain("Live Pitch Log");
+    const text = visibleText(render(<GamePage />, `/games/${GAME_ID}`, client));
+    expect(text).toContain("NYY 2, DET 1");
+    expect(text).toContain("Live, 5th inning");
+    expect(text).toContain("Every at-bat, newest first");
+    // The pitch reaches the account's sequence, not a separate board.
+    expect(text).toMatch(/SL 86\.4\s+ball/);
   });
 
   it("prints no score at all, not a fabricated 0-0, before the summary loads", () => {
     const html = render(<GamePage />, "/games/12345");
-    expect(html).not.toMatch(/role="status" aria-label="[^"]*, [^"]*,/);
-    expect(html).not.toContain("broadcast-live-dot");
+    const h1 = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/)?.[1] ?? "";
+    expect(visibleText(h1)).not.toMatch(/\d/);
+    expect(visibleText(html)).toContain("Loading the game");
   });
 
   it.each([
-    ["DELAYED", "DELAY", "Delayed Start: Rain"],
-    ["SUSPENDED", "SUSP", "Suspended: Rain"],
+    ["DELAYED", "Delayed in the 5th", "Delayed Start: Rain"],
+    ["SUSPENDED", "Suspended in the 5th", "Suspended: Rain"],
   ])(
-    "reads %s as stopped play with MLB's own description, never an inning",
-    (status, state, detailedState) => {
+    "reads %s as stopped play with MLB's own description, never as live",
+    (status, slug, detailedState) => {
       const client = seededClient();
       client.setQueryData(
         ["games", "byId", GAME_ID],
         makeGame({ status, detailedState, inning: 5 }),
       );
       client.setQueryData(["games", "pitches", GAME_ID], [makePitch()]);
-      const html = render(<GamePage />, `/games/${GAME_ID}`, client);
-      expect(html).toContain(
-        `aria-label="NYY 2, DET 1, ${state}, ${detailedState}"`,
+      const text = visibleText(
+        render(<GamePage />, `/games/${GAME_ID}`, client),
       );
-      expect(html).not.toContain("INN 5");
-      expect(html).not.toContain("broadcast-live-dot"); // stopped play is not live
+      expect(text).toContain(slug);
+      expect(text).toContain(detailedState);
+      expect(text).not.toContain("Live,");
+      // Stopped play estimates nothing: both model slots gate.
+      expect(countOccurrences(text, "Awaiting a settled at-bat")).toBe(2);
     },
   );
 
-  it.each([
-    ["POSTPONED", "PPD"],
-    ["UNKNOWN", "—"],
-  ])("reads %s as %s, never INN 0", (status, state) => {
+  it("does not place a delayed START in an inning (no pitch has been thrown)", () => {
     const client = seededClient();
     client.setQueryData(
       ["games", "byId", GAME_ID],
-      makeGame({ status, inning: 0 }),
+      makeGame({
+        status: "DELAYED",
+        detailedState: "Delayed Start: Rain",
+        inning: 1,
+        awayScore: 0,
+        homeScore: 0,
+      }),
     );
     client.setQueryData(["games", "pitches", GAME_ID], []);
-    const html = render(<GamePage />, `/games/${GAME_ID}`, client);
-    expect(html).toContain(`aria-label="NYY 2, DET 1, ${state}"`);
-    expect(html).not.toContain("INN 0");
+    const text = visibleText(render(<GamePage />, `/games/${GAME_ID}`, client));
+    expect(text).toContain("Delayed");
+    expect(text).not.toContain("Delayed in the");
+    // No baseball yet, so no score either.
+    expect(text).toContain("NYY at DET");
+    expect(text).not.toContain("NYY 0, DET 0");
+  });
+
+  it.each([
+    ["POSTPONED", "Postponed"],
+    ["UNKNOWN", "Status unknown"],
+  ])("reads %s as %s, with no score and never an inning 0", (status, slug) => {
+    const client = seededClient();
+    client.setQueryData(
+      ["games", "byId", GAME_ID],
+      makeGame({ status, inning: 0, detailedState: "" }),
+    );
+    client.setQueryData(["games", "pitches", GAME_ID], []);
+    const text = visibleText(render(<GamePage />, `/games/${GAME_ID}`, client));
+    expect(text).toContain(slug);
+    expect(text).toContain("NYY at DET");
+    expect(text).not.toContain("NYY 2, DET 1");
+    expect(text).not.toContain("0th");
   });
 
   it("routes the What guide links client-side, not as full document loads", () => {
     const html = render(<GamePage />, "/games/12345");
-    for (const anchor of ["next-pitch", "pitch-type", "batted-ball"]) {
-      // One <a> carrying both the route and the interaction-layer class (a router <Link> renders
-      // an <a href>; the client-side behaviour itself is react-router's, not re-tested here).
+    for (const anchor of ["next-pitch", "pitch-type"]) {
       const tag = html.match(
         new RegExp(`<a [^>]*href="/models/guide#${anchor}"[^>]*>`),
       )?.[0];
       expect(tag).toBeDefined();
-      expect(tag).toContain('class="bp-link bp-pressable"');
+      expect(tag).toContain("ed-link");
       // The class owns the link colour; an inline colour would outrank its hover state.
       expect(tag).not.toMatch(/style="[^"]*(?<![-\w])color:/);
     }
   });
 
-  it("renders the honest next-pitch gated state (ADR-0014 supersedes the [154] pending line)", () => {
-    // A6: the old "pitch model pending" header line is replaced by the Next-Pitch Model section.
-    // With no pitches loaded the at-bat is not settled, so the panel renders its GATED state - the
-    // honest champion-less/context-less surface, and no request ever fires from a static render.
+  it("renders the honest gated state in BOTH model slots (ADR-0014)", () => {
+    // With no pitches loaded the at-bat is not settled, so both slots gate - and no request ever
+    // fires from a static render.
     const html = render(<GamePage />, "/games/12345");
-    expect(html).toContain("Next-Pitch Model");
-    expect(html).toContain("Pitch-Type Model");
-    // BOTH gated panels must show it - one occurrence would mean one of them stopped gating.
+    expect(html).toContain("The next pitch, by outcome");
+    expect(html).toContain("The next pitch, by type");
+    // BOTH gated slots must say it - one occurrence would mean one of them stopped gating.
     expect(countOccurrences(html, "Awaiting a settled at-bat")).toBe(2);
     expect(html).not.toContain("pitch model pending");
   });
 
-  it("renders the chrome footer", () => {
+  it("renders the editorial colophon", () => {
     const html = render(<GamePage />, "/games/12345");
-    expect(html).toContain("THE BULLPEN · LIVE GAME");
+    expect(html).toContain("The Bullpen. Self-hosted, honestly scored.");
   });
 
   it("renders the invalid-id message when :id is non-numeric (e2e contract text)", () => {
     const html = render(<GamePage />, "/games/not-a-number");
     expect(html).toContain("Invalid game id.");
+  });
+
+  it("names the at-bat that is OVER once the live matchup has moved on, never keeping the old batter at bat", () => {
+    const client = seededClient();
+    client.setQueryData(
+      ["games", "byId", GAME_ID],
+      makeGame({
+        currentMatchup: {
+          batterId: 900001,
+          pitcherId: 900002,
+          batSide: "R",
+          pitchHand: "R",
+          atBatIndex: 2,
+        },
+      }),
+    );
+    client.setQueryData(["games", "pitches", GAME_ID], [makePitch()]);
+    client.setQueryData(["players", "byId", 111], {
+      id: 111,
+      name: "Previous Batter",
+      primaryPosition: "RF",
+      active: true,
+      team: "NYY",
+    });
+    const text = visibleText(render(<GamePage />, `/games/${GAME_ID}`, client));
+    expect(text).not.toContain("Previous Batter, 1-0 so far.");
+    expect(text).toMatch(
+      /Previous Batter(&#x27;|')s at-bat ends after 1 pitch; the feed does not say how\./,
+    );
   });
 
   it("renders the batted ball the SUMMARY names, not one scavenged from the pitch list", () => {
@@ -271,9 +318,11 @@ describe("GamePage (broadcast identity)", () => {
 
     const html = render(<GamePage />, `/games/${GAME_ID}`, client);
     expect(html).toContain("Live Batter");
-    expect(html).toContain("Field Out");
+    // The summary's "Field Out" said as the account says it, with the ball's own physics.
+    expect(visibleText(html)).toContain("Live Batter flies out.");
     expect(html).toContain("104.3");
-    expect(html).toContain("LIVE BIP");
+    // The comparison is the model's, counted over the parks it scored: TOR .61 >= .5, BOS .40 not.
+    expect(visibleText(html)).toContain("A home run in 1 of 2 parks");
     expect(html).not.toContain("Giancarlo Stanton");
   });
 
@@ -318,7 +367,7 @@ describe("GamePage (broadcast identity)", () => {
     // Assert on the ALWAYS-RENDERED header, not the park rows: those live behind "Compare across
     // parks", so `not.toContain("460")` would have passed whatever the code did - the same collapse
     // trap that made the first B3 pin vacuous, recurring in the test written to fix B1.
-    expect(html).not.toContain("LIVE BIP");
+    expect(visibleText(html)).not.toContain("A home run in");
     expect(visibleText(html)).toContain("withheld rather than estimated");
   });
 
@@ -380,11 +429,10 @@ describe("GamePage (broadcast identity)", () => {
     );
 
     const text = visibleText(render(<GamePage />, `/games/${GAME_ID}`, client));
-    // Statcast's classification appears TWICE - once in the sub-line, once as the metric key -
-    // and it is the same string by construction. A raw-angle re-derivation would print
-    // "Line drive" in one place and "Ground ball" in the other; a rounded one, "Line drive" and
-    // "Line drive" from two sources that can drift apart. Counting both is what pins the SHARING.
-    expect(text.split("Line Drive").length - 1).toBe(2);
+    // Statcast's classification wins over a raw-angle band. The editorial page prints the
+    // descriptor once (the physics line), from ONE derivation; a raw-angle re-derivation would say
+    // "Ground ball" for this 9.6-degree liner.
+    expect(text).toContain("Line drive, 96.2 mph");
     expect(text).not.toMatch(/ground ball/i);
   });
 
@@ -418,7 +466,7 @@ describe("GamePage (broadcast identity)", () => {
     const inFlight = visibleText(render(<GamePage />, `/games/${GAME_ID}`, c1));
     expect(inFlight).toContain("Scoring this batted ball");
     expect(inFlight).not.toContain("No ball has been put in play");
-    expect(inFlight).toContain("SCORING"); // the chip must not say AWAITING either
+    expect(inFlight).not.toContain("A home run in"); // nothing scored is claimed while in flight
 
     // Withheld: spray declined, so the comparison is refused rather than estimated.
     const c2 = seededClient();
@@ -477,7 +525,7 @@ describe("GamePage (broadcast identity)", () => {
     expect(html).toContain("No ball has been put in play in this game yet");
     expect(html).not.toContain("Giancarlo Stanton");
     expect(html).not.toContain("MODEL EXAMPLE");
-    expect(html).not.toContain("LIVE BIP");
+    expect(visibleText(html)).not.toContain("A home run in");
   });
 });
 
@@ -600,7 +648,10 @@ describe("GamePage current batter (V031 live matchup)", () => {
     );
     expect(html).toContain("Now Batting");
     expect(html).toContain("Now Pitching");
-    expect(html).not.toContain("Previous Batter");
+    // The SITUATION names who is standing in now. The previous batter may appear in the account's
+    // history (correctly, as an at-bat that is over), but never as the one at bat.
+    expect(visibleText(html)).toMatch(/At bat\s+Now Batting/);
+    expect(visibleText(html)).not.toMatch(/At bat\s+Previous Batter/);
     // The fixture row is at-bat 1 while the matchup is at-bat 2 - the PAST-TENSE case. The
     // prediction panel must be gated (never predicting for a finished at-bat) and the row-derived
     // Count/Outs must read as unknown rather than pairing the live batter with a dead count.
@@ -838,14 +889,15 @@ describe("GamePage live-state consumer (decision [194])", () => {
   it("renders live-state predictions in the next-pitch panel", () => {
     const html = seedLive(makeLiveState());
     expect(html).toContain("Next-pitch outcome probabilities");
-    expect(html).toContain("LIVE ESTIMATE");
+    expect(visibleText(html)).toContain("pitch_outcome_pre v2");
     expect(html).toContain("35.0%");
   });
 
   it("renders live-state predictions in the pitch-type panel", () => {
     const html = seedLive(makeLiveState());
-    expect(html).toContain("LIVE PRIOR");
-    expect(html).toContain("60.0%");
+    expect(visibleText(html)).toContain("pitch_type_pre v1");
+    expect(html).toContain("60%");
+    expect(html).toContain("Calibrated prior, not a call.");
   });
 
   it("falls back to em-dashes when live state has no upcomingPitch", () => {

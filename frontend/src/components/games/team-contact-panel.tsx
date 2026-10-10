@@ -1,35 +1,28 @@
-import type { TeamContactResponse, TeamHrProfile } from "../../api/games";
-import { colors, typography } from "../../design/broadcast";
-
 /**
- * The pre-first-pitch state of the batted-ball card: both teams' SEASON-TO-DATE contact, scored at
- * this park by the same champion the live card uses.
+ * <TeamContactPanel> - before the first ball in play, each team's REAL season-to-date contact
+ * scored at tonight's park by the batted-ball champion ([195] editorial skin; logic unchanged).
  *
- * <p>What it deliberately is not: a "typical" batted ball. Taking a team's median launch speed and
- * median launch angle would produce a point that never occurred, and feeding that to the model
- * would be a fabricated input wearing a statistic. Every number here is a mean over REAL balls
- * someone actually hit, and n is shown because a mean over 8 and a mean over 800 are not the same
- * claim.
- *
- * <p>It is also a DIFFERENT claim from the live card it stands in for - season-to-date rather than
- * this game - so the copy says so rather than letting the layout imply continuity.
+ * What it deliberately is not: a "typical" batted ball. A median launch speed and angle would be a
+ * point that never occurred, fed to the model as a fabricated input wearing a statistic. Every
+ * number here is a mean over REAL balls, and n is shown because a mean over 8 and a mean over 800
+ * are not the same claim. It is also a different claim from the live card it stands in for -
+ * season-to-date, not this game - so the caption says so.
  */
+import { VisuallyHidden } from "@mantine/core";
+
+import type { TeamContactResponse, TeamHrProfile } from "../../api/games";
+
 export type TeamContactPanelProps = {
   data: TeamContactResponse | undefined;
   isLoading: boolean;
   error: unknown;
 };
 
-/** State lines and the caption are sentences: body face (design.md §8 - the
- * mono never sets sentences). Figures stay mono in the rows. */
-const muted: React.CSSProperties = {
-  margin: 0,
-  fontFamily: typography.fonts.body,
-  fontSize: 13,
-  lineHeight: typography.leading.dense,
-  letterSpacing: 0,
-  color: colors.textMuted,
-};
+const PCT = new Intl.NumberFormat("en-US", {
+  style: "percent",
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+});
 
 function TeamRow({
   team,
@@ -38,62 +31,24 @@ function TeamRow({
   team: string;
   profile: TeamHrProfile | null;
 }) {
+  // Scaled against a 10% ceiling: league HR-per-BIP sits well under that, so a linear bar to 100%
+  // would render every team as a stub. The number is the claim; the bar is a comparison aid.
+  const scale = profile ? Math.min(profile.meanHrProbability * 10, 1) : 0;
   return (
-    <li
-      style={{
-        display: "grid",
-        gridTemplateColumns: "72px 1fr 96px",
-        alignItems: "center",
-        gap: 10,
-        padding: "4px 0",
-      }}
-    >
-      <span
-        style={{
-          fontFamily: typography.fonts.display,
-          fontSize: 15,
-          color: colors.ink,
-        }}
-      >
-        {team}
-      </span>
-      <span
-        aria-hidden="true"
-        style={{
-          display: "block",
-          height: 10,
-          background: colors.fieldSubtle,
-          overflow: "hidden",
-        }}
-      >
-        <span
-          style={{
-            display: "block",
-            height: "100%",
-            // Scaled against a 10% ceiling: league HR-per-BIP sits well under that, so a linear
-            // bar to 100% would render every team as a stub and hide the difference the card is
-            // about. The number beside it is the claim; the bar is only a comparison aid.
-            width: profile
-              ? `${Math.min(profile.meanHrProbability * 1000, 100)}%`
-              : "0%",
-            background: colors.steel,
-          }}
-        />
-      </span>
-      <span
-        style={{
-          fontFamily: typography.fonts.mono,
-          fontSize: 12,
-          fontFeatureSettings: '"tnum" 1',
-          textAlign: "right",
-          color: colors.textMuted,
-        }}
-      >
-        {profile
-          ? `${(profile.meanHrProbability * 100).toFixed(1)}% · n=${profile.n}`
-          : "no profile"}
-      </span>
-    </li>
+    <tr className="ed-agate__row">
+      <td>
+        {team}{" "}
+        {profile ? <span className="ed-agate__code">n={profile.n}</span> : null}
+      </td>
+      <td className="ed-barcell" aria-hidden="true">
+        <div className="ed-track">
+          <span className="ed-bar" style={{ transform: `scaleX(${scale})` }} />
+        </div>
+      </td>
+      <td className="ed-num">
+        {profile ? PCT.format(profile.meanHrProbability) : "no profile"}
+      </td>
+    </tr>
   );
 }
 
@@ -103,38 +58,51 @@ export function TeamContactPanel({
   error,
 }: TeamContactPanelProps) {
   if (error) {
-    return <p style={muted}>Could not load the season-to-date comparison.</p>;
+    return (
+      <p className="ed-note">Could not load the season-to-date comparison.</p>
+    );
   }
   if (isLoading || !data) {
     return (
-      <p aria-busy="true" style={muted}>
+      <p className="ed-note" aria-busy="true">
         Scoring both teams&rsquo; recent contact at this park&hellip;
       </p>
     );
   }
   if (!data.home && !data.away) {
     return (
-      <p style={muted}>
+      <p className="ed-note">
         No profileable contact for either team yet this season.
       </p>
     );
   }
   return (
-    <div>
-      <ul
-        aria-label="Season-to-date home-run probability by team at this park"
-        style={{ listStyle: "none", margin: 0, padding: 0 }}
-      >
-        <TeamRow team={data.awayTeam} profile={data.away} />
-        <TeamRow team={data.homeTeam} profile={data.home} />
-      </ul>
-      <p style={{ ...muted, marginTop: 8 }}>
-        Each team&rsquo;s REAL batted balls since {data.since}, scored at this
-        park by the batted-ball champion - not this game, and not a
-        &ldquo;typical&rdquo; batted ball. Team is current affiliation, so a
+    <table
+      className="ed-agate"
+      aria-label="Season-to-date home-run probability by team at this park"
+    >
+      <caption>
+        Each team&rsquo;s real batted balls since {data.since}, scored at this
+        park by the batted-ball champion. Season to date, not this game, and not
+        a &ldquo;typical&rdquo; batted ball. Team is current affiliation, so a
         mid-season trade attributes a batter&rsquo;s earlier contact to his new
         club.
-      </p>
-    </div>
+      </caption>
+      <thead>
+        <tr>
+          <th scope="col">Team</th>
+          <th scope="col" className="ed-barcell">
+            <VisuallyHidden>Share bar</VisuallyHidden>
+          </th>
+          <th scope="col" className="ed-num" style={{ width: "6rem" }}>
+            P(HR)
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        <TeamRow team={data.awayTeam} profile={data.away} />
+        <TeamRow team={data.homeTeam} profile={data.home} />
+      </tbody>
+    </table>
   );
 }

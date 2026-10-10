@@ -1,22 +1,32 @@
 /**
- * `/games/:id` - per-game live page, FIRST screen on the broadcast identity
- * (redesign PR-2, decision [160]).
+ * `/games/:id` - the live game page on the [195] editorial "Front Page" identity (approved
+ * SPEC-game, 2026-10-09; owner revision: B's left-rail scorecard beside the account).
  *
- * Composition (light field under dark chrome):
- *   1. Masthead - condensed-italic matchup h1 + context line + <Scorebug>
- *      (team-color wells, wedge state, gold on-air dot, last-pitch detail)
- *   2. State band - <BigStat> row (count / outs / last pitch / pitches seen)
- *   3. <LowerThird> "Live Pitch Log" + <LivePitchBoard> (the hero)
- *   4. <TickerStrip> - decorative recent-pitch crawl (aria-hidden; the same
- *      facts live in the board), dead under prefers-reduced-motion
- *   5. Chrome footer strip
+ * Reading order (one at both widths):
+ *   1. Dateline + breadcrumb.
+ *   2. TOP BLOCK: slug, score headline, dek; the situation; then the NOW-SLOT (the next pitch, by
+ *      outcome - or the ball just put in play) beside the next pitch, by type.
+ *   3. THE ACCOUNT: a sticky scorecard rail (phones: a one-line strip), the line score, every
+ *      at-bat newest first with "model gave it" per pitch, and sidenotes.
  *
- * Data wiring is UNCHANGED from the paper-era page: `useGame` /
- * `useLivePitches` poll on the status-driven cadence; this PR is presentation
- * only. This page imports ONLY the broadcast token namespace ([160] migration
- * rule: one namespace per screen).
+ * Data wiring is UNCHANGED from the broadcast page - same hooks, same gates, same freshness guards:
+ *  - useGame / useLivePitches poll on the status-driven cadence; useLiveState ([194]) at 2s.
+ *  - usePitchPrediction / usePitchTypePrediction fire only when the game is live, a request can be
+ *    built, AND /live has no worker-computed predictions (exactly as before; no new caller).
+ *  - useAllParksPrediction stays NULL-KEYED unless a real ball in play carries spray + base state:
+ *    the endpoint logs every request to prediction_log, so it is never called speculatively.
+ *  - useTeamContact runs only while the game has no ball in play.
+ *  - New reads are cache-backed lookups only: player names for the account (`/v1/players/:id`, the
+ *    same key usePlayer uses) and today's matchups for pre-game probables.
+ *
+ * Temporal hierarchy (ADR-0017 §3): during an at-bat the next-pitch estimate holds the now-slot. A
+ * ball in play takes the slot ONLY when it arrived while the page was open and nothing has been
+ * thrown since; it enters once (reduced motion: a fade), and never on page load - a ball that was
+ * already there when the page opened lives in the account.
  */
-import { useEffect, useMemo, useState } from "react";
+import { VisuallyHidden } from "@mantine/core";
+import { useQueries } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
 
 import {
@@ -31,173 +41,132 @@ import {
   usePitchTypePrediction,
   useTeamContact,
   type GameSummary,
-  type LivePitchRow,
   type RecentBattedBall,
 } from "../api/games";
+import { useTodaysMatchups } from "../api/matchups";
+import { firstPitchEt } from "../api/matchups-view";
+import { useAllParksPrediction, type AllParksRequest } from "../api/parks";
+import { getPlayer, usePlayer } from "../api/players";
+import { BUILD_DATE, BUILD_SHA } from "../build-info";
 import {
-  useAllParksPrediction,
-  type AllParksRequest,
-  type AllParksResponse,
-} from "../api/parks";
-import { usePlayer } from "../api/players";
-import { BigStat } from "../components/broadcast/big-stat";
-import { BroadcastPanel } from "../components/broadcast/broadcast-panel";
-import { LowerThird } from "../components/broadcast/lower-third";
-import { Scorebug } from "../components/broadcast/scorebug";
+  AccountStream,
+  type LatestBall,
+} from "../components/games/account-stream";
+import { BasesGlyph } from "../components/games/bases-glyph";
 import {
-  TickerStrip,
-  type TickerItem,
-} from "../components/broadcast/ticker-strip";
-import { BattedBallExplorer } from "../components/games/batted-ball-explorer";
-import { LivePitchBoard } from "../components/games/live-pitch-board";
-import { NextPitchPanel } from "../components/games/next-pitch-panel";
-import { PitchTypePanel } from "../components/games/pitch-type-panel";
+  atBatSentence,
+  atBatsFrom,
+  basesPhrase,
+  eventPhrase,
+  hrParkCount,
+  isFinalStatus,
+  lineScoreFrom,
+  ordinal,
+  parkLines,
+} from "../components/games/game-account";
+import { LineScore } from "../components/games/line-score";
+import { OutcomeAgate } from "../components/games/outcome-agate";
+import { ParkAgate } from "../components/games/park-agate";
+import { PitchTypeSection } from "../components/games/pitch-type-section";
+import {
+  PhoneScoreStrip,
+  ScorecardRail,
+  type Scorecard,
+} from "../components/games/scorecard";
+import { useScrolledPast } from "../components/games/use-scrolled-past";
 import { TeamContactPanel } from "../components/games/team-contact-panel";
-import {
-  type BattedBall,
-  type ParkOutcome,
-  type ParkOutcomeTone,
-} from "../data/batted-ball-fixtures";
-import { PARK_ROWS } from "../data/parks-fixtures";
-import { BroadcastFooter, PageChrome } from "../components/shared/page-chrome";
-import { colors, typography } from "../design/broadcast";
+import { INFERRED_NOTE, MODEL_GAVE_NOTE } from "../data/game-claims";
 
 // Hoisted: constructing an Intl formatter is not free, and the page re-renders on every poll.
-const ISSUE_DATE = new Intl.DateTimeFormat("en-US", {
-  weekday: "short",
-  month: "short",
+const ET_DATE = new Intl.DateTimeFormat("en-US", {
+  weekday: "long",
+  month: "long",
   day: "numeric",
   year: "numeric",
+  timeZone: "America/New_York",
+});
+const ET_CLOCK = new Intl.DateTimeFormat("en-US", {
+  hour: "numeric",
+  minute: "2-digit",
+  second: "2-digit",
+  timeZone: "America/New_York",
+});
+const ET_HM = new Intl.DateTimeFormat("en-US", {
+  hour: "numeric",
+  minute: "2-digit",
+  timeZone: "America/New_York",
 });
 
-function todayIssueDate(): string {
-  return ISSUE_DATE.format(new Date());
+function etClock(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  return Number.isNaN(t) ? null : `${ET_CLOCK.format(new Date(t))} ET`;
 }
 
-/** Scorebug state read. The API exposes `inning` but not top/bottom - the
- * neutral "INN n" marker carries over from the paper-era page. Only a game
- * actually in play reads an inning: a postponed game must not print "INN 0",
- * nor a rain delay "INN 5" as if play were on. */
-function scorebugState(summary: GameSummary | undefined): string {
-  if (!summary) return "—";
-  switch (summary.status) {
-    case "COMPLETED":
-      return "FINAL";
-    case "WARMUP":
-      return "WARMUP";
-    case "SCHEDULED":
-      return "PREGAME";
-    case "IN_PROGRESS":
-    case "MID_INNING":
-      return `INN ${summary.inning}`;
-    case "DELAYED":
-      return "DELAY";
-    case "SUSPENDED":
-      return "SUSP";
-    case "POSTPONED":
-      return "PPD";
-    default:
-      return "—";
-  }
-}
-
-/** Stopped-play statuses: the scorebug's detail reads MLB's own description
- * ("Delayed Start: Rain") instead of a stale last pitch. */
-function isStoppedPlay(summary: GameSummary | undefined): boolean {
-  return summary?.status === "DELAYED" || summary?.status === "SUSPENDED";
-}
+const PLAYING = new Set(["IN_PROGRESS", "MID_INNING"]);
+const STOPPED = new Set(["DELAYED", "SUSPENDED"]);
+const NOT_STARTED = new Set(["SCHEDULED", "WARMUP", "POSTPONED", "UNKNOWN"]);
 
 function isLive(summary: GameSummary | undefined): boolean {
   return summary?.status === "IN_PROGRESS" || summary?.status === "MID_INNING";
 }
 
-function lastPitchRead(p: LivePitchRow | undefined): string {
-  if (!p) return "—";
-  const type = p.pitchType || "—";
-  return p.releaseSpeedMph != null
-    ? `${type} · ${p.releaseSpeedMph.toFixed(1)}`
-    : type;
+/** Score is printed only for a game that has started - a postponed game must not read "0, 0". */
+function hasScore(summary: GameSummary | undefined, pitchCount: number) {
+  if (!summary) return false;
+  if (NOT_STARTED.has(summary.status)) return false;
+  if (STOPPED.has(summary.status)) return pitchCount > 0;
+  return true;
 }
 
-function tickerItems(pitches: LivePitchRow[]): TickerItem[] {
-  // Keyed by the pitch cursor: two pitches can read identically ("FF 94.8 → ball").
-  return pitches.slice(0, 12).map((p) => ({
-    key: p.cursor,
-    text: `${p.pitchType || "?"} ${
-      p.releaseSpeedMph != null ? p.releaseSpeedMph.toFixed(1) : "—"
-    } → ${p.description.replace(/_/g, " ")}`,
-  }));
+/** The sentence-case slug: state in words, so it needs no colour to be read. */
+function slugFor(
+  summary: GameSummary | undefined,
+  pitchCount: number,
+  firstPitch: string | null,
+): string {
+  if (!summary) return "Loading the game";
+  const inn = summary.inning > 0 ? ordinal(summary.inning) : null;
+  switch (summary.status) {
+    case "SCHEDULED":
+      return firstPitch ? `Tonight, first pitch ${firstPitch}` : "Tonight";
+    case "WARMUP":
+      return "Warmups";
+    case "IN_PROGRESS":
+      return inn ? `Live, ${inn} inning` : "Live";
+    case "MID_INNING":
+      return inn ? `Between half-innings, ${inn} inning` : "Between innings";
+    case "DELAYED":
+    case "SUSPENDED": {
+      const word = summary.status === "DELAYED" ? "Delayed" : "Suspended";
+      // A delayed START has an inning in the feed but no baseball: only a game with logged pitches
+      // was stopped "in" an inning.
+      return pitchCount > 0 && inn ? `${word} in the ${inn}` : word;
+    }
+    case "POSTPONED":
+      return "Postponed";
+    case "COMPLETED":
+      return "Final";
+    default:
+      return summary.detailedState || "Status unknown";
+  }
 }
 
-/** The "What" link to the model guide: a client-side route change, so the live
- * page's polling and cache survive the round trip. */
-function GuideLink({ anchor }: { anchor: string }) {
-  return (
-    <Link
-      to={`/models/guide#${anchor}`}
-      className="bp-link bp-pressable"
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 4,
-        minHeight: 32,
-        fontFamily: typography.fonts.mono,
-        fontSize: 12,
-        letterSpacing: typography.tracking.eyebrow,
-        textTransform: "uppercase",
-        border: `1px solid ${colors.rule}`,
-        padding: "6px 10px",
-      }}
-    >
-      <span style={{ color: colors.gold, fontSize: 11 }}>{"ⓘ"}</span> What
-    </Link>
-  );
+function outsWords(n: number): string {
+  return n === 0 ? "no outs" : n === 1 ? "one out" : `${n} outs`;
 }
-
-/** Section header row: the lower third plus its guide link, wrapping the link
- * under the bar at phone width instead of overflowing. */
-const sectionHeaderRow: React.CSSProperties = {
-  marginBottom: 12,
-  display: "flex",
-  flexWrap: "wrap",
-  alignItems: "center",
-  gap: 12,
-};
-
-/** The gold "primary" rail: 3px border + 13px pad = the 16px gutter exactly,
- * so the rail never pokes past the page edge. */
-const primaryRail: React.CSSProperties = {
-  borderLeft: `3px solid ${colors.gold}`,
-  paddingLeft: 13,
-  marginLeft: -16,
-};
 
 /** Stable identity of a batted ball across polls (the summary object can be re-created). */
 function bipKeyOf(bb: RecentBattedBall | null): string | null {
   return bb ? `${bb.batterId}-${bb.atBatIndex}-${bb.pitchNumber}` : null;
 }
 
-// ── Phase 1.2: live batted-ball -> BattedBall mapping ────────────────────────
-//
-// The all-parks endpoint exposes P(HR) per park ONLY - not a full fielded-outcome
-// distribution. So the per-park chip is honestly HR-likelihood, NOT a fabricated
-// 1B/2B/3B/OUT: a park reads HR at/above HR_THRESHOLD, else "In play" (the ball
-// stays in the yard; the model makes no claim whether it's a hit or an out). The
-// actual realized result is the card's top-line `result` (from the live event).
-// hrParkCount uses the same HR_THRESHOLD so the headline and chips agree. err is NULL on the live
-// path: AllParksResponse carries no per-park uncertainty, and printing a fixed band beside a real
-// carry would be an invented confidence interval read as the model's own precision.
-const HR_THRESHOLD = 0.5;
-
 function titleCaseFromSnake(value: string): string {
-  return value
-    .split("_")
-    .map((w) => (w ? w[0]!.toUpperCase() + w.slice(1) : w))
-    .join(" ");
+  const s = value.replace(/_/g, " ").trim();
+  return s ? s[0]!.toUpperCase() + s.slice(1).toLowerCase() : s;
 }
 
-// Contact descriptor when bb_type is absent: derive a coarse hit class from the
-// launch angle so the sub-line still reads (mirrors the showcase "Fly ball ...").
+/** Contact descriptor when bb_type is absent: a coarse class from the launch angle. */
 function bandFromLaunchAngle(deg: number): string {
   if (deg < 10) return "Ground ball";
   if (deg < 25) return "Line drive";
@@ -205,97 +174,14 @@ function bandFromLaunchAngle(deg: number): string {
   return "Pop up";
 }
 
-function outcomeForProb(p: number): { outcome: string; tone: ParkOutcomeTone } {
-  // P(HR)-only model -> honest binary: likely-HR vs stays-in-play. No invented 2B.
-  if (p >= HR_THRESHOLD) return { outcome: "HR", tone: "hr" };
-  return { outcome: "In play", tone: "out" };
+function GuideLink({ anchor }: { anchor: string }) {
+  // A client-side route change, so the live page's polling and cache survive the round trip.
+  return (
+    <Link to={`/models/guide#${anchor}`} className="ed-link ed-what">
+      What is this?
+    </Link>
+  );
 }
-
-/**
- * Map the most-recent in-play pitch + the all-parks prediction into the
- * BattedBall the explorer consumes. The launch fields are guaranteed non-null by
- * the caller's predicate; the park id -> name/team join mirrors <ParkHrHeatmap>.
- * Per-park dist uses the model's carry when the champion serves one, else the
- * BIP's own (estimated) distance; xBA is a placeholder (the endpoint has none).
- */
-function buildLiveBattedBall(
-  inPlay: RecentBattedBall,
-  pred: AllParksResponse,
-  batterName: string | undefined,
-  homeTeam: string | undefined,
-): BattedBall {
-  const exitVeloMph = inPlay.launchSpeedMph;
-  const launchAngleDeg = inPlay.launchAngleDeg;
-  const distanceFt = Math.round(inPlay.hitDistanceFt);
-
-  const rowById = new Map(PARK_ROWS.map((row) => [row.id, row]));
-  const carry = pred.carryFtByPark;
-  const probEntries = Object.entries(pred.probHrByPark);
-
-  const parks: ParkOutcome[] = probEntries.map(([id, p]) => {
-    const row = rowById.get(id);
-    const { outcome, tone } = outcomeForProb(p);
-    const parkCarry = carry?.[id];
-    return {
-      park: row?.parkName ?? id,
-      team: row?.team ?? id,
-      outcome,
-      tone,
-      dist: parkCarry != null ? Math.round(parkCarry) : distanceFt,
-      err: null, // the model reports no per-park uncertainty; do not invent one
-      here: id === homeTeam,
-    };
-  });
-
-  const parkCount = probEntries.length;
-  const hrParkCount = probEntries.filter(([, p]) => p >= HR_THRESHOLD).length;
-
-  // Default-shown: the home park (pinned) first, then the most interesting parks
-  // by P(HR), capped at six (matching the showcase's six-row default).
-  const byProbDesc = [...probEntries]
-    .sort((a, b) => b[1] - a[1])
-    .map(([id]) => rowById.get(id)?.parkName ?? id);
-  const homeParkName = parks.find((pk) => pk.here)?.park;
-  const defaultShown: string[] = [];
-  if (homeParkName) defaultShown.push(homeParkName);
-  for (const name of byProbDesc) {
-    if (defaultShown.length >= 6) break;
-    if (!defaultShown.includes(name)) defaultShown.push(name);
-  }
-
-  // ONE band, used by both the sub-line and the distance metric. Previously the sub-line used
-  // this value while the metric re-derived its own from the ROUNDED angle - so a raw 9.6 degrees
-  // read "Ground ball" in one place and "Line drive" in the other, and a present bbType made the
-  // two disagree by source as well as by input.
-  const descriptor = inPlay.bbType
-    ? titleCaseFromSnake(inPlay.bbType)
-    : bandFromLaunchAngle(launchAngleDeg);
-
-  return {
-    batter: batterName ?? `#${inPlay.batterId}`,
-    description: `${descriptor} · ${inPlay.outs} out`,
-    result: inPlay.event ? titleCaseFromSnake(inPlay.event) : "In play",
-    exitVeloMph,
-    launchDeg: Math.round(launchAngleDeg),
-    distanceFt,
-    band: descriptor,
-    xba: "—", // AllParksResponse carries no xBA; do not fabricate one.
-    hrParkCount,
-    parkCount,
-    parks,
-    defaultShown,
-    // Name the real served champion (calibration source); omit the editorial narrative on the
-    // live path so no hardcoded "caught at the track" line contradicts the actual result.
-    modelName: pred.modelName,
-    modelVersion: pred.modelVersion,
-  };
-}
-
-const errorTextStyle: React.CSSProperties = {
-  fontFamily: typography.fonts.body,
-  fontWeight: typography.weights.semibold,
-  color: colors.goldInk,
-};
 
 export function GamePage() {
   const { id } = useParams<{ id: string }>();
@@ -306,8 +192,7 @@ export function GamePage() {
   const pitches = useLivePitches(valid ? numericId : null, game.data?.status);
   const mostRecent = pitches.pitches[0];
 
-  // The fan-facing error copy drops the raw message; keep it for whoever opens the console. Logged
-  // once per distinct error object, not on every re-render.
+  // The fan-facing error copy drops the raw message; keep it for whoever opens the console.
   useEffect(() => {
     if (game.error) console.error("game summary failed to load", game.error);
   }, [game.error]);
@@ -315,15 +200,12 @@ export function GamePage() {
     if (pitches.error) console.error("pitch log failed to load", pitches.error);
   }, [pitches.error]);
 
-  // Decision [194]: poll the worker-computed live state at 2s. When the flag is off or the
-  // endpoint returns no predictions, fall back to the derive-and-POST path below.
+  // Decision [194]: the worker-computed live state at 2s; fall back to derive-and-POST otherwise.
   const liveState = useLiveState(valid ? numericId : null, game.data?.status);
   const ls = liveState.data;
   const lsHasPredictions = ls?.prePrediction != null;
 
-  // WHO IS BATTING: prefer the live-state matchup (2s freshness) when available, else the game
-  // summary's currentPlay matchup, else the last thrown pitch. The fallback chain means this can
-  // never render worse than before.
+  // WHO IS BATTING: live-state matchup, else the summary's currentPlay, else the last pitch.
   const liveMatchup = ls?.matchup ?? game.data?.currentMatchup ?? null;
   const rowIsPastTense = matchupIsAheadOf(liveMatchup, mostRecent);
 
@@ -339,9 +221,7 @@ export function GamePage() {
   const currentPitcher = usePlayer(shownPitcherId);
   const currentBatter = usePlayer(shownBatterId);
 
-  // A6: the forward-looking next-pitch estimate (ADR-0014). When live-state predictions are
-  // available, the POST hooks are disabled - the worker already computed them. When the live-state
-  // endpoint is off or has no predictions, the original derive-and-POST path fires.
+  // A6: the forward-looking next-pitch estimate (ADR-0014) - gates unchanged.
   const nextReq =
     mostRecent && game.data
       ? nextPitchRequest(mostRecent, game.data.gameDate, liveMatchup)
@@ -365,12 +245,6 @@ export function GamePage() {
     enabled: pitchTypeEnabled,
   });
 
-  // Synthesize panel-compatible prediction objects from the live-state data when available.
-  // The panels expect PitchPredictionResponse / PitchTypePriorResponse shapes; the live-state
-  // response is a subset (probabilities + winner, no latency/correlation). Fields the panels
-  // don't actually render (latencyMicros, correlationId, elapsedMicros, priorPitches) are filled
-  // with placeholder values. The panel rendering logic only reads probabilities, winner,
-  // modelName, and modelVersion/servingVersion.
   const nextPitchData = useMemo(() => {
     if (lsHasPredictions && ls?.prePrediction) {
       return {
@@ -378,8 +252,6 @@ export function GamePage() {
         winner: ls.prePrediction.winner,
         modelName: "pitch_outcome_pre",
         modelVersion: ls.modelVersions?.pre ?? "",
-        latencyMicros: 0,
-        correlationId: "",
       };
     }
     return nextPitch.data;
@@ -392,32 +264,22 @@ export function GamePage() {
         modelName: "pitch_type_pre",
         servingVersion: ls.modelVersions?.pitchType ?? "",
         priorPitches: 0,
-        elapsedMicros: 0,
-        correlationId: "",
       };
     }
     return pitchType.data;
   }, [lsHasPredictions, ls, pitchType.data]);
 
-  // The enabled state for the panels: live-state predictions count as "enabled" too.
   const nextPitchPanelEnabled =
     (isLive(game.data) && nextReq != null) || lsHasPredictions;
   const pitchTypePanelEnabled =
     (isLive(game.data) && pitchTypeReq != null) || lsHasPredictions;
 
-  // Phase 1.2: the most recent in-play batted ball carrying launch physics. The
-  // pitch store is newest-first, so .find() yields the LATEST qualifying BIP.
-  // The most recent COMPLETED ball in play, from the game summary rather than a scan of the pitch
-  // list. That list is the newest 50 pitches - a window, not the game - so scanning it found a
-  // batted ball only while it happened to still be inside, and failed by looking like "no batted
-  // ball yet" rather than like a bug.
+  // The most recent COMPLETED ball in play, from the summary (authoritative for the ball the page
+  // scores; the pitch list is not consulted for this).
   const inPlay = game.data?.mostRecentBattedBall ?? null;
   // ADR-0017 §3 entrance, gated by [112]: only a ball that arrives WHILE the page is open animates.
-  // The baseline is the ball (or absence of one) in the FIRST loaded summary - not the first
-  // render, which has no summary yet and would make a mid-game page load look like a new ball.
+  // The baseline is the ball (or absence of one) in the FIRST loaded summary, keyed to the game.
   const bipKey = bipKeyOf(inPlay);
-  // Keyed to the game: back/forward between two /games/:id URLs keeps this component mounted, so
-  // the baseline must re-seed when the game changes or the other game's ball would animate in.
   const [bipBaseline, setBipBaseline] = useState<{
     gameId: number;
     key: string | null;
@@ -431,35 +293,19 @@ export function GamePage() {
     bipBaseline != null &&
     bipBaseline.gameId === summaryGameId &&
     bipKey !== bipBaseline.key;
-  // The BIP's batter, keyed to the in-play pitch (NOT mostRecent, which may be a
-  // later non-BIP pitch in the same at-bat or a new one).
   const inPlayBatter = usePlayer(inPlay?.batterId ?? null);
 
-  // All-parks prediction for the live BIP. The query is GATED on a live BIP
-  // (enabled below): POST /v1/predict/batted-ball/all-parks logs every request to
-  // prediction_log (the drift-baseline source), so a throwaway prediction on a
-  // pregame / between-BIP mount would pollute the drift baselines the Phase-6
-  // postmortem reads. When any required field is missing the request is NULL, so the query has no
-  // key at all - it neither fires nor reads a cache entry another page populated.
+  // All-parks prediction for the ball - NULL-KEYED unless the ball carries what the model needs.
+  // POST /v1/predict/batted-ball/all-parks logs every request to prediction_log, so a throwaway
+  // request would pollute the drift baselines; a missing input withholds the comparison.
   const allParksReq = useMemo<AllParksRequest | null>(() => {
     if (
       inPlay == null ||
-      // Spray is REQUIRED and cannot be invented. The server declines it where the geometry
-      // degenerates (a ball tracked at or behind the plate, or an angle outside the foul lines),
-      // and the honest response to a declined value is to not ask the model - not to send 0.
-      // Measured cost: ~2% of balls at 150+ ft, so this almost never fires on a ball anyone would
-      // want compared across parks.
       inPlay.sprayAngleDeg == null ||
       inPlay.baseState == null
     ) {
       return null;
     }
-    // Batter side from the ROW, resolved for switch hitters exactly as nextPitchRequest resolves
-    // it. Previously hardcoded "R": harmless only while the card almost never rendered live, and a
-    // live-scored left-hander would otherwise be modelled as a right-hander on the page whose
-    // entire purpose is showing the real batted ball.
-    // Switch hitters are already resolved server-side, at the source, so the page does not
-    // re-derive a side the model input might disagree with.
     const stand = inPlay.stand;
     if (stand !== "R" && stand !== "L") return null;
     return {
@@ -472,9 +318,6 @@ export function GamePage() {
       outs: inPlay.outs,
     };
   }, [inPlay]);
-  // A null request means the query has no key at all, so it neither fires nor reads a cache entry
-  // some other page populated. Withholding is the whole point: an incomplete request must not
-  // become a prediction, and must not silently borrow one.
   const allParks = useAllParksPrediction(allParksReq, {
     enabled: allParksReq != null,
     context:
@@ -483,57 +326,79 @@ export function GamePage() {
         : undefined,
   });
 
-  // The pre-first-pitch comparison fills the state the retired fixture used to occupy. Gated on
-  // there being NO batted ball: it is a season-wide scan plus N inferences per team, so it must not
-  // run alongside the live card it stands in for.
+  // The pre-first-ball comparison: gated on there being NO ball in play.
   const teamContact = useTeamContact(game.data?.gameId ?? null, {
     enabled: game.data != null && inPlay == null,
   });
 
-  // The live BattedBall, or null until BOTH the BIP and its prediction exist (->
-  // the showcase fallback below). Memoised so polls with no new data are cheap.
-  const liveBattedBall = useMemo<BattedBall | null>(() => {
-    if (!inPlay || !allParks.data) return null;
-    return buildLiveBattedBall(
-      inPlay,
-      allParks.data,
-      inPlayBatter.data?.name,
-      game.data?.homeTeam,
-    );
-  }, [inPlay, allParks.data, inPlayBatter.data?.name, game.data?.homeTeam]);
+  // Pre-game probables: a cache-backed read of today's matchups (no logging).
+  const matchups = useTodaysMatchups();
+  const matchup = matchups.data?.find((m) => m.gameId === numericId) ?? null;
+
+  // The account.
+  const atBats = useMemo(
+    () =>
+      atBatsFrom(
+        pitches.pitches,
+        game.data?.status,
+        liveMatchup?.atBatIndex ?? null,
+      ),
+    [pitches.pitches, game.data?.status, liveMatchup?.atBatIndex],
+  );
+  const lineScore = useMemo(
+    () => (game.data ? lineScoreFrom(pitches.pitches, game.data) : null),
+    [pitches.pitches, game.data],
+  );
+  // ~20 unique batters per game, each the same cached key usePlayer uses (SPEC-game §13 Q6).
+  const batterIds = useMemo(
+    () => [...new Set(atBats.map((ab) => ab.batterId))],
+    [atBats],
+  );
+  const batterQueries = useQueries({
+    queries: batterIds.map((pid) => ({
+      queryKey: ["players", "byId", pid],
+      queryFn: () => getPlayer(pid),
+      staleTime: 60_000,
+    })),
+  });
+  const nameById = new Map<number, string>();
+  batterIds.forEach((pid, i) => {
+    const name = batterQueries[i]?.data?.name;
+    if (name) nameById.set(pid, name);
+  });
+
+  // The phone strip follows the masthead out of view.
+  const mastRef = useRef<HTMLElement | null>(null);
+  const scrolledPast = useScrolledPast(mastRef, 56);
 
   if (!valid) {
     return (
-      <PageChrome gap={24}>
-        <p style={errorTextStyle}>Invalid game id.</p>
-      </PageChrome>
+      <div className="ed-page">
+        <div className="ed-col">
+          <p className="ed-note" role="alert">
+            Invalid game id.
+          </p>
+        </div>
+      </div>
     );
   }
 
   const summary = game.data;
-  // While the lookup for a JUST-CHANGED player is in flight, show the em-dash rather than a raw
-  // MLB id: this feature makes identity flip at every at-bat, pitching change and half-inning, so
-  // what used to be a rare glimpse of a bare numeric player id would now be a regular one in the
-  // page's most prominent live line. (An MLB id is six digits, so a literal example here reads as
-  // a color to lint:hex-codes - hence the prose.) Deliberately NOT keeping the previous name as placeholder data - that
-  // would re-introduce, for a few hundred milliseconds, exactly the wrong-batter display this
-  // whole change exists to remove.
+  const status = summary?.status;
+  const final = isFinalStatus(status);
+  const pitchCount = pitches.pitches.length;
+
+  // While a JUST-CHANGED player's lookup is in flight, show the em-dash, never a raw id or the
+  // previous name (identity flips at every at-bat, pitching change and half-inning).
   const playerName = (
     q: { data?: { name?: string }; isPending: boolean },
-    id: number | null,
-  ): string => q.data?.name ?? (q.isPending || id == null ? "—" : `#${id}`);
+    pid: number | null,
+  ): string => q.data?.name ?? (q.isPending || pid == null ? "—" : `#${pid}`);
   const pitcherName = playerName(currentPitcher, shownPitcherId);
   const batterName = playerName(currentBatter, shownBatterId);
-  // Handedness rides the name only when there IS a name: "— (R)" attaches a hand to an unknown
-  // player, and this feature makes that pending window recur at every at-bat, pitching change and
-  // half-inning. "S" is resolved against the current pitcher exactly as nextPitchRequest resolves
-  // it, so the chyron and the model input never disagree about which side a switch hitter bats -
-  // an unresolved "(S)" would read to a viewer as a handedness, which it is not.
-  // The "#id" fallback DOES identify a player, so handedness on it is truthful; only the pending
-  // em-dash names nobody.
   const named = (n: string) => n !== "—";
-  // Gated on the RESOLVED code, not the raw one: a switch hitter whose pitcher hand has not
-  // arrived resolves to "", and gating on the raw "S" would render an empty " ()".
+  // Handedness rides a resolved name only; "S" is resolved against the pitcher exactly as
+  // nextPitchRequest resolves it, so the page and the model input never disagree.
   const handSuffix = (resolved: string, name: string) =>
     resolved !== "" && named(name) ? ` (${resolved})` : "";
   const livePitchHand = liveMatchup?.pitchHand ?? "";
@@ -548,294 +413,592 @@ export function GamePage() {
       : liveBatSideRaw;
   const shownPitchHand = handSuffix(livePitchHand, pitcherName);
   const shownBatSide = handSuffix(liveBatSide, batterName);
-  // Per-pitcher pitch count - the CURRENT pitcher only, not the whole-game total. Counted against
-  // the pitcher actually on the mound, so a pitching change resets it immediately rather than
-  // carrying the reliever's count over from the pitcher he replaced.
+  // Per-pitcher pitch count: the pitcher on the mound only (the log holds the whole game).
   const pitcherPitchCount =
     shownPitcherId != null
       ? pitches.pitches.filter((p) => p.pitcherId === shownPitcherId).length
       : 0;
 
-  // No fixture fallback. A labelled static example was defensible while no real batted ball could
-  // ever render here; now that one can, a Stanton card sitting on a live game page is the
-  // fixtures-presented-as-content defect the audit named. When there is no ball in play yet the
-  // page says so and shows nothing, which is the truth about the game.
-  const battedBall = liveBattedBall;
-  const battedBallLive = liveBattedBall != null;
+  // Count / Outs: fresh /live first; else the log's post-pitch count while the matchup is on the
+  // same at-bat; else unknown (an em-dash), never a finished at-bat's count beside the new batter.
+  const countText = (() => {
+    if (ls?.upcomingPitch && upcomingIsFresh)
+      return `${ls.upcomingPitch.balls}-${ls.upcomingPitch.strikes}`;
+    if (mostRecent && !rowIsPastTense) {
+      const post = postPitchCount(mostRecent);
+      if (post) return `${post.balls}-${post.strikes}`;
+    }
+    return "—";
+  })();
+  const outsNum: number | null = (() => {
+    if (ls?.upcomingPitch && upcomingIsFresh) return ls.upcomingPitch.outs;
+    if (mostRecent && !rowIsPastTense && postPitchCount(mostRecent))
+      return mostRecent.outs;
+    return null;
+  })();
+  // Bases only from a FRESH /live reading: a log row's runners are the state entering its at-bat,
+  // stale after a steal, so the log is not used for this.
+  const basesMask =
+    ls?.upcomingPitch && upcomingIsFresh ? ls.upcomingPitch.baseState : null;
 
-  return (
-    <PageChrome gap={24}>
-      <header>
-        <h1
-          style={{
-            margin: 0,
-            fontFamily: typography.fonts.display,
-            fontStyle: "italic",
-            fontWeight: typography.weights.heavy,
-            fontSize: typography.scale[6],
-            lineHeight: typography.lineHeights.display,
-            letterSpacing: "0.01em",
-            textTransform: "uppercase",
-            color: colors.ink,
-          }}
-        >
-          {summary?.awayTeam ?? "—"}{" "}
-          <span style={{ color: colors.textMuted, fontWeight: 600 }}>@</span>{" "}
-          {summary?.homeTeam ?? "—"}
-        </h1>
-        <p
-          style={{
-            margin: "2px 0 12px",
-            fontFamily: typography.fonts.mono,
-            fontSize: 12,
-            fontFeatureSettings: '"tnum" 1',
-            letterSpacing: "0.02em",
-            color: colors.textMuted,
-          }}
-        >
-          {todayIssueDate()} · live ingest
+  const scored = hasScore(summary, pitchCount);
+  const firstPitch = matchup?.gameTimeUtc
+    ? firstPitchEt(matchup.gameTimeUtc)
+    : null;
+  const slug = slugFor(summary, pitchCount, firstPitch);
+  const headline = !summary
+    ? null
+    : scored
+      ? `${summary.awayTeam} ${summary.awayScore}, ${summary.homeTeam} ${summary.homeScore}`
+      : `${summary.awayTeam} at ${summary.homeTeam}`;
+
+  // Probables: the matchup's pitcher roles, when the board names them.
+  const probables =
+    matchup != null
+      ? [
+          matchup.awayRole === "pitcher"
+            ? `${matchup.awayPlayerName} (${matchup.awayTeam})`
+            : null,
+          matchup.homeRole === "pitcher"
+            ? `${matchup.homePlayerName} (${matchup.homeTeam})`
+            : null,
+        ].filter((x): x is string => x != null)
+      : [];
+
+  // The now-slot hosts the ball only if it arrived in-session AND nothing has been thrown since.
+  const bipCursor = inPlay
+    ? inPlay.atBatIndex * 100 + inPlay.pitchNumber
+    : null;
+  const bipIsLatest = bipCursor != null && newestLogCursor <= bipCursor;
+  const bipInNowSlot = bipArrivedLive && bipIsLatest && isLive(summary);
+
+  const lines =
+    inPlay && allParks.data
+      ? parkLines(allParks.data, summary?.homeTeam, inPlay.hitDistanceFt)
+      : null;
+  const inPlayName = playerName(inPlayBatter, inPlay?.batterId ?? null);
+  const inPlayDescriptor = inPlay
+    ? inPlay.bbType
+      ? titleCaseFromSnake(inPlay.bbType)
+      : bandFromLaunchAngle(inPlay.launchAngleDeg)
+    : null;
+  const inPlayPhysics = inPlay
+    ? `${inPlayDescriptor}, ${inPlay.launchSpeedMph.toFixed(1)} mph, ${Math.round(
+        inPlay.launchAngleDeg,
+      )}°, ${Math.round(inPlay.hitDistanceFt)} ft`
+    : null;
+  const inPlaySentence = inPlay
+    ? (() => {
+        const phrase = eventPhrase(inPlay.event, inPlay.bbType);
+        return phrase
+          ? `${inPlayName} ${phrase}.`
+          : `${inPlayName}: ${inPlay.event.toLowerCase()}.`;
+      })()
+    : "";
+  // The comparison's state, said as what it is (never "no ball yet" when there is one).
+  const comparisonStatus: string | null = !inPlay
+    ? null
+    : allParksReq == null
+      ? "A ball was put in play, but its landing coordinates were not tracked cleanly enough to score it across parks, so the comparison is withheld rather than estimated."
+      : allParks.isError
+        ? "Could not score this batted ball across parks."
+        : !allParks.data
+          ? "Scoring this batted ball across all 30 parks…"
+          : null;
+  const comparison =
+    lines && allParks.data ? (
+      <>
+        <p className="ed-sub">
+          A home run in {hrParkCount(lines)} of {lines.length} parks by the
+          batted-ball estimate. Realized result here:{" "}
+          {titleCaseFromSnake(inPlay?.event ?? "in play")}.
         </p>
-        {summary ? (
-          <Scorebug
-            awayTeam={summary.awayTeam}
-            homeTeam={summary.homeTeam}
-            awayScore={summary.awayScore}
-            homeScore={summary.homeScore}
-            state={scorebugState(summary)}
-            live={isLive(summary)}
-            detail={
-              isStoppedPlay(summary)
-                ? summary.detailedState || undefined
-                : mostRecent
-                  ? lastPitchRead(mostRecent)
-                  : undefined
-            }
-            announceDetail={isStoppedPlay(summary)}
-          />
-        ) : (
-          // Reserve the scorebug's height (18px line + 12px well padding + 2px border, rounded to
-          // the rendered box) so the masthead does not jump when the summary lands - and print no
-          // score at all rather than a fabricated 0-0.
-          <div aria-hidden="true" style={{ height: 41 }} />
-        )}
-        <p
-          style={{
-            margin: "10px 0 0",
-            fontFamily: typography.fonts.body,
-            fontSize: 13,
-            color: colors.text,
-          }}
-        >
-          Pitching: <strong>{pitcherName}</strong>
-          {shownPitchHand} &middot; At bat: <strong>{batterName}</strong>
+        <ParkAgate
+          lines={lines}
+          carryIsModel={allParks.data.carryFtByPark != null}
+        />
+        <p className="ed-prov">
+          {`${allParks.data.modelName} ${allParks.data.modelVersion}`.trim()}
+        </p>
+      </>
+    ) : null;
+
+  const latestBall: LatestBall | null = inPlay
+    ? {
+        atBatIndex: inPlay.atBatIndex,
+        inNowSlot: bipInNowSlot,
+        comparison,
+        status: comparisonStatus,
+        openByDefault: false,
+        fromSummary: {
+          sentence: inPlaySentence,
+          physics: inPlayPhysics,
+          time: (() => {
+            const t = Date.parse(inPlay.ts);
+            return Number.isNaN(t) ? null : `${ET_HM.format(new Date(t))} ET`;
+          })(),
+          inning: null,
+        },
+      }
+    : null;
+
+  const dek = (() => {
+    if (!summary) return " ";
+    if (bipInNowSlot) return inPlaySentence;
+    switch (summary.status) {
+      case "SCHEDULED":
+      case "WARMUP":
+        return probables.length === 2
+          ? `${probables[0]} against ${probables[1]}. The models wake at first pitch.`
+          : "The models wake at first pitch.";
+      case "IN_PROGRESS": {
+        if (!named(pitcherName) || !named(batterName)) return "Play is on.";
+        const bits: string[] = [];
+        if (countText !== "—") bits.push(countText);
+        if (outsNum != null) bits.push(`with ${outsWords(outsNum)}`);
+        if (basesMask != null && basesMask !== 0)
+          bits.push(`and ${basesPhrase(basesMask)}`);
+        return bits.length > 0
+          ? `${pitcherName} pitching to ${batterName}, ${bits.join(" ")}.`
+          : `${pitcherName} pitching to ${batterName}.`;
+      }
+      case "MID_INNING":
+        return "The estimates return with the next at-bat.";
+      case "DELAYED":
+      case "SUSPENDED":
+        return `${summary.detailedState || "Play is stopped"}. Play is stopped, so no estimates are made.`;
+      case "POSTPONED":
+        return summary.detailedState
+          ? `${summary.detailedState}.`
+          : "This game will not be played today.";
+      case "COMPLETED":
+        return "How the post-pitch model read this game is scored on the record page.";
+      default:
+        return summary.detailedState || " ";
+    }
+  })();
+
+  const whoLine = (
+    <>
+      Pitching <strong>{pitcherName}</strong>
+      {shownPitchHand} &middot; At bat <strong>{batterName}</strong>
+      {shownBatSide}
+    </>
+  );
+
+  // The situation box (top block) by state.
+  let situation;
+  if (
+    summary &&
+    (summary.status === "SCHEDULED" || summary.status === "WARMUP")
+  ) {
+    situation = (
+      <aside className="ed-sit" aria-label="Probable starters">
+        <p className="ed-label">Probable starters</p>
+        <p className="ed-sit__who">
+          {probables.length > 0 ? probables.join(" and ") : "Not posted yet."}
+        </p>
+        {firstPitch ? (
+          <p className="ed-prov">First pitch {firstPitch}</p>
+        ) : null}
+      </aside>
+    );
+  } else if (summary && summary.status === "POSTPONED") {
+    situation = (
+      <aside className="ed-sit" aria-label="Game state">
+        <p className="ed-label">Postponed</p>
+        <p className="ed-sit__who">{summary.detailedState || "Postponed"}</p>
+      </aside>
+    );
+  } else if (final) {
+    situation = (
+      <aside className="ed-sit" aria-label="Game state">
+        <p className="ed-label">Final</p>
+        <dl className="ed-sit__grid">
+          <dt>Innings</dt>
+          <dd>{summary?.inning ?? "—"}</dd>
+          <dt>Pitches</dt>
+          <dd>{pitchCount}</dd>
+        </dl>
+        <p className="ed-sit__who">Final. The page stops polling.</p>
+      </aside>
+    );
+  } else {
+    situation = (
+      <aside className="ed-sit" aria-label="The situation">
+        <p className="ed-label">
+          {STOPPED.has(status ?? "") ? "Play stopped" : "The situation"}
+        </p>
+        <dl className="ed-sit__grid">
+          <dt>Count</dt>
+          <dd>{countText}</dd>
+          <dt>Outs</dt>
+          <dd>{outsNum != null ? String(outsNum) : "—"}</dd>
+          <dt>Bases</dt>
+          <dd>{basesMask != null ? <BasesGlyph mask={basesMask} /> : "—"}</dd>
+          <dt>Pitches</dt>
+          <dd>{pitcherPitchCount}</dd>
+        </dl>
+        <p className="ed-sit__who">
+          {STOPPED.has(status ?? "") && summary?.detailedState ? (
+            <>
+              MLB reports: <strong>{summary.detailedState}</strong>.{" "}
+            </>
+          ) : null}
+          {whoLine}
+        </p>
+      </aside>
+    );
+  }
+
+  const scorecard: Scorecard = {
+    away: summary?.awayTeam ?? "—",
+    home: summary?.homeTeam ?? "—",
+    awayScore: scored && summary ? summary.awayScore : null,
+    homeScore: scored && summary ? summary.homeScore : null,
+    inningLabel: !summary
+      ? "—"
+      : final
+        ? `Final, ${summary.inning}`
+        : summary.status === "SCHEDULED" || summary.status === "WARMUP"
+          ? (firstPitch ?? "Not started")
+          : summary.status === "POSTPONED"
+            ? "Postponed"
+            : summary.status === "MID_INNING"
+              ? `Between halves, ${ordinal(summary.inning)}`
+              : STOPPED.has(summary.status)
+                ? slug
+                : summary.inning > 0
+                  ? `${ordinal(summary.inning)} inning`
+                  : "—",
+    situation:
+      summary && PLAYING.has(summary.status)
+        ? {
+            count: countText,
+            outs: outsNum != null ? String(outsNum) : "—",
+            bases: basesMask,
+          }
+        : null,
+    pitchCount:
+      summary && !NOT_STARTED.has(summary.status) && pitchCount > 0
+        ? {
+            label: final ? "Game pitches" : "Pitches",
+            value: final ? pitchCount : pitcherPitchCount,
+          }
+        : null,
+    who:
+      summary && PLAYING.has(summary.status) ? (
+        <>
+          Pitching <strong>{pitcherName}</strong>
+          {shownPitchHand}
+          <br />
+          At bat <strong>{batterName}</strong>
           {shownBatSide}
-        </p>
-      </header>
+        </>
+      ) : summary && STOPPED.has(summary.status) ? (
+        `MLB reports: ${summary.detailedState || summary.status.toLowerCase()}.`
+      ) : final ? (
+        "Final. The page stops polling."
+      ) : probables.length > 0 ? (
+        `${probables.join(" and ")}, probable.`
+      ) : (
+        "Waiting for play."
+      ),
+    asOf: isLive(summary) ? etClock(ls?.predictedAt) : null,
+  };
 
-      {game.isError ? (
-        <p role="alert" style={errorTextStyle}>
-          Could not load this game right now. Retrying automatically.
-        </p>
-      ) : null}
-
-      <BroadcastPanel cut>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "16px 40px" }}>
-          {/* Count and Outs are derived from the newest STORED pitch, so once the live matchup
-              has moved past that pitch's at-bat they describe a moment that is over. Naming the
-              live batter beside a finished at-bat's count would read as one confident composite
-              ("leadoff hitter, 1-2 count, 2 outs") that is checkable against the broadcast and
-              wrong - worse than the stale-but-consistent page this replaced. Em-dash is this
-              page's existing way of saying "not known right now". */}
-          <BigStat
-            label="Count"
-            minCh={3}
-            value={(() => {
-              if (ls?.upcomingPitch && upcomingIsFresh)
-                return `${ls.upcomingPitch.balls}-${ls.upcomingPitch.strikes}`;
-              if (mostRecent && !rowIsPastTense) {
-                const post = postPitchCount(mostRecent);
-                if (post) return `${post.balls}-${post.strikes}`;
-              }
-              return "—";
-            })()}
-          />
-          <BigStat
-            label="Outs"
-            minCh={1}
-            value={(() => {
-              if (ls?.upcomingPitch && upcomingIsFresh)
-                return String(ls.upcomingPitch.outs);
-              if (mostRecent && !rowIsPastTense) {
-                const post = postPitchCount(mostRecent);
-                if (post) return String(mostRecent.outs);
-              }
-              return "—";
-            })()}
-          />
-          {/* Speed is the numeral, type the sub-line: the 48px figure stays <= 5 chars. */}
-          <BigStat
-            label="Last Pitch"
-            value={
-              mostRecent?.releaseSpeedMph != null
-                ? mostRecent.releaseSpeedMph.toFixed(1)
-                : "—"
-            }
-            sub={mostRecent ? mostRecent.pitchType || "—" : undefined}
-          />
-          <BigStat
-            label="Pitch Count"
-            minCh={3}
-            value={String(pitcherPitchCount)}
-            tone="gold"
-          />
-        </div>
-      </BroadcastPanel>
-
+  // Now-slot content.
+  let nowSlot;
+  if (bipInNowSlot && inPlay) {
+    nowSlot = (
       <section
+        key={bipKey ?? undefined}
+        className="ed-now__slot ed-enter"
         aria-labelledby="next-pitch-label"
-        style={nextPitchPanelEnabled ? primaryRail : undefined}
       >
-        <div style={sectionHeaderRow}>
-          <LowerThird
-            id="next-pitch-label"
-            meta={nextPitchPanelEnabled ? "LIVE ESTIMATE" : "GATED"}
-          >
-            Next-Pitch Model
-          </LowerThird>
+        <div className="ed-sechead">
+          <p className="ed-slug">Ball in play, just now</p>
+          <GuideLink anchor="batted-ball" />
+        </div>
+        <h2 className="ed-h2" id="next-pitch-label">
+          {inPlaySentence}
+        </h2>
+        <p className="ed-sub">{inPlayPhysics}</p>
+        {comparison ?? <p className="ed-note">{comparisonStatus}</p>}
+      </section>
+    );
+  } else if (final) {
+    nowSlot = (
+      <section className="ed-now__slot" aria-labelledby="next-pitch-label">
+        <div className="ed-sechead">
+          <p className="ed-slug">The record</p>
           <GuideLink anchor="next-pitch" />
         </div>
-        <NextPitchPanel
+        <h2 className="ed-h2" id="next-pitch-label">
+          How the models read this game
+        </h2>
+        <p className="ed-sub">
+          The estimates stop at the final out; the scoring starts.
+        </p>
+        <div className="ed-gated">
+          <p className="ed-note">
+            The post-pitch model&rsquo;s logged reads of this game&rsquo;s
+            pitches are scored against what happened on the record page.{" "}
+            <Link className="ed-link" to="/accuracy">
+              The Live Retrospective
+            </Link>
+          </p>
+        </div>
+      </section>
+    );
+  } else {
+    const sub =
+      nextPitchPanelEnabled && named(pitcherName) && named(batterName)
+        ? `${pitcherName} to ${batterName}${countText !== "—" ? `, ${countText}` : ""}${
+            outsNum != null ? `, ${outsWords(outsNum)}` : ""
+          }`
+        : summary?.status === "SCHEDULED" || summary?.status === "WARMUP"
+          ? "Waiting for first pitch"
+          : STOPPED.has(status ?? "")
+            ? "Play is stopped"
+            : "Waiting for the next pitch";
+    nowSlot = (
+      <section className="ed-now__slot" aria-labelledby="next-pitch-label">
+        <div className="ed-sechead">
+          <p className="ed-slug">At the plate</p>
+          <GuideLink anchor="next-pitch" />
+        </div>
+        <h2 className="ed-h2" id="next-pitch-label">
+          The next pitch, by outcome
+        </h2>
+        <p className="ed-sub">{sub}</p>
+        <OutcomeAgate
           prediction={nextPitchData}
           isLoading={lsHasPredictions ? false : nextPitch.isLoading}
           error={lsHasPredictions ? null : nextPitch.error}
           enabled={nextPitchPanelEnabled}
+          computed={
+            lsHasPredictions && ls?.predictedAt
+              ? `worker-computed ${etClock(ls.predictedAt) ?? ""}`.trim()
+              : undefined
+          }
         />
       </section>
+    );
+  }
 
-      <section aria-labelledby="pitch-type-label">
-        <div style={sectionHeaderRow}>
-          <LowerThird
-            id="pitch-type-label"
-            meta={pitchTypePanelEnabled ? "LIVE PRIOR" : "GATED"}
-          >
-            Pitch-Type Model
-          </LowerThird>
-          <GuideLink anchor="pitch-type" />
-        </div>
-        <PitchTypePanel
-          prior={pitchTypeData}
-          isLoading={lsHasPredictions ? false : pitchType.isLoading}
-          error={lsHasPredictions ? null : pitchType.error}
-          enabled={pitchTypePanelEnabled}
-        />
-      </section>
+  const noBallText = game.isError
+    ? null
+    : game.isPending
+      ? "Loading this game’s batted balls…"
+      : final
+        ? "No ball was put in play in this game."
+        : "No ball has been put in play in this game yet.";
 
-      <section
-        aria-labelledby="batted-ball-label"
-        style={battedBallLive ? primaryRail : undefined}
-      >
-        <div style={sectionHeaderRow}>
-          <LowerThird
-            id="batted-ball-label"
-            // Not "MODEL EXAMPLE" any more - there is no example. The fixture is retired, so
-            // the un-live state is an absence of data, not a substitute for it.
-            // Three-way, not two. "AWAITING BIP" above a caption that says "Scoring this batted
-            // ball..." asserts a known falsehood in the highest-contrast element of the section -
-            // the same defect the caption was just fixed for, one line up, and now contradicting
-            // the fix rather than merely agreeing with the old bug.
-            meta={
-              battedBallLive
-                ? "LIVE BIP"
-                : inPlay != null
-                  ? "SCORING"
-                  : "AWAITING BIP"
-            }
-          >
-            Batted-Ball Model
-          </LowerThird>
-          <GuideLink anchor="batted-ball" />
-        </div>
-        <p
-          style={{
-            margin: "0 0 12px",
-            fontFamily: typography.fonts.body,
-            fontSize: 12,
-            color: colors.textMuted,
-          }}
-        >
-          {battedBallLive ? (
-            <>Most recent in-play batted ball, scored across all 30 parks.</>
-          ) : inPlay != null ? (
-            // A ball WAS put in play - the page has been told so. Saying "no ball has been put in
-            // play yet" here is the same defect as saying it on an error: asserting a fact the page
-            // knows to be false. Three sub-states, all reachable, one of them the HAPPY PATH: every
-            // new ball re-keys the all-parks query, so `data` is undefined while it fetches.
-            allParksReq == null ? (
-              <>
-                A ball was put in play, but its landing coordinates were not
-                tracked cleanly enough to score it across parks - so the
-                comparison is withheld rather than estimated.
-              </>
-            ) : allParks.isError ? (
-              <>Could not score this batted ball across parks.</>
-            ) : (
-              <>Scoring this batted ball across all 30 parks&hellip;</>
-            )
-          ) : game.isError ? (
-            // NOT "no ball in play yet": that asserts a fact about the game when we simply failed
-            // to load it. An error state must say what it knows, which is nothing.
-            <>Could not load this game&rsquo;s batted balls.</>
-          ) : game.isPending ? (
-            <>Loading this game&rsquo;s batted balls&hellip;</>
-          ) : summary?.status === "COMPLETED" ? (
-            // "yet" promises more baseball. A finished game with no ball in play is finished.
-            <>No ball was put in play in this game.</>
-          ) : (
-            <>No ball has been put in play in this game yet.</>
-          )}
+  // One polite announcement per at-bat or state change, never per pitch.
+  const newestDone = atBats.find((ab) => ab.ending !== "in_progress");
+  const announcement = [
+    slug,
+    newestDone
+      ? atBatSentence(
+          newestDone,
+          nameById.get(newestDone.batterId) ?? "The batter",
+        )
+      : null,
+  ]
+    .filter(Boolean)
+    .join(". ");
+
+  const nameOf = (pid: number) => nameById.get(pid) ?? "—";
+
+  return (
+    <div className="ed-page">
+      <div className="ed-col" id="game-top">
+        <p className="ed-dateline">
+          <span>{ET_DATE.format(new Date())}</span>
+          <span className="ed-dateline__issued">
+            {isLive(summary)
+              ? `Live, updated ${etClock(ls?.predictedAt) ?? "every few seconds"}`
+              : final
+                ? "Final edition"
+                : "Game day"}
+          </span>
+          <span>
+            {summary ? `${summary.awayTeam} at ${summary.homeTeam}` : " "}
+          </span>
         </p>
-        {battedBall ? (
-          // Keyed per ball, so each new ball remounts and (when it arrived live) enters.
-          <BattedBallExplorer
-            key={bipKey ?? undefined}
-            data={battedBall}
-            enter={bipArrivedLive}
-          />
-        ) : inPlay == null && !game.isError ? (
-          // Not while the game itself failed to load: the comparison never fires then, and its
-          // panel would read "Scoring..." under a caption that already says the load failed.
-          <TeamContactPanel
-            data={teamContact.data}
-            isLoading={teamContact.isLoading}
-            error={teamContact.error}
-          />
-        ) : null}
-      </section>
+        <p className="ed-crumb">
+          <Link to="/">Tonight</Link> / <Link to="/games">Games</Link> /{" "}
+          {summary ? `${summary.awayTeam} at ${summary.homeTeam}` : "This game"}
+        </p>
 
-      <section aria-labelledby="game-pitch-log-label">
-        <div style={{ marginBottom: 12 }}>
-          <LowerThird
-            id="game-pitch-log-label"
-            meta={`NEWEST ${Math.min(pitches.pitches.length, 50)}`}
-          >
-            Live Pitch Log
-          </LowerThird>
-        </div>
-        {pitches.isError ? (
-          <p role="alert" style={errorTextStyle}>
-            Could not load pitches right now. Retrying automatically.
+        {game.isError ? (
+          <p role="alert" className="ed-note">
+            Could not load this game right now. Retrying automatically.
           </p>
-        ) : (
-          <LivePitchBoard
-            pitches={pitches.pitches}
-            isPending={pitches.isPending}
-          />
-        )}
-      </section>
+        ) : null}
 
-      <TickerStrip items={tickerItems(pitches.pitches)} />
+        <header className="ed-gmast" ref={mastRef}>
+          <div>
+            <p className="ed-slug">{slug}</p>
+            {headline ? (
+              <h1 className="ed-h1">{headline}</h1>
+            ) : (
+              <h1 className="ed-h1">
+                <span
+                  className="ed-shell"
+                  style={{ display: "block", height: "4.5rem", width: "60%" }}
+                  aria-hidden="true"
+                />
+                <VisuallyHidden>This game</VisuallyHidden>
+              </h1>
+            )}
+            <p className="ed-dek">{dek}</p>
+          </div>
+          {situation}
+        </header>
 
-      <BroadcastFooter>LIVE GAME</BroadcastFooter>
-    </PageChrome>
+        <div className="ed-now" id="now-slot">
+          {nowSlot}
+          <section className="ed-now__side" aria-labelledby="pitch-type-label">
+            <div className="ed-sechead">
+              <p className="ed-slug">By type</p>
+              <GuideLink anchor="pitch-type" />
+            </div>
+            <h2
+              className="ed-h2"
+              id="pitch-type-label"
+              style={{ fontSize: "1.5rem" }}
+            >
+              The next pitch, by type
+            </h2>
+            <p className="ed-sub">
+              {named(pitcherName)
+                ? `${pitcherName}’s calibrated prior for this count`
+                : "The pitcher’s calibrated prior for this count"}
+            </p>
+            {final ? (
+              <PitchTypeSectionClosed />
+            ) : bipInNowSlot ? (
+              <div className="ed-gated">
+                <p className="ed-note">
+                  Resets for the next batter. The prior describes one specific
+                  upcoming pitch.
+                </p>
+              </div>
+            ) : (
+              <PitchTypeSection
+                prior={pitchTypeData}
+                isLoading={lsHasPredictions ? false : pitchType.isLoading}
+                error={lsHasPredictions ? null : pitchType.error}
+                enabled={pitchTypePanelEnabled}
+              />
+            )}
+          </section>
+        </div>
+
+        <section
+          className="ed-acct"
+          id="game-account"
+          aria-labelledby="game-pitch-log-label"
+        >
+          <ScorecardRail card={scorecard} />
+          <div className="ed-acct__col">
+            <h2 className="ed-h2" id="game-pitch-log-label">
+              {pitchCount === 0 && !inPlay
+                ? "Pitch by pitch, from first pitch"
+                : "Every at-bat, newest first"}
+            </h2>
+            {lineScore && summary ? (
+              <div style={{ marginTop: "1rem" }}>
+                <LineScore
+                  data={lineScore}
+                  awayTeam={summary.awayTeam}
+                  homeTeam={summary.homeTeam}
+                />
+              </div>
+            ) : null}
+
+            {inPlay == null && !game.isError ? (
+              <div style={{ marginTop: "1.25rem" }}>
+                {noBallText ? <p className="ed-note">{noBallText}</p> : null}
+                {game.isPending ? null : (
+                  <>
+                    <h3 className="ed-h3" style={{ fontSize: "1.125rem" }}>
+                      Contact at this park, season to date
+                    </h3>
+                    <TeamContactPanel
+                      data={teamContact.data}
+                      isLoading={teamContact.isLoading}
+                      error={teamContact.error}
+                    />
+                  </>
+                )}
+              </div>
+            ) : null}
+
+            {pitches.isError ? (
+              <p role="alert" className="ed-note">
+                Could not load pitches right now. Retrying automatically.
+              </p>
+            ) : pitchCount === 0 && latestBall == null ? (
+              <p className="ed-note" style={{ marginTop: "1.25rem" }}>
+                {pitches.isPending
+                  ? "Loading the pitch log…"
+                  : summary?.status === "POSTPONED"
+                    ? "No pitches were thrown."
+                    : "Waiting for the first pitch. The account starts there."}
+              </p>
+            ) : (
+              <AccountStream
+                atBats={atBats}
+                nameOf={nameOf}
+                latestBall={latestBall}
+              />
+            )}
+            <p className="ed-sn ed-sn-inline" style={{ marginTop: "1rem" }}>
+              {MODEL_GAVE_NOTE}
+            </p>
+            <p className="ed-sn ed-sn-inline">{INFERRED_NOTE}</p>
+          </div>
+          <aside className="ed-acct__notes" aria-label="Notes">
+            <p className="ed-sn">
+              <span className="ed-label">Model gave it</span>
+              {MODEL_GAVE_NOTE}{" "}
+              <Link className="ed-link" to="/accuracy">
+                How we score ourselves
+              </Link>
+            </p>
+            <p className="ed-sn">
+              <span className="ed-label">Ball in play</span>
+              Only the latest ball is scored across parks; earlier balls keep
+              their tracked physics. <GuideLink anchor="batted-ball" />
+            </p>
+            <p className="ed-sn">
+              <span className="ed-label">Inferred results</span>
+              {INFERRED_NOTE}
+            </p>
+          </aside>
+        </section>
+
+        <VisuallyHidden aria-live="polite">{announcement}</VisuallyHidden>
+
+        <footer className="ed-footer">
+          <span>The Bullpen. Self-hosted, honestly scored.</span>
+          <span>
+            build {BUILD_SHA}, {BUILD_DATE}
+          </span>
+        </footer>
+      </div>
+      <PhoneScoreStrip card={scorecard} shown={scrolledPast} />
+    </div>
+  );
+}
+
+function PitchTypeSectionClosed() {
+  return (
+    <div className="ed-gated">
+      <p className="ed-note">No next pitch. Game over.</p>
+    </div>
   );
 }

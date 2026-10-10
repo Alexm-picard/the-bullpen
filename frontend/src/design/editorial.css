@@ -692,3 +692,597 @@
     border-bottom: 1px solid var(--ed-rule);
   }
 }
+
+/* ══ Game page (/games/:id, SPEC-game) ═══════════════════════════════════════
+ * Top block (A): masthead (score headline + the situation) over a double rule,
+ * then the now-slot (next pitch by outcome, or the ball just put in play)
+ * beside "by type". Below it the account (B): a sticky scorecard rail, the
+ * running account, and sidenotes. Phones get a one-line solid score strip
+ * instead of the rail. No colour beyond the tokens above. */
+
+.ed-crumb {
+  margin: 0.75rem 0 0;
+  font: 400 0.75rem/1.4 var(--ed-mono);
+  color: var(--ed-ink3);
+}
+/* Underlined: a link inside running text must not rely on colour alone (axe link-in-text-block). */
+.ed-crumb a {
+  color: var(--ed-ink2);
+  text-decoration-line: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+  text-decoration-color: var(--ed-ink3);
+}
+
+.ed-gmast {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem 2.5rem;
+  align-items: end;
+  padding: 1.25rem 0 1.5rem;
+}
+.ed-gmast .ed-h1 {
+  max-width: none;
+  font-size: 4.5rem;
+  line-height: 0.98;
+  letter-spacing: var(--ed-track-figure);
+  font-variant-numeric: lining-nums tabular-nums;
+  margin: 0.625rem 0 0.875rem;
+}
+.ed-gmast .ed-dek {
+  max-width: 46ch;
+}
+
+.ed-sit {
+  min-width: 22rem;
+  padding-left: 2rem;
+  border-left: 1px solid var(--ed-rule);
+}
+.ed-label {
+  margin: 0;
+  font: 600 0.6875rem/1.2 var(--ed-sans);
+  letter-spacing: var(--ed-track-caps);
+  text-transform: uppercase;
+  color: var(--ed-ink2);
+}
+.ed-sit__grid {
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  grid-auto-flow: column;
+  grid-template-rows: auto auto;
+  gap: 0.375rem 1.75rem;
+  align-items: end;
+  margin: 0.75rem 0 0;
+}
+.ed-sit__grid dt {
+  font: 600 0.625rem/1 var(--ed-sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ed-ink2);
+}
+.ed-sit__grid dd {
+  margin: 0;
+  font-family: var(--ed-serif);
+  font-weight: 600;
+  font-size: 2rem;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variation-settings: "opsz" 48;
+  font-variant-numeric: lining-nums tabular-nums;
+  color: var(--ed-ink);
+  min-height: 2rem;
+}
+.ed-sit__who {
+  margin: 0.875rem 0 0;
+  padding-top: 0.625rem;
+  border-top: 1px dotted var(--ed-rule);
+  font: 400 0.8125rem/1.5 var(--ed-sans);
+  color: var(--ed-ink2);
+}
+.ed-sit__who strong {
+  color: var(--ed-ink);
+  font-weight: 600;
+}
+
+/* The bases: occupied = ink fill, empty = ink2 outline (a meaningful graphic, >=3:1). */
+.ed-bases {
+  display: block;
+  width: 2.75rem;
+  height: 2rem;
+}
+.ed-bases rect {
+  fill: transparent;
+  stroke: var(--ed-ink2);
+  stroke-width: 1.5;
+}
+.ed-bases rect[data-on="true"] {
+  fill: var(--ed-ink);
+  stroke: var(--ed-ink);
+}
+
+/* Now-slot (7fr) + by type (5fr) */
+.ed-now {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  border-top: 3px double var(--ed-ink);
+}
+.ed-now__slot {
+  min-width: 0;
+  padding: 1.5rem 2.5rem 0 0;
+  border-right: 1px solid var(--ed-rule);
+}
+.ed-now__side {
+  min-width: 0;
+  padding: 1.5rem 0 0 2.5rem;
+}
+.ed-sechead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+}
+.ed-now__slot .ed-h2 {
+  font-size: 2rem;
+  font-variation-settings: "opsz" 40;
+}
+.ed-what {
+  flex-shrink: 0;
+  font: 500 0.75rem/1.4 var(--ed-sans);
+}
+
+/* Outcome agate: [180] the most probable class may carry INK WEIGHT - never colour, never the accent. */
+.ed-agate--big {
+  font-size: 0.9375rem;
+}
+.ed-agate--big td {
+  padding: 0.625rem 0;
+}
+.ed-agate--big .ed-track {
+  height: 0.625rem;
+}
+.ed-agate__row--top td {
+  font-weight: 700;
+}
+.ed-agate__row--top .ed-bar {
+  background-color: var(--ed-ink);
+}
+.ed-gated {
+  margin: 0;
+  padding: 1.25rem 0;
+  border-top: 1px solid var(--ed-rule);
+  border-bottom: 1px solid var(--ed-rule);
+}
+.ed-gated .ed-note {
+  margin: 0;
+  font-size: 1rem;
+}
+
+/* The 30-park agate: a standings-style block, three columns wide. */
+.ed-parks {
+  columns: 3;
+  column-gap: 1.75rem;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  list-style: none;
+  font: 400 0.75rem/1.25 var(--ed-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ed-ink2);
+}
+.ed-parks li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 4rem;
+  gap: 0.5rem;
+  padding: 0.3rem 0;
+  border-bottom: 1px dotted var(--ed-rule);
+  break-inside: avoid;
+}
+.ed-parks li > :not(:first-child) {
+  text-align: right;
+}
+.ed-parks li[data-hr="true"] {
+  color: var(--ed-ink);
+  font-weight: 700;
+}
+.ed-parks--two {
+  columns: 2;
+}
+
+/* ── The account (B) ─────────────────────────────────────────────────────── */
+
+.ed-acct {
+  display: grid;
+  grid-template-columns: 14rem minmax(0, 1fr) 13rem;
+  margin-top: 2.5rem;
+  border-top: 3px double var(--ed-ink);
+  /* Scroll anchoring keeps a reader's place when a new at-bat is prepended above them
+   * (Chromium/Firefox; Safari lacks overflow-anchor and will shift). */
+  overflow-anchor: auto;
+}
+.ed-acct__col {
+  min-width: 0;
+  padding: 1.25rem 2.5rem 0;
+  border-left: 1px solid var(--ed-rule);
+}
+.ed-acct__notes {
+  min-width: 0;
+  padding: 1.25rem 0 0 1.75rem;
+  border-left: 1px solid var(--ed-rule);
+}
+
+/* The scorecard rail: sticky inside the account only, so it never sits beside the masthead.
+ * Solid ground (page content, not chrome); no animation - sticky layout is not motion. */
+.ed-rail {
+  position: sticky;
+  top: calc(56px + 1.25rem);
+  align-self: start;
+  padding: 1.25rem 2rem 1.5rem 0;
+}
+.ed-rail__score {
+  width: 100%;
+  margin-top: 0.625rem;
+  border-collapse: collapse;
+  border-top: 3px solid var(--ed-ink);
+}
+.ed-rail__score th,
+.ed-rail__score td {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--ed-rule);
+}
+.ed-rail__score th {
+  text-align: left;
+  font: 500 0.875rem/1 var(--ed-mono);
+  letter-spacing: 0.04em;
+  color: var(--ed-ink2);
+}
+.ed-rail__score td {
+  text-align: right;
+  font-family: var(--ed-serif);
+  font-weight: 600;
+  font-size: 2.25rem;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variation-settings: "opsz" 48;
+  font-variant-numeric: lining-nums tabular-nums;
+  color: var(--ed-ink);
+}
+.ed-rail__dl {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.625rem 0.5rem;
+  align-items: center;
+  margin: 1rem 0 0;
+}
+.ed-rail__dl dt {
+  font: 600 0.625rem/1.2 var(--ed-sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ed-ink2);
+}
+.ed-rail__dl dd {
+  margin: 0;
+  text-align: right;
+  font: 500 0.9375rem/1 var(--ed-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ed-ink);
+}
+.ed-rail__dl dd .ed-bases {
+  margin-left: auto;
+}
+.ed-rail__who {
+  margin: 1rem 0 0;
+  padding-top: 0.75rem;
+  border-top: 1px dotted var(--ed-rule);
+  font: 400 0.8125rem/1.5 var(--ed-sans);
+  color: var(--ed-ink2);
+}
+.ed-rail__who strong {
+  color: var(--ed-ink);
+  font-weight: 600;
+}
+.ed-rail__jump {
+  display: grid;
+  gap: 0.375rem;
+  margin: 1rem 0 0;
+  padding-top: 0.75rem;
+  border-top: 1px dotted var(--ed-rule);
+  font: 400 0.8125rem/1.3 var(--ed-sans);
+}
+
+/* Line score */
+.ed-line-wrap {
+  overflow-x: auto;
+}
+.ed-line {
+  width: 100%;
+  border-collapse: collapse;
+  font: 400 0.8125rem/1 var(--ed-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ed-ink);
+}
+.ed-line caption {
+  caption-side: bottom;
+  text-align: left;
+  margin-top: 0.625rem;
+  font-family: var(--ed-serif);
+  font-style: italic;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--ed-ink2);
+}
+.ed-line th {
+  width: 2.25rem;
+  padding: 0.375rem 0;
+  border-bottom: 1px solid var(--ed-ink);
+  text-align: right;
+  font: 600 0.625rem/1 var(--ed-sans);
+  letter-spacing: 0.08em;
+  color: var(--ed-ink2);
+}
+.ed-line th:first-child {
+  width: auto;
+  text-align: left;
+}
+.ed-line th[aria-current="true"] {
+  color: var(--ed-ink);
+  box-shadow: inset 0 -3px 0 var(--ed-ink);
+}
+.ed-line td {
+  padding: 0.5rem 0;
+  text-align: right;
+  border-bottom: 1px dotted var(--ed-rule);
+}
+.ed-line tbody th {
+  width: auto;
+  padding: 0.5rem 0;
+  text-align: left;
+  border-bottom: 1px dotted var(--ed-rule);
+  font: 400 0.8125rem/1 var(--ed-mono);
+  letter-spacing: 0;
+  color: var(--ed-ink2);
+}
+.ed-line .ed-line__r {
+  padding-left: 1rem;
+  border-left: 1px solid var(--ed-rule);
+  font-weight: 700;
+  color: var(--ed-ink);
+}
+
+/* Entries */
+.ed-stream {
+  margin: 1.75rem 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--ed-ink);
+}
+.ed-entry {
+  display: grid;
+  grid-template-columns: 4.75rem minmax(0, 1fr);
+  column-gap: 1rem;
+  padding: 1.125rem 0;
+  border-bottom: 1px solid var(--ed-rule);
+}
+.ed-entry__when {
+  margin: 0;
+  padding-top: 0.2rem;
+  font: 400 0.6875rem/1.5 var(--ed-mono);
+  color: var(--ed-ink3);
+}
+.ed-entry__tag {
+  margin: 0 0 0.25rem;
+  font: 600 0.6875rem/1.2 var(--ed-sans);
+  letter-spacing: var(--ed-track-caps);
+  text-transform: uppercase;
+  color: var(--ed-ink2);
+}
+.ed-entry__head {
+  margin: 0;
+  font-family: var(--ed-serif);
+  font-weight: 700;
+  font-size: 1.25rem;
+  line-height: 1.25;
+  letter-spacing: var(--ed-track-h3);
+  font-variation-settings: "opsz" 28;
+  text-wrap: balance;
+  color: var(--ed-ink);
+}
+.ed-entry--dispatch .ed-entry__head {
+  font-size: 1.625rem;
+  font-variation-settings: "opsz" 36;
+}
+.ed-entry__body {
+  margin: 0.375rem 0 0;
+  font: 400 0.9375rem/1.55 var(--ed-sans);
+  color: var(--ed-ink2);
+}
+.ed-seq {
+  margin: 0.5rem 0 0;
+  font: 400 0.75rem/1.7 var(--ed-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ed-ink2);
+}
+.ed-seq b {
+  font-weight: 500;
+  color: var(--ed-ink);
+}
+.ed-seq__p {
+  color: var(--ed-ink3);
+}
+.ed-inferred {
+  margin: 0.25rem 0 0;
+  font: 400 0.6875rem/1.4 var(--ed-mono);
+  color: var(--ed-ink3);
+}
+.ed-divider {
+  margin: 0;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--ed-ink);
+  font: 600 0.6875rem/1 var(--ed-sans);
+  letter-spacing: var(--ed-track-caps);
+  text-transform: uppercase;
+  color: var(--ed-ink2);
+}
+.ed-disclosure {
+  margin-top: 0.75rem;
+}
+.ed-disclosure > summary {
+  cursor: pointer;
+  font: 500 0.8125rem/1.4 var(--ed-sans);
+  color: var(--ed-accent);
+  text-decoration-line: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+}
+
+/* Sidenotes */
+.ed-sn {
+  margin: 0;
+  font: 400 0.8125rem/1.5 var(--ed-sans);
+  color: var(--ed-ink2);
+}
+.ed-sn + .ed-sn {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px dotted var(--ed-rule);
+}
+.ed-sn .ed-label {
+  display: block;
+  margin-bottom: 0.375rem;
+}
+.ed-sn-inline {
+  display: none;
+}
+
+/* Phone score strip: <48em only, fixed under the 56px header, solid. */
+.ed-strip {
+  display: none;
+}
+
+@media (max-width: 75em) and (min-width: 48.0625em) {
+  .ed-acct {
+    grid-template-columns: 13rem minmax(0, 1fr);
+  }
+  .ed-acct__notes {
+    display: none;
+  }
+  .ed-sn-inline {
+    display: block;
+  }
+}
+
+@media (max-width: 48em) {
+  .ed-gmast {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 1rem 0 1.25rem;
+  }
+  .ed-gmast .ed-h1 {
+    font-size: 3rem;
+    letter-spacing: -0.025em;
+    font-variation-settings: "opsz" 48;
+  }
+  .ed-sit {
+    min-width: 0;
+    padding: 0.75rem 0 0;
+    border-left: 0;
+    border-top: 1px solid var(--ed-rule);
+  }
+  .ed-sit__grid dd {
+    font-size: 1.625rem;
+  }
+  .ed-now {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ed-now__slot {
+    padding: 1.25rem 0 0;
+    border-right: 0;
+  }
+  .ed-now__slot .ed-h2 {
+    font-size: 1.625rem;
+  }
+  .ed-now__side {
+    margin-top: 1.5rem;
+    padding: 1.5rem 0 0;
+    border-top: 1px solid var(--ed-rule);
+  }
+  .ed-parks {
+    columns: 2;
+  }
+  .ed-acct {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ed-rail,
+  .ed-acct__notes {
+    display: none;
+  }
+  .ed-acct__col {
+    padding: 1.25rem 0 0;
+    border-left: 0;
+  }
+  .ed-entry {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ed-entry__when {
+    padding: 0 0 0.25rem;
+  }
+  .ed-sn-inline {
+    display: block;
+  }
+  .ed-strip {
+    display: block;
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: 56px;
+    z-index: 90;
+    background-color: var(--ed-ground);
+    border-bottom: 1px solid var(--ed-ink);
+    opacity: 0;
+    transform: translateY(-100%);
+    visibility: hidden;
+    transition:
+      transform 140ms var(--ease-out),
+      opacity 140ms var(--ease-out),
+      visibility 0s linear 140ms;
+  }
+  .ed-strip[data-shown="true"] {
+    opacity: 1;
+    transform: none;
+    visibility: visible;
+    transition:
+      transform var(--duration-base) var(--ease-out),
+      opacity var(--duration-base) var(--ease-out),
+      visibility 0s;
+  }
+  html:has(.ed-strip[data-shown="true"]) {
+    scroll-padding-top: calc(56px + 3rem);
+  }
+}
+@media (max-width: 48em) and (prefers-contrast: more) {
+  .ed-strip {
+    border-bottom-width: 2px;
+  }
+}
+.ed-strip__in {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  white-space: nowrap;
+  padding: 0.5rem var(--ed-gutter);
+  font: 500 0.8125rem/1 var(--ed-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ed-ink2);
+}
+.ed-strip__score {
+  font-family: var(--ed-serif);
+  font-weight: 650;
+  font-size: 1.125rem;
+  color: var(--ed-ink);
+}
+.ed-strip .ed-bases {
+  width: 1.75rem;
+  height: 1.25rem;
+  margin-left: auto;
+}
+
+html:has(.ed-acct) {
+  scroll-padding-top: calc(56px + 1.5rem);
+}
