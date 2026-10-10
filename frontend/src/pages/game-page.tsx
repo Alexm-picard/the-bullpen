@@ -204,6 +204,12 @@ export function GamePage() {
   const liveState = useLiveState(valid ? numericId : null, game.data?.status);
   const ls = liveState.data;
   const lsHasPredictions = ls?.prePrediction != null;
+  // The derive-and-POST fallback may only fire once the live-state read has SETTLED: fetched at
+  // least once (data or error), or not running at all (flag off / game not live). Before this
+  // gate, a page open fired the POSTs while the first /live response was still in flight, logging
+  // one duplicate served prediction to prediction_log per open.
+  const liveStateSettled =
+    liveState.isFetched || liveState.fetchStatus === "idle";
 
   // WHO IS BATTING: live-state matchup, else the summary's currentPlay, else the last pitch.
   const liveMatchup = ls?.matchup ?? game.data?.currentMatchup ?? null;
@@ -227,7 +233,10 @@ export function GamePage() {
       ? nextPitchRequest(mostRecent, game.data.gameDate, liveMatchup)
       : null;
   const nextPitchEnabled =
-    isLive(game.data) && nextReq != null && !lsHasPredictions;
+    isLive(game.data) &&
+    nextReq != null &&
+    liveStateSettled &&
+    !lsHasPredictions;
   const nextPitch = usePitchPrediction(nextReq, { enabled: nextPitchEnabled });
 
   const pitchTypeReq =
@@ -240,7 +249,10 @@ export function GamePage() {
         )
       : null;
   const pitchTypeEnabled =
-    isLive(game.data) && pitchTypeReq != null && !lsHasPredictions;
+    isLive(game.data) &&
+    pitchTypeReq != null &&
+    liveStateSettled &&
+    !lsHasPredictions;
   const pitchType = usePitchTypePrediction(pitchTypeReq, {
     enabled: pitchTypeEnabled,
   });

@@ -134,6 +134,49 @@ describe("GamePage (interaction)", () => {
     ).toHaveTextContent(/not yet promoted/i);
   });
 
+  it("does not fire the fallback prediction POSTs until the first /live read settles", async () => {
+    // Every POST to /v1/predict writes a served row to prediction_log. Before the settle gate, a
+    // page open fired them while the first /live response was still in flight - a duplicate
+    // logged prediction per open. Hold /live open, prove nothing posts, then release it.
+    let releaseLive: (value: Response) => void = () => {};
+    const livePending = new Promise<Response>((resolve) => {
+      releaseLive = resolve;
+    });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const json = (body: unknown, status = 200) =>
+        ({ ok: status < 400, status, json: async () => body }) as Response;
+      if (url.includes("/v1/predict/")) return json(null, 503);
+      if (url.includes(`/v1/games/${GAME_ID}/live`)) return livePending;
+      if (url.includes("/pitches")) return json([pitch()]);
+      if (url.includes("/v1/games/")) return json(GAME);
+      throw new Error(`unstubbed ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderAt(`/games/${GAME_ID}`);
+
+    // The account renders from the pitches query while /live is still pending...
+    await screen.findAllByTestId("account-entry");
+    const predictCalls = () =>
+      fetchMock.mock.calls.filter(([u]) => String(u).includes("/v1/predict/"));
+    expect(
+      fetchMock.mock.calls.some(([u]) => String(u).includes("/live")),
+    ).toBe(true);
+    // ...and no prediction has been requested yet.
+    expect(predictCalls()).toHaveLength(0);
+
+    // /live settles with no worker predictions: now the derive-and-POST fallback may fire.
+    releaseLive({
+      ok: true,
+      status: 200,
+      json: async () => ({ gameId: GAME_ID, prePrediction: null }),
+    } as Response);
+    expect(
+      await screen.findByTestId("next-pitch-unpromoted"),
+    ).toBeInTheDocument();
+    expect(predictCalls().length).toBeGreaterThan(0);
+  });
+
   it("shows the invalid-id contract message for a non-numeric id", () => {
     stubFetchRoutes([{ match: "/v1/games/", body: GAME }]);
     renderAt("/games/not-a-number");
