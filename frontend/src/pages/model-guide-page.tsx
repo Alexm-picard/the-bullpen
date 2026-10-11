@@ -1,224 +1,353 @@
-import { useEffect, type CSSProperties } from "react";
-import { useLocation } from "react-router";
+/**
+ * /models/guide - the Model Guide, under the [195] editorial identity (SPEC-guide-about).
+ *
+ * The one page that explains the numbers ([191]/ADR-0017 §4): every data surface links to an anchor
+ * here instead of carrying its own methodology. Reference cards, one per model: identity | what it
+ * gives you, sees, how it is calibrated and held to, plus the rest of its gate | an evidence margin
+ * carrying the headline figure(s) with their committed source. One number, one place: a figure in
+ * the margin is never repeated in the checks table (tested).
+ *
+ * It follows the Day/Night toggle like every other page; [191]'s always-paper surface is retired.
+ * Fully static: no fetch, so no loading or error states. The only variable is the URL hash.
+ */
+import { useEffect, useState, type CSSProperties } from "react";
+import { Link, useLocation } from "react-router";
 
-import { colors, layouts, typography } from "../design/broadcast";
+import { BUILD_DATE, BUILD_SHA } from "../build-info";
+import {
+  GUIDE_CHECK_SOURCES,
+  GUIDE_CHECKS,
+  GUIDE_MARGIN,
+} from "../data/guide-evidence";
+import {
+  GUIDE_MODELS,
+  HOW_SCORED,
+  type GuideModelCard,
+} from "../data/guide-sections";
 
-const FIELD: CSSProperties = {
-  backgroundColor: colors.field,
-  minHeight: "100%",
-  padding: "48px 16px 72px",
-};
+const ET_DATE = new Intl.DateTimeFormat("en-US", {
+  weekday: "long",
+  month: "long",
+  day: "numeric",
+  year: "numeric",
+  timeZone: "America/New_York",
+});
 
-const COLUMN: CSSProperties = {
-  maxWidth: layouts.editorialMaxWidth,
-  margin: "0 auto",
-  color: colors.text,
-};
+let entranceShown = false;
 
-const EYEBROW: CSSProperties = {
-  fontFamily: typography.fonts.mono,
-  fontSize: 11,
-  letterSpacing: "0.16em",
-  textTransform: "uppercase",
-  color: colors.textMuted,
-  marginBottom: 8,
-};
+/** Router state a "What is this?" link may carry, so the card can say where the reader came from. */
+type ArrivedFrom = { from?: unknown } | null;
 
-const H1: CSSProperties = {
-  fontFamily: typography.fonts.display,
-  fontWeight: typography.weights.heavy,
-  fontSize: 48,
-  lineHeight: 1.05,
-  textTransform: "uppercase",
-  color: colors.ink,
-  margin: "0 0 8px",
-};
+function arrivedFrom(state: unknown): string | null {
+  const from = (state as ArrivedFrom)?.from;
+  return typeof from === "string" && from.length > 0 ? from : null;
+}
 
-const INTRO: CSSProperties = {
-  fontSize: 16,
-  lineHeight: 1.6,
-  color: colors.textMuted,
-  maxWidth: "56ch",
-  marginBottom: 48,
-};
+function GuideCard({
+  card,
+  arrived,
+  from,
+}: {
+  card: GuideModelCard;
+  arrived: boolean;
+  from: string | null;
+}) {
+  const headingId = `${card.anchor}-h`;
+  return (
+    <section
+      className="gd-card"
+      id={card.anchor}
+      aria-labelledby={headingId}
+      data-arrived={arrived ? "true" : undefined}
+    >
+      <header className="gd-card__id">
+        <span className="gd-card__no" aria-hidden="true">
+          {card.n}
+        </span>
+        <h2 className="ed-h2" id={headingId}>
+          {card.title}
+        </h2>
+        {arrived && from ? (
+          <p className="gd-arrived">You came from {from}.</p>
+        ) : null}
+        <dl className="gd-card__meta">
+          <dt>Registry</dt>
+          <dd>
+            <code>{card.registry}</code>
+          </dd>
+          <dt>Stage</dt>
+          <dd>{card.stage}</dd>
+          <dt>Seen on</dt>
+          <dd>
+            {card.seenOn.map((s, i) => (
+              <span key={s.label}>
+                {i > 0 ? <br /> : null}
+                <Link className="ed-link" to={s.to}>
+                  {s.label}
+                </Link>
+              </span>
+            ))}
+          </dd>
+        </dl>
+      </header>
 
-const SECTION: CSSProperties = {
-  marginBottom: 56,
-};
+      <div className="gd-card__body">
+        <dl className="gd-spec">
+          <dt>Gives you</dt>
+          <dd>{card.givesYou}</dd>
+          <dt>Sees</dt>
+          <dd>{card.sees}</dd>
+          <dt>Calibrated by</dt>
+          <dd>{card.calibratedBy}</dd>
+          <dt>Held to</dt>
+          <dd>{card.heldTo}</dd>
+        </dl>
+        <table className="ed-agate gd-checks">
+          <caption>
+            The rest of its gate; the headline figure is in the margin.{" "}
+            <span className="gd-src">
+              {GUIDE_CHECK_SOURCES[card.anchor].join("; ")}
+            </span>
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Check</th>
+              <th scope="col" className="gd-num">
+                Result
+              </th>
+              <th scope="col" className="gd-num">
+                Bar
+              </th>
+              <th scope="col" className="gd-num">
+                Verdict
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {GUIDE_CHECKS[card.anchor].map((c) => (
+              <tr key={c.check}>
+                <th scope="row">{c.check}</th>
+                <td className="gd-num">{c.result}</td>
+                <td className="gd-num">{c.bar}</td>
+                <td
+                  className="gd-num gd-verdict"
+                  data-against={
+                    c.verdict === "Over" || c.verdict === "LR wins"
+                      ? "true"
+                      : undefined
+                  }
+                >
+                  {c.verdict}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="gd-limit">
+          <b>Read it this way.</b> {card.readIt}
+        </p>
+      </div>
 
-const H2: CSSProperties = {
-  fontFamily: typography.fonts.display,
-  fontWeight: typography.weights.heavy,
-  fontSize: 24,
-  textTransform: "uppercase",
-  letterSpacing: "0.02em",
-  color: colors.ink,
-  margin: "0 0 12px",
-  paddingBottom: 8,
-  borderBottom: `2px solid ${colors.rule}`,
-};
+      <aside
+        className="gd-card__ev"
+        aria-label={`Evidence for ${card.title.toLowerCase()}`}
+      >
+        {GUIDE_MARGIN[card.anchor].map((f) => (
+          <figure className="gd-ev" key={f.label}>
+            <span className="gd-ev__value">{f.value}</span>
+            <figcaption>
+              <span className="gd-ev__label">{f.label}</span>
+              <span className="gd-ev__basis">{f.basis}</span>
+              <span className="gd-ev__src">{f.source}</span>
+            </figcaption>
+          </figure>
+        ))}
+      </aside>
+    </section>
+  );
+}
 
-const BODY: CSSProperties = {
-  fontSize: 15,
-  lineHeight: 1.65,
-  color: colors.ink,
-};
-
-const CALLOUT: CSSProperties = {
-  backgroundColor: colors.rule,
-  border: `1px solid ${colors.rule}`,
-  borderRadius: 2,
-  padding: "12px 16px",
-  fontSize: 14,
-  color: colors.textMuted,
-  margin: "16px 0",
-};
+/** The scoring pipeline, drawn in ink. The label is the drawing's meaning in one sentence. */
+function ScoringPipeline() {
+  return (
+    <svg
+      viewBox="0 0 900 170"
+      role="img"
+      aria-label="A served prediction is logged, joined to what happened, and graded live. Held-out seasons are graded offline, separately."
+    >
+      <rect x="1" y="20" width="150" height="46" />
+      <text x="14" y="41">
+        Served prediction
+      </text>
+      <text className="gd-flow__s" x="14" y="57">
+        model, inputs, probs
+      </text>
+      <line x1="151" y1="43" x2="215" y2="43" />
+      <rect x="215" y="20" width="150" height="46" />
+      <text x="228" y="41">
+        prediction_log
+      </text>
+      <text className="gd-flow__s" x="228" y="57">
+        ClickHouse
+      </text>
+      <line x1="365" y1="43" x2="429" y2="43" />
+      <rect x="429" y="20" width="160" height="46" />
+      <text x="442" y="41">
+        Truth-join
+      </text>
+      <text className="gd-flow__s" x="442" y="57">
+        pitch or play resolves
+      </text>
+      <line x1="589" y1="43" x2="643" y2="43" />
+      <rect x="643" y="20" width="256" height="46" />
+      <text x="656" y="41">
+        Live
+      </text>
+      <text className="gd-flow__s" x="656" y="57">
+        7-day top-1, 30-day reliability
+      </text>
+      <rect
+        className="gd-flow__offline"
+        x="160"
+        y="112"
+        width="429"
+        height="46"
+      />
+      <text x="173" y="133">
+        Rolling-origin CV, 4 folds, 2015 to 2025
+      </text>
+      <text className="gd-flow__s" x="173" y="149">
+        each trained on earlier seasons; 2026 never trained on
+      </text>
+      <line x1="589" y1="135" x2="643" y2="135" />
+      <rect x="643" y="112" width="256" height="46" />
+      <text x="656" y="133">
+        Held out
+      </text>
+      <text className="gd-flow__s" x="656" y="149">
+        the gate figures on this page
+      </text>
+    </svg>
+  );
+}
 
 export default function ModelGuidePage() {
-  // BrowserRouter does not scroll to a hash on client navigation, so the game page's "What" links
-  // (/models/guide#next-pitch etc.) would land at the top. Instant, not smooth: the jump is
-  // URL/keyboard-initiated, and smooth scrolling would ignore reduced motion.
-  const { hash } = useLocation();
+  const [animate] = useState(() => !entranceShown);
   useEffect(() => {
-    if (hash) {
-      document
-        .getElementById(hash.slice(1))
-        ?.scrollIntoView({ block: "start" });
+    entranceShown = true;
+  }, []);
+  const enter = (base: string, i: number) =>
+    animate
+      ? {
+          className: `${base} ed-enter`,
+          style: { "--ed-stagger": i } as CSSProperties,
+        }
+      : { className: base };
+
+  // BrowserRouter does not scroll to a hash on client navigation, so a "What is this?" link would
+  // land at the top. Instant, not smooth: the jump is URL/keyboard-initiated, and smooth scrolling
+  // would ignore reduced motion. `scroll-margin-top` on the card keeps the H2 clear of the header.
+  const { hash, state } = useLocation();
+  const target = hash.slice(1);
+  const from = arrivedFrom(state);
+  useEffect(() => {
+    if (target) {
+      document.getElementById(target)?.scrollIntoView({ block: "start" });
     }
-  }, [hash]);
+  }, [target]);
 
   return (
-    <div style={FIELD}>
-      <div style={COLUMN}>
-        <div style={EYEBROW}>The Bullpen - Model Guide</div>
-        <h1 style={H1}>How the models work</h1>
-        <p style={INTRO}>
-          Four calibrated models predict live during MLB games. This page
-          explains what each one does, what it sees, and how its accuracy is
-          measured. The data surfaces on the game page and elsewhere link here
-          rather than carrying their own explanations.
+    <div className="ed-page">
+      <div className="ed-col">
+        <p className="ed-dateline">
+          <span>{ET_DATE.format(new Date())}</span>
+          <span className="ed-dateline__issued">The model guide</span>
+          <span>Four champions, one method</span>
         </p>
 
-        <section id="next-pitch" style={SECTION}>
-          <h2 style={H2}>Next-Pitch Outcome</h2>
-          <div style={BODY}>
-            <p>
-              Predicts the outcome of the next pitch before it is thrown: ball,
-              called strike, swinging strike, foul, or in play. The model sees
-              the count, runners, batter/pitcher history (28-day form, target
-              encodings), and park - everything available before the windup.
-            </p>
-            {/* SHELF: 2027-01 training/data/eval/promotion/pitch_outcome_pre_promotion_gate.json (experiment_results row id=5) */}
-            <div style={CALLOUT}>
-              <strong>Primary metric:</strong> calibration (ECE, lower is
-              better). The champion passed its promotion gate at ECE 0.0009 vs
-              the LR baseline&apos;s 0.0016, and beats the baseline on Brier and
-              log-loss, across 710k rolling-origin CV rows.
-            </div>
-            <p>
-              Calibration is isotonic per class: each outcome's predicted
-              probability is mapped through a piecewise-linear function fitted
-              on the validation fold, then renormalized so the five classes sum
-              to 1. The calibrator is a separate artifact from the model weights
-              and is verified at registration (rule 7).
+        <div className="gd-head">
+          <div>
+            <p {...enter("ed-slug", 0)}>How the models work</p>
+            <h1 {...enter("ed-h1", 1)}>
+              Four models, and the test each one passed
+            </h1>
+            <p {...enter("ed-dek", 2)}>
+              Three of them speak during a game, and one reads each pitch after
+              it is thrown. Each card says what the model sees, how it was
+              calibrated, and the gate it cleared against a plain baseline.
             </p>
           </div>
-        </section>
+          <p className="ed-note">
+            Every figure here is an offline gate result from a committed
+            evidence file, not live accuracy. Live accuracy is on{" "}
+            <Link className="ed-link" to="/accuracy">
+              Accuracy
+            </Link>
+            .
+          </p>
+        </div>
 
-        <section id="pitch-type" style={SECTION}>
-          <h2 style={H2}>Pitch-Type Prior</h2>
-          <div style={BODY}>
-            <p>
-              A calibrated prior over seven pitch-type classes (FF, SI, FC, SL,
-              CU, CH, OFF) for the pitch about to be thrown. The model sees the
-              pitcher's career arsenal frequencies, the current count, the
-              outing sequence (previous two pitches, pitches into the outing),
-              and the batter's handedness.
-            </p>
-            {/* SHELF: 2027-01 training/data/eval/promotion/pitch_type_pre_promotion_gate.json */}
-            <div style={CALLOUT}>
-              <strong>Primary metric:</strong> ECE (expected calibration error).
-              The champion passed at ECE 0.016 (mean of four rolling-origin
-              folds; the earliest fold sat at 0.022), under the 0.02 threshold.
-              This model is scoped as a calibrated prior, not a top-1 predictor
-              - its value is calibration, not accuracy.
-            </div>
-            <p>
-              Calibration is temperature scaling: a single positive scalar
-              divides the logits and re-softmaxes, preserving the ranking while
-              adjusting confidence. Order-preserving by construction.
-            </p>
-          </div>
-        </section>
-
-        <section id="batted-ball" style={SECTION}>
-          <h2 style={H2}>Batted-Ball Outcome</h2>
-          <div style={BODY}>
-            <p>
-              Predicts the fielded outcome (out, single, double, triple, home
-              run) of a batted ball at each of the 30 MLB parks, given exit
-              velocity, launch angle, spray angle, hit distance, batter
-              handedness, base state, and outs. The model is a multi-output MLP
-              with a shared backbone and 30 per-park heads.
-            </p>
-            <div style={CALLOUT}>
-              <strong>What the /parks page shows:</strong> the model's P(HR)
-              surface across all 30 parks for user-adjustable launch parameters.
-              The per-park carry distance (in feet) comes from a second output
-              head on the same architecture.
-            </div>
-            <p>
-              Calibration is per-park isotonic: 30 parks times 5 outcomes = 150
-              calibrators, each a piecewise-linear function. The calibrator file
-              is 241 KB of JSON and is verified at registration.
-            </p>
-          </div>
-        </section>
-
-        <section id="how-scored" style={SECTION}>
-          <h2 style={H2}>How accuracy is scored</h2>
-          <div style={BODY}>
-            <p>
-              Every prediction is logged to ClickHouse with the model version,
-              the input features, and the predicted probabilities. When the
-              outcome is known (the next pitch is thrown, the play resolves), a
-              truth-join matches the prediction to the result. The /accuracy
-              page shows two surfaces that never mix:
-            </p>
-            <ul>
-              <li>
-                <strong>Live scorecard (rolling 7 days):</strong> realized top-1
-                accuracy from truth-joined prediction_log rows. This is what the
-                model actually got right on real, served predictions.
+        <nav aria-label="On this page">
+          <ol className="gd-index">
+            {[...GUIDE_MODELS, HOW_SCORED].map((s) => (
+              <li key={s.anchor}>
+                <span className="gd-index__n" aria-hidden="true">
+                  {s.n}
+                </span>
+                <a href={`#${s.anchor}`}>{s.title}</a>
+                <span className="gd-index__d">{s.summary}</span>
+                <span className="gd-index__t">{s.test}</span>
               </li>
-              <li>
-                <strong>Held-out scorecard:</strong> offline rolling-origin CV
-                metrics (Brier, ECE, confusion matrices) from the training
-                evaluation. This is the model's expected performance on unseen
-                data.
-              </li>
-            </ul>
-            <p>
-              The two surfaces measure different things and are kept separate so
-              neither contaminates the other. A model can have strong offline
-              metrics and weak live accuracy (distribution shift) or vice versa
-              (the training set was harder than production).
-            </p>
-          </div>
-        </section>
+            ))}
+          </ol>
+        </nav>
 
-        <footer
-          style={{
-            fontFamily: typography.fonts.mono,
-            fontSize: 11,
-            color: colors.textMuted,
-            letterSpacing: "0.04em",
-            borderTop: `1px solid ${colors.rule}`,
-            paddingTop: 16,
-            marginTop: 48,
-          }}
+        {GUIDE_MODELS.map((card) => (
+          <GuideCard
+            key={card.anchor}
+            card={card}
+            arrived={target === card.anchor}
+            from={from}
+          />
+        ))}
+
+        <section
+          className="gd-card gd-card--method"
+          id={HOW_SCORED.anchor}
+          aria-labelledby="how-scored-h"
+          data-arrived={target === HOW_SCORED.anchor ? "true" : undefined}
         >
-          THE BULLPEN - MODEL GUIDE
+          <header className="gd-card__id">
+            <span className="gd-card__no" aria-hidden="true">
+              {HOW_SCORED.n}
+            </span>
+            <h2 className="ed-h2" id="how-scored-h">
+              {HOW_SCORED.title}
+            </h2>
+            {target === HOW_SCORED.anchor && from ? (
+              <p className="gd-arrived">You came from {from}.</p>
+            ) : null}
+          </header>
+          <div className="gd-card__body">
+            <p className="gd-prose">{HOW_SCORED.lead}</p>
+            <ul className="gd-two">
+              <li>{HOW_SCORED.live}</li>
+              <li>{HOW_SCORED.heldOut}</li>
+            </ul>
+            <figure className="gd-flow">
+              <ScoringPipeline />
+              <figcaption className="ed-note">
+                The two never mix. {HOW_SCORED.after}
+              </figcaption>
+            </figure>
+          </div>
+        </section>
+
+        <footer className="ed-footer">
+          <span>The Bullpen. Self-hosted, honestly scored.</span>
+          <span>
+            build {BUILD_SHA}, {BUILD_DATE}
+          </span>
         </footer>
       </div>
     </div>

@@ -35,6 +35,7 @@ const ROUTES = [
   "/parks",
   "/ops",
   "/about",
+  "/models/guide",
   "/games",
   "/players",
   "/players/592450",

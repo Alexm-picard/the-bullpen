@@ -179,7 +179,11 @@ export default function ParksPage() {
           </div>
           <p className="ed-note pk-head__note">
             {FIELD_NOTE}{" "}
-            <Link className="ed-link" to="/models/guide">
+            <Link
+              className="ed-link"
+              to="/models/guide#batted-ball"
+              state={{ from: "Parks" }}
+            >
               How the model was built
             </Link>
           </p>

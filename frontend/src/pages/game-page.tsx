@@ -177,7 +177,11 @@ function bandFromLaunchAngle(deg: number): string {
 function GuideLink({ anchor }: { anchor: string }) {
   // A client-side route change, so the live page's polling and cache survive the round trip.
   return (
-    <Link to={`/models/guide#${anchor}`} className="ed-link ed-what">
+    <Link
+      to={`/models/guide#${anchor}`}
+      state={{ from: "the game page" }}
+      className="ed-link ed-what"
+    >
       What is this?
     </Link>
   );

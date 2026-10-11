@@ -1,7 +1,10 @@
 import { execSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
+
+import { readDocCounts } from "./build/doc-counts";
 
 /**
  * N3 - real build stamp injected at build time, replacing the hand-frozen fixture SHAs and the
@@ -30,6 +33,14 @@ function readBuildInfo(): { sha: string; date: string } {
 const buildInfo = readBuildInfo();
 
 /**
+ * The /about record's decision and ADR counts, read from ../docs at build time (SPEC-guide-about
+ * §6.2). `null` when docs/ is not in the build's checkout; the page then says it was not counted.
+ */
+const docCounts = readDocCounts(
+  fileURLToPath(new URL("../docs", import.meta.url)),
+);
+
+/**
  * Per-route chunks come from React.lazy in App.tsx. This function-style
  * manualChunks splits the remaining heavy vendor deps into their own
  * long-cacheable bundles so a Mantine patch release doesn't invalidate
@@ -52,6 +63,8 @@ export default defineConfig({
   define: {
     __BUILD_SHA__: JSON.stringify(buildInfo.sha),
     __BUILD_DATE__: JSON.stringify(buildInfo.date),
+    __DECISION_COUNT__: JSON.stringify(docCounts.decisions),
+    __ADR_COUNT__: JSON.stringify(docCounts.adrs),
   },
   build: {
     rollupOptions: {
@@ -67,7 +80,7 @@ export default defineConfig({
   test: {
     // Scope vitest to src/ so it doesn't try to collect the Playwright specs under e2e/
     // (which call Playwright's test(), not vitest's). E2E runs via `npm run test:e2e`.
-    include: ["src/**/*.{test,spec}.{ts,tsx}"],
+    include: ["src/**/*.{test,spec}.{ts,tsx}", "build/**/*.test.ts"],
     coverage: {
       provider: "v8",
       reporter: ["text-summary", "json-summary", "html", "lcov"],

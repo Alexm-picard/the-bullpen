@@ -33,7 +33,7 @@ session and most "obvious" alternatives have already been considered and rejecte
 - **Live data is the default; fixtures are labeled islands.** Live against the backend:
   `/games/:id` (including the NextPitchPanel serving the PRE champion and the pitch-type panel
   serving the calibrated pitch-type prior), the player lookup + `/players/:id` profile, the
-  `/parks` HR-probability-by-park heatmap, the home page's tonight slate, `/accuracy` (scorecard +
+  `/parks` field explorer ([203]), the home page's tonight slate, `/accuracy` (scorecard +
   Live Retrospective), and the Ops systems register's Serving / Drift / Retraining / Event log
   sections (live via `/v1/ops/*`; when those cannot be read, Serving falls back to a
   SHELF-marked registry-verified roster with every figure em-dashed and the other sections say
@@ -41,10 +41,12 @@ session and most "obvious" alternatives have already been considered and rejecte
   [206]). The drift section is live-wired over the watched surface with "awaiting first value"
   until `drift_metrics` values land, and [175] drill-tagged rows are labelled as deliberate
   synthetic drift. Still pure fixtures from `frontend/src/data/*-fixtures.ts`: the `/parks`
-  factor table, the `/about` colophon, the `/players` landing's Featured Reports + Model
-  Standouts, and the `/players/:id` slug showcase matchup. The Ops Infrastructure section is
+  showcase factor table, the `/players` landing's Featured Reports + Model Standouts, and the
+  `/players/:id` slug showcase matchup. The Ops Infrastructure section is
   static SHELF-marked claims (where each service is watched), not a status display ([207]).
-  `/models/guide` ([191]) is a static explainer page, not a data surface.
+  `/models/guide` ([191], [208]) is a static explainer page, not a data surface; its figures are
+  committed gate evidence re-read by a test. `/about` ([209]) is static editorial copy plus
+  build-time decision/ADR counts and a registry champion count.
 - **The live pitch path is user-visible end-to-end; all three pitch-side heads are CHAMPION.**
   The poller chain (MLB Stats API client + parser + per-game poll + `pitches_live` writer + the
   `prediction_log` truth-join) is enabled in prod behind `BULLPEN_INGEST_LIVE_ENABLED` (flipped
@@ -78,9 +80,10 @@ session and most "obvious" alternatives have already been considered and rejecte
   been corrected to the measured figures. Rule still holds: do **not** cite a coverage percentage you
   cannot reproduce from CI.
 - **Note (2026-10-09):** [195] supersedes the broadcast identity below with an editorial "Front Page"
-  identity; the migration is in progress, home first.
-- **Frontend visual identity rework is complete.** All pages on the broadcast identity ([160]) with
-  chrome-over-dark-field ground ([191]/ADR-0017), light/dark toggle ([192]) with CSS custom
+  identity; the migration is complete except the /games slate list and the 404 page.
+- **Frontend visual identity rework is complete.** The identity is [195]'s editorial Front Page
+  (paper by default, a Night edition via [192]'s toggle; ADR-0017 IA), migrated on every page
+  except the /games slate list and the 404 page. Light/dark toggle ([192]) with CSS custom
   properties + localStorage persistence + system preference default. Theme-switching colors return
   `var(--bp-*)` CSS references from `broadcast.ts`; chrome elements stay constant dark in both modes.
   condFormat has three exports: `condFormat` (CSS vars for theme switching), `condFormatDark`/
@@ -121,7 +124,7 @@ matters — see `design.md` §1.
 | Analytical DB | **ClickHouse** (Docker) — pitches, drift metrics, prediction logs                                                                                                                                                  |
 | App state DB  | **SQLite** + Flyway — model registry, A/B config, retraining queue                                                                                                                                                 |
 | Frontend      | **React 19 + TypeScript + Vite**, pure SPA (React 19 in-repo; the "18" floor in early decisions was upgraded). **TanStack Query** for server state, plain React Context for client state. Polling, not WebSockets. |
-| UI            | **Mantine 9 + Tailwind 4** (Tailwind = `@theme` token layer, not utility classes). Broadcast-graphics identity (Barlow Condensed / Inter / JetBrains Mono, decision [160]). Superseded 2026-10-09 by [195] (editorial "Front Page": Source Serif 4 / Inter / JetBrains Mono); migration in progress, home first.                                        |
+| UI            | **Mantine 9 + Tailwind 4** (Tailwind = `@theme` token layer, not utility classes). Broadcast-graphics identity (Barlow Condensed / Inter / JetBrains Mono, decision [160]). Superseded 2026-10-09 by [195] (editorial "Front Page": Source Serif 4 / Inter / JetBrains Mono); migrated on every page except /games and 404.                                        |
 | Hosting       | Self-hosted in WSL2 (Ubuntu 24.04 LTS) on personal desktop. Cloudflare Tunnel for public access. Frontend on Vercel.                                                                                               |
 | Process mgmt  | systemd (bare-metal for app, Docker for stateful services)                                                                                                                                                         |
 | Observability | Prometheus + Grafana + Actuator (internal); Uptime Robot + Healthchecks.io + Discord webhook (external)                                                                                                            |

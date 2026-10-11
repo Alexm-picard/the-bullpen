@@ -101,7 +101,7 @@ describe("ParksPage (static)", () => {
 
   it("says the field is generic and links to how the model was built", () => {
     expect(text).toContain("The field is generic");
-    expect(html).toContain('href="/models/guide"');
+    expect(html).toContain('href="/models/guide#batted-ball"');
   });
 
   it("lets the user reach the sprays the model was trained on", () => {

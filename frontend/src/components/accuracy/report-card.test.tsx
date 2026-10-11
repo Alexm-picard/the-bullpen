@@ -236,8 +236,18 @@ describe("ReportCard - states carried over from LiveScorecard", () => {
       "lede",
     );
     expect(html).toContain("The post-pitch retrospective");
-    expect(html).toContain('href="/models/guide#how-scored"');
+    // SPEC-guide-about §7: the post-pitch model has its own Guide card now.
+    expect(html).toContain('href="/models/guide#post-pitch"');
     expect(html).toContain('href="#offline-record"');
+  });
+
+  it("a family with no Guide card of its own falls back to how accuracy is scored", () => {
+    const html = card(
+      model({ modelName: "pitch_spin_pre" }),
+      "pitch_spin_pre",
+      "lede",
+    );
+    expect(html).toContain('href="/models/guide#how-scored"');
   });
 });
 

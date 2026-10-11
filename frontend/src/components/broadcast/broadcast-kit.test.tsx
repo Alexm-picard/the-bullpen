@@ -2,14 +2,14 @@
  * SSR markup tests for the broadcast kit (decision [160]) - structure, a11y
  * affordances, and the [160] rules (team color as fills only, real heading
  * elements in lower-thirds). The scorebug, big-stat and ticker left with the
- * game page's move to the [195] editorial identity.
+ * game page's move to the [195] editorial identity; the panel, eyebrow,
+ * stat table and key notes left once no page used them (SPEC-guide-about).
  */
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { teamColor } from "../../design/teamColors";
 
-import { BroadcastPanel } from "./broadcast-panel";
 import { LowerThird } from "./lower-third";
 
 describe("LowerThird", () => {
@@ -34,23 +34,5 @@ describe("LowerThird", () => {
     );
     expect(html).toContain("<h3");
     expect(html).toContain(teamColor("NYM"));
-  });
-});
-
-describe("BroadcastPanel", () => {
-  it("renders the team edge bar and the diagonal cut on demand", () => {
-    const html = renderToStaticMarkup(
-      <BroadcastPanel cut edgeTeam="SEA">
-        body
-      </BroadcastPanel>,
-    );
-    expect(html).toContain(teamColor("SEA"));
-    expect(html).toContain("polygon");
-    expect(html).toContain("body");
-  });
-
-  it("renders plain (no cut, no edge) by default", () => {
-    const html = renderToStaticMarkup(<BroadcastPanel>x</BroadcastPanel>);
-    expect(html).not.toContain("polygon");
   });
 });
