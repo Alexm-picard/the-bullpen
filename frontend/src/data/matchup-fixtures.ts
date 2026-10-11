@@ -21,8 +21,6 @@
  * later is component-internal only.
  */
 
-import type { MetricMeta } from "../design/cellColor";
-
 // ── Types (spec §11) ─────────────────────────────────────────────────────────
 
 export type Hand = "L" | "R" | "S";
@@ -148,93 +146,6 @@ export type MatchupReport = {
   keyNotes: string[];
   /** Headline date / game context. */
   context: string;
-};
-
-// ── Metric meta (cellColor references) ───────────────────────────────────────
-
-/**
- * Metric metadata registry. Every numeric column that participates in
- * conditional formatting reaches in here for its MetricMeta — so the cellColor
- * percentile mapping is consistent across StatTable and PlayerProfileCard.
- *
- * Reference distributions are MLB-typical ranges for the named metric.
- */
-export const METRIC_META: Record<string, MetricMeta> = {
-  usage: {
-    key: "usage",
-    direction: "higher-is-better",
-    reference: { min: 0.02, p25: 0.1, median: 0.18, p75: 0.32, max: 0.6 },
-  },
-  velo: {
-    key: "velo",
-    direction: "higher-is-better",
-    reference: { min: 70, p25: 84, median: 92, p75: 95, max: 102 },
-  },
-  whiff: {
-    key: "whiff",
-    direction: "higher-is-better",
-    reference: { min: 0.05, p25: 0.18, median: 0.26, p75: 0.34, max: 0.55 },
-  },
-  xwoba_vs: {
-    // pitcher's xwOBA-against: lower is better.
-    key: "xwoba_vs",
-    direction: "lower-is-better",
-    reference: { min: 0.18, p25: 0.27, median: 0.32, p75: 0.36, max: 0.5 },
-  },
-  putaway: {
-    key: "putaway",
-    direction: "higher-is-better",
-    reference: { min: 0.05, p25: 0.14, median: 0.2, p75: 0.27, max: 0.45 },
-  },
-  pa: {
-    // Larger-sample columns: do NOT heat-format. Kept here for callers that
-    // want it anyway.
-    key: "pa",
-    direction: "higher-is-better",
-    reference: { min: 0, p25: 50, median: 200, p75: 400, max: 700 },
-  },
-  avg: {
-    key: "avg",
-    direction: "higher-is-better",
-    reference: { min: 0.15, p25: 0.22, median: 0.255, p75: 0.285, max: 0.36 },
-  },
-  obp: {
-    key: "obp",
-    direction: "higher-is-better",
-    reference: { min: 0.22, p25: 0.295, median: 0.325, p75: 0.36, max: 0.45 },
-  },
-  slg: {
-    key: "slg",
-    direction: "higher-is-better",
-    reference: { min: 0.28, p25: 0.38, median: 0.42, p75: 0.47, max: 0.65 },
-  },
-  iso: {
-    key: "iso",
-    direction: "higher-is-better",
-    reference: { min: 0.06, p25: 0.13, median: 0.17, p75: 0.22, max: 0.34 },
-  },
-  xwoba_batter: {
-    key: "xwoba_batter",
-    direction: "higher-is-better",
-    reference: { min: 0.22, p25: 0.31, median: 0.34, p75: 0.38, max: 0.48 },
-  },
-  k: {
-    // batter K%: lower is better.
-    key: "k",
-    direction: "lower-is-better",
-    reference: { min: 0.1, p25: 0.18, median: 0.22, p75: 0.27, max: 0.38 },
-  },
-  bb: {
-    key: "bb",
-    direction: "higher-is-better",
-    reference: { min: 0.04, p25: 0.07, median: 0.085, p75: 0.105, max: 0.18 },
-  },
-  // 20-80 scouting grades — clamp to a sensible range.
-  grade: {
-    key: "grade",
-    direction: "higher-is-better",
-    reference: { min: 20, p25: 40, median: 50, p75: 60, max: 80 },
-  },
 };
 
 // ── Gaussian density helper ──────────────────────────────────────────────────

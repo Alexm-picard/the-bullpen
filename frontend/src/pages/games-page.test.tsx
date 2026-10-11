@@ -1,10 +1,8 @@
 /**
- * Page-level smoke test for /games on the BROADCAST identity (decision [160]).
- * Narrow by design: the page wires `useTodaysGames()` + `useTodaysMatchups()`
- * live and merges them, so we assert the chrome renders, the one-h1 rule holds,
- * the status filter renders, and the loading state shows. The merge is covered
- * in slate-view.test.ts and the card states in slate-board.test.tsx; the e2e
- * suite covers the network-mocked empty + populated + fallback flows.
+ * Static-render smoke for /games ([195], SPEC-games-404). A static render leaves both queries in
+ * flight, so this pins the loading-first contract: the editorial ground, one h1, the facets, the
+ * pre-sized shell, and no showcase flash. The settled postures run against stubbed fetches in
+ * games-page.interaction.test.tsx.
  */
 import { MantineProvider } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -13,8 +11,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 
-import { colors } from "../design/broadcast";
+import { RATING_CLAIM } from "../data/games-claims";
 import { theme } from "../design/theme";
+import { visibleText } from "../test-support/visible-text";
 
 import GamesPage from "./games-page";
 
@@ -31,35 +30,59 @@ function render(node: ReactNode): string {
   );
 }
 
-describe("GamesPage (broadcast slate)", () => {
-  it("renders the light field under broadcast chrome", () => {
+describe("GamesPage (scoreboard, loading-first)", () => {
+  it("renders on the editorial ground, not the broadcast field", () => {
     const html = render(<GamesPage />);
-    expect(html.toLowerCase()).toContain(colors.field.toLowerCase());
-    expect(html.toLowerCase()).toContain(colors.chrome.toLowerCase());
+    const page = html.slice(html.indexOf('<div class="ed-page"'));
+    expect(page).toContain('class="ed-page"');
+    // Scoped to the page: Mantine's injected theme <style> still carries the broadcast vars.
+    expect(page).not.toContain("var(--bp-");
   });
 
-  it("renders exactly one h1 (the slate masthead)", () => {
+  it("renders exactly one h1", () => {
     const html = render(<GamesPage />);
-    const matches = html.match(/<h1\b/g) ?? [];
-    expect(matches.length).toBe(1);
-    expect(html).toContain("Games");
+    expect((html.match(/<h1\b/g) ?? []).length).toBe(1);
   });
 
-  it("renders the slate lower-third and the loading state initially", () => {
+  it("shows the pre-sized shell, and no showcase, while the slate is in flight", () => {
     const html = render(<GamesPage />);
-    expect(html).toContain("Slate");
-    expect(html).toContain("Loading today");
+    const text = visibleText(html);
+    expect(html).toContain('aria-busy="true"');
+    expect(text).toContain("Slate loading");
+    expect(text).not.toContain("Showcase");
+    expect(text).not.toContain("Skubal");
   });
 
-  it("renders the chrome footer", () => {
+  it("names the status facets All, Live, Scheduled and Final", () => {
     const html = render(<GamesPage />);
-    expect(html).toContain("THE BULLPEN · TODAY");
+    const text = visibleText(html);
+    expect(html).toContain('aria-label="Filter games by status"');
+    for (const label of ["All", "Live", "Scheduled", "Final"]) {
+      expect(text).toContain(label);
+    }
+    expect(text).not.toContain("Completed");
   });
 
-  it("renders the status filter (all / live / scheduled / completed)", () => {
+  it("prints the rating claim verbatim from its SHELF-marked source, in both emitters", () => {
     const html = render(<GamesPage />);
-    expect(html).toContain("Filter games by status");
-    expect(html).toContain(">All<");
-    expect(html).toContain(">Completed<");
+    // Scoped per emitter: the desktop aside and the phone disclosure BOTH print the claim, so a
+    // page-wide toContain would stay green if either one lost it (pins decay by accretion).
+    const between = (open: string, close: string) => {
+      const at = html.indexOf(open);
+      expect(at, `missing ${open}`).toBeGreaterThanOrEqual(0);
+      return visibleText(html.slice(at, html.indexOf(close, at)));
+    };
+    expect(between('<aside class="gm-holds gm-aside"', "</aside>")).toContain(
+      RATING_CLAIM,
+    );
+    expect(between('<details class="gm-key-sum"', "</details>")).toContain(
+      RATING_CLAIM,
+    );
+  });
+
+  it("renders the colophon with the build stamp", () => {
+    const text = visibleText(render(<GamesPage />));
+    expect(text).toContain("The Bullpen. Self-hosted, honestly scored.");
+    expect(text).toMatch(/build \S+/);
   });
 });

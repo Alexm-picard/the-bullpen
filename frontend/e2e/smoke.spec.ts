@@ -37,7 +37,10 @@ test("an unknown URL renders the 404 page, not a blank shell (S6)", async ({
 }) => {
   const errors = trackPageErrors(page);
   await page.goto("/this-route-does-not-exist");
-  await expect(page.getByText("404")).toBeVisible();
+  // exact: the dateline also says "Error 404"; this pins the scorebook figure itself.
+  await expect(page.getByText("404", { exact: true })).toBeVisible();
+  // The scorebook echoes what was asked for (SPEC-games-404 §7).
+  await expect(page.getByText("/this-route-does-not-exist")).toBeVisible();
   await expect(page.getByText("No play at this base.")).toBeVisible();
   await expect(page.getByRole("link", { name: /back to home/i })).toBeVisible();
   // The nav chrome still frames the page (the 404 route lives inside the Layout).
@@ -75,12 +78,13 @@ const SLATE_GAME = {
   mostRecentBattedBall: null,
 };
 
-test("games slate degrades to the showcase slate when the live API is empty", async ({
+test("games slate degrades to the labelled showcase slate when the live API is empty", async ({
   page,
 }) => {
   const errors = trackPageErrors(page);
-  // Both live sources settled-empty -> the page falls back to the committed showcase slate
-  // (decision [160]), so a card still renders rather than a blank/empty view.
+  // Both live sources settled-empty -> the committed showcase slate, LABELLED with the not-posted
+  // reason ([195], SPEC-games-404 §5.1). Showcase rows are plain text: their fixture ids do not
+  // resolve on the game page, so no row may link into /games/:id (SPEC §6.3).
   await page.route("**/v1/games/today", (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: "[]" }),
   );
@@ -88,10 +92,33 @@ test("games slate degrades to the showcase slate when the live API is empty", as
     route.fulfill({ status: 200, contentType: "application/json", body: "[]" }),
   );
   await page.goto("/games");
+  await expect(page.getByText("Showcase", { exact: true })).toBeVisible();
   await expect(
-    page.getByRole("link", { name: /open game for/i }).first(),
+    page.getByText(/No games have posted for today yet/),
   ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { level: 2, name: "In progress" }),
+  ).toBeVisible();
+  await expect(page.locator('.ed-page a[href^="/games/"]')).toHaveCount(0);
   expect(errors, "uncaught errors on empty /games").toEqual([]);
+});
+
+test("games slate says the backend is unreachable when the live API errors", async ({
+  page,
+}) => {
+  const errors = trackPageErrors(page);
+  for (const path of ["**/v1/games/today", "**/v1/matchups/today"]) {
+    await page.route(path, (route) =>
+      route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: "{}",
+      }),
+    );
+  }
+  await page.goto("/games");
+  await expect(page.getByText(/The backend is unreachable/)).toBeVisible();
+  expect(errors, "uncaught errors on offline /games").toEqual([]);
 });
 
 test("games slate renders a row and its numeric link opens the live game page", async ({
@@ -139,7 +166,8 @@ test("games slate renders a row and its numeric link opens the live game page", 
   );
 
   await page.goto("/games");
-  await expect(page.getByText("BAL")).toBeVisible();
+  // The line score's team row (the pair link also reads "BAL at BOS").
+  await expect(page.getByRole("rowheader", { name: "BAL" })).toBeVisible();
   const open = page.getByRole("link", {
     name: /open game for BAL at BOS/i,
   });

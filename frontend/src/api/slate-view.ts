@@ -29,7 +29,14 @@ export type SlateCard = {
    * inning), but the card shows the delay state instead of the on-air LIVE dot.
    */
   paused: boolean;
-  /** Scores are null until the game has live/final state. */
+  /**
+   * True for a POSTPONED game. It buckets as final, and its scores are null: the feed sends 0-0
+   * for a game that was never played, and printing that as a final score would be false.
+   */
+  postponed: boolean;
+  /** True for a "Delayed Start": status DELAYED before first pitch (still a scheduled game). */
+  delayedStart: boolean;
+  /** Scores are null until the game has live/final state, and always null when postponed. */
   awayScore: number | null;
   homeScore: number | null;
   inning: number | null;
@@ -37,6 +44,8 @@ export type SlateCard = {
   detailedState: string | null;
   /** First-pitch ET label for scheduled games. */
   firstPitchEt: string | null;
+  /** First pitch as ISO UTC (from the matchup row), for ordering by time; null with no matchup. */
+  firstPitchUtc: string | null;
   /** Matchup enrichment (null for a game with no matchup row). */
   leanLabel: string | null;
   battleScore: number | null;
@@ -57,6 +66,19 @@ const FINAL_STATUSES = new Set([
   "FINAL",
   "POSTPONED",
 ]);
+
+/** True for a game that will not be played today. */
+export function slatePostponed(status: string | undefined): boolean {
+  return status === "POSTPONED";
+}
+
+/** True for a delay before first pitch ("Delayed Start"): DELAYED with no inning yet. */
+export function slateDelayedStart(
+  status: string | undefined,
+  inning?: number | null,
+): boolean {
+  return status === "DELAYED" && !inning;
+}
 
 /** True when a started game is halted (rain delay, suspension). */
 export function slatePaused(status: string | undefined): boolean {
@@ -96,17 +118,21 @@ function matchupSide(
 }
 
 function fromMatchup(m: MatchupSummary, g: GameSummary | undefined): SlateCard {
+  const postponed = slatePostponed(g?.status);
   return {
     gameId: m.gameId,
     awayTeam: m.awayTeam,
     homeTeam: m.homeTeam,
     status: slateStatus(g?.status, g?.inning),
     paused: slatePaused(g?.status),
-    awayScore: g ? g.awayScore : null,
-    homeScore: g ? g.homeScore : null,
+    postponed,
+    delayedStart: slateDelayedStart(g?.status, g?.inning),
+    awayScore: g && !postponed ? g.awayScore : null,
+    homeScore: g && !postponed ? g.homeScore : null,
     inning: g && g.inning > 0 ? g.inning : null,
     detailedState: g ? g.detailedState : null,
     firstPitchEt: firstPitchEt(m.gameTimeUtc),
+    firstPitchUtc: m.gameTimeUtc,
     leanLabel: leanLabel(m.lean),
     battleScore: m.battleScore,
     away: matchupSide(m.awayPlayerId, m.awayPlayerName, m.awayTeam, m.awayRole),
@@ -115,17 +141,21 @@ function fromMatchup(m: MatchupSummary, g: GameSummary | undefined): SlateCard {
 }
 
 function fromGameOnly(g: GameSummary): SlateCard {
+  const postponed = slatePostponed(g.status);
   return {
     gameId: g.gameId,
     awayTeam: g.awayTeam,
     homeTeam: g.homeTeam,
     status: slateStatus(g.status, g.inning),
     paused: slatePaused(g.status),
-    awayScore: g.awayScore,
-    homeScore: g.homeScore,
+    postponed,
+    delayedStart: slateDelayedStart(g.status, g.inning),
+    awayScore: postponed ? null : g.awayScore,
+    homeScore: postponed ? null : g.homeScore,
     inning: g.inning > 0 ? g.inning : null,
     detailedState: g.detailedState,
     firstPitchEt: null,
+    firstPitchUtc: null,
     leanLabel: null,
     battleScore: null,
     away: null,

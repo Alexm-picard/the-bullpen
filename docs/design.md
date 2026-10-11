@@ -87,7 +87,7 @@ production system through real time-series data.
 | Analytical DB       | **ClickHouse**                      | Pitches, drift metrics, prediction logs                     |
 | App state DB        | **SQLite**                          | Model registry, A/B config, retraining queue                |
 | Frontend            | **React + TypeScript + Vite**       | Pure SPA                                                    |
-| Component library   | **Mantine + Tailwind**              | Scouting-report design system (broadcast-graphics flavored) |
+| Component library   | **Mantine + Tailwind**              | Editorial "Front Page" design system ([195], [212])         |
 | Process management  | **systemd**                         | Inside WSL2                                                 |
 | Observability       | **Prometheus + Grafana + Actuator** | Local dashboards                                            |
 | External monitoring | **Uptime Robot + Healthchecks.io**  | Uptime + heartbeat                                          |
@@ -1023,12 +1023,14 @@ metric)` function (§8); pure CSS/React, no chart library.
 ### Visual identity (LOCKED — re-pitched 2026-05-29)
 
 > **Superseded direction (2026-10-09, decision [195]).** The broadcast /
-> scouting-report identity described in this section is being replaced by an
+> scouting-report identity described in this section has been replaced by an
 > editorial "Front Page" identity (Source Serif 4 display, Inter body,
 > JetBrains Mono figures, warm paper ground by default with a designed dark
-> variant, one scorecard-red accent). Migration is in progress, home first;
-> this section will be rewritten as the implementation lands. See ADR-0017's
-> 2026-10-09 revision.
+> variant, one scorecard-red accent). Migration is complete on every page
+> as of 2026-10-11 (/games and the 404 page were last, [210]/[211]), and the
+> [160] broadcast component layer is retired ([212]); `design/broadcast.ts`
+> remains until its own retirement spec. This section is kept as the
+> historical record. See ADR-0017's 2026-10-09 revision.
 
 **Scouting report / broadcast graphics.** The interface looks like a
 printed MLB advance-scouting packet crossed with a broadcast lower-third:

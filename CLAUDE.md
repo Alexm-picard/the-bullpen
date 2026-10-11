@@ -79,15 +79,14 @@ session and most "obvious" alternatives have already been considered and rejecte
   branches >= 62%, functions >= 75%, in `vite.config.ts`). The README's earlier unbacked "~95%" has
   been corrected to the measured figures. Rule still holds: do **not** cite a coverage percentage you
   cannot reproduce from CI.
-- **Note (2026-10-09):** [195] supersedes the broadcast identity below with an editorial "Front Page"
-  identity; the migration is complete except the /games slate list and the 404 page.
 - **Frontend visual identity rework is complete.** The identity is [195]'s editorial Front Page
   (paper by default, a Night edition via [192]'s toggle; ADR-0017 IA), migrated on every page
-  except the /games slate list and the 404 page. Light/dark toggle ([192]) with CSS custom
-  properties + localStorage persistence + system preference default. Theme-switching colors return
-  `var(--bp-*)` CSS references from `broadcast.ts`; chrome elements stay constant dark in both modes.
-  condFormat has three exports: `condFormat` (CSS vars for theme switching), `condFormatDark`/
-  `condFormatLight` (static hex for cellColor RGB interpolation). AA contrast verified via axe.
+  (the /games scoreboard and the 404 closed it out, [210]-[211]); tokens live in
+  `frontend/src/design/editorial.css`. The [160] broadcast component layer is deleted ([212]);
+  `design/broadcast.ts` survives only for the Mantine theme, the teamColors fallback, App.tsx
+  motion values and the error boundary, and its retirement is a separate follow-up. Light/dark
+  toggle ([192]) with CSS custom properties + localStorage persistence + system preference
+  default. AA contrast verified via axe.
   SHELF markers ([190]) seeded on static metric callouts; `lint-unmarked-claims.sh` runs as a
   non-blocking CI check. D4 honesty labels inline on all fixture surfaces. The post-pitch
   retrospective relocated from the game page to /accuracy ([191.2]).
@@ -124,7 +123,7 @@ matters — see `design.md` §1.
 | Analytical DB | **ClickHouse** (Docker) — pitches, drift metrics, prediction logs                                                                                                                                                  |
 | App state DB  | **SQLite** + Flyway — model registry, A/B config, retraining queue                                                                                                                                                 |
 | Frontend      | **React 19 + TypeScript + Vite**, pure SPA (React 19 in-repo; the "18" floor in early decisions was upgraded). **TanStack Query** for server state, plain React Context for client state. Polling, not WebSockets. |
-| UI            | **Mantine 9 + Tailwind 4** (Tailwind = `@theme` token layer, not utility classes). Broadcast-graphics identity (Barlow Condensed / Inter / JetBrains Mono, decision [160]). Superseded 2026-10-09 by [195] (editorial "Front Page": Source Serif 4 / Inter / JetBrains Mono); migrated on every page except /games and 404.                                        |
+| UI            | **Mantine 9 + Tailwind 4** (Tailwind = `@theme` token layer, not utility classes). Broadcast-graphics identity (Barlow Condensed / Inter / JetBrains Mono, decision [160]). Superseded 2026-10-09 by [195] (editorial "Front Page": Source Serif 4 / Inter / JetBrains Mono); migrated on every page ([210]-[212]).                                        |
 | Hosting       | Self-hosted in WSL2 (Ubuntu 24.04 LTS) on personal desktop. Cloudflare Tunnel for public access. Frontend on Vercel.                                                                                               |
 | Process mgmt  | systemd (bare-metal for app, Docker for stateful services)                                                                                                                                                         |
 | Observability | Prometheus + Grafana + Actuator (internal); Uptime Robot + Healthchecks.io + Discord webhook (external)                                                                                                            |

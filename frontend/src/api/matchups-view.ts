@@ -56,11 +56,11 @@ const ET_TIME = new Intl.DateTimeFormat("en-US", {
 export function leanLabel(lean: string): string {
   switch (lean) {
     case "pitching":
-      return "Pitching Duel";
+      return "Pitching duel";
     case "hitters":
-      return "Hitters Duel";
+      return "Hitters duel";
     case "mixed":
-      return "Split Lean";
+      return "Split lean";
     default:
       return "Matchup";
   }
