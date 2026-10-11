@@ -7,8 +7,6 @@
  */
 import { useQueries, useQuery } from "@tanstack/react-query";
 
-import type { OpsLogEntry, OpsLogType } from "../data/ops-fixtures";
-
 import { ApiError, apiGet } from "./base";
 
 export type ModelVersion = {
@@ -149,6 +147,18 @@ export function useDriftForModels(modelNames: string[]) {
     combine: (results) => ({
       metrics: results.flatMap((r) => r.data ?? []),
       isLoading: results.some((r) => r.isLoading),
+      /** Some model's drift could not be read and has no earlier data to show. */
+      isError: results.some((r) => r.isError && r.data === undefined),
+      /** Some model's latest refresh failed while earlier data is still shown. */
+      isStale: results.some((r) => r.isError && r.data !== undefined),
+      /** Oldest successful read across the models (0 when none resolved yet). */
+      dataUpdatedAt: results.reduce(
+        (min, r) =>
+          r.dataUpdatedAt > 0 && (min === 0 || r.dataUpdatedAt < min)
+            ? r.dataUpdatedAt
+            : min,
+        0,
+      ),
     }),
   });
 }
@@ -254,27 +264,4 @@ export function useOpsEvents(page = 0, size = 20) {
     staleTime: 30_000,
     refetchInterval: 30_000,
   });
-}
-
-const OPS_EVENT_ET_FMT = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  hour: "numeric",
-  minute: "2-digit",
-  hour12: false,
-  timeZone: "America/New_York",
-});
-
-/**
- * Map a backend {@link OpsEvent} to the {@link OpsLogEntry} shape the OpsLogTable renders. Backend
- * underscore type names become the frontend's hyphenated display labels (DRIFT_OK → DRIFT-OK), and
- * the ISO instant becomes a short ET display string.
- */
-export function opsEventToLogEntry(e: OpsEvent): OpsLogEntry {
-  return {
-    id: `oe-${e.id}`,
-    timestamp: `${OPS_EVENT_ET_FMT.format(new Date(e.occurredAt))} ET`,
-    type: e.type.replace(/_/g, "-") as OpsLogType,
-    detail: e.detail,
-  };
 }

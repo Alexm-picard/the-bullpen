@@ -4,35 +4,40 @@ import type {
   DriftMetric,
   LatencyStat,
   ModelVersion,
+  OpsEvent,
   RetrainingTrigger,
-  RoutingConfig,
 } from "./ops";
 import {
-  toDriftRows,
+  fmtWhen,
+  opsEventToLogEntry,
+  toDriftCells,
   toFleetRows,
   toLatencyRows,
   toRetrainEntries,
 } from "./ops-mappers";
+
+/** 7:42 PM ET on Sunday, October 11, 2026. */
+const NOW = new Date("2026-10-11T23:42:00Z");
 
 function mv(
   over: Partial<ModelVersion> & Pick<ModelVersion, "id">,
 ): ModelVersion {
   return {
     modelName: "pitch_outcome_pre",
-    version: "v3",
+    version: "v2",
     artifactPath: "",
     metadataPath: "",
     trainingDataHash: "",
     trainingDataWindow: "",
     featureSchemaHash: "",
     evalMetrics: "",
-    trainedAt: "2026-04-12T00:00:00Z",
+    trainedAt: "2026-07-22T12:00:00Z",
     promotedAt: null,
     stage: "CHAMPION",
     createdBy: null,
     notes: null,
-    createdAt: "2026-04-12T00:00:00Z",
-    updatedAt: "2026-04-12T00:00:00Z",
+    createdAt: "2026-07-22T12:00:00Z",
+    updatedAt: "2026-07-22T12:00:00Z",
     ...over,
   };
 }
@@ -40,217 +45,261 @@ function mv(
 function lat(over: Partial<LatencyStat>): LatencyStat {
   return {
     modelName: "pitch_outcome_pre",
-    modelVersion: "v3",
+    modelVersion: "v2",
     sampleCount: 1000,
-    p50Ms: 0.4,
-    p95Ms: 0.9,
+    p50Ms: 0.44,
+    p95Ms: 0.91,
     p99Ms: 1.37,
     p999Ms: 2.1,
     ...over,
   };
 }
 
+describe("fmtWhen (12-hour ET, relative day)", () => {
+  it("prints the clock alone for today", () => {
+    expect(fmtWhen("2026-10-11T07:00:00Z", NOW)).toBe("3:00 AM");
+  });
+  it("prefixes Yesterday across the ET day boundary", () => {
+    expect(fmtWhen("2026-10-10T15:40:00Z", NOW)).toBe("Yesterday, 11:40 AM");
+  });
+  it("prints month and day beyond yesterday", () => {
+    expect(fmtWhen("2026-10-08T22:10:00Z", NOW)).toBe("Oct 8, 6:10 PM");
+  });
+  it("uses the ET day, not UTC: 1 AM UTC on the 12th is still the 11th in ET", () => {
+    expect(
+      fmtWhen("2026-10-12T01:00:00Z", new Date("2026-10-12T02:00:00Z")),
+    ).toBe("9:00 PM");
+  });
+  it("renders an em-dash for missing or unparseable input", () => {
+    expect(fmtWhen(null, NOW)).toBe("—");
+    expect(fmtWhen("not a date", NOW)).toBe("—");
+  });
+});
+
 describe("toFleetRows", () => {
-  it("maps a champion to LIVE @ 100% and joins its latency", () => {
-    const rows = toFleetRows([mv({ id: 1 })], [], [lat({})]);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({
-      modelName: "pitch_outcome_pre",
-      version: "v3",
-      state: "LIVE",
-      traffic: "100%",
-      predictions24h: 1000,
-      p99Ms: 1.37,
-      // drift columns are honest-null until the in-season jobs run
-      psiMax: null,
-      eceDelta: null,
-      lastRegistered: "2026-04-12",
-    });
-  });
-
-  it("renders null p99/predictions (→ em-dash) for a model with no served latency", () => {
-    const rows = toFleetRows([mv({ id: 1, modelName: "batted_ball" })], [], []);
-    expect(rows[0]?.p99Ms).toBeNull();
-    expect(rows[0]?.predictions24h).toBeNull();
-  });
-
-  it("derives challenger traffic from the routing row", () => {
-    const champion = mv({ id: 10, version: "v3" });
-    const challenger = mv({ id: 11, version: "v4", stage: "SHADOW" });
-    const routing: RoutingConfig = {
-      id: 1,
-      modelName: "pitch_outcome_pre",
-      championVersionId: 10,
-      challengerVersionId: 11,
-      challengerTrafficPct: 25,
-      mode: "AB",
-      updatedAt: "2026-05-01T00:00:00Z",
-    };
-    const rows = toFleetRows([champion, challenger], [routing], []);
-    expect(rows.find((r) => r.version === "v3")?.traffic).toBe("75%");
-    expect(rows.find((r) => r.version === "v4")?.traffic).toBe("25%");
-    expect(rows.find((r) => r.version === "v4")?.state).toBe("SHADOW");
-  });
-
-  it("filters out ARCHIVED versions", () => {
-    const rows = toFleetRows(
-      [mv({ id: 1, stage: "ARCHIVED" }), mv({ id: 2, version: "v4" })],
-      [],
-      [],
-    );
-    expect(rows).toHaveLength(1);
-    expect(rows[0]?.version).toBe("v4");
-  });
-
-  it("maps CANDIDATE to AWAITING-PROMOTION so the header count works (FE-M1)", () => {
+  it("uses the registry's own stage words, never LIVE/SHADOW", () => {
     const rows = toFleetRows(
       [
-        mv({ id: 1, stage: "CHAMPION" }),
-        mv({ id: 2, version: "v4", stage: "CANDIDATE" }),
-        mv({ id: 3, version: "v5", stage: "SHADOW" }),
+        mv({ id: 1 }),
+        mv({ id: 2, version: "v3", stage: "CANDIDATE" }),
+        mv({ id: 3, modelName: "pitch_outcome_lr_baseline", stage: "SHADOW" }),
       ],
       [],
       [],
     );
-    expect(rows.find((r) => r.version === "v3")?.state).toBe("LIVE");
-    expect(rows.find((r) => r.version === "v4")?.state).toBe(
-      "AWAITING-PROMOTION",
+    expect(rows.map((r) => r.stage)).toEqual([
+      "Champion",
+      "Candidate",
+      "Shadow",
+    ]);
+    expect(JSON.stringify(rows)).not.toMatch(/LIVE|AWAITING/);
+  });
+
+  it("joins 24 h latency by name AND version and rounds p99 to one decimal", () => {
+    const [row] = toFleetRows([mv({ id: 1 })], [], [lat({})]);
+    expect(row).toMatchObject({ calls24h: 1000, p99Ms: 1.4, traffic: "100%" });
+    expect(row?.trained).toBe("Jul 22");
+    const [other] = toFleetRows(
+      [mv({ id: 1 })],
+      [],
+      [lat({ modelVersion: "v1" })],
     );
-    expect(rows.find((r) => r.version === "v5")?.state).toBe("SHADOW");
+    expect(other).toMatchObject({ calls24h: null, p99Ms: null });
+  });
+
+  it("says 'none' for traffic a version never serves, and splits A/B traffic from routing", () => {
+    const rows = toFleetRows(
+      [mv({ id: 1 }), mv({ id: 2, version: "v3", stage: "SHADOW" })],
+      [
+        {
+          id: 1,
+          modelName: "pitch_outcome_pre",
+          championVersionId: 1,
+          challengerVersionId: 2,
+          challengerTrafficPct: 10,
+          mode: "AB",
+          updatedAt: "",
+        },
+      ],
+      [],
+    );
+    expect(rows.map((r) => r.traffic)).toEqual(["90%", "10%"]);
+    const shadowOnly = toFleetRows([mv({ id: 2, stage: "SHADOW" })], [], []);
+    expect(shadowOnly[0]?.traffic).toBe("none");
+  });
+
+  it("filters ARCHIVED and orders champions, then candidates, then shadows", () => {
+    const rows = toFleetRows(
+      [
+        mv({ id: 9, modelName: "z_model", stage: "SHADOW" }),
+        mv({ id: 8, stage: "ARCHIVED" }),
+        mv({ id: 7, modelName: "battedball_outcome", stage: "CANDIDATE" }),
+        mv({ id: 6, modelName: "battedball_outcome" }),
+      ],
+      [],
+      [],
+    );
+    expect(rows.map((r) => `${r.modelName} ${r.stage}`)).toEqual([
+      "battedball_outcome Champion",
+      "battedball_outcome Candidate",
+      "z_model Shadow",
+    ]);
   });
 });
 
-describe("toDriftRows", () => {
-  const WATCHED_FEATURES = [
-    { feature: "release_speed", byModel: {} },
-    { feature: "launch_angle", byModel: {} },
-  ];
-  const WATCHED_OUTPUTS = [{ output: "in_play", byModel: {} }];
+describe("toLatencyRows", () => {
+  it("labels each row and rounds to one decimal", () => {
+    expect(toLatencyRows([lat({})])).toEqual([
+      {
+        label: "pitch_outcome_pre v2",
+        calls: 1000,
+        p50: 0.4,
+        p95: 0.9,
+        p99: 1.4,
+        p999: 2.1,
+      },
+    ]);
+  });
+});
+
+describe("toDriftCells", () => {
+  const WATCHED = { pitch_outcome_post: ["releaseSpeedMph", "plateXIn"] };
+  const ECE = ["pitch_outcome_pre", "pitch_outcome_post"];
 
   function dm(over: Partial<DriftMetric>): DriftMetric {
     return {
-      computedAt: "2026-06-11T06:00:00Z",
-      modelName: "battedball_outcome",
-      modelVersionId: 1,
-      metricType: "PSI_FEATURE",
-      featureOrSegment: "release_speed",
-      metricValue: 0.04,
-      sampleSize: 1000,
-      windowStart: "2026-06-04",
-      windowEnd: "2026-06-11",
+      computedAt: "2026-10-11T06:00:00Z",
+      modelName: "pitch_outcome_post",
+      modelVersionId: 5,
+      metricType: "psi_feature",
+      featureOrSegment: "releaseSpeedMph",
+      metricValue: 0.06,
+      sampleSize: 41200,
+      windowStart: "",
+      windowEnd: "",
       tag: "",
       ...over,
     };
   }
 
-  it("renders the watched-surface skeleton untouched when drift_metrics is empty", () => {
-    const { psiByFeature, eceByOutput } = toDriftRows(
-      [],
-      WATCHED_FEATURES,
-      WATCHED_OUTPUTS,
-    );
-    expect(psiByFeature.map((f) => f.feature)).toEqual([
-      "release_speed",
-      "launch_angle",
+  it("renders the watched surface with null cells when drift_metrics is empty", () => {
+    const { psi, ece, drillTags } = toDriftCells([], WATCHED, ECE);
+    expect(psi).toEqual([
+      {
+        modelName: "pitch_outcome_post",
+        cells: [
+          {
+            key: "releaseSpeedMph",
+            modelName: "pitch_outcome_post",
+            value: null,
+            sampleSize: null,
+            tag: null,
+          },
+          {
+            key: "plateXIn",
+            modelName: "pitch_outcome_post",
+            value: null,
+            sampleSize: null,
+            tag: null,
+          },
+        ],
+      },
     ]);
-    expect(psiByFeature[0]?.byModel).toEqual({});
-    expect(eceByOutput[0]?.byModel).toEqual({});
-  });
-
-  it("overlays the NEWEST psi value per (feature, model) cell", () => {
-    const { psiByFeature } = toDriftRows(
-      [
-        dm({ metricValue: 0.31, computedAt: "2026-06-10T06:00:00Z" }),
-        dm({ metricValue: 0.04, computedAt: "2026-06-11T06:00:00Z" }),
-        dm({ modelName: "pitch_outcome_pre", metricValue: 0.12 }),
-      ],
-      WATCHED_FEATURES,
-      WATCHED_OUTPUTS,
-    );
-    const release = psiByFeature.find((f) => f.feature === "release_speed");
-    expect(release?.byModel["battedball_outcome"]).toBe(0.04);
-    expect(release?.byModel["pitch_outcome_pre"]).toBe(0.12);
-  });
-
-  it("routes CALIBRATION_ERROR rows to the output table, not the feature table", () => {
-    const { psiByFeature, eceByOutput } = toDriftRows(
-      [
-        dm({
-          metricType: "CALIBRATION_ERROR",
-          featureOrSegment: "in_play",
-          metricValue: 0.008,
-        }),
-      ],
-      WATCHED_FEATURES,
-      WATCHED_OUTPUTS,
-    );
-    expect(
-      eceByOutput.find((o) => o.output === "in_play")?.byModel[
-        "battedball_outcome"
-      ],
-    ).toBe(0.008);
-    expect(psiByFeature[0]?.byModel).toEqual({});
-  });
-
-  it("appends an observed feature the watch list doesn't carry, after the canonical rows", () => {
-    const { psiByFeature } = toDriftRows(
-      [dm({ featureOrSegment: "spray_angle" })],
-      WATCHED_FEATURES,
-      WATCHED_OUTPUTS,
-    );
-    expect(psiByFeature.map((f) => f.feature)).toEqual([
-      "release_speed",
-      "launch_angle",
-      "spray_angle",
+    expect(ece.map((c) => [c.modelName, c.value])).toEqual([
+      ["pitch_outcome_pre", null],
+      ["pitch_outcome_post", null],
     ]);
-  });
-
-  it("reports no drill tags for organic rows", () => {
-    const { drillTags } = toDriftRows(
-      [dm({}), dm({ modelName: "pitch_outcome_post" })],
-      WATCHED_FEATURES,
-      WATCHED_OUTPUTS,
-    );
     expect(drillTags).toEqual([]);
   });
 
-  it("surfaces the distinct drill tags so the page can label induced rows", () => {
-    // [175]/E-4: tagged evidence rows stay IN the overlay (visible during a
-    // drill is the drill working) but the page must be able to label them -
-    // a synthetic PSI spike must never present as organic drift.
-    const { psiByFeature, drillTags } = toDriftRows(
+  it("keeps the newest value per cell and carries sampleSize", () => {
+    const { psi } = toDriftCells(
       [
-        dm({ metricValue: 0.91, tag: "induced-drill-2026-07" }),
-        dm({ featureOrSegment: "launch_angle", tag: "" }),
+        dm({ metricValue: 0.03, computedAt: "2026-10-09T06:00:00Z" }),
         dm({
-          featureOrSegment: "launch_angle",
-          modelName: "pitch_outcome_post",
-          tag: "induced-drill-2026-07",
+          metricValue: 0.06,
+          sampleSize: 180,
+          computedAt: "2026-10-11T06:00:00Z",
         }),
+        dm({ metricValue: 0.04, computedAt: "2026-10-10T06:00:00Z" }),
       ],
-      WATCHED_FEATURES,
-      WATCHED_OUTPUTS,
+      WATCHED,
+      ECE,
     );
-    expect(drillTags).toEqual(["induced-drill-2026-07"]); // deduped
-    // The tagged value still overlays - labeled, not hidden.
-    expect(
-      psiByFeature.find((f) => f.feature === "release_speed")?.byModel[
-        "battedball_outcome"
-      ],
-    ).toBe(0.91);
+    expect(psi[0]?.cells[0]).toMatchObject({ value: 0.06, sampleSize: 180 });
   });
-});
 
-describe("toLatencyRows", () => {
-  it("maps each latency stat to a labelled percentile row", () => {
-    const rows = toLatencyRows([lat({ modelVersion: "v3" })]);
-    expect(rows[0]).toEqual({
-      label: "pitch_outcome_pre v3",
-      p50: 0.4,
-      p95: 0.9,
-      p99: 1.37,
-      p999: 2.1,
-    });
+  it("appends live keys and models the watch list does not carry, sorted, after the canonical rows", () => {
+    const { psi } = toDriftCells(
+      [
+        dm({ featureOrSegment: "stand" }),
+        dm({ featureOrSegment: "baseState" }),
+        dm({ modelName: "pitch_type_pre", featureOrSegment: "balls" }),
+      ],
+      WATCHED,
+      ECE,
+    );
+    expect(psi.map((g) => g.modelName)).toEqual([
+      "pitch_outcome_post",
+      "pitch_type_pre",
+    ]);
+    expect(psi[0]?.cells.map((c) => c.key)).toEqual([
+      "releaseSpeedMph",
+      "plateXIn",
+      "baseState",
+      "stand",
+    ]);
+  });
+
+  it("routes CALIBRATION_ERROR at segment 'all' to ece and leaves other metrics off the page", () => {
+    const { psi, ece } = toDriftCells(
+      [
+        dm({
+          metricType: "calibration_error",
+          featureOrSegment: "all",
+          metricValue: 0.013,
+          sampleSize: 6112,
+        }),
+        dm({
+          metricType: "calibration_error",
+          featureOrSegment: "count_0_0",
+          metricValue: 0.9,
+        }),
+        dm({
+          metricType: "psi_prediction",
+          featureOrSegment: "releaseSpeedMph",
+          metricValue: 0.9,
+        }),
+        dm({ metricType: "brier", featureOrSegment: "all", metricValue: 0.2 }),
+      ],
+      WATCHED,
+      ECE,
+    );
+    expect(ece.find((c) => c.modelName === "pitch_outcome_post")).toMatchObject(
+      {
+        value: 0.013,
+        sampleSize: 6112,
+      },
+    );
+    // The PSI_PREDICTION row must not land in the feature table (owner default: off the page).
+    expect(psi[0]?.cells[0]?.value).toBeNull();
+  });
+
+  it("carries the V027 drill tag on its cell and lists the distinct tags", () => {
+    const { psi, drillTags } = toDriftCells(
+      [
+        dm({
+          featureOrSegment: "plateXIn",
+          metricValue: 0.31,
+          tag: "e2-induced-drill",
+        }),
+        dm({ featureOrSegment: "releaseSpeedMph", tag: "" }),
+      ],
+      WATCHED,
+      ECE,
+    );
+    expect(psi[0]?.cells.map((c) => c.tag)).toEqual([null, "e2-induced-drill"]);
+    expect(drillTags).toEqual(["e2-induced-drill"]);
   });
 });
 
@@ -258,43 +307,131 @@ describe("toRetrainEntries", () => {
   function trig(over: Partial<RetrainingTrigger>): RetrainingTrigger {
     return {
       id: 1,
-      triggerId: "trig-1",
-      modelName: "pitch_outcome_pre",
-      triggerType: "DRIFT",
+      triggerId: "t-1",
+      modelName: "pitch_type_pre",
+      triggerType: "SCHEDULED",
       triggerMetadata: null,
-      status: "QUEUED",
-      enqueuedAt: "2026-05-30T15:08:00Z",
-      startedAt: null,
-      finishedAt: null,
-      producedVersionId: null,
+      status: "SUCCEEDED",
+      enqueuedAt: "2026-10-10T06:00:00Z",
+      startedAt: "2026-10-10T06:04:00Z",
+      finishedAt: "2026-10-11T06:52:00Z",
+      producedVersionId: 12,
       errorMessage: null,
       ...over,
     };
   }
 
-  it("maps backend trigger/status enums to the display labels", () => {
-    const [e] = toRetrainEntries([
-      trig({ triggerType: "SCHEDULED", status: "RUNNING" }),
-    ]);
-    expect(e?.trigger).toBe("SCHEDULE");
-    expect(e?.status).toBe("RUNNING");
+  it("is 'Awaiting promotion' only while the produced version is still a CANDIDATE", () => {
+    const [e] = toRetrainEntries(
+      [trig({})],
+      [mv({ id: 12, modelName: "pitch_type_pre", stage: "CANDIDATE" })],
+      NOW,
+    );
+    expect(e).toMatchObject({
+      status: "Awaiting promotion",
+      modelLabel: "pitch_type_pre (v2)",
+      trigger: "Scheduled",
+      ranAt: "2:52 AM, done",
+      queuedAt: "Yesterday, 2:00 AM",
+    });
   });
 
-  it("maps SUCCEEDED to AWAITING-PROMOTION and reads the metadata reason", () => {
-    const [e] = toRetrainEntries([
-      trig({
-        status: "SUCCEEDED",
-        triggerMetadata: '{"reason":"PSI release_spin 0.22"}',
-        producedVersionId: 42,
-      }),
-    ]);
-    expect(e?.status).toBe("AWAITING-PROMOTION");
-    expect(e?.reason).toBe("PSI release_spin 0.22");
-    expect(e?.modelLabel).toContain("v42 candidate");
+  it("says 'Promoted' once a person promoted the produced version (the old mapper said awaiting forever)", () => {
+    const [e] = toRetrainEntries(
+      [trig({})],
+      [mv({ id: 12, modelName: "pitch_type_pre", stage: "CHAMPION" })],
+      NOW,
+    );
+    expect(e?.status).toBe("Promoted");
   });
 
-  it("drops FAILED / CANCELLED rows the queue list doesn't render", () => {
-    expect(toRetrainEntries([trig({ status: "FAILED" })])).toHaveLength(0);
-    expect(toRetrainEntries([trig({ status: "CANCELLED" })])).toHaveLength(0);
+  it("says 'Done' for a finished job with no produced version, or one archived or unknown", () => {
+    const out = toRetrainEntries(
+      [
+        trig({ triggerId: "a", producedVersionId: null }),
+        trig({ triggerId: "b", producedVersionId: 12 }),
+        trig({ triggerId: "c", producedVersionId: 99 }),
+      ],
+      [mv({ id: 12, stage: "ARCHIVED" })],
+      NOW,
+    );
+    expect(out.map((e) => e.status)).toEqual(["Done", "Done", "Done"]);
+    expect(out[2]?.modelLabel).toBe("pitch_type_pre (id 99)");
+  });
+
+  it("maps queued/running, reads the metadata reason, and drops FAILED/CANCELLED", () => {
+    const out = toRetrainEntries(
+      [
+        trig({
+          triggerId: "q",
+          status: "QUEUED",
+          triggerType: "DRIFT",
+          startedAt: null,
+          finishedAt: null,
+          producedVersionId: null,
+          triggerMetadata: '{"reason":"PSI plateXIn over 0.25"}',
+        }),
+        trig({
+          triggerId: "r",
+          status: "RUNNING",
+          triggerType: "MANUAL",
+          finishedAt: null,
+          producedVersionId: null,
+        }),
+        trig({ triggerId: "f", status: "FAILED" }),
+        trig({ triggerId: "x", status: "CANCELLED" }),
+      ],
+      [],
+      NOW,
+    );
+    expect(out.map((e) => [e.id, e.status, e.trigger])).toEqual([
+      ["q", "Queued", "Drift"],
+      ["r", "Running", "Manual"],
+    ]);
+    expect(out[0]?.reason).toBe("PSI plateXIn over 0.25");
+    expect(out[0]?.ranAt).toBe("—");
+    expect(out[1]?.reason).toBeNull();
+  });
+});
+
+describe("opsEventToLogEntry", () => {
+  const ev = (over: Partial<OpsEvent>): OpsEvent => ({
+    id: 7,
+    occurredAt: "2026-10-11T07:00:00Z",
+    type: "DRIFT_OK",
+    detail: "Nightly sweep.",
+    ...over,
+  });
+
+  it("keeps the raw instant and prints a sentence-case label and 12-hour time", () => {
+    expect(opsEventToLogEntry(ev({}), NOW)).toEqual({
+      id: "oe-7",
+      when: "3:00 AM",
+      occurredAt: "2026-10-11T07:00:00Z",
+      type: "DRIFT_OK",
+      label: "Drift ok",
+      detail: "Nightly sweep.",
+    });
+  });
+
+  it("labels every backend event type, and keeps an unknown type's own words", () => {
+    const labels = [
+      "DEPLOY",
+      "REGISTER",
+      "PROMOTE",
+      "ALERT",
+      "RETRAIN_OK",
+      "RESTORE_DRILL",
+      "NEW_THING",
+    ].map((type) => opsEventToLogEntry(ev({ type }), NOW).label);
+    expect(labels).toEqual([
+      "Deploy",
+      "Register",
+      "Promote",
+      "Alert",
+      "Retrain ok",
+      "Restore drill",
+      "New thing",
+    ]);
   });
 });

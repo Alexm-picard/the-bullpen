@@ -368,9 +368,9 @@ test("live game page renders the first-class empty pitch-log state when the feed
   expect(errors, "uncaught errors on empty /games/:id").toEqual([]);
 });
 
-// --- /ops (live registry x routing x latency, with fixture fallback) -----------------------
+// --- /ops ("The systems register": live via /v1/ops/*, roster-only when unreachable) -------
 
-/** Mock every /v1/ops/* read; callers override `registry` to drive the live-vs-fallback path. */
+/** Mock every /v1/ops/* read; callers override `registry` to drive the live / empty path. */
 async function mockOps(page: Page, registry: unknown[] = []) {
   await page.route("**/v1/ops/registry/all", (route) => json(route, registry));
   await page.route("**/v1/ops/routing", (route) => json(route, []));
@@ -387,23 +387,54 @@ async function mockOps(page: Page, registry: unknown[] = []) {
   await page.route("**/v1/ops/registry", (route) => json(route, []));
 }
 
-test("ops dashboard renders with the fixture fallback when /v1/ops/* are empty", async ({
+test("ops: backend unreachable (503) shows the verified roster with no figures, never invented data", async ({
   page,
 }) => {
   const errors = trackPageErrors(page);
-  await mockOps(page, []); // empty registry => liveFleet null => fixture fleet
+  await page.route("**/v1/ops/**", (route) =>
+    json(route, { error: "unavailable" }, 503),
+  );
 
   await page.goto("/ops");
 
-  await expect(page.locator("h1").first()).toBeVisible();
-  // The fixture fleet renders (a known fixture model), proving graceful offline fallback.
+  const serving = page.getByRole("region", { name: "Serving" });
+  await expect(serving.getByText("Showcase data.")).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(serving.getByTestId("ops-roster")).toBeVisible();
+  await expect(serving.getByText(/pitch_outcome_pre\s+v2/)).toBeVisible();
+  const log = page.getByRole("region", { name: "Event log" });
   await expect(
-    page.getByText("lr_baseline", { exact: false }).first(),
+    log.getByText(
+      "The event log could not be read. No invented events are shown in its place.",
+    ),
   ).toBeVisible();
-  expect(errors, "uncaught errors on /ops (fallback)").toEqual([]);
+  await expect(log.getByRole("table")).toHaveCount(0);
+  expect(errors, "uncaught errors on /ops (offline)").toEqual([]);
 });
 
-test("ops dashboard renders LIVE fleet rows when the registry endpoint returns data", async ({
+test("ops: every source answered empty is shown as empty, never backfilled", async ({
+  page,
+}) => {
+  const errors = trackPageErrors(page);
+  await mockOps(page, []);
+
+  await page.goto("/ops");
+
+  const serving = page.getByRole("region", { name: "Serving" });
+  await expect(
+    serving.getByText("The registry returned no models."),
+  ).toBeVisible();
+  await expect(serving.getByTestId("ops-roster")).toHaveCount(0);
+  await expect(
+    page
+      .getByRole("region", { name: "Event log" })
+      .getByText("No events recorded yet."),
+  ).toBeVisible();
+  expect(errors, "uncaught errors on /ops (empty)").toEqual([]);
+});
+
+test("ops: LIVE fleet rows render with the registry's own stage word", async ({
   page,
 }) => {
   const errors = trackPageErrors(page);
@@ -429,9 +460,19 @@ test("ops dashboard renders LIVE fleet rows when the registry endpoint returns d
 
   await page.goto("/ops");
 
-  // "pitch_outcome_post v9" is NOT in any fixture, so seeing it proves live registry data flowed
-  // through toFleetRows into the Model Fleet table.
-  await expect(page.getByText(/pitch_outcome_post\s+v9/).first()).toBeVisible();
+  // "pitch_outcome_post v9" is in no claim or roster, so seeing it proves live registry data flowed
+  // through toFleetRows into the fleet table; the row carries the registry's word, not a badge.
+  const fleet = page
+    .getByRole("region", { name: "Serving" })
+    .getByTestId("ops-fleet");
+  const row = fleet
+    .getByRole("row")
+    .filter({ hasText: /pitch_outcome_post\s+v9/ });
+  await expect(row).toBeVisible();
+  await expect(row.getByText("Shadow", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Serving" }).getByText(/^Live\./),
+  ).toBeVisible();
   expect(errors, "uncaught errors on /ops (live)").toEqual([]);
 });
 

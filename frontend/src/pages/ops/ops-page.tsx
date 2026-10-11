@@ -1,36 +1,28 @@
 /**
- * /ops — Operator's Marginalia (Stage 3b, decision [133] identity).
+ * /ops - "The systems register" (SPEC-ops; decision [195] editorial identity).
  *
- * Single-column scouting-report back-page over the ML-systems wrapper. Visual
- * vocabulary lifts from /home's cover sheet — same shell, masthead, StatTable
- * chrome.
+ * One numbered section per subsystem around the four champion models. Each section says where its
+ * numbers come from (a source stamp whose state is a WORD: Live / Live, empty / Live, stale /
+ * Showcase data / Static) and which threshold it is held to (the provenance margin, a disclosure
+ * on phone). The contents list carries one rule-generated status line per section
+ * (lib/ops-status.ts).
  *
- * Data sourcing (C3, Threshold A):
- *   - Model Fleet ........ LIVE — registry × routing × latency
- *     (GET /v1/ops/registry/all + /v1/ops/routing + /v1/ops/latency?days=1),
- *     mapped by ops-mappers.toFleetRows.
- *   - Latency Detail ..... LIVE — GET /v1/ops/latency?days=7 → toLatencyRows.
- *   - Retrain Queue ...... LIVE — GET /v1/ops/retrain → toRetrainEntries
- *     (built-in empty state when the queue is empty).
- *   - Ops Log ............ LIVE — GET /v1/ops/events (B3).
- *   - Drift Snapshot ..... watched-surface skeleton with honest em-dashes —
- *     PSI / ECE populate once the nightly drift jobs run in-season (Threshold
- *     B). We never render the old illustrative drift numbers as if real (C4).
- *   - Infra Ribbon ....... showcase chrome (service status has no endpoint yet).
+ * Data (existing hooks only, TanStack Query, polling, no useEffect for server state):
+ *   Serving ....... GET /v1/ops/registry/all x /routing x /latency?days=1 (fleet), ?days=7 (latency)
+ *   Drift ......... GET /v1/ops/drift?model= per non-archived model -> toDriftCells
+ *   Retraining .... GET /v1/ops/retrain (+ the registry, for the promotion-stage check)
+ *   Event log ..... GET /v1/ops/events?page=0&size=20
+ *   Infrastructure  static "watched by" claims (data/ops-claims.ts); no status endpoint exists.
  *
- * Fixtures (`ops-fixtures.ts`) are the fallback ONLY when the backend is
- * unreachable / has no registered models, and that case is marked in the table
- * captions so a showcase render never reads as live (C4).
+ * Honesty ([202]): when a source cannot be read, nothing invented takes its place. The fleet
+ * falls back to the verified roster with every figure em-dashed; latency, queue and log say they
+ * could not be read. A resolved EMPTY response is shown as empty, never backfilled.
  *
- * Constraints honored:
- *   - One <Title order={1}> only (the masthead h1).
- *   - No hex codes — every color via tokens or CSS-var utilities.
+ * No hex: every colour is an --ed-* token through the .ed-* / .op-* classes in editorial.css.
  */
-
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
-  opsEventToLogEntry,
   useAllRegistryRows,
   useDriftForModels,
   useLatency,
@@ -39,81 +31,107 @@ import {
   useRouting,
 } from "../../api/ops";
 import {
-  toDriftRows,
+  opsEventToLogEntry,
+  toDriftCells,
   toFleetRows,
   toLatencyRows,
   toRetrainEntries,
 } from "../../api/ops-mappers";
-import { LowerThird } from "../../components/broadcast/lower-third";
-import { DriftSnapshotGrid } from "../../components/ops/drift-snapshot-grid";
-import { InfraRibbon } from "../../components/ops/infra-ribbon";
-import { LatencyDetailTable } from "../../components/ops/latency-detail-table";
-import { ModelFleetTable } from "../../components/ops/model-fleet-table";
-import { OpsHeader } from "../../components/ops/ops-header";
-import { OpsLogTable } from "../../components/ops/ops-log-table";
-import { RetrainQueueList } from "../../components/ops/retrain-queue-list";
+import { BUILD_DATE, BUILD_SHA } from "../../build-info";
 import {
-  ECE_BY_OUTPUT,
-  INFRA_SERVICES,
-  LATENCY_BY_MODEL,
-  MODEL_FLEET,
-  OPS_LOG,
-  OPS_META,
-  PSI_BY_FEATURE,
-  RETRAIN_QUEUE,
-} from "../../data/ops-fixtures";
-import type { DriftFeatureRow, DriftOutputRow } from "../../data/ops-fixtures";
+  DriftKey,
+  DrillNotice,
+  EceTable,
+  PsiTable,
+} from "../../components/ops/drift-tables";
+import { readTime } from "../../components/ops/ops-format";
 import {
-  BroadcastFooter,
-  PageChrome,
-} from "../../components/shared/page-chrome";
-import { colors, typography } from "../../design/broadcast";
+  RegisterSection,
+  SourceStamp,
+  type StampState,
+} from "../../components/ops/register-section";
+import {
+  EventLogTable,
+  RetrainTable,
+  WatchedByTable,
+} from "../../components/ops/register-tables";
+import {
+  FleetTable,
+  LatencyTable,
+  RosterTable,
+} from "../../components/ops/serving-tables";
+import {
+  DRIFT_SCHEDULE,
+  DRIFT_THRESHOLDS,
+  LATENCY_SLO,
+  WATCHED_ECE,
+  WATCHED_PSI,
+} from "../../data/ops-claims";
+import {
+  driftStatus,
+  logStatus,
+  retrainStatus,
+  sectionsAnsweredLine,
+  servingStatus,
+  sourceState,
+  type SourceState,
+} from "../../lib/ops-status";
 
-import "./ops.css";
+/** Module-level: the edition "arrives" once per session, as on the other [195] pages. */
+let entranceShown = false;
 
-const ET_TIME = new Intl.DateTimeFormat("en-US", {
-  hour: "numeric",
-  minute: "2-digit",
-  hour12: false,
-  timeZone: "America/New_York",
-});
 const ET_DATE = new Intl.DateTimeFormat("en-US", {
-  weekday: "short",
-  month: "short",
+  weekday: "long",
+  month: "long",
   day: "numeric",
   year: "numeric",
   timeZone: "America/New_York",
 });
 
-// Watched-surface skeletons: keep WHICH features/outputs are monitored (config,
-// not data) but null the values, so the grid renders the drift surface with
-// honest em-dashes until the first in-season sweep populates it.
-const PSI_SKELETON: DriftFeatureRow[] = PSI_BY_FEATURE.map((f) => ({
-  feature: f.feature,
-  byModel: {},
-}));
-const ECE_SKELETON: DriftOutputRow[] = ECE_BY_OUTPUT.map((o) => ({
-  output: o.output,
-  byModel: {},
-}));
+const T = DRIFT_THRESHOLDS;
 
-const noteStyle: React.CSSProperties = {
-  margin: "0 0 8px",
-  fontFamily: typography.fonts.body,
-  fontSize: 13,
-  color: colors.textMuted,
-};
+const Code = ({ children }: { children: string }) => <code>{children}</code>;
+
+/** A section body that could not be read, or has nothing yet: one honest sentence. */
+const Note = ({ children }: { children: string }) => (
+  <p className="ed-note">{children}</p>
+);
+
+const Shell = ({ rows }: { rows: number }) => (
+  <div
+    className="ed-shell"
+    aria-hidden="true"
+    style={{ height: `${rows * 2.125}rem` }}
+  />
+);
+
+/** Contents state word: what answered, never a verdict. */
+function stateWord(s: StampState): string {
+  switch (s) {
+    case "loading":
+      return "Loading";
+    case "error":
+      return "Showcase";
+    case "static":
+      return "Static";
+    default:
+      return "Live";
+  }
+}
 
 export default function OpsPage() {
+  const [animate] = useState(() => !entranceShown);
+  useEffect(() => {
+    entranceShown = true;
+  }, []);
+
   const registry = useAllRegistryRows();
   const routing = useRouting();
-  const latency24h = useLatency(1); // fleet p99 + 24h prediction counts
-  const latency7d = useLatency(7); // latency-detail percentile table
+  const latency24h = useLatency(1);
+  const latency7d = useLatency(7);
   const retrain = useRetrainQueue();
-  const opsEvents = useOpsEvents();
+  const events = useOpsEvents();
 
-  // Drift: one query per non-archived model name (the endpoint requires ?model=).
-  // Memoised so the queryKey set only changes when the registry roster changes.
   const driftModelNames = useMemo(
     () => [
       ...new Set(
@@ -126,194 +144,351 @@ export default function OpsPage() {
   );
   const drift = useDriftForModels(driftModelNames);
 
-  // Fleet: live registry × routing × latency. Fall back to the showcase fixture
-  // only when the registry call returned nothing (offline / empty registry).
-  const liveFleet =
-    registry.data && registry.data.length > 0
-      ? toFleetRows(registry.data, routing.data ?? [], latency24h.data ?? [])
-      : null;
-  const fleet = liveFleet ?? MODEL_FLEET;
-  const fleetIsLive = liveFleet !== null;
-  // D3: three-state caption - a cold-load in-flight registry query reads "loading", never
-  // "backend unreachable" (the table keeps its rows to avoid hero-table layout jank; the caption
-  // carries the honesty, matching the drift section's skeleton-in-place convention).
-  const fleetSuffix = fleetIsLive
-    ? ""
-    : registry.isLoading
-      ? " · loading"
-      : " · showcase data (backend unreachable)";
+  const now = new Date();
 
-  const liveLatency =
-    latency7d.data && latency7d.data.length > 0
-      ? toLatencyRows(latency7d.data)
-      : null;
-  const latencyRows = liveLatency ?? LATENCY_BY_MODEL;
-  const latencyIsLive = liveLatency !== null;
-
-  // Retrain: render real data whenever the query resolved (an empty array is a
-  // legitimate "queue empty" state via the list's built-in empty path); only
-  // fall back to the fixture when the call never resolved (offline).
-  const retrainIsLive = retrain.data !== undefined;
-  const retrainEntries = retrainIsLive
-    ? toRetrainEntries(retrain.data ?? [])
-    : RETRAIN_QUEUE;
-
-  // Ops log: live whenever the query resolved - an empty list is a legitimate
-  // "no events yet" state (the table has its own empty path), never the fixture.
-  const opsLogIsLive = opsEvents.data !== undefined;
-  const opsLog = opsLogIsLive
-    ? opsEvents.data.rows.map(opsEventToLogEntry)
-    : OPS_LOG;
-
-  // Drift snapshot: live values overlaid on the watched-surface skeleton.
-  // While drift_metrics is empty (no traffic yet) this renders the same
-  // honest em-dash grid the skeleton did. drillTags labels [175] induced-drill
-  // evidence rows so a synthetic PSI spike is never presented as organic (E-4).
-  const { psiByFeature, eceByOutput, drillTags } = toDriftRows(
-    drift.metrics,
-    PSI_SKELETON,
-    ECE_SKELETON,
+  // ── 1. Serving ──────────────────────────────────────────────────────────
+  const fleet = registry.data
+    ? toFleetRows(registry.data, routing.data ?? [], latency24h.data ?? [])
+    : undefined;
+  const servingState = sourceState(
+    { data: fleet, isError: registry.isError },
+    (rows) => rows.length === 0,
+  );
+  const latencyRows = latency7d.data
+    ? toLatencyRows(latency7d.data)
+    : undefined;
+  const latencyState = sourceState(
+    { data: latencyRows, isError: latency7d.isError },
+    (rows) => rows.length === 0,
   );
 
-  const now = new Date();
-  const issuedAt = `${ET_TIME.format(now)} ET`;
-  const issueDate = ET_DATE.format(now).replace(",", " ·");
-  const alertCount = opsLog.filter((e) => e.type === "ALERT").length;
-  const awaitingPromotionCount = fleet.filter(
-    (m) => m.state === "AWAITING-PROMOTION",
-  ).length;
+  // ── 2. Drift ────────────────────────────────────────────────────────────
+  const cells = toDriftCells(drift.metrics, WATCHED_PSI, WATCHED_ECE);
+  let driftState: SourceState;
+  if (servingState === "error" || drift.isError) driftState = "error";
+  else if (servingState === "loading" || drift.isLoading)
+    driftState = "loading";
+  else if (drift.isStale) driftState = "stale";
+  else driftState = drift.metrics.length === 0 ? "empty" : "live";
+  const driftOffline = driftState === "error";
 
-  const showcaseSuffix = (live: boolean) =>
-    live ? "" : " · showcase data (backend unreachable)";
+  // ── 3. Retraining ───────────────────────────────────────────────────────
+  const retrainEntries = retrain.data
+    ? toRetrainEntries(retrain.data, registry.data ?? [], now)
+    : undefined;
+  const retrainState = sourceState(
+    { data: retrainEntries, isError: retrain.isError },
+    (rows) => rows.length === 0,
+  );
+
+  // ── 4. Event log ────────────────────────────────────────────────────────
+  const logPage = events.data
+    ? {
+        rows: events.data.rows.map((e) => opsEventToLogEntry(e, now)),
+        hasNext: events.data.hasNext,
+      }
+    : undefined;
+  const logState = sourceState(
+    { data: logPage, isError: events.isError },
+    (p) => p.rows.length === 0,
+  );
+
+  const contents: {
+    id: string;
+    name: string;
+    state: StampState;
+    status: string;
+  }[] = [
+    {
+      id: "ops-serving",
+      name: "Serving",
+      state: servingState,
+      status: servingStatus(servingState, fleet, latencyRows),
+    },
+    {
+      id: "ops-drift",
+      name: "Drift",
+      state: driftState,
+      status: driftStatus(driftState, cells.psi, cells.ece, T),
+    },
+    {
+      id: "ops-retraining",
+      name: "Retraining",
+      state: retrainState,
+      status: retrainStatus(retrainState, retrainEntries),
+    },
+    {
+      id: "ops-log",
+      name: "Event log",
+      state: logState,
+      status: logStatus(logState, logPage, now),
+    },
+    {
+      id: "ops-infrastructure",
+      name: "Infrastructure",
+      state: "static",
+      status: "No status endpoint; where each service is watched",
+    },
+  ];
+
+  const lastRead = Math.max(
+    registry.dataUpdatedAt,
+    latency7d.dataUpdatedAt,
+    retrain.dataUpdatedAt,
+    events.dataUpdatedAt,
+    drift.dataUpdatedAt,
+  );
+
+  const enter = (base: string, i: number) =>
+    animate
+      ? {
+          className: `${base} ed-enter`,
+          style: { "--ed-stagger": i } as React.CSSProperties,
+        }
+      : { className: base };
 
   return (
-    <PageChrome>
-      <OpsHeader
-        issueDate={issueDate}
-        modelCount={fleet.length}
-        alertCount={alertCount}
-        awaitingPromotionCount={awaitingPromotionCount}
-        issuedAt={issuedAt}
-        window={OPS_META.window}
-      />
-
-      <InfraRibbon services={INFRA_SERVICES} />
-      {/* D4 disclosure: the ribbon's statuses are invented showcase chrome - there is no service
-          status endpoint yet, and an operator page must never imply one. */}
-      <p
-        role="note"
-        style={{
-          margin: "-16px 0 0",
-          fontFamily: typography.fonts.mono,
-          fontSize: 11,
-          fontStyle: "italic",
-          letterSpacing: "0.02em",
-          color: colors.textMuted,
-        }}
-      >
-        Service status · showcase chrome (no status endpoint yet)
-      </p>
-
-      <section aria-labelledby="ops-fleet-section-label">
-        <div style={{ marginBottom: 12 }}>
-          <LowerThird
-            id="ops-fleet-section-label"
-            meta={`${fleet.length} REGISTERED`}
-          >
-            Model Fleet
-          </LowerThird>
-        </div>
-        <ModelFleetTable
-          rows={fleet}
-          caption={`Registry · state, traffic, 24h drift + p99 latency${fleetSuffix}`}
-        />
-      </section>
-
-      <section aria-labelledby="ops-drift-section-label">
-        <div style={{ marginBottom: 12 }}>
-          <LowerThird
-            id="ops-drift-section-label"
-            meta="PSI | ECE · NIGHTLY WINDOWS"
-          >
-            Drift Snapshot
-          </LowerThird>
-        </div>
-        <p style={noteStyle}>
-          Monitored surface shown; cells fill from the nightly drift jobs
-          (champions and shadows both watched) as predictions accumulate.
+    <div className="ed-page">
+      <div className="ed-col">
+        <p className="ed-dateline">
+          <span>{ET_DATE.format(now)}</span>
+          <span className="ed-dateline__issued">
+            {lastRead > 0 ? `Ops desk, read ${readTime(lastRead)}` : "Ops desk"}
+          </span>
+          <span>
+            {sectionsAnsweredLine([
+              servingState,
+              driftState,
+              retrainState,
+              logState,
+            ])}
+          </span>
         </p>
-        {drillTags.length > 0 && (
-          // role="status": announced to screen readers when a drill tag appears
-          // mid-session (the 30s poll can flip this on). goldInk + 600 weight
-          // out-ranks the neutral note above - during a drill this is the most
-          // important sentence on the panel (frontend-reviewer, E-4).
-          <p
-            role="status"
-            style={{ ...noteStyle, color: colors.goldInk, fontWeight: 600 }}
-          >
-            Includes induced-drill evidence rows (deliberate synthetic drift,
-            decision [175]; tag: {drillTags.join(", ")}) - not organic
-            production drift.
-          </p>
-        )}
-        <DriftSnapshotGrid
-          models={fleet}
-          psiByFeature={psiByFeature}
-          eceByOutput={eceByOutput}
-        />
-      </section>
 
-      <section aria-labelledby="ops-latency-section-label">
-        <div style={{ marginBottom: 12 }}>
-          <LowerThird id="ops-latency-section-label" meta="BY PERCENTILE">
-            Latency Detail
-          </LowerThird>
+        <div className="op-head">
+          <div>
+            <p {...enter("ed-slug", 0)}>Ops</p>
+            <h1 {...enter("ed-h1", 1)}>The systems register</h1>
+            <p {...enter("ed-dek", 2)}>
+              One section for each system around the four champion models. Each
+              says where its numbers come from and which threshold it is held
+              to.
+            </p>
+          </div>
+          <nav aria-labelledby="ops-toc-h" {...enter("", 3)}>
+            <p className="ed-label" id="ops-toc-h">
+              In this register
+            </p>
+            <ol className="op-toc">
+              {contents.map((c, i) => (
+                <li key={c.id}>
+                  <span className="op-toc__n" aria-hidden="true">
+                    {i + 1}
+                  </span>
+                  <span>
+                    <a className="ed-link op-toc__name" href={`#${c.id}`}>
+                      {c.name}
+                    </a>
+                    <span className="op-toc__status">{c.status}</span>
+                  </span>
+                  <span className="op-toc__state" data-state={c.state}>
+                    {stateWord(c.state)}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </nav>
         </div>
-        <LatencyDetailTable
-          rows={latencyRows}
-          caption={`Latency by percentile · onnxruntime-java in-process${showcaseSuffix(latencyIsLive)}`}
-        />
-      </section>
 
-      <RetrainQueueList entries={retrainEntries} />
-      {/* D4 disclosure: the fixture fallback (query never resolved) must say so - an empty
-          RESOLVED queue is the honest live state and needs no caption. */}
-      {!retrainIsLive && (
-        <p
-          role="note"
-          style={{
-            margin: "-12px 0 0",
-            fontFamily: typography.fonts.mono,
-            fontSize: 11,
-            fontStyle: "italic",
-            letterSpacing: "0.02em",
-            color: colors.textMuted,
-          }}
+        <RegisterSection
+          n={1}
+          id="ops-serving"
+          title="Serving"
+          stamp={
+            <SourceStamp
+              state={servingState}
+              source="registry x routing x latency"
+              updatedAt={registry.dataUpdatedAt}
+            />
+          }
+          provenance={[
+            {
+              term: "Reads",
+              detail: (
+                <>
+                  <Code>/v1/ops/registry/all</Code>, <Code>/routing</Code>,{" "}
+                  <Code>/latency?days=1</Code> and <Code>?days=7</Code>
+                </>
+              ),
+            },
+            {
+              term: "Held to",
+              detail: `p99 latency alert over ${LATENCY_SLO.p99Ms} ms (${LATENCY_SLO.alert}); a champion changes only by a human promotion with a passing evidence row.`,
+            },
+          ]}
         >
-          Retrain queue ·{" "}
-          {retrain.isLoading
-            ? "loading"
-            : "showcase data (backend unreachable)"}
-        </p>
-      )}
+          <div className="op-tables">
+            {servingState === "loading" ? (
+              <Shell rows={7} />
+            ) : servingState === "error" ? (
+              <RosterTable />
+            ) : servingState === "empty" || !fleet ? (
+              <Note>The registry returned no models.</Note>
+            ) : (
+              <FleetTable rows={fleet} />
+            )}
+            {latencyState === "loading" ? (
+              <Shell rows={5} />
+            ) : latencyState === "error" ? (
+              <Note>
+                Latency could not be read. Nothing is shown in its place.
+              </Note>
+            ) : latencyState === "empty" || !latencyRows ? (
+              <Note>No predictions logged in the last 7 days.</Note>
+            ) : (
+              <LatencyTable rows={latencyRows} />
+            )}
+          </div>
+        </RegisterSection>
 
-      <section aria-labelledby="ops-log-section-label">
-        <div style={{ marginBottom: 12 }}>
-          <LowerThird
-            id="ops-log-section-label"
-            meta={
-              opsLogIsLive
-                ? "RECENT EVENTS"
-                : "SHOWCASE DATA (BACKEND UNREACHABLE)"
-            }
-          >
-            Ops Log
-          </LowerThird>
-        </div>
-        <OpsLogTable entries={opsLog} />
-      </section>
+        <RegisterSection
+          n={2}
+          id="ops-drift"
+          title="Drift"
+          stamp={
+            <SourceStamp
+              state={driftState}
+              source="drift_metrics"
+              updatedAt={drift.dataUpdatedAt}
+            />
+          }
+          provenance={[
+            {
+              term: "Reads",
+              detail: (
+                <>
+                  <Code>/v1/ops/drift?model=</Code>, one per non-archived model,
+                  every 30 s
+                </>
+              ),
+            },
+            { term: "Written", detail: DRIFT_SCHEDULE },
+            {
+              term: "Held to",
+              detail: `PSI notice over ${T.psiNotice.toFixed(2)} for ${T.psiNoticeDays} days at n of ${T.psiMinSample} or more; ECE page over ${T.ecePage.toFixed(2)} for ${T.ecePageDays} days.`,
+            },
+          ]}
+        >
+          <div className="op-tables">
+            <div>
+              <DriftKey />
+              {driftOffline ? null : <DrillNotice psi={cells.psi} />}
+            </div>
+            <PsiTable groups={cells.psi} offline={driftOffline} />
+            <EceTable cells={cells.ece} offline={driftOffline} />
+          </div>
+        </RegisterSection>
 
-      <BroadcastFooter>OPS</BroadcastFooter>
-    </PageChrome>
+        <RegisterSection
+          n={3}
+          id="ops-retraining"
+          title="Retraining"
+          stamp={
+            <SourceStamp
+              state={retrainState}
+              source="retraining queue"
+              updatedAt={retrain.dataUpdatedAt}
+            />
+          }
+          provenance={[
+            {
+              term: "Reads",
+              detail: (
+                <>
+                  <Code>/v1/ops/retrain</Code>, every 30 s
+                </>
+              ),
+            },
+            {
+              term: "Held to",
+              detail:
+                "Triggers are automatic (drift, schedule); promotion is never automatic.",
+            },
+          ]}
+        >
+          {retrainState === "loading" ? (
+            <Shell rows={2} />
+          ) : retrainState === "error" ? (
+            <Note>
+              The retrain queue could not be read. Nothing is shown in its
+              place.
+            </Note>
+          ) : retrainState === "empty" || !retrainEntries ? (
+            <Note>
+              The queue is empty. Nothing is training or waiting for promotion.
+            </Note>
+          ) : (
+            <RetrainTable entries={retrainEntries} />
+          )}
+        </RegisterSection>
+
+        <RegisterSection
+          n={4}
+          id="ops-log"
+          title="Event log"
+          stamp={
+            <SourceStamp
+              state={logState}
+              source="ops_events"
+              updatedAt={events.dataUpdatedAt}
+            />
+          }
+          provenance={[
+            {
+              term: "Reads",
+              detail: (
+                <>
+                  <Code>/v1/ops/events?page=0&size=20</Code>, every 30 s
+                </>
+              ),
+            },
+            {
+              term: "Written by",
+              detail:
+                "deploy.sh, the registry, the drift and retrain jobs, the restore drill.",
+            },
+          ]}
+        >
+          {logState === "loading" ? (
+            <Shell rows={6} />
+          ) : logState === "error" ? (
+            <Note>
+              The event log could not be read. No invented events are shown in
+              its place.
+            </Note>
+          ) : logState === "empty" || !logPage ? (
+            <Note>No events recorded yet.</Note>
+          ) : (
+            <EventLogTable rows={logPage.rows} />
+          )}
+        </RegisterSection>
+
+        <RegisterSection
+          n={5}
+          id="ops-infrastructure"
+          title="Infrastructure"
+          stamp={<SourceStamp state="static" source="no status endpoint yet" />}
+        >
+          <WatchedByTable />
+        </RegisterSection>
+
+        <footer className="ed-footer">
+          <span>The Bullpen. Self-hosted, honestly scored.</span>
+          <span>
+            build {BUILD_SHA}, {BUILD_DATE}
+          </span>
+        </footer>
+      </div>
+    </div>
   );
 }
