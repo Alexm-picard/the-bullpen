@@ -147,3 +147,6 @@ nohup.out
 # Schemathesis run cache (contract fuzzing)
 .schemathesis/
 docs/design/screenshots/
+
+# Per-machine Claude Code settings (e.g. permission grants on the box); never shared
+.claude/settings.local.json
