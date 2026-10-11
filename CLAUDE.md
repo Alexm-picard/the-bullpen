@@ -34,16 +34,17 @@ session and most "obvious" alternatives have already been considered and rejecte
   `/games/:id` (including the NextPitchPanel serving the PRE champion and the pitch-type panel
   serving the calibrated pitch-type prior), the player lookup + `/players/:id` profile, the
   `/parks` HR-probability-by-park heatmap, the home page's tonight slate, `/accuracy` (scorecard +
-  Live Retrospective), and the Ops dashboard's Model Fleet / latency / retrain queue / ops log
-  (live via `/v1/ops/*`, with a fixture fallback when those return empty or the backend is
-  offline - so Ops is live-wired, not "fixtures"). The Ops drift snapshot is ALSO live-wired
-  (`/v1/ops/drift` + a skeleton-overlay: the watched-surface rows render em-dashes until live
-  `drift_metrics` values land; E-4 keyed the watchlist by the real request-DTO feature names and
-  labels [175] induced-drill rows via the V027 tag). Still pure fixtures from
-  `frontend/src/data/*-fixtures.ts`: the `/parks` factor table, the `/about` colophon, the
-  `/players` landing's Featured Reports + Model Standouts, the `/players/:id` slug showcase
-  matchup, and the Ops infra ribbon. `/models/guide` ([191]) is a static explainer page, not a
-  data surface.
+  Live Retrospective), and the Ops systems register's Serving / Drift / Retraining / Event log
+  sections (live via `/v1/ops/*`; when those cannot be read, Serving falls back to a
+  SHELF-marked registry-verified roster with every figure em-dashed and the other sections say
+  they could not be read; a resolved empty response is shown as empty, never backfilled -
+  [206]). The drift section is live-wired over the watched surface with "awaiting first value"
+  until `drift_metrics` values land, and [175] drill-tagged rows are labelled as deliberate
+  synthetic drift. Still pure fixtures from `frontend/src/data/*-fixtures.ts`: the `/parks`
+  factor table, the `/about` colophon, the `/players` landing's Featured Reports + Model
+  Standouts, and the `/players/:id` slug showcase matchup. The Ops Infrastructure section is
+  static SHELF-marked claims (where each service is watched), not a status display ([207]).
+  `/models/guide` ([191]) is a static explainer page, not a data surface.
 - **The live pitch path is user-visible end-to-end; all three pitch-side heads are CHAMPION.**
   The poller chain (MLB Stats API client + parser + per-game poll + `pitches_live` writer + the
   `prediction_log` truth-join) is enabled in prod behind `BULLPEN_INGEST_LIVE_ENABLED` (flipped
