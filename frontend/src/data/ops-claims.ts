@@ -106,12 +106,11 @@ export type RosterEntry = {
 
 /**
  * The offline roster: shown ONLY when GET /v1/ops/registry/all cannot be read, with every figure
- * em-dashed. Limited to what was verified against the live registry (the 2026-08-17 state
- * reconcile in docs/phase-status.json): the four champions and the two candidates. The LR
- * baselines' stages and the training dates were not part of that verification, so the roster
- * does not assert them.
+ * em-dashed. Copied from the live registry (GET https://api.thebullpen.net/v1/ops/registry/all) on
+ * 2026-10-11: every non-archived version with its registry stage. Re-verify on every /promote or
+ * registration; the SHELF marker below expires so a stale roster surfaces in CI.
  */
-// SHELF: 2026-12 docs/phase-status.json 2026-08-17 STATE RECONCILE (registry-verified: PRE v2, POST v1, pitch_type_pre v1, battedball_outcome v2 champions; battedball_outcome v3 + pitch_type_lr_baseline v1 candidates); re-verify on every /promote or registration
+// SHELF: 2026-12 GET https://api.thebullpen.net/v1/ops/registry/all (non-archived modelName, version, stage) verified 2026-10-11; re-verify on every /promote or registration
 export const ROSTER: readonly RosterEntry[] = [
   { modelName: "pitch_outcome_pre", version: "v2", stage: "Champion" },
   { modelName: "pitch_outcome_post", version: "v1", stage: "Champion" },
@@ -119,7 +118,11 @@ export const ROSTER: readonly RosterEntry[] = [
   { modelName: "battedball_outcome", version: "v2", stage: "Champion" },
   { modelName: "battedball_outcome", version: "v3", stage: "Candidate" },
   { modelName: "pitch_type_lr_baseline", version: "v1", stage: "Candidate" },
+  { modelName: "pitch_outcome_pre", version: "v1", stage: "Shadow" },
+  { modelName: "pitch_outcome_lr_baseline", version: "v1", stage: "Shadow" },
+  { modelName: "lr_baseline_batted_ball", version: "v1", stage: "Shadow" },
+  { modelName: "battedball_lgbm_per_park", version: "v1", stage: "Shadow" },
 ];
 
 /** As-of date for the roster caption (the verification date above). */
-export const ROSTER_VERIFIED = "Aug 17, 2026";
+export const ROSTER_VERIFIED = "Oct 11, 2026";
