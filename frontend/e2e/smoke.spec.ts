@@ -184,7 +184,10 @@ test("browser back/forward re-renders routes cleanly (BrowserRouter history)", a
   await expect(page).toHaveURL(/\/parks$/);
   await header.getByRole("link", { name: "About", exact: true }).click();
   await expect(page).toHaveURL(/\/about$/);
-  await expect(page.locator("h1").first()).toHaveText(/about/i);
+  // The /about H1 (SPEC-guide-about) names what the colophon is about; "About" is its slug.
+  await expect(page.locator("h1").first()).toHaveText(
+    "How this was built, and what was left out",
+  );
 
   await page.goBack();
   await expect(page).toHaveURL(/\/parks$/);
@@ -207,4 +210,19 @@ test("browser back/forward re-renders routes cleanly (BrowserRouter history)", a
   );
 
   expect(errors, "uncaught errors traversing history").toEqual([]);
+});
+
+test("a Guide anchor lands with its heading clear of the header (SPEC-guide-about §7)", async ({
+  page,
+}) => {
+  await page.goto("/models/guide#post-pitch");
+  const heading = page.locator("#post-pitch-h");
+  await expect(heading).toBeVisible();
+  await expect
+    .poll(async () => (await heading.boundingBox())?.y ?? -1)
+    .toBeGreaterThanOrEqual(56);
+  await expect(page.locator("#post-pitch")).toHaveAttribute(
+    "data-arrived",
+    "true",
+  );
 });

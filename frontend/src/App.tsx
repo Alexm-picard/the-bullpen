@@ -44,7 +44,7 @@ const GamePage = lazy(() =>
   import("./pages/game-page").then((m) => ({ default: m.GamePage })),
 );
 
-// [191] Model Guide - the reading surface (paper palette).
+// [191] Model Guide - the methodology page; under [195] it follows the Day/Night toggle.
 const ModelGuidePage = lazy(() => import("./pages/model-guide-page"));
 
 // Unlisted in the public nav - operator routing override (B7), reached by URL.

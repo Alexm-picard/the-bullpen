@@ -48,7 +48,7 @@ const COPY: Record<string, Copy> = {
   pitch_outcome_post: {
     title: "The post-pitch retrospective",
     body: "It reads the pitch after it leaves the hand: release speed, plate location, spin. These are its logged calls, graded against what the umpire and the batter did. A read of the pitch just thrown, never a forecast of the next one.",
-    guide: "how-scored",
+    guide: "post-pitch",
   },
   pitch_outcome_pre: {
     title: "The next pitch, called before it is thrown",
@@ -224,6 +224,7 @@ export function ReportCard({
       <Link
         className="ed-link"
         to={`/models/guide#${copy?.guide ?? "how-scored"}`}
+        state={{ from: "Accuracy" }}
       >
         What is this?
       </Link>
