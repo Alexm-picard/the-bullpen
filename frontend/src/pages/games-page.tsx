@@ -1,92 +1,62 @@
 /**
- * /games - the day's slate as a card board on the BROADCAST identity (decision
- * [160]). Merges the live game rows (GET /v1/games/today: scores + status) with
- * the day's matchups (GET /v1/matchups/today: lean + battle score + featured
- * people + first pitch) by gameId, via the pure {@link mergeSlate}.
+ * /games - the day's scoreboard ([195] editorial identity; approved SPEC-games-404, 2026-10-11).
  *
- * Status-bucket filter tabs (All / Live / Scheduled / Completed). When BOTH
- * sources are unreachable / empty the page degrades to the showcase slate
- * (SHOWCASE_MATCHUPS + SHOWCASE_GAMES merged through the same path) with an
- * honest "showcase data" caption - never the old raw "Failed to fetch".
+ * Reading order: dateline -> head (slug, an H1 composed from the counts, dek) beside "Reading the
+ * board" -> status facets -> the showcase note when it applies -> three status columns of line
+ * scores (in progress / still to come / final).
  *
- * This page imports ONLY the broadcast token namespace ([160] migration rule).
+ * Data posture (all TanStack Query, polling only, no new endpoints): the day's matchups
+ * (`/v1/matchups/today`) and live game rows (`/v1/games/today`) merge through the shared
+ * `mergeSlate`, then `orderForBoard` puts "Still to come" in first-pitch order for THIS page only
+ * (home keeps mergeSlate's order). With no rows, the page degrades to the committed showcase slate,
+ * LABELLED with the reason home uses: backend unreachable (a query errored) or nothing posted yet
+ * (both answered empty). Showcase rows are plain text, never links (SPEC §6.3).
  */
 import { VisuallyHidden } from "@mantine/core";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import { useTodaysGames } from "../api/games";
 import { useTodaysMatchups } from "../api/matchups";
+import { mergeSlate, type SlateStatus } from "../api/slate-view";
+import { BUILD_DATE, BUILD_SHA } from "../build-info";
+import { Scoreboard, ScoreboardShell } from "../components/games/scoreboard";
 import {
-  mergeSlate,
-  slateCounts,
-  type SlateCard,
-  type SlateStatus,
-} from "../api/slate-view";
-import { LowerThird } from "../components/broadcast/lower-third";
-import { SlateBoard } from "../components/games/slate-board";
+  boardCounts,
+  boardHeadline,
+  firstPitchWindow,
+  orderForBoard,
+} from "../components/games/slate-lines";
+import { RATING_CLAIM } from "../data/games-claims";
 import { SHOWCASE_MATCHUPS } from "../data/matchups-showcase";
 import { SHOWCASE_GAMES } from "../data/slate-fixtures";
-import { BroadcastFooter, PageChrome } from "../components/shared/page-chrome";
-import { SegmentedToggle } from "../components/shared/segmented-toggle";
-import { colors, typography } from "../design/broadcast";
 
-// Built once: constructing an Intl formatter is the expensive part.
-const ISSUE_DATE_FORMAT = new Intl.DateTimeFormat("en-US", {
-  weekday: "short",
-  month: "short",
+const ET_DATE = new Intl.DateTimeFormat("en-US", {
+  weekday: "long",
+  month: "long",
   day: "numeric",
   year: "numeric",
+  timeZone: "America/New_York",
 });
 
-function todayIssueDate(): string {
-  return ISSUE_DATE_FORMAT.format(new Date());
-}
-
 type Filter = "all" | SlateStatus;
+type Posture = "loading" | "live" | "showcase-offline" | "showcase-unposted";
 
-const FILTERS: { key: Filter; label: string }[] = [
+const FILTERS: readonly { key: Filter; label: string }[] = [
   { key: "all", label: "All" },
   { key: "live", label: "Live" },
   { key: "scheduled", label: "Scheduled" },
-  { key: "final", label: "Completed" },
+  { key: "final", label: "Final" },
 ];
 
-function countTag(counts: Record<SlateStatus, number>): string {
-  const parts: string[] = [];
-  if (counts.live) parts.push(`${counts.live} live`);
-  if (counts.scheduled) parts.push(`${counts.scheduled} scheduled`);
-  if (counts.final) parts.push(`${counts.final} final`);
-  return parts.join(" · ").toUpperCase();
-}
-
-const SKELETON_CARDS = [0, 1, 2, 3, 4, 5];
-
-/** Same-shell loading state: the slate grid with static (no shimmer) boxes. */
-function SlateSkeleton() {
-  return (
-    <div
-      role="status"
-      aria-busy="true"
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fill, minmax(min(330px, 100%), 1fr))",
-        gap: 14,
-      }}
-    >
-      <VisuallyHidden>Loading today&rsquo;s slate&hellip;</VisuallyHidden>
-      {SKELETON_CARDS.map((i) => (
-        <div
-          key={i}
-          aria-hidden="true"
-          style={{
-            minHeight: 150,
-            backgroundColor: colors.panel,
-            border: `1px solid ${colors.rule}`,
-          }}
-        />
-      ))}
-    </div>
-  );
+/** Why the page is showing the sample slate, in the same two postures home distinguishes. */
+function showcaseReason(posture: Posture): string | null {
+  if (posture === "showcase-offline") {
+    return "The backend is unreachable, so this is a sample slate.";
+  }
+  if (posture === "showcase-unposted") {
+    return "No games have posted for today yet, so this is a sample slate.";
+  }
+  return null;
 }
 
 export default function GamesPage() {
@@ -94,120 +64,156 @@ export default function GamesPage() {
   const matchups = useTodaysMatchups();
   const [filter, setFilter] = useState<Filter>("all");
 
-  const settled = !games.isLoading && !matchups.isLoading;
-  const hasLive =
-    (matchups.data?.length ?? 0) > 0 || (games.data?.length ?? 0) > 0;
-  const usingShowcase = !hasLive && settled;
-  const loading = !hasLive && !settled;
+  const liveMatchups = matchups.data ?? [];
+  const liveGames = games.data ?? [];
+  const posture: Posture =
+    liveMatchups.length > 0 || liveGames.length > 0
+      ? "live"
+      : matchups.isLoading || games.isLoading
+        ? "loading"
+        : matchups.isError || games.isError
+          ? "showcase-offline"
+          : "showcase-unposted";
+  const reason = showcaseReason(posture);
+  const showcase = reason !== null;
 
-  // Live wins whenever either source has data; otherwise (both settled empty or
-  // errored) fall back to the merged showcase slate. Defaulting lives inside the
-  // memo so the deps stay the stable query-data references.
-  const cards = useMemo<SlateCard[]>(() => {
-    const liveMatchups = matchups.data ?? [];
-    const liveGames = games.data ?? [];
-    if (liveMatchups.length > 0 || liveGames.length > 0) {
-      return mergeSlate(liveMatchups, liveGames);
-    }
-    if (settled) {
-      return mergeSlate(SHOWCASE_MATCHUPS, SHOWCASE_GAMES);
-    }
-    return [];
-  }, [matchups.data, games.data, settled]);
+  const cards = orderForBoard(
+    posture === "live"
+      ? mergeSlate(liveMatchups, liveGames)
+      : showcase
+        ? mergeSlate(SHOWCASE_MATCHUPS, SHOWCASE_GAMES)
+        : [],
+  );
+  const counts = boardCounts(cards);
+  const total = cards.length;
+  const pitchWindow = firstPitchWindow(cards);
 
-  const counts = slateCounts(cards);
-  const filtered =
-    filter === "all" ? cards : cards.filter((c) => c.status === filter);
-  const activeFilterLabel =
-    filter === "all" ? undefined : FILTERS.find((f) => f.key === filter)?.label;
+  const datelineRight =
+    posture === "loading"
+      ? "Slate loading"
+      : showcase
+        ? `Showcase slate, ${total} sample ${total === 1 ? "game" : "games"}`
+        : `${total} ${total === 1 ? "game" : "games"}${
+            pitchWindow ? `, first pitch ${pitchWindow}` : ""
+          }`;
+
+  const postponedNote =
+    counts.postponed === 0
+      ? ""
+      : counts.postponed === 1
+        ? ", one game postponed"
+        : `, ${counts.postponed} games postponed`;
+  const dek = showcase
+    ? "A sample board, so the page still reads when there is nothing live to show. Every game opens to its pitch-by-pitch account."
+    : `The day’s board${postponedNote}. Every game opens to its pitch-by-pitch account and the models’ read of the next pitch.`;
 
   return (
-    <PageChrome gap={22} bottomPad={48}>
-      <header
-        style={{
-          display: "flex",
-          alignItems: "flex-end",
-          justifyContent: "space-between",
-          gap: 16,
-          flexWrap: "wrap",
-        }}
-      >
-        <div>
-          <h1
-            style={{
-              margin: 0,
-              fontFamily: typography.fonts.display,
-              fontStyle: "italic",
-              fontWeight: typography.weights.heavy,
-              fontSize: typography.scale[6],
-              lineHeight: typography.lineHeights.display,
-              letterSpacing: "0.01em",
-              textTransform: "uppercase",
-              color: colors.ink,
-            }}
-          >
-            Today&rsquo;s Games
-          </h1>
-          <p
-            style={{
-              margin: "2px 0 0",
-              fontFamily: typography.fonts.mono,
-              fontSize: 12,
-              fontFeatureSettings: '"tnum" 1',
-              letterSpacing: "0.02em",
-              color: colors.textMuted,
-            }}
-          >
-            {todayIssueDate()} &middot; live ingest &middot; slate fills as
-            games go live
-          </p>
-        </div>
+    <div className="ed-page">
+      <div className="ed-col">
+        <p className="ed-dateline">
+          <span>{ET_DATE.format(new Date())}</span>
+          <span className="ed-dateline__issued">The slate</span>
+          <span>{datelineRight}</span>
+        </p>
 
-        <SegmentedToggle
-          options={FILTERS}
-          value={filter}
-          onChange={setFilter}
-          ariaLabel="Filter games by status"
-        />
-      </header>
-
-      <section aria-labelledby="games-slate-label">
-        <div style={{ marginBottom: 14 }}>
-          <LowerThird
-            id="games-slate-label"
-            meta={cards.length > 0 ? countTag(counts) : undefined}
-          >
-            Slate
-          </LowerThird>
-        </div>
-
-        {loading ? (
-          <SlateSkeleton />
-        ) : (
-          <>
-            <SlateBoard
-              cards={filtered}
-              filterLabel={activeFilterLabel}
-              onReset={() => setFilter("all")}
-            />
-            {usingShowcase && (
-              <p
-                style={{
-                  margin: "12px 0 0",
-                  fontFamily: typography.fonts.mono,
-                  fontSize: 11,
-                  letterSpacing: "0.04em",
-                  color: colors.textMuted,
-                }}
-              >
-                Showcase slate · backend unreachable or no games posted yet
-              </p>
+        <div className="pl-split pl-head gm-head">
+          <div>
+            <p className="ed-slug">
+              {showcase ? "Games, showcase slate" : "Games"}
+            </p>
+            {posture === "loading" ? (
+              <h1 className="ed-h1">
+                <span
+                  className="ed-shell"
+                  style={{ display: "block", height: "8rem" }}
+                  aria-hidden="true"
+                />
+                <VisuallyHidden>Today&rsquo;s games</VisuallyHidden>
+              </h1>
+            ) : (
+              <h1 className="ed-h1">{boardHeadline(counts)}</h1>
             )}
-          </>
-        )}
-      </section>
+            <p className="ed-dek">{dek}</p>
+          </div>
+          <aside className="gm-holds gm-aside" aria-labelledby="gm-holds-h">
+            <p className="ed-label" id="gm-holds-h">
+              Reading the board
+            </p>
+            <dl>
+              <dt>Columns</dt>
+              <dd>
+                Games under way, games still to come, and finals. A rain delay
+                stays with the games under way and says so.
+              </dd>
+              <dt>Rating</dt>
+              <dd>{RATING_CLAIM}</dd>
+            </dl>
+          </aside>
+        </div>
+        <details className="gm-key-sum">
+          <summary>Reading the board</summary>
+          <p>
+            A rain delay stays with the games under way and says so.{" "}
+            {RATING_CLAIM}
+          </p>
+        </details>
 
-      <BroadcastFooter>TODAY&rsquo;S GAMES</BroadcastFooter>
-    </PageChrome>
+        <div className="gm-filter">
+          <span className="gm-filter__label" aria-hidden="true">
+            Show
+          </span>
+          <div
+            className="pl-facets"
+            role="group"
+            aria-label="Filter games by status"
+          >
+            {FILTERS.map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                className="pl-facet"
+                aria-pressed={filter === f.key}
+                onClick={() => setFilter(f.key)}
+              >
+                {f.label}
+                {posture === "loading" ? null : (
+                  <small>{f.key === "all" ? total : counts[f.key]}</small>
+                )}
+              </button>
+            ))}
+          </div>
+          {posture === "live" ? (
+            <span className="gm-filter__asof">scores refresh every minute</span>
+          ) : null}
+        </div>
+
+        {showcase ? (
+          <p className="gm-showcase" role="note">
+            <span className="pl-tag">Showcase</span>
+            {reason} The teams, players and scores are illustrative, not
+            today&rsquo;s games.
+          </p>
+        ) : null}
+
+        {posture === "loading" ? (
+          <ScoreboardShell />
+        ) : (
+          <Scoreboard
+            cards={cards}
+            counts={counts}
+            filter={filter}
+            showcase={showcase}
+            onReset={() => setFilter("all")}
+          />
+        )}
+
+        <footer className="ed-footer">
+          <span>The Bullpen. Self-hosted, honestly scored.</span>
+          <span>
+            build {BUILD_SHA}, {BUILD_DATE}
+          </span>
+        </footer>
+      </div>
+    </div>
   );
 }
