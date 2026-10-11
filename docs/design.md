@@ -924,6 +924,16 @@ Three reference layouts anchor the system (styling in §8):
 | **Ops Dashboard**           | **Analytical (recruiter-facing)** | **Model versions, A/B traffic split, drift charts, retraining queue, reliability diagrams — same design system, dashboard density**                                                                                                                                                                    |
 | About / Methodology         | Editorial sheet                   | What the models do, training data, eval methodology, "v2 ideas"; long-form reading column inside the report chrome                                                                                                                                                                                     |
 
+> **As built (2026-10-11).** The page set above is the original lock; the shipped pages
+> grew from it. Park Explorer is now "The field" ([203]/[204]): an ink field drawing that
+> follows the launch sliders, a count of parks at P(HR) >= .50 and a 30-dot strip, not a
+> heatmap. The Ops Dashboard is "The systems register" ([205]-[207]): Serving, Drift,
+> Retraining, Event log and Infrastructure sections with source stamps, a roster-only offline
+> fallback, and no invented service status. /accuracy ([199]/[200]), /models/guide ([208]) and
+> the /games scoreboard ([210]) were added; About is "The back page" ([209]). The visual
+> identity is [195]'s editorial Front Page (see the note at the top of section 8), and the
+> dark-mode exclusion below was reversed by [192].
+
 Conspicuously not in scope: leaderboards, team pages, social features,
 comments, fantasy integration, betting, mobile app, dark mode toggle, i18n.
 

@@ -17,7 +17,7 @@ hiring audience. Different work, separate time block.
 | Lessons-learned             | skeleton | [`lessons-learned.md`](lessons-learned.md) — fills during operation                                                                                                                       |
 | 60-second verbal pitch      | drafted  | [`60-second-pitch.md`](60-second-pitch.md)                                                                                                                                                |
 | OSS PR (≥ 1 merged)         | struck   | criterion struck by decision [193] - the track (clickhouse-java investigation, LightGBM PR) was pursued honestly and deliberately ended; the targets file was deleted with it             |
-| Hero screenshot of /parks   | shipped  | [`docs/screenshots/parks-full.jpeg`](../screenshots/parks-full.jpeg) - in the root README grid                                                                                            |
+| Hero screenshot of /parks   | shipped  | [`docs/screenshots/parks.png`](../screenshots/parks.png) - in the root README grid                                                                                            |
 | Recruiter-time-test         | pending  | non-baseball friend reads README in 60 s and gets it                                                                                                                                      |
 
 ## Gated vs author-now

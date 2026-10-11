@@ -81,10 +81,10 @@ linked artifact disagree, the artifact wins.
   tests (future-contamination, shuffled-target, calendar-date trace, id-consistency)
   checked by fault injection, plus a real-ClickHouse SQL-path leakage gate where a skipped
   test fails the build. 2026 season data is holdout-only, fenced at three layers (rule 13).
-- **Broadcast-graphics design system** (Barlow Condensed / Inter / JetBrains Mono,
-  scorebug + lower-third telecast chrome) on a dark broadcast field with a light/dark
-  toggle ([191]/[192], ADR-0017). Token discipline is linted: a hex code in a component
-  file fails CI.
+- **Editorial "Front Page" design system** (Source Serif 4 / Inter / JetBrains Mono on a
+  newsprint paper ground, with a designed Night edition behind a light/dark toggle;
+  [195]-[212], ADR-0017). Token discipline is linted: a hex code in a component file fails
+  CI.
 - **Measured coverage, not a vibe**: line/branch coverage is published every CI run and
   gated on regression floors (backend JaCoCo under the Docker integration tests, frontend
   vitest v8, training coverage.py). The enforced floors live in
@@ -97,15 +97,16 @@ linked artifact disagree, the artifact wins.
 > **What's live vs. showcase (v1):** most of the app pulls real data from the Spring
 > backend - the per-game detail view (`/games/:id`) including the **live next-pitch panel**
 > (pre-pitch champion) and the **pitch-type panel** (calibrated prior), the player lookup +
-> `/players/:id` profile, the `/parks` HR-by-park heatmap, the home page's tonight slate,
-> the `/accuracy` scorecard + Live Retrospective, and the Ops dashboard's Model Fleet /
-> latency / retrain queue / ops log (live via `/v1/ops/*`, with a committed-fixture
-> fallback when those are empty or the backend is offline). Still pure showcase from
-> `frontend/src/data/*-fixtures.ts`: the `/parks` factor table, the `/about` colophon, the
-> `/players` landing's Featured Reports + Model Standouts, the `/players/:id` slug showcase
-> matchup, and the Ops infra ribbon. The Ops drift snapshot is live-wired to
-> `/v1/ops/drift` and renders an honest em-dash skeleton until `drift_metrics` fills in;
-> drill-tagged rows are labeled so a synthetic PSI spike is never shown as organic.
+> `/players/:id` profile, the `/parks` field explorer, the home page and `/games` slate,
+> the `/accuracy` report cards (with live 30-day reliability charts) + Live Retrospective,
+> and the Ops systems register's Serving / Drift / Retraining / Event log sections (live
+> via `/v1/ops/*`). When the backend cannot be read, the slate pages show a labelled
+> sample slate that says why, and Ops shows a registry-verified roster with every figure
+> em-dashed; an empty response is shown as empty, never backfilled ([206]). Still pure
+> showcase from `frontend/src/data/*-fixtures.ts`: the `/parks` factor table, the
+> `/players` landing's Featured Reports + Model Standouts, and the `/players/:id` slug
+> showcase matchup. Drill-tagged drift rows are labeled so a synthetic PSI spike is never
+> shown as organic.
 > See [Known limitations](#known-limitations) for the honest caveats.
 
 ## The 25-second tour
@@ -119,15 +120,17 @@ this repo's own tokens, fonts and components; source and build notes in
 
 ## Screenshots
 
-The live site ([thebullpen.net](https://thebullpen.net)):
+The live site ([thebullpen.net](https://thebullpen.net)), captured 2026-10-11 in the paper edition:
 
-|                                Tonight's slate                                 |                                         Ops dashboard                                         |
-| :----------------------------------------------------------------------------: | :-------------------------------------------------------------------------------------------: |
-|   [![Tonight's slate](docs/screenshots/home.png)](docs/screenshots/home.png)   |            [![Ops dashboard](docs/screenshots/ops.png)](docs/screenshots/ops.png)             |
-|                                 **Live game**                                  |                                     **Park HR explorer**                                      |
-|      [![Live game](docs/screenshots/game.png)](docs/screenshots/game.png)      |   [![Park HR explorer](docs/screenshots/parks-full.jpeg)](docs/screenshots/parks-full.jpeg)   |
-|                               **Player search**                                |                                      **Player profile**                                       |
-| [![Player search](docs/screenshots/players.png)](docs/screenshots/players.png) | [![Player profile](docs/screenshots/player-ohtani.jpeg)](docs/screenshots/player-ohtani.jpeg) |
+| Tonight's slate | The games board |
+| :---: | :---: |
+| [![Tonight's slate](docs/screenshots/home.png)](docs/screenshots/home.png) | [![The games board](docs/screenshots/games.png)](docs/screenshots/games.png) |
+| **Game page** | **Ops systems register** |
+| [![Game page](docs/screenshots/game.png)](docs/screenshots/game.png) | [![Ops systems register](docs/screenshots/ops.png)](docs/screenshots/ops.png) |
+| **Accuracy report cards** | **Park field explorer** |
+| [![Accuracy report cards](docs/screenshots/accuracy.png)](docs/screenshots/accuracy.png) | [![Park field explorer](docs/screenshots/parks.png)](docs/screenshots/parks.png) |
+| **Player index** | **Player file** |
+| [![Player index](docs/screenshots/players.png)](docs/screenshots/players.png) | [![Player file](docs/screenshots/player.png)](docs/screenshots/player.png) |
 
 ## The models, honestly
 
@@ -174,9 +177,9 @@ cd ../training && uv sync && OMP_NUM_THREADS=1 uv run python -m pytest
 
 **What works with an empty stack.** The backend boots against an empty ClickHouse with no
 registered ONNX model: the predict endpoints return a documented `503` (no live champion,
-not a crash), and every read surface (`/v1/ops/*`, players, parks, games) falls back to
-committed fixtures - so the SPA and the Ops dashboard render end-to-end before you have any
-data or models. Real predictions need the historical Statcast pull plus a
+not a crash), and every page degrades to a labelled state (a sample slate that says the
+backend is unreachable, a registry-verified Ops roster with figures em-dashed) - so the SPA
+and the Ops register render end-to-end before you have any data or models. Real predictions need the historical Statcast pull plus a
 trained-and-registered model, which is the self-hosted box workflow (ADR-0006), not the
 local quickstart.
 
@@ -396,7 +399,7 @@ redistributed.**
   that should lift the ordering is staged but not yet shipped. Treat per-park batted-ball
   numbers as directional, not calibrated, until that gate is green - see
   [`docs/cross-park-fidelity-plan.md`](docs/cross-park-fidelity-plan.md). The `/parks`
-  heatmap and the model guide surface this physics-estimate framing (and the rho gap)
+  field explorer and the model guide surface this physics-estimate framing (and the rho gap)
   directly to users rather than presenting raw P(HR) as fact (decision [163]).
 - **Automated retraining is wired and proven, but only one model deep.**
   `battedball_outcome` retrains end-to-end (the 2026-07-15 unattended proof above); every
