@@ -1,9 +1,8 @@
 /**
- * Smoke test for /parks (Stage 3c Park Factors appendix).
- *
- * Renders the full page inside MemoryRouter + MantineProvider and asserts
- * the section labels + all 30 park abbreviations are present in the markup.
- * The deeper component tests cover the individual primitives.
+ * /parks static render (SPEC-parks). The query is left in its loading state (static render), which
+ * is exactly the first-load frame: shells, no numbers, and the honesty copy already in place.
+ * Assertions run on visibleText() (never regex-stripped markup) and are scoped to the part of the
+ * page they are about, so a second emitter of the same words cannot keep a dead pin alive.
  */
 import { MantineProvider } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -11,83 +10,104 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 
-import { BUILD_SHA } from "../build-info";
 import { OBSERVED_HOME_RUN_SPRAY_MAX_DEG, SPRAY_LIMIT_DEG } from "../api/parks";
+import { BUILD_SHA } from "../build-info";
+import {
+  PHYSICS_CAVEAT_BODY,
+  PHYSICS_CAVEAT_LEAD,
+  SHOWCASE_FACTORS_NOTE,
+} from "../data/parks-claims";
 import { PARK_ROWS } from "../data/parks-fixtures";
 import { theme } from "../design/theme";
+import { visibleText } from "../test-support/visible-text";
 
 import ParksPage from "./parks-page";
 
-function render(ui: React.ReactElement): string {
-  // The live HR-by-park section (B1) uses TanStack Query; static render leaves it
-  // in the loading state, which does not affect the fixture-backed sections these
-  // assertions cover.
+function render(): string {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return renderToStaticMarkup(
     <QueryClientProvider client={client}>
       <MemoryRouter>
-        <MantineProvider theme={theme}>{ui}</MantineProvider>
+        <MantineProvider theme={theme}>
+          <ParksPage />
+        </MantineProvider>
       </MemoryRouter>
     </QueryClientProvider>,
   );
 }
 
-describe("ParksPage", () => {
-  it("renders all three section labels", () => {
-    const html = render(<ParksPage />);
-    expect(html).toContain("Overview");
-    expect(html).toContain("Park Switcher");
-    expect(html).toContain("Spotlight");
+/** The markup of one section, by the id its heading/label carries. */
+function section(html: string, labelledBy: string): string {
+  const at = html.indexOf(`aria-labelledby="${labelledBy}"`);
+  expect(at).toBeGreaterThan(-1);
+  const end = html.indexOf("</section>", at);
+  return html.slice(at, end);
+}
+
+describe("ParksPage (static)", () => {
+  const html = render();
+  const text = visibleText(html);
+
+  it("is the editorial park explorer, with the physics-estimate framing in the dateline", () => {
+    expect(text).toContain("Park explorer");
+    expect(text).toContain("A calibrated physics estimate");
+    expect(text).toContain("Where does it leave the yard?");
+    expect(text).toContain(BUILD_SHA);
   });
 
-  it("renders the masthead", () => {
-    const html = render(<ParksPage />);
-    expect(html).toContain("Park Factors");
-    expect(html).toContain("Appendix A");
+  it("puts the [163] caveat in the answer column, before any number arrives", () => {
+    const answer = visibleText(section(html, "pk-answer-label"));
+    expect(answer).toContain(PHYSICS_CAVEAT_LEAD);
+    expect(answer).toContain(PHYSICS_CAVEAT_BODY);
+    // First load: a shell, never an invented count.
+    expect(answer).toContain("Scoring this ball across the 30 parks");
+    expect(answer).not.toMatch(/\d+ of \d+/);
   });
 
-  it("includes all 30 park abbreviations in the markup", () => {
-    const html = render(<ParksPage />);
-    for (const row of PARK_ROWS) {
-      // Each abbreviation should appear at least once (in the switcher
-      // and in the TEAM column of the overview).
-      expect(html).toContain(row.team);
+  it("fences the fixture factors in one labelled Showcase part, all 30 parks", () => {
+    const showcase = visibleText(section(html, "pk-showcase-title"));
+    expect(showcase).toContain("Showcase");
+    expect(showcase).toContain("fixtures, not from the models");
+    expect(showcase).toContain(SHOWCASE_FACTORS_NOTE);
+    for (const r of PARK_ROWS) expect(showcase).toContain(r.parkName);
+    // The Every park part carries no fixture value.
+    const every = visibleText(section(html, "pk-every-title"));
+    expect(every).not.toContain("Showcase");
+  });
+
+  it("drops the fixture copy that described a model that does not exist ([202])", () => {
+    for (const gone of [
+      "park_factor_v2",
+      "shrinkage",
+      "437,210",
+      "Edition",
+      "Appendix",
+      "Spotlight",
+      "Mini Heatmaps",
+    ]) {
+      expect(text).not.toContain(gone);
     }
   });
 
-  it("renders the methodology line", () => {
-    const html = render(<ParksPage />);
-    expect(html).toContain("3-yr rolling window");
-    expect(html).toContain("n=437,210");
+  it("labels direction absolutely (left/right field), never pull/oppo, and never rules a ball foul", () => {
+    expect(text).toContain("Left field");
+    expect(text).toContain("Right field");
+    expect(text).toContain("Straightaway");
+    expect(text).not.toMatch(/\bpull\b|\boppo/i);
+    expect(text).not.toMatch(/\bfoul\b/i);
   });
 
-  it("renders the footer build SHA", () => {
-    const html = render(<ParksPage />);
-    expect(html).toContain(BUILD_SHA);
-  });
-
-  it("labels spray direction ABSOLUTELY, since pull and oppo swap with handedness", () => {
-    // The label read "- pull / + oppo", which is batter-relative and therefore only correct for a
-    // LEFT-handed batter - while this page defaults stand to "R", so the default view was exactly
-    // backwards. Training's convention is absolute (+ toward 3B/LF) and the feature pipeline passes
-    // spray through unmodified, so the axis has one true description and it is not handedness
-    // dependent. Nothing pinned this copy before, which is how it stayed wrong.
-    const html = render(<ParksPage />);
-    expect(html).toContain("toward LF");
-    expect(html).toContain("toward RF");
-    expect(html).not.toMatch(/pull/i);
-    expect(html).not.toMatch(/oppo/i);
+  it("says the field is generic and links to how the model was built", () => {
+    expect(text).toContain("The field is generic");
+    expect(html).toContain('href="/models/guide"');
   });
 
   it("lets the user reach the sprays the model was trained on", () => {
-    // The input was clamped to plus/minus 45, which excluded ~9.8% of the training corpus and 195
-    // home runs (max 52.7 degrees). A control for exploring spray that cannot reach the model's
-    // domain is a worse defect than the label that described it wrongly.
-    // Pinned to the EMPIRICAL bound, not to itself: the limit must admit the widest spray ever
-    // observed on a home run. Asserting SPRAY_LIMIT_DEG === 90 would only prove the constant equals
-    // the constant.
+    // Pinned to the EMPIRICAL bound, not to itself: the slider's range must admit the widest spray
+    // ever observed on a home run.
     expect(SPRAY_LIMIT_DEG).toBeGreaterThan(OBSERVED_HOME_RUN_SPRAY_MAX_DEG);
+    expect(html).toContain(`aria-valuemax="${SPRAY_LIMIT_DEG}"`);
   });
 });

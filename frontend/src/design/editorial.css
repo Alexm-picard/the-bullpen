@@ -2302,3 +2302,339 @@ html:has(.ed-acct) {
     gap: 0.625rem;
   }
 }
+
+/* ══ Parks (/parks, SPEC-parks layout B "The field") ═══════════════════════════
+ * A generic field drawn in ink (the drawing follows the hand), the answer (count, a 30-dot strip
+ * on a fixed 0..1 axis, the scored line, the [163] caveat under them), the game page's .ed-parks
+ * list in its P(HR) mode, and one fenced Showcase table. Data in ink; the accent is links only. */
+
+.pk-head {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  align-items: end;
+  margin-top: 1.75rem;
+}
+.pk-head > :first-child {
+  padding-right: 2.5rem;
+}
+.pk-head .ed-h1 {
+  max-width: 14ch;
+  margin-bottom: 0.75rem;
+}
+.pk-head__note {
+  margin: 0 0 0.375rem 2.5rem;
+}
+.pk-hero {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--ed-ink);
+}
+
+/* The field: aspect-locked so measurement never shifts layout. */
+.pk-field {
+  aspect-ratio: 680 / 400;
+}
+.pk-field svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.pk-field__ring {
+  fill: none;
+  stroke: var(--ed-rule);
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+}
+.pk-field__foul,
+.pk-field__diamond {
+  fill: none;
+  stroke: var(--ed-ink3);
+  stroke-width: 1;
+}
+.pk-field__plate {
+  fill: var(--ed-ink);
+}
+.pk-field__ray {
+  stroke: var(--ed-ink2);
+  stroke-width: 1.25;
+  stroke-dasharray: 1 3;
+}
+.pk-field__carry {
+  stroke: var(--ed-ink);
+  stroke-width: 6;
+  transition:
+    stroke var(--duration-fast) var(--ease-color),
+    opacity var(--duration-fast) var(--ease-color);
+}
+.pk-field__carry--draft {
+  stroke: var(--ed-ink3);
+  opacity: 0.75;
+}
+.pk-field__input {
+  fill: var(--ed-ground);
+  stroke: var(--ed-ink2);
+  stroke-width: 1.5;
+}
+.pk-field__t {
+  font-family: var(--ed-mono);
+  fill: var(--ed-ink3);
+}
+.pk-field__l {
+  font-family: var(--ed-mono);
+  font-weight: 500;
+  fill: var(--ed-ink);
+}
+.pk-field__note {
+  margin: 0.25rem 0 0;
+  font: 400 0.6875rem/1.5 var(--ed-mono);
+  color: var(--ed-ink3);
+}
+
+/* Controls: three sliders + bat side. The Direction value is words, so its column is widest. */
+.pk-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.45fr) auto;
+  gap: 1rem 1.75rem;
+  margin-top: 0.875rem;
+  padding-top: 0.875rem;
+  border-top: 1px solid var(--ed-rule);
+}
+.pk-ctl {
+  min-width: 0;
+}
+.pk-ctl__label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0;
+  font: 500 0.8125rem/1.3 var(--ed-sans);
+  color: var(--ed-ink2);
+}
+.pk-ctl__value {
+  white-space: nowrap;
+  font-family: var(--ed-serif);
+  font-weight: 600;
+  font-size: 1.375rem;
+  line-height: 1;
+  font-variant-numeric: lining-nums tabular-nums;
+  color: var(--ed-ink);
+}
+.pk-ctl__value small {
+  margin-left: 0.125rem;
+  font: 400 0.6875rem/1 var(--ed-mono);
+  color: var(--ed-ink3);
+}
+.pk-ctl__value .pk-ctl__words {
+  font-size: 1rem;
+}
+.pk-ctl__ends {
+  display: flex;
+  justify-content: space-between;
+  margin: 0;
+  font: 400 0.625rem/1 var(--ed-mono);
+  color: var(--ed-ink3);
+}
+.pk-stand {
+  margin-top: 0.125rem;
+}
+
+/* Mantine Slider, re-skinned to ink. The 44px hit area comes from the root's own height. */
+.ed-page .pk-slider {
+  --slider-size: 4px;
+  --slider-thumb-size: 16px;
+  --slider-color: var(--ed-ink2);
+  --slider-track-bg: var(--ed-track);
+  height: 2.75rem;
+  margin: 0;
+}
+.ed-page .pk-slider__track::before {
+  border-radius: 2px;
+  background-color: var(--ed-track);
+}
+.ed-page .pk-slider__bar {
+  background-color: var(--ed-ink2);
+}
+.ed-page .pk-slider__thumb {
+  border-radius: 50%;
+  border: 2px solid var(--ed-ground);
+  background-color: var(--ed-ink);
+  color: var(--ed-ink);
+  box-shadow: 0 0 0 1px var(--ed-ink);
+  transition: transform 100ms var(--ease-out);
+}
+.ed-page .pk-slider__thumb:active,
+.ed-page .pk-slider__thumb[data-dragging] {
+  transform: translate(-50%, -50%) scale(1.15);
+}
+/* The thumb carries the focus ring (it is the role="slider" element); Mantine focuses it on track
+ * keydown, so the root must not draw a second, box-shaped ring around the whole control. */
+.ed-page .pk-slider:focus-visible,
+.ed-page .pk-slider:focus {
+  outline: none;
+}
+.ed-page .pk-slider__thumb:focus-visible {
+  outline: 2px solid var(--ed-accent);
+  outline-offset: 2px;
+}
+
+/* The answer */
+.pk-count .ed-fig__value {
+  font-size: 4rem;
+}
+.pk-dim {
+  transition: opacity var(--duration-fast) var(--ease-color);
+}
+.pk-dim--on {
+  opacity: 0.6;
+}
+.pk-strip {
+  margin-top: 1.25rem;
+  min-height: 132px;
+}
+.pk-strip svg {
+  display: block;
+  overflow: visible;
+}
+.pk-strip__axis,
+.pk-strip__half {
+  stroke: var(--ed-ink3);
+  stroke-width: 1;
+}
+.pk-strip__half {
+  stroke-dasharray: 2 3;
+}
+.pk-strip__dot {
+  fill: none;
+  stroke: var(--ed-ink2);
+  stroke-width: 1.25;
+  transition: transform var(--duration-base) var(--ease-out);
+}
+.pk-strip__dot--hr {
+  fill: var(--ed-ink);
+  stroke: var(--ed-ink);
+}
+.pk-strip__t {
+  font: 400 10px/1 var(--ed-mono);
+  fill: var(--ed-ink3);
+}
+.pk-strip__l {
+  font: 500 10.5px/1 var(--ed-mono);
+  fill: var(--ed-ink2);
+}
+.pk-scored {
+  margin: 0.5rem 0 0;
+  font: 400 0.6875rem/1.5 var(--ed-mono);
+  color: var(--ed-ink3);
+}
+.pk-scored--pending {
+  color: var(--ed-ink);
+}
+/* The [163] caveat: a ruled ink note under the number it qualifies, never a coloured box. */
+.pk-caveat {
+  margin: 1.5rem 0 0;
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--ed-ink);
+  border-bottom: 1px solid var(--ed-rule);
+  font: 400 0.875rem/1.55 var(--ed-sans);
+  color: var(--ed-ink2);
+}
+.pk-caveat strong {
+  font-weight: 600;
+  color: var(--ed-ink);
+}
+.pk-shell-fig {
+  display: block;
+  width: 9rem;
+  height: 4rem;
+}
+.pk-shell-strip {
+  height: 132px;
+  margin-top: 1.25rem;
+}
+.pk-shell-list {
+  height: 18rem;
+  margin-top: 0.875rem;
+}
+
+/* The game page's list, in its P(HR) mode: the park name is visible. */
+.ed-parks__name {
+  font-family: var(--ed-sans);
+}
+
+/* Showcase factors: ink deviation tick, sign by side */
+.pk-factors th[scope="row"] {
+  padding: 0.5rem 0;
+  border-bottom: 1px dotted var(--ed-rule);
+  font: 400 0.8125rem/1.3 var(--ed-mono);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ed-ink);
+}
+.pk-factors .pk-faint {
+  color: var(--ed-ink3);
+}
+.pk-factors .pk-wind {
+  padding-left: 1rem;
+}
+.pk-devcell {
+  width: 8rem;
+  padding-left: 0.75rem !important;
+}
+.pk-dev {
+  position: relative;
+  display: block;
+  height: 0.5rem;
+  background-color: var(--ed-track);
+}
+.pk-dev__mid {
+  position: absolute;
+  left: 50%;
+  top: -0.125rem;
+  bottom: -0.125rem;
+  width: 1px;
+  background-color: var(--ed-ink3);
+}
+.pk-dev__bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background-color: var(--ed-ink2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pk-strip__dot,
+  .pk-field__carry,
+  .ed-page .pk-slider__thumb {
+    transition: none;
+  }
+  .ed-page .pk-slider__thumb:active,
+  .ed-page .pk-slider__thumb[data-dragging] {
+    transform: translate(-50%, -50%);
+  }
+}
+
+@media (max-width: 48em) {
+  .pk-head {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .pk-head > :first-child {
+    padding-right: 0;
+  }
+  .pk-head__note {
+    margin: 0.75rem 0 0;
+  }
+  .pk-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .pk-count .ed-fig__value {
+    font-size: 3rem;
+  }
+  .pk-every .ed-parks {
+    columns: 1;
+  }
+  .pk-hide-phone {
+    display: none;
+  }
+}

@@ -1,298 +1,354 @@
 /**
- * /parks - the Park Factors appendix on the BROADCAST identity (redesign
- * PR-6, decision [160]).
+ * /parks - "The field", the park explorer on the [195] editorial identity (SPEC-parks, layout B).
  *
- * Composition unchanged: ParksHeader, ParksMethodology, the 30-park overview
- * table (StatTable through the broadcast palette), the mini-heatmap switcher
- * strip (gold active ring), and the Coors spotlight (field SVG + heatmap grid
- * + factor strip + KeyNotes through the broadcast palette). All sections stay
- * showcase fixtures with their honest captions - GET /v1/parks/factors is not
- * implemented yet (the all-parks predict endpoint is a prediction surface,
- * not a factor table). This page imports ONLY the broadcast namespace.
+ * Read order: dateline; head (slug, H1, dek) beside the "field is generic" note; the hero - the
+ * field drawing and its four controls | the answer (how many parks, the 30-dot strip, the scored
+ * line, the [163] physics-estimate caveat directly under them); Every park (the game page's own
+ * .ed-parks list, in its P(HR) mode); then ONE fenced Showcase part (fixture park factors, D4).
+ *
+ * Three balls are kept apart on purpose (SPEC-parks 6.1):
+ *   draft      what the controls show; the drawing follows it 1:1; never sent;
+ *   committed  what the request is keyed on; changes only when a gesture ENDS (use-ball-commit);
+ *   scored     the ball whose numbers are on screen. With keepPrevious the shown data can belong to
+ *              an earlier request, so every number is labelled with the ball it was computed for.
+ *
+ * POST /all-parks logs EVERY request to prediction_log, so the page sends one request per settled
+ * ball (pointer release, a coalesced keyboard burst, or a bat-side click) and never the balls a
+ * drag passes through. No new caller; the request shape is unchanged.
  */
-
-import { NumberInput, SegmentedControl } from "@mantine/core";
-import { useDebouncedValue, useReducedMotion } from "@mantine/hooks";
-import { useMemo, useState } from "react";
+import { VisuallyHidden } from "@mantine/core";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 
-import { SPRAY_LIMIT_DEG, useAllParksPrediction } from "../api/parks";
-import type { AllParksRequest } from "../api/parks";
-import { LowerThird } from "../components/broadcast/lower-third";
-import { OverviewParksTable } from "../components/parks/overview-parks-table";
-import { estimateLandingDistanceFt } from "../components/parks/estimate-landing";
-import { ParkHrHeatmap } from "../components/parks/park-hr-heatmap";
-import { ParkSpotlight } from "../components/parks/park-spotlight";
-import { ParkSwitcherStrip } from "../components/parks/park-switcher-strip";
-import { ParksHeader } from "../components/parks/parks-header";
-import { ParksMethodology } from "../components/parks/parks-methodology";
 import {
-  COORS_SPOTLIGHT,
-  PARK_ROWS,
-  PARK_THUMBNAILS,
-  PARKS_META,
-} from "../data/parks-fixtures";
-import { BroadcastFooter, PageChrome } from "../components/shared/page-chrome";
-import { colors, motion, typography } from "../design/broadcast";
+  CANONICAL_BBE_INPUT,
+  useAllParksPrediction,
+  type AllParksRequest,
+} from "../api/parks";
+import { BUILD_DATE, BUILD_SHA } from "../build-info";
+import {
+  hrParkCount,
+  parkLines,
+  type ParkLine,
+} from "../components/games/game-account";
+import { ParkAgate } from "../components/games/park-agate";
+import { BallControls } from "../components/parks/ball-controls";
+import { estimateLandingDistanceFt } from "../components/parks/estimate-landing";
+import { ParkFactorsTable } from "../components/parks/park-factors-table";
+import { ParkField } from "../components/parks/park-field";
+import { ParkStrip } from "../components/parks/park-strip";
+import { useBallCommit } from "../components/parks/use-ball-commit";
+import { ShowcaseNote } from "../components/players/showcase-note";
+import {
+  FIELD_NOTE,
+  INPUT_RING_NOTE,
+  NO_UNCERTAINTY_NOTE,
+  PHYSICS_CAVEAT_BODY,
+  PHYSICS_CAVEAT_LEAD,
+  SHOWCASE_FACTORS_NOTE,
+} from "../data/parks-claims";
+import { PARK_ROWS } from "../data/parks-fixtures";
+import {
+  carryExtremes,
+  describeBall,
+  sameBall,
+  type Ball,
+} from "../lib/park-ball";
 
-import "./parks/parks.css";
+/** Module-level: the edition "arrives" once per session, as on the other [195] pages. */
+let entranceShown = false;
 
-// Shared caption for all fixture-backed sections on this page.
-const SHOWCASE_NOTE =
-  "Showcase data -- GET /v1/parks/factors not yet implemented.";
+const ET_DATE = new Intl.DateTimeFormat("en-US", {
+  weekday: "long",
+  month: "long",
+  day: "numeric",
+  year: "numeric",
+  timeZone: "America/New_York",
+});
+const ET_TIME = new Intl.DateTimeFormat("en-US", {
+  hour: "numeric",
+  minute: "2-digit",
+  timeZone: "America/New_York",
+});
 
-const noteStyle: React.CSSProperties = {
-  margin: "0 0 8px",
-  fontFamily: typography.fonts.body,
-  fontSize: 13,
-  color: colors.textMuted,
+const CANONICAL_BALL: Ball = {
+  launchSpeedMph: CANONICAL_BBE_INPUT.launchSpeedMph,
+  launchAngleDeg: CANONICAL_BBE_INPUT.launchAngleDeg,
+  sprayAngleDeg: CANONICAL_BBE_INPUT.sprayAngleDeg,
+  stand: CANONICAL_BBE_INPUT.stand,
 };
 
-const controlsRowStyle: React.CSSProperties = {
-  display: "flex",
-  gap: 16,
-  alignItems: "flex-end",
-  flexWrap: "wrap",
-  marginBottom: 12,
-};
+/** The request for a ball. Distance is derived so it stays consistent with speed + angle. */
+function requestFor(b: Ball): AllParksRequest {
+  return {
+    launchSpeedMph: b.launchSpeedMph,
+    launchAngleDeg: b.launchAngleDeg,
+    sprayAngleDeg: b.sprayAngleDeg,
+    // The post-contact model takes hitDistance as a feature; baseState empty + 0 outs are neutral
+    // game-context defaults for the park HR surface (unchanged from the previous page).
+    hitDistanceFt: estimateLandingDistanceFt(
+      b.launchSpeedMph,
+      b.launchAngleDeg,
+    ),
+    stand: b.stand,
+    baseState: 0,
+    outs: 0,
+  };
+}
 
-const controlLabelStyle: React.CSSProperties = {
-  display: "block",
-  marginBottom: 4,
-  fontFamily: typography.fonts.mono,
-  fontSize: 11,
-  letterSpacing: "0.04em",
-  textTransform: "uppercase",
-  color: colors.textMuted,
-};
-
-const errorStyle: React.CSSProperties = {
-  fontFamily: typography.fonts.body,
-  fontWeight: typography.weights.semibold,
-  color: colors.goldInk,
-};
-
-// M1 / decision [163]: the live HR heatmap is served by the batted-ball MLP, which is an honestly
-// re-scoped per-park CALIBRATED PHYSICS ESTIMATE (not a reality-validated predictor) - so the
-// section carries that caveat rather than presenting raw P(HR) as fact.
-const caveatStyle: React.CSSProperties = {
-  margin: "0 0 12px",
-  padding: "8px 12px",
-  borderLeft: `3px solid ${colors.gold}`,
-  backgroundColor: colors.fieldSubtle,
-  fontFamily: typography.fonts.body,
-  fontSize: 13,
-  lineHeight: typography.lineHeights.body,
-  color: colors.text,
-};
+type Scored = { ball: Ball; at: number };
 
 export default function ParksPage() {
-  // The switcher tracks the active park id so the spotlight ring stays
-  // in sync visually. The actual spotlight payload is locked to Coors in
-  // v1 -- switching parks scrolls the table; it doesn't yet swap spotlight
-  // content. That's the natural next step when /v1/parks/factors lands.
-  const [activeParkId, setActiveParkId] = useState<string>(COORS_SPOTLIGHT.id);
+  const [animate] = useState(() => !entranceShown);
+  useEffect(() => {
+    entranceShown = true;
+  }, []);
+  const enter = (base: string, i: number) =>
+    animate
+      ? {
+          className: `${base} ed-enter`,
+          style: { "--ed-stagger": i } as React.CSSProperties,
+        }
+      : { className: base };
 
-  // B1: live HR-probability-by-park from the batted-ball champion's all-parks
-  // endpoint. The launch-condition inputs are debounced (300ms) so typing does
-  // not spam the endpoint; the query keys on the debounced request.
-  const [launchSpeedMph, setLaunchSpeedMph] = useState(110);
-  const [launchAngleDeg, setLaunchAngleDeg] = useState(28);
-  const [sprayAngleDeg, setSprayAngleDeg] = useState(0);
-  const [stand, setStand] = useState<"L" | "R">("R");
-  const req: AllParksRequest = useMemo(
-    () => ({
-      launchSpeedMph,
-      launchAngleDeg,
-      sprayAngleDeg,
-      // Derived so distance stays physically consistent with velo + angle as they
-      // change (the post-contact model takes hitDistance as a feature). baseState
-      // empty + 0 outs are neutral game-context defaults for the park HR surface.
-      hitDistanceFt: estimateLandingDistanceFt(launchSpeedMph, launchAngleDeg),
-      stand,
-      baseState: 0,
-      outs: 0,
-    }),
-    [launchSpeedMph, launchAngleDeg, sprayAngleDeg, stand],
-  );
-  const [debouncedReq] = useDebouncedValue(req, 300);
-  // keepPrevious: a slider change keeps the 30-row heatmap mounted (dimmed) while
-  // the next request is in flight instead of unmounting it for a one-line note.
-  const allParks = useAllParksPrediction(debouncedReq, { keepPrevious: true });
-  const reduceMotion = useReducedMotion();
+  const ball = useBallCommit(CANONICAL_BALL);
+  const { draft, committed, pending, source } = ball;
+  const req = useMemo(() => requestFor(committed), [committed]);
+  const query = useAllParksPrediction(req, { keepPrevious: true });
 
-  const handleSelect = (parkId: string) => {
-    setActiveParkId(parkId);
-    if (typeof document !== "undefined") {
-      const el = document.getElementById(`park-row-${parkId}`);
-      if (el) {
-        el.scrollIntoView({
-          behavior: reduceMotion ? "auto" : "smooth",
-          block: "center",
-        });
-      }
-    }
-  };
+  // The ball whose numbers are on screen: remembered when a request SETTLES (not a placeholder).
+  // Adjusting state during render is React's documented pattern for derived-from-change state.
+  const [scored, setScored] = useState<Scored | null>(null);
+  if (
+    query.isSuccess &&
+    !query.isPlaceholderData &&
+    (scored == null ||
+      !sameBall(scored.ball, committed) ||
+      scored.at !== query.dataUpdatedAt)
+  ) {
+    setScored({ ball: committed, at: query.dataUpdatedAt });
+  }
+
+  const data = query.isError ? undefined : query.data;
+  const lines: ParkLine[] | null = data
+    ? parkLines(data, undefined, null)
+    : null;
+  const carry = data ? carryExtremes(data.carryFtByPark) : null;
+  const hasCarry = data?.carryFtByPark != null;
+  const inFlight =
+    !query.isError && (query.isPlaceholderData || (query.isFetching && !data));
+  const firstLoad = !data && !query.isError;
+  const settled = !pending && !inFlight && data != null && scored != null;
+  const stale = pending || inFlight;
+  const count = lines ? hrParkCount(lines) : null;
+
+  const scoredWords = scored ? describeBall(scored.ball) : null;
+  const scoredTime = scored ? ET_TIME.format(new Date(scored.at)) : null;
+  const scoredLine = pending
+    ? source === "pointer"
+      ? `Showing the ball above${scoredTime ? `, scored ${scoredTime} ET` : ""}. Release to rescore: ${describeBall(draft)}.`
+      : `Rescoring: ${describeBall(draft)}.`
+    : inFlight
+      ? `Rescoring: ${describeBall(committed)}.`
+      : data && scoredTime
+        ? `${data.modelName} ${data.modelVersion}, scored ${scoredTime} ET`
+        : null;
+
+  const fieldLabel =
+    scored && carry
+      ? `Generic field. The scored ball goes ${describeBall(scored.ball)}; the model's carry runs from ${carry.min.ft} feet at ${carry.min.name} to ${carry.max.ft} feet at ${carry.max.name}.`
+      : `Generic field. The ball goes ${describeBall(draft)}.`;
 
   return (
-    <PageChrome>
-      <ParksHeader
-        edition={PARKS_META.edition}
-        sampleN={PARKS_META.sampleN}
-        dataWindow={PARKS_META.dataWindow}
-        modelTag={PARKS_META.modelTag}
-      />
-
-      <ParksMethodology line={PARKS_META.methodologyLine} />
-      <p style={noteStyle}>{SHOWCASE_NOTE}</p>
-
-      <section
-        aria-labelledby="parks-hr-label"
-        aria-busy={allParks.isPlaceholderData ? true : undefined}
-      >
-        <div style={{ marginBottom: 12 }}>
-          <LowerThird id="parks-hr-label" meta="LIVE · 30 PARKS">
-            Home-Run Probability by Park
-          </LowerThird>
-        </div>
-        <p style={caveatStyle}>
-          <strong>Physics estimate, not a reality-validated predictor.</strong>{" "}
-          These per-park probabilities come from a calibrated batted-ball model
-          whose physics retrodiction correlates only about 0.30 with realized
-          outcomes (its linear baseline still wins on aggregate Brier). Read
-          them as relative comparisons between parks, not absolute HR rates -
-          see{" "}
-          <Link
-            to="/about"
-            style={{ color: colors.goldInk, textDecoration: "underline" }}
-          >
-            About
-          </Link>{" "}
-          for the methodology and roadmap.
+    <div className="ed-page">
+      <div className="ed-col">
+        <p className="ed-dateline">
+          <span>{ET_DATE.format(new Date())}</span>
+          <span className="ed-dateline__issued">Park explorer</span>
+          <span>A calibrated physics estimate</span>
         </p>
-        <div style={controlsRowStyle}>
-          <NumberInput
-            label="Exit velo (mph)"
-            value={launchSpeedMph}
-            onChange={(v) =>
-              setLaunchSpeedMph(typeof v === "number" ? v : Number(v) || 110)
-            }
-            min={40}
-            max={125}
-            step={1}
-            w={130}
-          />
-          <NumberInput
-            label="Launch angle (deg)"
-            value={launchAngleDeg}
-            onChange={(v) =>
-              setLaunchAngleDeg(typeof v === "number" ? v : Number(v) || 28)
-            }
-            min={-20}
-            max={60}
-            step={1}
-            w={150}
-          />
-          <NumberInput
-            label="Spray angle (deg)"
-            // ABSOLUTE, not batter-relative. Training's convention is "+ to 3B/LF"; pull and oppo
-            // SWAP with handedness, so "- pull / + oppo" was correct only for a left-handed batter
-            // and backwards on this page's default (stand "R").
-            description="- toward RF / + toward LF"
-            value={sprayAngleDeg}
-            onChange={(v) =>
-              setSprayAngleDeg(typeof v === "number" ? v : Number(v) || 0)
-            }
-            min={-SPRAY_LIMIT_DEG}
-            max={SPRAY_LIMIT_DEG}
-            step={1}
-            w={150}
-          />
+
+        <div className="pk-head">
           <div>
-            <span style={controlLabelStyle}>Bat side</span>
-            <SegmentedControl
-              value={stand}
-              onChange={(v) => setStand(v === "L" ? "L" : "R")}
-              data={[
-                { label: "LHB", value: "L" },
-                { label: "RHB", value: "R" },
-              ]}
-            />
-          </div>
-        </div>
-        {allParks.isError ? (
-          <p style={errorStyle}>
-            Could not load the all-parks prediction
-            {allParks.error instanceof Error
-              ? `: ${allParks.error.message}`
-              : ""}
-            .
-          </p>
-        ) : allParks.data ? (
-          <div
-            style={{
-              opacity: allParks.isPlaceholderData ? 0.6 : 1,
-              transition: `opacity ${motion.durationsMs.fast}ms ${motion.easing.color}`,
-            }}
-          >
-            <p style={noteStyle}>
-              Live: {allParks.data.modelName} {allParks.data.modelVersion} -
-              estimated P(HR) for a {launchSpeedMph} mph / {launchAngleDeg}
-              &deg; / {sprayAngleDeg}&deg; spray batted ball,{" "}
-              {stand === "R" ? "RHB" : "LHB"}, at each park. Bar length and
-              color show the absolute P(HR), so near-equal parks read as
-              near-equal.
-              {allParks.data.carryFtByPark
-                ? " The carry column is the model's predicted carry distance (ft) at each park."
-                : ""}
+            <p {...enter("ed-slug", 0)}>Parks</p>
+            <h1 {...enter("ed-h1", 1)}>Where does it leave the yard?</h1>
+            <p {...enter("ed-dek", 2)}>
+              Hit one ball in all thirty parks. Move the sliders; the
+              batted-ball model rescores every park when you let go.
             </p>
-            <ParkHrHeatmap
-              probHrByPark={allParks.data.probHrByPark}
-              carryFtByPark={allParks.data.carryFtByPark}
-              parkRows={PARK_ROWS}
-            />
           </div>
-        ) : allParks.isLoading ? (
-          <p style={noteStyle}>Computing P(HR) across the 30 parks&hellip;</p>
-        ) : null}
-      </section>
-
-      <section aria-labelledby="parks-switcher-label">
-        <div style={{ marginBottom: 12 }}>
-          <LowerThird id="parks-switcher-label">
-            Park Switcher · Mini Heatmaps
-          </LowerThird>
+          <p className="ed-note pk-head__note">
+            {FIELD_NOTE}{" "}
+            <Link className="ed-link" to="/models/guide">
+              How the model was built
+            </Link>
+          </p>
         </div>
-        <p style={noteStyle}>{SHOWCASE_NOTE}</p>
-        <ParkSwitcherStrip
-          thumbnails={PARK_THUMBNAILS}
-          rows={PARK_ROWS}
-          activeParkId={activeParkId}
-          onSelect={handleSelect}
-        />
-      </section>
 
-      <section aria-labelledby="parks-overview-label">
-        <div style={{ marginBottom: 12 }}>
-          <LowerThird id="parks-overview-label" meta="30 PARKS">
-            Overview
-          </LowerThird>
+        <div className="pl-split pk-hero">
+          <section aria-label="The ball" {...enter("pk-hero__field", 3)}>
+            <ParkField
+              sprayDeg={draft.sprayAngleDeg}
+              inputDistanceFt={estimateLandingDistanceFt(
+                draft.launchSpeedMph,
+                draft.launchAngleDeg,
+              )}
+              carry={carry}
+              settled={settled}
+              label={fieldLabel}
+              unsettledNote={
+                pending
+                  ? source === "pointer"
+                    ? "release to rescore"
+                    : "rescoring"
+                  : inFlight
+                    ? "rescoring"
+                    : null
+              }
+            />
+            <p className="pk-field__note">{INPUT_RING_NOTE}</p>
+            <BallControls
+              draft={draft}
+              onMove={ball.move}
+              onEnd={ball.end}
+              onBegin={ball.begin}
+              onStand={ball.setStand}
+            />
+          </section>
+
+          <section
+            className="pk-answer"
+            aria-labelledby="pk-answer-label"
+            aria-busy={inFlight || firstLoad ? true : undefined}
+          >
+            <p className="ed-label" id="pk-answer-label">
+              This ball, in every park
+            </p>
+            {query.isError ? (
+              <div className="pk-error">
+                <div className="ed-fig">
+                  <span className="ed-fig__value">—</span>
+                  <span className="ed-fig__label">
+                    parks where the estimate is .50 or higher
+                  </span>
+                </div>
+                <p className="ed-note">
+                  Could not score this ball
+                  {query.error instanceof Error
+                    ? `: ${query.error.message}`
+                    : ""}
+                  . Try a different ball, or reload.
+                </p>
+              </div>
+            ) : firstLoad ? (
+              <div className="pk-loading">
+                <div className="ed-fig">
+                  <span className="ed-fig__value ed-shell pk-shell-fig" />
+                  <span className="ed-fig__label">
+                    Scoring this ball across the 30 parks
+                  </span>
+                </div>
+                <div className="ed-shell pk-shell-strip" />
+              </div>
+            ) : lines && lines.length === 0 ? (
+              <p className="ed-note">
+                No per-park estimates came back for this ball.
+              </p>
+            ) : lines ? (
+              <div className={stale ? "pk-dim pk-dim--on" : "pk-dim"}>
+                <div className="ed-fig pk-count">
+                  <span className="ed-fig__value">
+                    {count} of {lines.length}
+                  </span>
+                  <span className="ed-fig__label">
+                    parks where the estimate is .50 or higher
+                  </span>
+                  {scoredWords ? (
+                    <span className="ed-fig__basis">{scoredWords}</span>
+                  ) : null}
+                </div>
+                <ParkStrip lines={lines} />
+              </div>
+            ) : null}
+            {scoredLine ? (
+              <p
+                className={stale ? "pk-scored pk-scored--pending" : "pk-scored"}
+              >
+                {scoredLine}
+              </p>
+            ) : null}
+            <VisuallyHidden>
+              <p aria-live="polite">
+                {settled && lines && scoredWords
+                  ? `${count} of ${lines.length} parks at .50 or higher for ${scoredWords}.`
+                  : ""}
+              </p>
+            </VisuallyHidden>
+            <p className="pk-caveat">
+              <strong>{PHYSICS_CAVEAT_LEAD}</strong> {PHYSICS_CAVEAT_BODY}
+            </p>
+          </section>
         </div>
-        <p style={noteStyle}>{SHOWCASE_NOTE}</p>
-        <OverviewParksTable rows={PARK_ROWS} activeParkId={activeParkId} />
-      </section>
 
-      <section aria-labelledby="parks-spotlight-label">
-        <div style={{ marginBottom: 12 }}>
-          <LowerThird id="parks-spotlight-label">
-            Spotlight · Coors Field
-          </LowerThird>
-        </div>
-        <p style={noteStyle}>{SHOWCASE_NOTE}</p>
-        <ParkSpotlight spotlight={COORS_SPOTLIGHT} />
-      </section>
+        <section
+          className="pl-part pk-every"
+          aria-labelledby="pk-every-title"
+          aria-busy={inFlight ? true : undefined}
+        >
+          <div className="pl-part__head">
+            <p className="ed-slug">Every park</p>
+            <span className="pl-asof">
+              ranked by estimated P(HR), highest first
+            </span>
+          </div>
+          <h2 className="ed-h2" id="pk-every-title">
+            The thirty, for this ball
+          </h2>
+          {lines && lines.length > 0 ? (
+            <div className={stale ? "pk-dim pk-dim--on" : "pk-dim"}>
+              <ParkAgate
+                lines={lines}
+                carryIsModel={hasCarry}
+                figure="prob"
+                caption={
+                  <p className="ed-note">
+                    Bold where the estimate is .50 or higher.{" "}
+                    {hasCarry
+                      ? "Carry is the model's distance per park."
+                      : "This champion serves no per-park carry."}{" "}
+                    {NO_UNCERTAINTY_NOTE}
+                  </p>
+                }
+              />
+            </div>
+          ) : firstLoad ? (
+            <div className="ed-shell pk-shell-list" />
+          ) : (
+            <p className="ed-note">
+              The list fills in once this ball is scored.
+            </p>
+          )}
+        </section>
 
-      <BroadcastFooter>PARK FACTORS</BroadcastFooter>
-    </PageChrome>
+        <section className="pl-part" aria-labelledby="pk-showcase-title">
+          <div className="pl-part__head">
+            <p className="ed-slug">Showcase</p>
+            <span className="pl-asof">fixtures, not from the models</span>
+          </div>
+          <h2 className="ed-h2" id="pk-showcase-title">
+            Park factors
+          </h2>
+          <ShowcaseNote>{SHOWCASE_FACTORS_NOTE}</ShowcaseNote>
+          <ParkFactorsTable rows={PARK_ROWS} />
+        </section>
+
+        <footer className="ed-footer">
+          <span>The Bullpen. Self-hosted, honestly scored.</span>
+          <span>
+            build {BUILD_SHA}, {BUILD_DATE}
+          </span>
+        </footer>
+      </div>
+    </div>
   );
 }
