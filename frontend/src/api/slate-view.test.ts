@@ -109,6 +109,37 @@ describe("slateStatus", () => {
     expect(c.paused).toBe(false);
   });
 
+  it("prints no score for a POSTPONED game: the feed's 0-0 was never played", () => {
+    const [withMatchup] = mergeSlate(
+      [matchup({ gameId: 8 })],
+      [game({ gameId: 8, status: "POSTPONED", homeScore: 0, awayScore: 0 })],
+    );
+    expect(withMatchup!.postponed).toBe(true);
+    expect(withMatchup!.awayScore).toBeNull();
+    expect(withMatchup!.homeScore).toBeNull();
+    const [gameOnly] = mergeSlate(
+      [],
+      [game({ gameId: 9, status: "POSTPONED", homeScore: 0, awayScore: 0 })],
+    );
+    expect(gameOnly!.postponed).toBe(true);
+    expect(gameOnly!.awayScore).toBeNull();
+    expect(gameOnly!.homeScore).toBeNull();
+  });
+
+  it("flags a delay before first pitch as a delayed start, still scheduled", () => {
+    const [c] = mergeSlate(
+      [matchup({ gameId: 10 })],
+      [game({ gameId: 10, status: "DELAYED", inning: 0 })],
+    );
+    expect(c!.status).toBe("scheduled");
+    expect(c!.delayedStart).toBe(true);
+    const [started] = mergeSlate(
+      [matchup({ gameId: 11 })],
+      [game({ gameId: 11, status: "DELAYED", inning: 4 })],
+    );
+    expect(started!.delayedStart).toBe(false);
+  });
+
   it("does not flag an in-progress or scheduled game as paused", () => {
     expect(slatePaused("IN_PROGRESS")).toBe(false);
     expect(slatePaused(undefined)).toBe(false);
@@ -126,9 +157,16 @@ describe("mergeSlate", () => {
     expect(c.homeScore).toBe(1);
     expect(c.inning).toBe(5);
     // matchup enrichment survives the merge
-    expect(c.leanLabel).toBe("Pitching Duel");
+    expect(c.leanLabel).toBe("Pitching duel");
     expect(c.battleScore).toBe(8.6);
     expect(c.away?.name).toBe("Gerrit Cole");
+  });
+
+  it("carries the matchup's first pitch through as ISO UTC for ordering", () => {
+    expect(mergeSlate([matchup()], [])[0]!.firstPitchUtc).toBe(
+      "2026-06-13T23:10:00Z",
+    );
+    expect(mergeSlate([], [game({ gameId: 99 })])[0]!.firstPitchUtc).toBeNull();
   });
 
   it("keeps a matchup with no game row as a SCHEDULED card (no scores)", () => {

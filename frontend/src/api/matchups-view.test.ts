@@ -31,9 +31,9 @@ function row(over: Partial<MatchupSummary> = {}): MatchupSummary {
 
 describe("leanLabel", () => {
   it("maps each classifier lean to its display label", () => {
-    expect(leanLabel("pitching")).toBe("Pitching Duel");
-    expect(leanLabel("hitters")).toBe("Hitters Duel");
-    expect(leanLabel("mixed")).toBe("Split Lean");
+    expect(leanLabel("pitching")).toBe("Pitching duel");
+    expect(leanLabel("hitters")).toBe("Hitters duel");
+    expect(leanLabel("mixed")).toBe("Split lean");
   });
 
   it("falls back to a generic label for an unknown lean", () => {
@@ -56,7 +56,7 @@ describe("firstPitchEt", () => {
 describe("toFeaturedView / toBoardRow", () => {
   it("carries the two lean-driven sides with team context", () => {
     const v = toFeaturedView(row());
-    expect(v.leanLabel).toBe("Pitching Duel");
+    expect(v.leanLabel).toBe("Pitching duel");
     expect(v.firstPitchEt).toBe("7:10 PM ET");
     expect(v.away).toEqual({
       playerId: 20,
@@ -79,7 +79,7 @@ describe("toFeaturedView / toBoardRow", () => {
         awayPlayerName: "Aaron Judge",
       }),
     );
-    expect(b.leanLabel).toBe("Hitters Duel");
+    expect(b.leanLabel).toBe("Hitters duel");
     expect(b.away.role).toBe("hitter");
     expect(b.home.role).toBe("hitter");
     expect(b.awayTeam).toBe("NYY");
@@ -102,8 +102,8 @@ describe("splitSlate", () => {
     expect(featured?.gameId).toBe(1);
     expect(board.map((b) => b.gameId)).toEqual([2, 3]);
     expect(board.map((b) => b.leanLabel)).toEqual([
-      "Hitters Duel",
-      "Split Lean",
+      "Hitters duel",
+      "Split lean",
     ]);
   });
 });
