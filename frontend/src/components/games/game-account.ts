@@ -17,7 +17,7 @@
  *    transform, so "model gave it" is a direct lookup into `predictedClasses`.
  */
 import type { AllParksResponse } from "../../api/parks";
-import { PARK_ROWS } from "../../data/parks-fixtures";
+import { parkName } from "../../lib/park-names";
 import {
   postPitchCount,
   type GameSummary,
@@ -401,6 +401,8 @@ export type ParkLine = {
   id: string;
   team: string;
   parkName: string;
+  /** The model's P(HR) at this park (the figure /parks prints; the game page prints a verdict). */
+  prob: number;
   carryFt: number | null;
   hr: boolean;
   here: boolean;
@@ -411,17 +413,18 @@ export function parkLines(
   homeTeam: string | undefined,
   fallbackDistanceFt: number | null,
 ): ParkLine[] {
-  const byId = new Map(PARK_ROWS.map((r) => [r.id, r]));
   return Object.entries(pred.probHrByPark)
     .filter(([, prob]) => Number.isFinite(prob))
     .sort(([a, pa], [b, pb]) => pb - pa || a.localeCompare(b))
     .map(([id, prob]) => {
-      const row = byId.get(id);
       const carry = pred.carryFtByPark?.[id];
       return {
         id,
-        team: row?.team ?? id,
-        parkName: row?.parkName ?? id,
+        // The live id IS the team code (training: home_team AS park_id); names come from the one
+        // live map, never from the showcase fixture (which lacked AZ / ATH).
+        team: id,
+        parkName: parkName(id),
+        prob,
         carryFt:
           carry != null
             ? Math.round(carry)

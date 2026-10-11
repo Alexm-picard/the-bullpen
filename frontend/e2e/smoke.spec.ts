@@ -188,7 +188,10 @@ test("browser back/forward re-renders routes cleanly (BrowserRouter history)", a
 
   await page.goBack();
   await expect(page).toHaveURL(/\/parks$/);
-  await expect(page.locator("h1").first()).toHaveText(/park/i);
+  // The /parks H1 (SPEC-parks) names the question the page answers; it no longer says "park".
+  await expect(page.locator("h1").first()).toHaveText(
+    "Where does it leave the yard?",
+  );
 
   await page.goBack();
   await expect(page).toHaveURL(/localhost:\d+\/$/);
@@ -198,7 +201,10 @@ test("browser back/forward re-renders routes cleanly (BrowserRouter history)", a
 
   await page.goForward();
   await expect(page).toHaveURL(/\/parks$/);
-  await expect(page.locator("h1").first()).toHaveText(/park/i);
+  // The /parks H1 (SPEC-parks) names the question the page answers; it no longer says "park".
+  await expect(page.locator("h1").first()).toHaveText(
+    "Where does it leave the yard?",
+  );
 
   expect(errors, "uncaught errors traversing history").toEqual([]);
 });

@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 
 import { GameApiError } from "../../api/games";
 import { theme } from "../../design/theme";
+import { visibleText } from "../../test-support/visible-text";
 
 import { BasesGlyph } from "./bases-glyph";
 import {
@@ -184,6 +185,31 @@ describe("parkLines + ParkAgate", () => {
     expect(out).toContain("this champion serves no per-park carry");
     expect(out).toContain("The model reports no per-park uncertainty");
     expect(out).not.toMatch(/±/);
+  });
+
+  it("names every live park from the live map, including AZ and ATH (not the showcase fixture)", () => {
+    const lines = parkLines(
+      { probHrByPark: { AZ: 0.6, ATH: 0.2 } },
+      "ATH",
+      null,
+    );
+    expect(lines.map((l) => [l.id, l.parkName, l.prob])).toEqual([
+      ["AZ", "Chase Field", 0.6],
+      ["ATH", "Sutter Health Park", 0.2],
+    ]);
+  });
+
+  it("prob mode (/parks) prints P(HR) and the visible park name; the default stays a verdict", () => {
+    const lines = parkLines(pred, undefined, null);
+    const probOut = visibleText(
+      html(<ParkAgate lines={lines} carryIsModel figure="prob" />),
+    );
+    expect(probOut).toContain("Coors Field");
+    expect(probOut).toContain(".74");
+    expect(probOut).not.toMatch(/\bin play\b/);
+    const verdict = visibleText(html(<ParkAgate lines={lines} carryIsModel />));
+    expect(verdict).toContain("in play");
+    expect(verdict).not.toContain(".74");
   });
 });
 

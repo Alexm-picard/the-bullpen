@@ -1,37 +1,18 @@
 /**
- * Fixture data for the Park Factors appendix (/parks, Stage 3c, decision [133]).
+ * SHOWCASE fixture for /parks: the park-factor table (SPEC-parks, decision [202]).
  *
- * Stage 3c replaces the editorial-data /parks Park Explorer (the slider-driven
- * fly-ball heatmap) with a scouting-report appendix: 30-row OVERVIEW StatTable
- * of league-wide park factors, a horizontal-scroll PARK SWITCHER strip of 30
- * mini heatmaps, and a SPOTLIGHT block on Coors Field with a generic field SVG,
- * a 12×12 landing-density heatmap, and a 5-block factor strip with key reads.
+ * Illustrative values in the shape a future GET /v1/parks/factors would return. No model produced
+ * them and the page says so inline (D4). Fixtures may illustrate scouting, never model
+ * performance ([202]): the earlier "MODEL park_factor_v2" tag, the "sample-size-weighted
+ * shrinkage, n=437,210" method line, the edition stamp, the 30 invented mini-heatmaps and the
+ * Coors spotlight were removed, because they described a model and a measurement that do not
+ * exist.
  *
- * Fixture-only — no live API in v1. Real-data wiring is out of scope; the shape
- * mirrors what a future GET /v1/parks/factors endpoint would return.
- *
- * FACTOR_METRIC:
- *   Park factors are conventionally expressed as ratios where 1.00 is league
- *   average (a park that neither helps nor hurts the metric). 1.18 HR = 18 %
- *   more home runs than average; 0.88 HR = 12 % fewer. The `closer-to-target`
- *   direction in cellColor tints both extremes red and keeps the neutral
- *   midpoint cream — readers see _how extreme_ a park plays, not _which way_
- *   the extreme falls. For the FACTOR_METRIC reference {0.80 .. 1.25}, the
- *   half-range is 0.25; a value with |Δ| > 0.16 (i.e. ≤ 0.84 or ≥ 1.16) lands
- *   in bad1/bad3 territory ("clearly distinctive").
- *
- * makeGrid:
- *   The 12×12 spotlight grid imports {@link makeGrid} from matchup-fixtures
- *   to keep the helper canonical. Mini-thumbs use their own 6×6
- *   {@link makeMiniGrid} helper because the size is different and the helper
- *   is trivial; duplicating it locally is cheaper than parameterizing the
- *   shared helper.
+ * Park factors are ratios where 1.00 is league average (1.18 HR = 18% more home runs than
+ * average). Ids are the current team codes the live endpoint uses (AZ, ATH), so a reader never
+ * sees two spellings of one park on one page. No live surface reads these names; live labels come
+ * from lib/park-names.ts.
  */
-
-import { makeGrid } from "./matchup-fixtures";
-import type { MetricMeta } from "../design/cellColor";
-
-// ── Types ────────────────────────────────────────────────────────────────────
 
 export type ClimateKind = "ALTITUDE" | "DOME" | "COASTAL" | "TEMPERATE";
 
@@ -40,7 +21,7 @@ export type WindBias = "LF→RF" | "RF→LF" | "IN" | "OUT" | "NEUTRAL";
 export type ParkRow = {
   /** Canonical 3-letter abbreviation (also the team abbr). */
   id: string;
-  /** Full park name, uppercased for the row-label column. */
+  /** Park name, title case, current as of 2026 (the live map in lib/park-names.ts agrees). */
   parkName: string;
   /** Team 3-letter abbreviation. */
   team: string;
@@ -60,94 +41,12 @@ export type ParkRow = {
   ops: number;
 };
 
-export type ParkThumbnailDatum = {
-  /** Park id (matches ParkRow.id). */
-  id: string;
-  /** 6×6 normalized [0,1] grid for the mini heatmap. */
-  grid: number[][];
-};
-
-export type ParkSpotlightFactor = {
-  /** Display key, e.g. "HR". */
-  key: string;
-  /** Display label, e.g. "HR FACTOR". */
-  label: string;
-  /** Raw factor value (used for cellColor + figure). */
-  value: number;
-  /** Caption format, e.g. "+18% vs lg". */
-  caption: string;
-};
-
-export type ParkSpotlightWindBlock = {
-  key: "WIND";
-  label: "WIND BIAS";
-  /** Display string like "LF → RF". */
-  display: string;
-  caption: string;
-};
-
-export type ParkSpotlightDatum = {
-  /** Park id (matches ParkRow.id). */
-  id: string;
-  /** Full park name. */
-  parkName: string;
-  /** Numeric blocks + wind block, in display order. */
-  factors: (ParkSpotlightFactor | ParkSpotlightWindBlock)[];
-  /** 12×12 normalized landing-density grid. */
-  landingGrid: number[][];
-  /** 1–4 paragraphs of editorial prose. */
-  keyReads: string[];
-};
-
-// ── Metric meta ──────────────────────────────────────────────────────────────
-
-/**
- * Park-factor metric. closer-to-target with target 1.00.
- *
- * Reference distribution is symmetric around 1.00 with the empirical spread
- * we see across the 30 MLB parks: ~0.80 to ~1.25 for the most extreme single
- * factor across HR / BABIP / 3B / K / OPS. Closer-to-target inversion means
- * the neutral cream stop is the visual peak (1.00 = average) and both tails
- * tint red proportionally to distance.
- */
-export const FACTOR_METRIC: MetricMeta = {
-  key: "parkFactor",
-  direction: "closer-to-target",
-  reference: { min: 0.8, p25: 0.93, median: 1.0, p75: 1.07, max: 1.25 },
-};
-
-// ── Meta ─────────────────────────────────────────────────────────────────────
-
-export const PARKS_META = {
-  issueDate: "Wed · May 30, 2026",
-  edition: "2026.05.30",
-  issuedAt: "19:05 ET",
-  dataWindow: "DATA WINDOW 2023 — 2025",
-  modelTag: "MODEL park_factor_v2",
-  sampleN: 437_210,
-  methodologyLine:
-    "3-yr rolling window · park-and-batter-mix adjusted · 2023–2025 · n=437,210 · sample-size-weighted shrinkage to 1.00",
-  buildSha: "b1b62ec",
-  buildDate: "2026.05.30",
-} as const;
-
-// ── 30 park rows ─────────────────────────────────────────────────────────────
-
-/**
- * Every MLB park with realistic conditionally-formatted factor values.
- *
- * The factor anchors (COL/BOS/NYY/SD/HOU/TB/MIA/TEX/ARI/TOR) match published
- * Statcast / Baseball-Savant park-factor norms for 2023–2025. The remaining
- * 20 parks cluster around 1.00 ± 0.06 with WIND + CLIMATE matched to real
- * venue geography. A handful (CHC at Wrigley, CIN at Great American, KC,
- * SEA, SF) land at least one factor in the visibly-tinted extreme range so
- * the overview table's cellColor heatmap is not entirely cream.
- */
+/** The 30 parks, showcase values (illustrative; a handful of anchors echo commonly cited park profiles). */
 export const PARK_ROWS: ParkRow[] = [
   // Anchors
   {
     id: "COL",
-    parkName: "COORS FIELD",
+    parkName: "Coors Field",
     team: "COL",
     climate: "ALTITUDE",
     hr: 1.18,
@@ -159,7 +58,7 @@ export const PARK_ROWS: ParkRow[] = [
   },
   {
     id: "BOS",
-    parkName: "FENWAY PARK",
+    parkName: "Fenway Park",
     team: "BOS",
     climate: "COASTAL",
     hr: 1.04,
@@ -171,7 +70,7 @@ export const PARK_ROWS: ParkRow[] = [
   },
   {
     id: "NYY",
-    parkName: "YANKEE STADIUM",
+    parkName: "Yankee Stadium",
     team: "NYY",
     climate: "COASTAL",
     hr: 1.16,
@@ -183,7 +82,7 @@ export const PARK_ROWS: ParkRow[] = [
   },
   {
     id: "SD",
-    parkName: "PETCO PARK",
+    parkName: "Petco Park",
     team: "SD",
     climate: "COASTAL",
     hr: 0.88,
@@ -195,7 +94,7 @@ export const PARK_ROWS: ParkRow[] = [
   },
   {
     id: "HOU",
-    parkName: "MINUTE MAID PARK",
+    parkName: "Daikin Park",
     team: "HOU",
     climate: "DOME",
     hr: 1.06,
@@ -207,7 +106,7 @@ export const PARK_ROWS: ParkRow[] = [
   },
   {
     id: "TB",
-    parkName: "TROPICANA FIELD",
+    parkName: "Tropicana Field",
     team: "TB",
     climate: "DOME",
     hr: 0.95,
@@ -219,7 +118,7 @@ export const PARK_ROWS: ParkRow[] = [
   },
   {
     id: "MIA",
-    parkName: "LOANDEPOT PARK",
+    parkName: "loanDepot park",
     team: "MIA",
     climate: "DOME",
     hr: 0.92,
@@ -231,7 +130,7 @@ export const PARK_ROWS: ParkRow[] = [
   },
   {
     id: "TEX",
-    parkName: "GLOBE LIFE FIELD",
+    parkName: "Globe Life Field",
     team: "TEX",
     climate: "DOME",
     hr: 1.02,
@@ -242,9 +141,9 @@ export const PARK_ROWS: ParkRow[] = [
     ops: 1.01,
   },
   {
-    id: "ARI",
-    parkName: "CHASE FIELD",
-    team: "ARI",
+    id: "AZ",
+    parkName: "Chase Field",
+    team: "AZ",
     climate: "DOME",
     hr: 1.04,
     babip: 1.04,
@@ -255,7 +154,7 @@ export const PARK_ROWS: ParkRow[] = [
   },
   {
     id: "TOR",
-    parkName: "ROGERS CENTRE",
+    parkName: "Rogers Centre",
     team: "TOR",
     climate: "DOME",
     hr: 1.05,
@@ -269,7 +168,7 @@ export const PARK_ROWS: ParkRow[] = [
   // signature reads so cellColor tinting shows up on the overview.
   {
     id: "CHC",
-    parkName: "WRIGLEY FIELD",
+    parkName: "Wrigley Field",
     team: "CHC",
     climate: "TEMPERATE",
     hr: 1.05,
@@ -281,7 +180,7 @@ export const PARK_ROWS: ParkRow[] = [
   },
   {
     id: "CIN",
-    parkName: "GREAT AMERICAN BALL PARK",
+    parkName: "Great American Ball Park",
     team: "CIN",
     climate: "TEMPERATE",
     hr: 1.14,
@@ -293,7 +192,7 @@ export const PARK_ROWS: ParkRow[] = [
   },
   {
     id: "KC",
-    parkName: "KAUFFMAN STADIUM",
+    parkName: "Kauffman Stadium",
     team: "KC",
     climate: "TEMPERATE",
     hr: 0.94,
@@ -305,7 +204,7 @@ export const PARK_ROWS: ParkRow[] = [
   },
   {
     id: "SEA",
-    parkName: "T-MOBILE PARK",
+    parkName: "T-Mobile Park",
     team: "SEA",
     climate: "COASTAL",
     hr: 0.9,
@@ -317,7 +216,7 @@ export const PARK_ROWS: ParkRow[] = [
   },
   {
     id: "SF",
-    parkName: "ORACLE PARK",
+    parkName: "Oracle Park",
     team: "SF",
     climate: "COASTAL",
     hr: 0.86,
@@ -329,7 +228,7 @@ export const PARK_ROWS: ParkRow[] = [
   },
   {
     id: "ATL",
-    parkName: "TRUIST PARK",
+    parkName: "Truist Park",
     team: "ATL",
     climate: "TEMPERATE",
     hr: 1.02,
@@ -341,7 +240,7 @@ export const PARK_ROWS: ParkRow[] = [
   },
   {
     id: "BAL",
-    parkName: "ORIOLE PARK AT CAMDEN YARDS",
+    parkName: "Oriole Park at Camden Yards",
     team: "BAL",
     climate: "COASTAL",
     hr: 1.03,
@@ -353,7 +252,7 @@ export const PARK_ROWS: ParkRow[] = [
   },
   {
     id: "CWS",
-    parkName: "GUARANTEED RATE FIELD",
+    parkName: "Rate Field",
     team: "CWS",
     climate: "TEMPERATE",
     hr: 1.07,
@@ -365,7 +264,7 @@ export const PARK_ROWS: ParkRow[] = [
   },
   {
     id: "CLE",
-    parkName: "PROGRESSIVE FIELD",
+    parkName: "Progressive Field",
     team: "CLE",
     climate: "TEMPERATE",
     hr: 0.99,
@@ -377,7 +276,7 @@ export const PARK_ROWS: ParkRow[] = [
   },
   {
     id: "DET",
-    parkName: "COMERICA PARK",
+    parkName: "Comerica Park",
     team: "DET",
     climate: "TEMPERATE",
     hr: 0.95,
@@ -389,7 +288,7 @@ export const PARK_ROWS: ParkRow[] = [
   },
   {
     id: "LAA",
-    parkName: "ANGEL STADIUM",
+    parkName: "Angel Stadium",
     team: "LAA",
     climate: "COASTAL",
     hr: 0.99,
@@ -401,7 +300,7 @@ export const PARK_ROWS: ParkRow[] = [
   },
   {
     id: "LAD",
-    parkName: "DODGER STADIUM",
+    parkName: "Dodger Stadium",
     team: "LAD",
     climate: "TEMPERATE",
     hr: 1.04,
@@ -413,7 +312,7 @@ export const PARK_ROWS: ParkRow[] = [
   },
   {
     id: "MIL",
-    parkName: "AMERICAN FAMILY FIELD",
+    parkName: "American Family Field",
     team: "MIL",
     climate: "DOME",
     hr: 1.04,
@@ -425,7 +324,7 @@ export const PARK_ROWS: ParkRow[] = [
   },
   {
     id: "MIN",
-    parkName: "TARGET FIELD",
+    parkName: "Target Field",
     team: "MIN",
     climate: "TEMPERATE",
     hr: 1.0,
@@ -437,7 +336,7 @@ export const PARK_ROWS: ParkRow[] = [
   },
   {
     id: "NYM",
-    parkName: "CITI FIELD",
+    parkName: "Citi Field",
     team: "NYM",
     climate: "COASTAL",
     hr: 0.96,
@@ -448,10 +347,10 @@ export const PARK_ROWS: ParkRow[] = [
     ops: 0.98,
   },
   {
-    id: "OAK",
-    parkName: "OAKLAND COLISEUM",
-    team: "OAK",
-    climate: "COASTAL",
+    id: "ATH",
+    parkName: "Sutter Health Park",
+    team: "ATH",
+    climate: "TEMPERATE",
     hr: 0.93,
     babip: 0.97,
     triples: 1.02,
@@ -461,7 +360,7 @@ export const PARK_ROWS: ParkRow[] = [
   },
   {
     id: "PHI",
-    parkName: "CITIZENS BANK PARK",
+    parkName: "Citizens Bank Park",
     team: "PHI",
     climate: "TEMPERATE",
     hr: 1.08,
@@ -473,7 +372,7 @@ export const PARK_ROWS: ParkRow[] = [
   },
   {
     id: "PIT",
-    parkName: "PNC PARK",
+    parkName: "PNC Park",
     team: "PIT",
     climate: "TEMPERATE",
     hr: 0.93,
@@ -485,7 +384,7 @@ export const PARK_ROWS: ParkRow[] = [
   },
   {
     id: "STL",
-    parkName: "BUSCH STADIUM",
+    parkName: "Busch Stadium",
     team: "STL",
     climate: "TEMPERATE",
     hr: 0.97,
@@ -497,7 +396,7 @@ export const PARK_ROWS: ParkRow[] = [
   },
   {
     id: "WSH",
-    parkName: "NATIONALS PARK",
+    parkName: "Nationals Park",
     team: "WSH",
     climate: "TEMPERATE",
     hr: 1.01,
@@ -508,133 +407,3 @@ export const PARK_ROWS: ParkRow[] = [
     ops: 1.0,
   },
 ];
-
-// ── Mini-thumbnail grids ─────────────────────────────────────────────────────
-
-/**
- * Compact 6×6 Gaussian grid for park-switcher thumbs. Normalised so the max
- * cell value is 1.0. We use a local helper (rather than the shared 12×12
- * makeGrid) because the smaller grid keeps the SVG cheap and the per-thumb
- * peak placements are intentional design choices, not data.
- */
-function makeMiniGrid(
-  peakRow: number,
-  peakCol: number,
-  sigma: number,
-): number[][] {
-  const size = 6;
-  const grid: number[][] = [];
-  let max = 0;
-  for (let r = 0; r < size; r++) {
-    const row: number[] = [];
-    for (let c = 0; c < size; c++) {
-      const dr = r - peakRow;
-      const dc = c - peakCol;
-      const v = Math.exp(-(dr * dr + dc * dc) / (2 * sigma * sigma));
-      row.push(v);
-      if (v > max) max = v;
-    }
-    grid.push(row);
-  }
-  if (max > 0) {
-    for (const row of grid) {
-      for (let c = 0; c < row.length; c++) {
-        row[c] = row[c]! / max;
-      }
-    }
-  }
-  return grid;
-}
-
-/**
- * One {@link ParkThumbnailDatum} per row in {@link PARK_ROWS}. The peak
- * (row, col, sigma) for each thumb is hand-picked so each one reads as a
- * distinct landing-density signature even at 80×80 px. Order matches
- * {@link PARK_ROWS} so the switcher and the overview table line up.
- */
-export const PARK_THUMBNAILS: ParkThumbnailDatum[] = [
-  { id: "COL", grid: makeMiniGrid(2, 1, 1.8) }, // Rockpile-pull LF
-  { id: "BOS", grid: makeMiniGrid(3, 0, 1.6) }, // Monster LF
-  { id: "NYY", grid: makeMiniGrid(2, 5, 1.4) }, // Short porch RF
-  { id: "SD", grid: makeMiniGrid(3, 3, 2.4) }, // dispersed
-  { id: "HOU", grid: makeMiniGrid(2, 4, 1.6) }, // Crawford boxes LF
-  { id: "TB", grid: makeMiniGrid(3, 3, 1.8) },
-  { id: "MIA", grid: makeMiniGrid(3, 2, 1.8) },
-  { id: "TEX", grid: makeMiniGrid(2, 3, 1.7) },
-  { id: "ARI", grid: makeMiniGrid(2, 2, 1.7) },
-  { id: "TOR", grid: makeMiniGrid(2, 3, 1.7) },
-  { id: "CHC", grid: makeMiniGrid(3, 4, 1.5) }, // Wrigley wind-out RC
-  { id: "CIN", grid: makeMiniGrid(2, 4, 1.5) }, // GABP RC bandbox
-  { id: "KC", grid: makeMiniGrid(4, 2, 2.0) }, // big alleys → spread
-  { id: "SEA", grid: makeMiniGrid(3, 1, 1.7) },
-  { id: "SF", grid: makeMiniGrid(3, 0, 1.8) }, // RF→LF wind
-  { id: "ATL", grid: makeMiniGrid(2, 3, 1.7) },
-  { id: "BAL", grid: makeMiniGrid(2, 4, 1.6) },
-  { id: "CWS", grid: makeMiniGrid(2, 2, 1.6) },
-  { id: "CLE", grid: makeMiniGrid(3, 3, 1.9) },
-  { id: "DET", grid: makeMiniGrid(4, 3, 2.0) }, // deep alleys
-  { id: "LAA", grid: makeMiniGrid(3, 3, 1.8) },
-  { id: "LAD", grid: makeMiniGrid(2, 4, 1.7) },
-  { id: "MIL", grid: makeMiniGrid(2, 2, 1.7) },
-  { id: "MIN", grid: makeMiniGrid(3, 2, 1.9) },
-  { id: "NYM", grid: makeMiniGrid(3, 4, 1.7) },
-  { id: "OAK", grid: makeMiniGrid(4, 2, 2.0) }, // foul territory
-  { id: "PHI", grid: makeMiniGrid(2, 5, 1.5) },
-  { id: "PIT", grid: makeMiniGrid(4, 3, 1.9) }, // big LF
-  { id: "STL", grid: makeMiniGrid(3, 3, 1.8) },
-  { id: "WSH", grid: makeMiniGrid(2, 3, 1.7) },
-];
-
-// ── Coors spotlight ──────────────────────────────────────────────────────────
-
-/**
- * The /parks SPOTLIGHT block currently profiles Coors Field. The numeric
- * factors mirror the overview row; the wind block is editorial (LF→RF with
- * a prevailing 11 mph reading derived from Denver's typical summer pattern);
- * the 12×12 landing grid uses makeGrid(4, 4, 2.8) — peak in the LF-CF
- * triangle, which matches the Rockpile/triples-machine pattern.
- *
- * keyReads paragraphs are written to read as scouting prose, not analyst
- * footnotes. They reference real factors and avoid model-output filler.
- */
-export const COORS_SPOTLIGHT: ParkSpotlightDatum = {
-  id: "COL",
-  parkName: "COORS FIELD",
-  factors: [
-    {
-      key: "HR",
-      label: "HR FACTOR",
-      value: 1.18,
-      caption: "+18% vs lg",
-    },
-    {
-      key: "BABIP",
-      label: "BABIP FACTOR",
-      value: 1.12,
-      caption: "+12% vs lg",
-    },
-    {
-      key: "3B",
-      label: "3B FACTOR",
-      value: 1.42,
-      caption: "+42% vs lg",
-    },
-    {
-      key: "WIND",
-      label: "WIND BIAS",
-      display: "LF → RF",
-      caption: "prevailing 11 mph",
-    },
-    {
-      key: "OPS",
-      label: "OPS FACTOR",
-      value: 1.13,
-      caption: "+13% vs lg",
-    },
-  ],
-  landingGrid: makeGrid(4, 4, 2.8),
-  keyReads: [
-    "Coors plays as the league's most distinctive hitter park — 1.18 HR factor with elevation responsible for ~70% of the gap, but the LF gap (Rockpile) drives the league-leading 1.42 triples factor by carrying balls past defenders rather than over them.",
-    "Despite the slugging surface, K factor lands at 0.97 — the thin air rewards two-strike contact more than it punishes it, a cross-current that distinguishes Coors from comparable bandbox profiles like Great American.",
-  ],
-};
