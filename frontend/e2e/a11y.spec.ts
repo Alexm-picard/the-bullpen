@@ -41,6 +41,8 @@ const ROUTES = [
   "/players/592450",
   "/games/745804",
   "/accuracy",
+  // The 404 (SPEC-games-404 §7): any unmatched URL.
+  "/this-route-does-not-exist",
 ];
 
 for (const route of ROUTES) {
@@ -74,24 +76,27 @@ for (const route of ROUTES) {
   });
 }
 
-// [195]: the front page ships two designed editions; audit the night edition too (an OS dark
-// preference selects it on first paint, before any toggle).
-test("no critical or serious a11y violations on / (night edition)", async ({
-  page,
-}) => {
-  await page.emulateMedia({ colorScheme: "dark" });
-  await page.goto("/");
-  await page.locator("h1").first().waitFor();
-  await settle(page);
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  const results = await new AxeBuilder({ page })
-    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
-    .analyze();
-  const blocking = results.violations.filter(
-    (v) => v.impact === "critical" || v.impact === "serious",
-  );
-  expect(
-    blocking.map((v) => `${v.id} [${v.impact}] x${v.nodes.length}`),
-    "axe critical/serious violations on / (night edition)",
-  ).toEqual([]);
-});
+// [195]: every migrated page ships two designed editions; audit the night edition too (an OS dark
+// preference selects it on first paint, before any toggle). /games and the 404 joined with
+// SPEC-games-404.
+for (const route of ["/", "/games", "/this-route-does-not-exist"]) {
+  test(`no critical or serious a11y violations on ${route} (night edition)`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.goto(route);
+    await page.locator("h1").first().waitFor();
+    await settle(page);
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    const results = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+      .analyze();
+    const blocking = results.violations.filter(
+      (v) => v.impact === "critical" || v.impact === "serious",
+    );
+    expect(
+      blocking.map((v) => `${v.id} [${v.impact}] x${v.nodes.length}`),
+      `axe critical/serious violations on ${route} (night edition)`,
+    ).toEqual([]);
+  });
+}

@@ -37,7 +37,10 @@ test("an unknown URL renders the 404 page, not a blank shell (S6)", async ({
 }) => {
   const errors = trackPageErrors(page);
   await page.goto("/this-route-does-not-exist");
-  await expect(page.getByText("404")).toBeVisible();
+  // exact: the dateline also says "Error 404"; this pins the scorebook figure itself.
+  await expect(page.getByText("404", { exact: true })).toBeVisible();
+  // The scorebook echoes what was asked for (SPEC-games-404 §7).
+  await expect(page.getByText("/this-route-does-not-exist")).toBeVisible();
   await expect(page.getByText("No play at this base.")).toBeVisible();
   await expect(page.getByRole("link", { name: /back to home/i })).toBeVisible();
   // The nav chrome still frames the page (the 404 route lives inside the Layout).
