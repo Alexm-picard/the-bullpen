@@ -21,15 +21,42 @@ const json = (route: Route, body: unknown, status = 200) =>
     body: JSON.stringify(body),
   });
 
-// --- /players/:id (B2: recent predictions + calibration, with first-class empty) ----------
+// --- /players/:id ([195] player file: calls register + confidence-only histogram, first-class empty)
 
 const PLAYER_ID = 592450; // Aaron Judge
 
-test("player profile renders recent predictions + calibration when the API has data", async ({
+async function mockPlayer(page: Page) {
+  await page.route(`**/v1/players/${PLAYER_ID}`, (route) =>
+    json(route, {
+      id: PLAYER_ID,
+      name: "Aaron Judge",
+      primaryPosition: "RF",
+      active: true,
+      team: "NYY",
+    }),
+  );
+}
+
+test("player profile renders the calls register + where the calls landed when the API has data", async ({
   page,
 }) => {
   const errors = trackPageErrors(page);
-  // A settled prediction (winnerClass AND observedOutcome non-null) is what feeds the table.
+  await mockPlayer(page);
+  await page.route(`**/v1/players/${PLAYER_ID}/batted-balls*`, (route) =>
+    json(route, [
+      {
+        gameDate: "2026-06-12",
+        events: "home_run",
+        bbType: "fly_ball",
+        launchSpeedMph: 112.3,
+        launchAngleDeg: 28,
+        hitDistanceFt: 441,
+        parkId: "NYY",
+        stand: "R",
+      },
+    ]),
+  );
+  // A settled prediction (winnerClass AND observedOutcome non-null) is what feeds the account.
   await page.route(`**/v1/players/${PLAYER_ID}/predictions*`, (route) =>
     json(route, [
       {
@@ -44,6 +71,7 @@ test("player profile renders recent predictions + calibration when the API has d
       },
     ]),
   );
+  // Even if a payload carried observed rates, the profile draws confidence only.
   await page.route(`**/v1/players/${PLAYER_ID}/calibration*`, (route) =>
     json(route, [
       { binStart: 0.0, binEnd: 0.1, predicted: 0.05, actual: 0.04, n: 120 },
@@ -53,37 +81,60 @@ test("player profile renders recent predictions + calibration when the API has d
 
   await page.goto(`/players/${PLAYER_ID}`);
 
-  // Target the section heading by role (getByText is case-insensitive substring, so the bare
-  // string also matches the "Loading recent predictions…" paragraph).
   await expect(
-    page.getByRole("heading", { name: "Recent Predictions" }),
+    page.getByRole("heading", { level: 1, name: "Aaron Judge" }),
   ).toBeVisible();
-  // Wait for the predictions query to resolve (the loading paragraph clears).
-  await expect(page.getByText("Loading recent predictions")).toHaveCount(0);
-  // Data present => the first-class empty states must NOT render.
-  await expect(page.getByText("No prediction history yet")).toHaveCount(0);
-  await expect(page.getByText("No calibration data yet")).toHaveCount(0);
+  const calls = page.locator("#calls");
+  await expect(
+    calls.getByRole("heading", { name: "The calls, as they happened" }),
+  ).toBeVisible();
+  await expect(calls.getByTestId("calls-register")).toHaveText(
+    /1 of his last 1 settled calls came true\./,
+  );
+  await expect(calls.getByTestId("landed-note")).toBeVisible();
+  await expect(calls.getByText("No settled calls for him yet.")).toHaveCount(0);
+  await expect(calls.getByText("No calls logged for him yet.")).toHaveCount(0);
+  await expect(page.locator("#contact .pl-sc__hr")).toHaveCount(1);
   expect(errors, "uncaught errors on populated /players/:id").toEqual([]);
 });
 
-test("player profile renders the first-class empty state when the API returns []", async ({
+test("player profile renders the first-class empty states when the API returns []", async ({
   page,
 }) => {
   const errors = trackPageErrors(page);
-  await page.route(`**/v1/players/${PLAYER_ID}/predictions*`, (route) =>
-    json(route, []),
-  );
-  await page.route(`**/v1/players/${PLAYER_ID}/calibration*`, (route) =>
-    json(route, []),
-  );
+  await mockPlayer(page);
+  for (const leaf of ["batted-balls", "predictions", "calibration"]) {
+    await page.route(`**/v1/players/${PLAYER_ID}/${leaf}*`, (route) =>
+      json(route, []),
+    );
+  }
 
   await page.goto(`/players/${PLAYER_ID}`);
 
-  // prediction_log is sparse for weeks, so the empty state is the COMMON case and is
-  // rendered first-class (NoHistoryNote), never as an error or a blank table.
-  await expect(page.getByText("No prediction history yet")).toBeVisible();
-  await expect(page.getByText("No calibration data yet")).toBeVisible();
+  // prediction_log is sparse for weeks, so the empty state is the COMMON case and is rendered
+  // first-class, never as an error or a blank table.
+  const calls = page.locator("#calls");
+  await expect(calls.getByText(/No settled calls for him yet\./)).toBeVisible();
+  await expect(calls.getByText("No calls logged for him yet.")).toBeVisible();
+  await expect(
+    page.locator("#contact").getByText("No balls in play on file."),
+  ).toBeVisible();
   expect(errors, "uncaught errors on empty /players/:id").toEqual([]);
+});
+
+test("the showcase file keeps its D4 banner and links to live files", async ({
+  page,
+}) => {
+  const errors = trackPageErrors(page);
+  await page.goto("/players/judge_aaron");
+  await expect(page.getByRole("note")).toContainText(
+    "A demonstration matchup with illustrative values, not live scouting.",
+  );
+  await expect(
+    page.getByRole("link", { name: "Aaron Judge, live file" }),
+  ).toHaveAttribute("href", "/players/592450");
+  await expect(page.getByText("What the models said")).toHaveCount(0);
+  expect(errors, "uncaught errors on /players/:slug").toEqual([]);
 });
 
 // --- /games/:id (live pitch log, populated) ------------------------------------------------

@@ -1,155 +1,56 @@
 /**
- * <FeaturedReports> - the /players landing's first "filled" section: a row of
- * scouting-report cards for notable players, each linking to its /players/:id
- * profile. Showcase data (see players-landing-fixtures) until a featured-by-slate
- * endpoint exists; the card shape is the contract.
- *
- * Team color appears ONLY as the left edge bar ([160] a11y rule - fills, never
- * text). Cards use the panel corner-cut.
+ * <FeaturedReports> - the /players showcase list ([195] editorial skin). These are hand-written
+ * FIXTURES (players-landing-fixtures.ts): the parent section carries the Showcase label inline, and
+ * the caption repeats it. Each name links to the player's LIVE file. The grade chips the fixture
+ * still carries are deliberately not rendered (tone-coded quality chips break "data in ink").
  */
-
 import { Link } from "react-router";
 
-import type {
-  FeaturedReport,
-  ReportChip,
-} from "../../data/players-landing-fixtures";
-import { colors, cuts, typography } from "../../design/broadcast";
-import { teamColor } from "../../design/teamColors";
+import type { FeaturedReport } from "../../data/players-landing-fixtures";
 
-function chipStyle(tone: ReportChip["tone"]): React.CSSProperties {
-  return {
-    display: "inline-block",
-    padding: "2px 7px",
-    fontFamily: typography.fonts.mono,
-    fontWeight: typography.weights.medium,
-    fontSize: 12,
-    backgroundColor: colors.condFormat[tone],
-    // D4 (AA contrast): ink on the retuned good3 token reads at 5.9:1; the old
-    // light-on-green pairing sat at 3.9:1.
-    color: colors.ink,
-  };
-}
-
-function ReportCard({ report }: { report: FeaturedReport }) {
+export function FeaturedReports({
+  reports,
+}: {
+  reports: readonly FeaturedReport[];
+}) {
+  if (reports.length === 0) return null;
   return (
-    <Link
-      to={`/players/${report.playerId}`}
-      aria-label={`Open scouting report for ${report.name}`}
-      // Surface color, hover, press and the inset focus ring (the corner-cut
-      // clips an outset one) come from interaction.css.
-      className="bp-surface bp-pressable bp-pressable--soft bp-pressable--inset"
-      style={{
-        position: "relative",
-        display: "block",
-        textDecoration: "none",
-        clipPath: cuts.panelCorner,
-        padding: "16px 16px 14px 18px",
-      }}
-    >
-      <span
-        aria-hidden="true"
-        style={{
-          position: "absolute",
-          left: 0,
-          top: 0,
-          bottom: 0,
-          width: 4,
-          backgroundColor: teamColor(report.team),
-        }}
-      />
-      <div
-        style={{
-          fontFamily: typography.fonts.display,
-          fontStyle: "italic",
-          fontWeight: typography.weights.bold,
-          fontSize: 24,
-          lineHeight: 1.05,
-          color: colors.ink,
-        }}
-      >
-        {report.name}
-      </div>
-      <div
-        style={{
-          marginTop: 3,
-          fontFamily: typography.fonts.mono,
-          fontSize: 11,
-          letterSpacing: "0.08em",
-          textTransform: "uppercase",
-          color: colors.textMuted,
-        }}
-      >
-        {report.team} · {report.role}
-      </div>
-
-      <div style={{ display: "flex", gap: 8, margin: "14px 0 12px" }}>
-        {report.stats.map((s) => (
-          <div key={s.label} style={{ flex: 1 }}>
-            <div
-              style={{
-                fontFamily: typography.fonts.mono,
-                fontSize: 10,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                color: colors.textMuted,
-              }}
-            >
-              {s.label}
-            </div>
-            <div
-              style={{
-                marginTop: 1,
-                fontFamily: typography.fonts.mono,
-                fontWeight: typography.weights.bold,
-                fontSize: 18,
-                fontFeatureSettings: '"tnum" 1',
-                color: colors.ink,
-              }}
-            >
-              {s.value}
-            </div>
-          </div>
+    <table className="ed-agate">
+      <caption>Showcase figures, illustrative.</caption>
+      <thead>
+        <tr>
+          <th scope="col">Player</th>
+          <th scope="col">Role</th>
+          <th scope="col" className="pl-r">
+            Stat
+          </th>
+          <th scope="col" className="pl-r">
+            Stat
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {reports.map((r) => (
+          <tr key={r.playerId}>
+            <td>
+              <Link className="ed-link" to={`/players/${r.playerId}`}>
+                {r.name}
+              </Link>{" "}
+              <span className="pl-faint">{r.team}</span>
+            </td>
+            <td>{r.role}</td>
+            {r.stats.slice(0, 2).map((s) => (
+              <td
+                key={s.label}
+                className="pl-r"
+                style={{ whiteSpace: "nowrap" }}
+              >
+                {s.label} {s.value}
+              </td>
+            ))}
+          </tr>
         ))}
-      </div>
-
-      <div style={{ display: "flex", gap: 6 }}>
-        {report.chips.map((c) => (
-          <span key={c.label} style={chipStyle(c.tone)}>
-            {c.label}
-          </span>
-        ))}
-      </div>
-
-      <div
-        style={{
-          marginTop: 12,
-          fontFamily: typography.fonts.mono,
-          fontWeight: typography.weights.medium,
-          fontSize: 12,
-          letterSpacing: "0.06em",
-          textTransform: "uppercase",
-          color: colors.goldInk,
-        }}
-      >
-        Open report &rarr;
-      </div>
-    </Link>
-  );
-}
-
-export function FeaturedReports({ reports }: { reports: FeaturedReport[] }) {
-  return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-        gap: 14,
-      }}
-    >
-      {reports.map((r) => (
-        <ReportCard key={r.playerId} report={r} />
-      ))}
-    </div>
+      </tbody>
+    </table>
   );
 }

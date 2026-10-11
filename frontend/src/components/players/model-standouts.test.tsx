@@ -1,60 +1,57 @@
+// @vitest-environment jsdom
 /**
- * <ModelStandouts> - the /players landing leaderboard. Static render shows the
- * default (xwOBA) board; the toggle interaction is covered by the e2e pass
- * (no DOM-interaction lib in this project). The xFIP path is asserted at the
- * fixture level so both metrics stay covered.
+ * <ModelStandouts> - the /players showcase ranking ([195]). Default board, the metric toggle,
+ * live-file links, and the honesty caption (a hand-written board; a leaders endpoint would fill it).
  */
-import { renderToStaticMarkup } from "react-dom/server";
-import { MemoryRouter } from "react-router";
-import { describe, expect, it } from "vitest";
+import "@testing-library/jest-dom/vitest";
+
+import { cleanup, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { MODEL_STANDOUTS } from "../../data/players-landing-fixtures";
+import {
+  installMantineShims,
+  renderWithProviders,
+} from "../../test-support/behavioral";
 
 import { ModelStandouts } from "./model-standouts";
 
-function render(ui: React.ReactElement): string {
-  return renderToStaticMarkup(<MemoryRouter>{ui}</MemoryRouter>);
-}
+beforeAll(installMantineShims);
+afterEach(cleanup);
 
 describe("ModelStandouts", () => {
-  it("renders the default xwOBA leaderboard with linked players", () => {
-    const html = render(<ModelStandouts />);
-    expect(html).toContain("Model Standouts");
-    expect(html).toContain("Aaron Judge");
-    expect(html).toContain(".451");
-    expect(html).toContain("+.118");
-    expect(html).toContain('href="/players/592450"');
-  });
-
-  it("offers both metric toggles and labels the showcase honestly", () => {
-    const html = render(<ModelStandouts />);
-    // both toggle buttons present
-    expect(html).toContain(">xwOBA<");
-    expect(html).toContain(">xFIP<");
-    // the default tag + the no-endpoint caveat
-    expect(html).toContain("Top predicted xwOBA");
-    expect(html).toContain("no live leaders endpoint yet");
-  });
-
-  it("uses the shared segmented toggle and the ink link class for names", () => {
-    const html = render(<ModelStandouts />);
-    expect(html).toContain('aria-label="Leaderboard metric"');
-    expect(html).toContain('class="bp-seg"');
-    expect(html).toContain('aria-pressed="true"');
-    expect(html).toMatch(
-      /<a class="bp-link--ink"[^>]*href="\/players\/592450"/,
+  it("renders the default xwOBA board with linked players and the showcase caption", () => {
+    renderWithProviders(<ModelStandouts />);
+    expect(screen.getByRole("link", { name: "Aaron Judge" })).toHaveAttribute(
+      "href",
+      "/players/592450",
+    );
+    expect(screen.getByText(".451")).toBeInTheDocument();
+    expect(screen.getByText("+.118")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Showcase ranking, illustrative/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "xwOBA" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
     );
   });
 
-  it("carries a distinct pitcher board on the xFIP metric (fixture contract)", () => {
-    const topPitcher = MODEL_STANDOUTS.xfip.rows[0];
-    const topHitter = MODEL_STANDOUTS.xwoba.rows[0];
-    expect(topPitcher).toBeDefined();
-    expect(topHitter).toBeDefined();
-    expect(MODEL_STANDOUTS.xfip.column).toBe("xFIP");
-    expect(topPitcher?.name).toBe("Paul Skenes");
-    expect(topPitcher?.value).toBe("2.44");
-    // hitters vs pitchers are genuinely different leaders
-    expect(topHitter?.name).not.toBe(topPitcher?.name);
+  it("switches to the xFIP board", async () => {
+    const user = userEvent.setup({ delay: null });
+    renderWithProviders(<ModelStandouts />);
+    await user.click(screen.getByRole("button", { name: "xFIP" }));
+    const top = MODEL_STANDOUTS.xfip.rows[0];
+    expect(top?.name).toBe("Paul Skenes");
+    expect(
+      screen.getByRole("link", { name: "Paul Skenes" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "Aaron Judge" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("columnheader", { name: "xFIP" }),
+    ).toBeInTheDocument();
   });
 });
