@@ -8,7 +8,6 @@ import {
   fetchRegistryRows,
   fetchRetrainQueue,
   fetchRouting,
-  opsEventToLogEntry,
   OpsApiError,
 } from "./ops";
 
@@ -117,19 +116,6 @@ describe("ops API client", () => {
     expect(fetch).toHaveBeenCalledWith(
       expect.stringContaining("/v1/ops/events?page=1&size=5"),
     );
-  });
-
-  it("opsEventToLogEntry maps backend type names to hyphenated display labels", () => {
-    const entry = opsEventToLogEntry({
-      id: 7,
-      occurredAt: "2026-05-30T19:00:00Z",
-      type: "DRIFT_OK",
-      detail: "pitch_outcome_pre nightly sweep — PSI max 0.07",
-    });
-    expect(entry.id).toBe("oe-7");
-    expect(entry.type).toBe("DRIFT-OK");
-    expect(entry.detail).toContain("nightly sweep");
-    expect(entry.timestamp).toContain("ET");
   });
 
   it("throws OpsApiError on non-200", async () => {

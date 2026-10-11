@@ -324,7 +324,7 @@ export default function HomePage() {
   const fleetRows =
     registry.data && registry.data.length > 0
       ? toFleetRows(registry.data, routing.data ?? [], []).filter(
-          (r) => r.state === "LIVE",
+          (r) => r.stage === "Champion",
         )
       : null;
   const fleetLive = fleetRows !== null && fleetRows.length > 0;
