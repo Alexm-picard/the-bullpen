@@ -1,427 +1,377 @@
 /**
- * `/players/:id` Matchup Report on the BROADCAST identity (redesign PR-5,
- * decision [160]).
+ * `/players/:id` - a player's file on the [195] editorial identity (SPEC-players, layout B
+ * "Magazine spread").
  *
- * A numeric :id is a real searched player - render a real header plus the LIVE
- * prediction_log-backed sections (Recent Predictions, Calibration, arsenal or
- * batted balls). A non-numeric slug keeps the fixture-driven showcase matchup,
- * defaulting to Judge -> Skubal when :id is missing or unknown. Composition
- * order unchanged: MatchupHeader, two-column pitcher/batter grid (profile card
- * -> StatTable -> density chart), RecentPredictionsTable, calibration + KeyNotes
- * pair.
+ * A NUMERIC :id is a real player: the lede (slug, name, a dek GENERATED from his record, three
+ * figures) beside a ranked aside, then one hero - a pitcher's velocity by pitch, a batter's contact
+ * scatter, both for a two-way player (pitcher first) - then "What the models said". Every number
+ * comes from the live hooks; usePlayer only knows name, position, team and active, so no bio is
+ * shown or invented.
  *
- * The shared StatTable + KeyNotes render through the broadcast palettes
- * (identity-parameterized); the players-only scouting components were converted
- * in place. This page imports ONLY the broadcast namespace.
+ * A non-numeric :id keeps the showcase matchup (`/players/judge_aaron`), now labelled as a
+ * showcase file with a role="note" banner (D4), defaulting to Judge against Skubal.
  */
-
-import { useMemo } from "react";
-import { useParams } from "react-router";
+import { VisuallyHidden } from "@mantine/core";
+import { useEffect, useState, type ReactNode } from "react";
+import { Link, useParams } from "react-router";
 
 import {
+  useBatterBattedBalls,
   usePitcherArsenal,
   usePlayer,
-  usePlayerCalibration,
-  usePlayerPredictions,
+  type PlayerSearchResult,
 } from "../api/players";
-import { ReliabilityDiagram } from "../components/charts/reliability-diagram";
-import { BroadcastPanel } from "../components/broadcast/broadcast-panel";
-import { Eyebrow } from "../components/broadcast/eyebrow";
-import { LowerThird } from "../components/broadcast/lower-third";
-import {} from "../components/broadcast/palettes";
-import { BattedBallsView } from "../components/players/batted-balls-view";
-import { PitcherArsenalCard } from "../components/players/pitcher-arsenal-card";
-import { KeyNotes } from "../components/scouting/key-notes";
-import { MatchupHeader } from "../components/scouting/matchup-header";
-import { NoHistoryNote } from "../components/scouting/no-history-note";
-import { PitchLocationHeatmap } from "../components/scouting/pitch-location-heatmap";
-import { PlayerProfileCard } from "../components/scouting/player-profile-card";
-import { RecentPredictionsTable } from "../components/scouting/recent-predictions-table";
-import { SprayChart } from "../components/scouting/spray-chart";
-import { StatTable } from "../components/shared/stat-table";
-import type {
-  StatTableColumn,
-  StatTableRow,
-} from "../components/shared/stat-table";
+import { BUILD_DATE, BUILD_SHA } from "../build-info";
+import { CallsSection } from "../components/players/calls-section";
+import { ContactSection } from "../components/players/contact-section";
+import { ShowcaseFile } from "../components/players/showcase-file";
+import { VelocityStrips } from "../components/players/velocity-strips";
+import { PitchTypeAgate } from "../components/home/pitch-type-agate";
 import {
-  getDefaultMatchup,
-  METRIC_META,
-  type MatchupPrediction,
-  type MatchupReport,
-  type ScoutingPlayer,
-} from "../data/matchup-fixtures";
-import { PageChrome } from "../components/shared/page-chrome";
-import { colors, typography } from "../design/broadcast";
+  batterDek,
+  pitcherDek,
+  rankArsenal,
+  rankBattedTypes,
+} from "../lib/player-dek";
+import {
+  batterFigures,
+  battedWindowPhrase,
+  pitcherFigures,
+  positionWord,
+  roleOf,
+  teamPlace,
+  type Figure,
+  type PlayerRole,
+} from "../lib/player-file";
+import { pitchName } from "../lib/pitch-type-prior";
 
-import "../components/scouting/matchup.css";
+/** The batted-ball window the file reads (the hook's default limit). */
+const BATTED_WINDOW = 200;
 
-// ── Shared shell styles ───────────────────────────────────────────────────────
+/** Module-level: the edition "arrives" once per session, as on the other [195] pages. */
+let entranceShown = false;
 
-const h1Style: React.CSSProperties = {
-  margin: 0,
-  fontFamily: typography.fonts.display,
-  fontStyle: "italic",
-  fontWeight: typography.weights.heavy,
-  fontSize: typography.h1Size,
-  lineHeight: typography.lineHeights.display,
-  letterSpacing: typography.tracking.h1,
-  textTransform: "uppercase",
-  color: colors.ink,
+const ET_DATE = new Intl.DateTimeFormat("en-US", {
+  weekday: "long",
+  month: "long",
+  day: "numeric",
+  year: "numeric",
+  timeZone: "America/New_York",
+});
+
+const BB_CODE: Readonly<Record<string, string>> = {
+  ground_ball: "GB",
+  line_drive: "LD",
+  fly_ball: "FB",
+  popup: "PU",
+};
+const BB_LABEL: Readonly<Record<string, string>> = {
+  ground_ball: "Ground ball",
+  line_drive: "Line drive",
+  fly_ball: "Fly ball",
+  popup: "Popup",
 };
 
-// Live-state messages for the player profile's prediction_log-backed sections (B2).
-const liveLoadingStyle: React.CSSProperties = {
-  fontFamily: typography.fonts.body,
-  fontSize: 13,
-  color: colors.textMuted,
+type Enter = (
+  base: string,
+  i: number,
+) => {
+  className: string;
+  style?: React.CSSProperties;
 };
 
-const liveErrorStyle: React.CSSProperties = {
-  fontFamily: typography.fonts.body,
-  fontWeight: typography.weights.semibold,
-  color: colors.goldInk,
-};
-
-// ── /players/:id Matchup Report ──────────────────────────────────────────────
-
-const POSITION_PLAYERS = ["RF", "CF", "LF", "DH", "1B", "2B", "3B", "SS", "C"];
-
-function isPositionPlayer(p: ScoutingPlayer): boolean {
-  return POSITION_PLAYERS.includes(p.position);
-}
-
-// Column key for the pitch-mix table (pitcher side).
-function pitchMixColumns(): StatTableColumn[] {
-  return [
-    {
-      key: "usage",
-      label: "Usage%",
-      metricMeta: METRIC_META.usage,
-      format: (v) => `${(Number(v) * 100).toFixed(0)}%`,
-    },
-    {
-      key: "velo",
-      label: "Velo",
-      metricMeta: METRIC_META.velo,
-      format: (v) => `${Number(v).toFixed(1)}`,
-    },
-    {
-      key: "whiff",
-      label: "Whiff%",
-      metricMeta: METRIC_META.whiff,
-      format: (v) => `${(Number(v) * 100).toFixed(0)}%`,
-    },
-    {
-      key: "xwoba",
-      label: "xwOBA",
-      metricMeta: METRIC_META.xwoba_vs,
-      format: (v) => Number(v).toFixed(3).replace(/^0/, ""),
-    },
-    {
-      key: "putaway",
-      label: "PutAway%",
-      metricMeta: METRIC_META.putaway,
-      format: (v) => `${(Number(v) * 100).toFixed(0)}%`,
-    },
-  ];
-}
-
-function splitsColumns(): StatTableColumn[] {
-  return [
-    {
-      key: "pa",
-      label: "PA",
-      format: (v) => String(v),
-    },
-    {
-      key: "avg",
-      label: "AVG",
-      metricMeta: METRIC_META.avg,
-      format: (v) => Number(v).toFixed(3).replace(/^0/, ""),
-    },
-    {
-      key: "obp",
-      label: "OBP",
-      metricMeta: METRIC_META.obp,
-      format: (v) => Number(v).toFixed(3).replace(/^0/, ""),
-    },
-    {
-      key: "slg",
-      label: "SLG",
-      metricMeta: METRIC_META.slg,
-      format: (v) => Number(v).toFixed(3).replace(/^0/, ""),
-    },
-    {
-      key: "iso",
-      label: "ISO",
-      metricMeta: METRIC_META.iso,
-      format: (v) => Number(v).toFixed(3).replace(/^0/, ""),
-    },
-    {
-      key: "xwoba",
-      label: "xwOBA",
-      metricMeta: METRIC_META.xwoba_batter,
-      format: (v) => Number(v).toFixed(3).replace(/^0/, ""),
-    },
-    {
-      key: "k",
-      label: "K%",
-      metricMeta: METRIC_META.k,
-      format: (v) => `${(Number(v) * 100).toFixed(1)}%`,
-    },
-    {
-      key: "bb",
-      label: "BB%",
-      metricMeta: METRIC_META.bb,
-      format: (v) => `${(Number(v) * 100).toFixed(1)}%`,
-    },
-  ];
-}
-
-function PitcherColumn({ report }: { report: MatchupReport }) {
-  const pitcher = isPositionPlayer(report.primary)
-    ? report.opponent
-    : report.primary;
-  const mixRows: StatTableRow[] = report.pitcherMix.map((p) => ({
-    label: `${p.code} · ${p.name}`,
-    values: {
-      usage: p.usage,
-      velo: p.velo,
-      whiff: p.whiff,
-      xwoba: p.xwoba,
-      putaway: p.putaway,
-    },
-  }));
+function Dateline({ middle, right }: { middle: string; right: string }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      <PlayerProfileCard player={pitcher} variant="pitcher" />
-      <StatTable
-        columns={pitchMixColumns()}
-        rows={mixRows}
-        caption={`Pitch mix · ${pitcher.team} 2025–26 · vs opposite hand`}
-      />
-      <PitchLocationHeatmap
-        pitches={report.pitcherMix}
-        caption="Location density · last 60 days"
-      />
+    <p className="ed-dateline">
+      <span>{ET_DATE.format(new Date())}</span>
+      <span className="ed-dateline__issued">{middle}</span>
+      <span>{right}</span>
+    </p>
+  );
+}
+
+/** A static, pre-sized loading block (no shimmer). A span, so it is valid inside a heading. */
+function Shell({ height, width = "100%" }: { height: string; width?: string }) {
+  return (
+    <span
+      className="ed-shell"
+      aria-hidden="true"
+      style={{ display: "block", height, width, margin: "0.5rem 0" }}
+    />
+  );
+}
+
+function Figures({ figures }: { figures: Figure[] }) {
+  return (
+    <div className="ed-front__figs ed-figs">
+      {figures.map((f) => (
+        <p className="ed-fig" key={f.label}>
+          <span
+            className={
+              f.value == null ? "ed-fig__value pl-fig-empty" : "ed-fig__value"
+            }
+          >
+            {f.value ?? "–"}
+          </span>
+          <span className="ed-fig__label">{f.label}</span>
+          <span className="ed-fig__basis">{f.basis}</span>
+        </p>
+      ))}
     </div>
   );
 }
 
-function BatterColumn({ report }: { report: MatchupReport }) {
-  const batter = isPositionPlayer(report.primary)
-    ? report.primary
-    : report.opponent;
-  const splitRows: StatTableRow[] = report.batterSplits.map((s) => ({
-    label: s.split,
-    values: {
-      pa: s.pa,
-      avg: s.avg,
-      obp: s.obp,
-      slg: s.slg,
-      iso: s.iso,
-      xwoba: s.xwoba,
-      k: s.k,
-      bb: s.bb,
-    },
-  }));
+function slugFor(p: PlayerSearchResult): string {
+  const place = teamPlace(p.team);
+  return [positionWord(p.primaryPosition), place, p.active ? null : "inactive"]
+    .filter(Boolean)
+    .join(", ");
+}
+
+function LiveFile({ id, enter }: { id: number; enter: Enter }) {
+  const player = usePlayer(id);
+  const role: PlayerRole | null = player.data
+    ? roleOf(player.data.primaryPosition)
+    : null;
+  const pitches = role === "pitcher" || role === "two-way";
+  const bats = role === "batter" || role === "two-way";
+  const arsenal = usePitcherArsenal(pitches ? id : null);
+  // Unfiltered: the dek, figures and aside describe the whole window. The contact section's
+  // default filters share this exact query key, so the first paint is one request, not two.
+  const balls = useBatterBattedBalls(bats ? id : null, {});
+
+  const notFound = player.isError && player.error.status === 404;
+  const dateRight = player.data
+    ? `${slugFor(player.data)}, Statcast ${id}`
+    : `Statcast ${id}`;
+
+  if (player.isError) {
+    return (
+      <>
+        <Dateline middle="Player file" right={dateRight} />
+        <div className="pl-head">
+          <p className="ed-slug">Players</p>
+          <h1 className="ed-h1">
+            {notFound ? "No player with that ID" : "Could not load this player"}
+          </h1>
+          <p className="ed-dek">
+            {notFound
+              ? `Nothing on file for Statcast ID ${id}. `
+              : "The player service did not answer. "}
+            <Link className="ed-link" to="/players">
+              Back to the index
+            </Link>
+          </p>
+        </div>
+      </>
+    );
+  }
+
+  // Lede pieces per role (a two-way player's lede reads from the arsenal, pitcher first).
+  let dek: ReactNode = null;
+  let figures: Figure[] | null = null;
+  let aside: ReactNode = null;
+  let heroLink: ReactNode = null;
+  const season = new Date().getUTCFullYear();
+
+  if (role != null && pitches) {
+    heroLink = (
+      <a className="ed-link" href="#velocity">
+        Velocity by pitch
+      </a>
+    );
+    if (arsenal.isError) {
+      dek = <p className="ed-dek">Could not load his arsenal.</p>;
+      figures = pitcherFigures([]);
+    } else if (arsenal.isPending) {
+      dek = <Shell height="4.5rem" width="80%" />;
+    } else {
+      const text = pitcherDek(arsenal.data);
+      dek = text ? <p {...enter("ed-dek", 2)}>{text}</p> : null;
+      figures = pitcherFigures(arsenal.data);
+      aside = (
+        <aside className="ed-front__aside" aria-labelledby="pl-mix-title">
+          <h2 className="ed-h2" id="pl-mix-title">
+            His mix, ranked
+          </h2>
+          <p className="ed-sub">Share of every pitch he has thrown.</p>
+          <PitchTypeAgate
+            rows={rankArsenal(arsenal.data).map((p) => ({
+              code: p.pitchType,
+              label: pitchName(p.pitchType),
+              share: p.usagePct,
+            }))}
+            caption="All seasons on file, most-thrown first. Usage, not a call."
+            valueHeader="Usage"
+            note={
+              arsenal.data.length === 0
+                ? "No pitches on file for him yet."
+                : undefined
+            }
+            provenance="Statcast pitch record, all seasons"
+          />
+        </aside>
+      );
+    }
+  } else if (role === "batter") {
+    heroLink = (
+      <a className="ed-link" href="#contact">
+        Every ball in play
+      </a>
+    );
+    if (balls.isError) {
+      dek = <p className="ed-dek">Could not load his balls in play.</p>;
+      figures = batterFigures([], BATTED_WINDOW);
+    } else if (balls.isPending) {
+      dek = <Shell height="4.5rem" width="80%" />;
+    } else {
+      const text = batterDek(balls.data, season, BATTED_WINDOW);
+      dek = text ? <p {...enter("ed-dek", 2)}>{text}</p> : null;
+      figures = batterFigures(balls.data, BATTED_WINDOW);
+      const phrase = battedWindowPhrase(balls.data.length, BATTED_WINDOW);
+      aside = (
+        <aside className="ed-front__aside" aria-labelledby="pl-bb-title">
+          <h2 className="ed-h2" id="pl-bb-title">
+            His balls in play, by type
+          </h2>
+          <p className="ed-sub">{`Share of ${phrase}.`}</p>
+          <PitchTypeAgate
+            rows={rankBattedTypes(balls.data).map((t) => ({
+              code: BB_CODE[t.type] ?? t.type,
+              label: BB_LABEL[t.type] ?? t.type,
+              share: t.share,
+            }))}
+            caption="Statcast hit types; a share of the record, not a call."
+            valueHeader="Share"
+            labelHeader="Type"
+            note={
+              balls.data.length === 0 ? "No balls in play on file." : undefined
+            }
+            provenance="Statcast batted-ball record, newest first"
+          />
+        </aside>
+      );
+    }
+  }
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      <PlayerProfileCard player={batter} variant="batter" />
-      <StatTable
-        columns={splitsColumns()}
-        rows={splitRows}
-        caption={`Splits · ${batter.team} 2025–26 season-to-date`}
-      />
-      <SprayChart zones={report.spray} caption="Spray distribution · 2025–26" />
-    </div>
+    <>
+      <Dateline middle="Player file" right={dateRight} />
+      <div className="ed-front pl-front">
+        <div className="ed-front__head">
+          {player.data ? (
+            <>
+              <p {...enter("ed-slug", 0)}>{slugFor(player.data)}</p>
+              <h1 {...enter("ed-h1", 1)}>{player.data.name}</h1>
+            </>
+          ) : (
+            <>
+              <Shell height="1rem" width="10rem" />
+              <h1 className="ed-h1" aria-busy="true">
+                <VisuallyHidden>Loading the player</VisuallyHidden>
+                <Shell height="3.5rem" width="60%" />
+              </h1>
+            </>
+          )}
+          {dek}
+        </div>
+        {figures ? (
+          <Figures figures={figures} />
+        ) : (
+          <div className="ed-front__figs ed-figs" aria-hidden="true">
+            {[0, 1, 2].map((i) => (
+              <Shell key={i} height="5rem" />
+            ))}
+          </div>
+        )}
+        <div className="ed-front__links">
+          {heroLink}
+          <a className="ed-link" href="#calls">
+            The calls
+          </a>
+          <Link className="ed-link" to="/accuracy">
+            How we score ourselves
+          </Link>
+        </div>
+        {aside}
+      </div>
+
+      {pitches ? (
+        <section
+          className="pl-part"
+          id="velocity"
+          aria-labelledby="pl-velo-title"
+        >
+          <div className="pl-part__head">
+            <p className="ed-slug">Velocity</p>
+            <span className="pl-asof">one fixed scale, 65 to 105 mph</span>
+          </div>
+          <h2 className="ed-h2" id="pl-velo-title">
+            How hard, pitch by pitch
+          </h2>
+          <p className="ed-sub">
+            Each bar runs from his slowest to his fastest of that pitch; the
+            solid tick is the average.
+          </p>
+          {arsenal.isError ? (
+            <p className="ed-note">Could not load his arsenal.</p>
+          ) : arsenal.isPending ? (
+            <Shell height="14rem" />
+          ) : arsenal.data.length === 0 ? (
+            <p className="ed-note">No pitches on file for him yet.</p>
+          ) : (
+            <VelocityStrips arsenal={arsenal.data} />
+          )}
+        </section>
+      ) : null}
+      {bats ? (
+        <div id="contact">
+          <ContactSection playerId={id} />
+        </div>
+      ) : null}
+
+      <CallsSection playerId={id} />
+    </>
   );
 }
 
 export default function PlayerProfilePage() {
   const { id } = useParams<{ id: string }>();
-  // Search + roster navigate with a NUMERIC Statcast id; the demo matchups use a string slug (e.g.
-  // "judge_aaron"). A numeric id is a real searched player - render a real header + the live sections
-  // instead of falling back to the Judge->Skubal fixture (the full live scouting card is Phase 2). A
-  // non-numeric slug keeps the showcase matchup demo.
+  // Search and the index navigate with a NUMERIC Statcast id; the demo matchups use a string slug.
   const isRealPlayer = id != null && /^\d+$/.test(id);
-  const playerId = isRealPlayer ? Number(id) : null;
-  const realPlayer = usePlayer(playerId);
-  const report = getDefaultMatchup(id);
-
-  // Arsenal (Phase 2.1) is fetched only once we know the player is a pitcher (position arrives with
-  // the realPlayer query); a batter's arsenal would be empty, so we don't fire that request.
-  const position = realPlayer.data?.primaryPosition.trim() ?? "";
-  const isPitcher = position === "P" || position === "SP" || position === "RP";
-  const arsenal = usePitcherArsenal(
-    isRealPlayer && isPitcher ? playerId : null,
-  );
-
-  // B2: the Recent Predictions + Calibration sections are LIVE for this player
-  // (prediction_log via /v1/players/:id/...). The matchup scaffold (header,
-  // columns, key notes) stays showcase. prediction_log is sparse until the pitch
-  // model serves this player live, so the empty state is the common case and is
-  // rendered first-class (NoHistoryNote), never as an error or a blank table.
-  const predictions = usePlayerPredictions(playerId);
-  const calibration = usePlayerCalibration(playerId, "pitch_outcome_pre");
-
-  // Only settled predictions (a winner AND an observed outcome) feed the
-  // predicted-vs-actual table; an unsettled prediction has no truth to agree
-  // with yet and would mislabel the agreement column.
-  const predictionRows: MatchupPrediction[] = useMemo(
-    () =>
-      (predictions.data ?? [])
-        .filter((r) => r.winnerClass != null && r.observedOutcome != null)
-        .map((r) => ({
-          when: r.requestAt,
-          predicted: r.winnerClass ?? "-",
-          prob: r.winnerProb ?? 0,
-          actual: r.observedOutcome ?? "-",
-          agreed: r.agreed ?? false,
-        })),
-    [predictions.data],
-  );
+  const [animate] = useState(() => !entranceShown);
+  useEffect(() => {
+    entranceShown = true;
+  }, []);
+  const enter: Enter = (base, i) =>
+    animate
+      ? {
+          className: `${base} ed-enter`,
+          style: { "--ed-stagger": i } as React.CSSProperties,
+        }
+      : { className: base };
 
   return (
-    <PageChrome bottomPad={48}>
-      {isRealPlayer ? (
-        <>
-          <header>
-            <Eyebrow as="p">Player Profile</Eyebrow>
-            <h1 style={h1Style}>
-              {realPlayer.data?.name ??
-                (realPlayer.isError
-                  ? "Player not found"
-                  : realPlayer.isLoading
-                    ? "Loading…"
-                    : `Player #${playerId}`)}
-            </h1>
-            {realPlayer.data ? (
-              <p style={liveLoadingStyle}>
-                {realPlayer.data.primaryPosition.trim() || "—"}
-                {realPlayer.data.team ? ` · ${realPlayer.data.team}` : ""}
-              </p>
-            ) : null}
-          </header>
-          {isPitcher ? (
-            <section aria-labelledby="arsenal-label">
-              <div style={{ marginBottom: 12 }}>
-                <LowerThird id="arsenal-label">
-                  Arsenal · Velocity Range
-                </LowerThird>
-              </div>
-              {arsenal.isError ? (
-                <p style={liveErrorStyle}>
-                  Could not load this pitcher&rsquo;s arsenal.
-                </p>
-              ) : arsenal.isLoading ? (
-                <p style={liveLoadingStyle}>Loading arsenal&hellip;</p>
-              ) : (
-                <BroadcastPanel padding={12}>
-                  <PitcherArsenalCard pitches={arsenal.data ?? []} />
-                </BroadcastPanel>
-              )}
-            </section>
-          ) : realPlayer.data && playerId != null ? (
-            <section aria-labelledby="batted-balls-label">
-              <div style={{ marginBottom: 12 }}>
-                <LowerThird id="batted-balls-label">
-                  In-Play Batted Balls
-                </LowerThird>
-              </div>
-              <BattedBallsView playerId={playerId} />
-            </section>
-          ) : null}
-        </>
-      ) : (
-        <>
-          {/* D4 disclosure: the slug demo is a SHOWCASE scouting card, and must say so in the UI -
-              its stats are illustrative fixture data, not live scouting. */}
-          <p
-            role="note"
-            style={{
-              margin: "0 0 4px",
-              fontFamily: typography.fonts.body,
-              fontSize: 13,
-              fontStyle: "italic",
-              lineHeight: typography.leading.dense,
-              letterSpacing: 0,
-              color: colors.textMuted,
-            }}
-          >
-            Showcase scouting card · demonstration matchup with illustrative
-            data (the live scouting card is Phase 2)
-          </p>
-          <MatchupHeader
-            primary={report.primary}
-            opponent={report.opponent}
-            context={report.context}
-          />
-
-          <div className="matchup-report__columns">
-            <PitcherColumn report={report} />
-            <BatterColumn report={report} />
-          </div>
-        </>
-      )}
-
-      <section aria-labelledby="recent-predictions-label">
-        <div style={{ marginBottom: 12 }}>
-          <LowerThird id="recent-predictions-label">
-            Recent Predictions
-          </LowerThird>
-        </div>
-        {predictions.isError ? (
-          <p style={liveErrorStyle}>
-            Could not load this player&rsquo;s predictions right now.
-          </p>
-        ) : predictions.isLoading ? (
-          <p style={liveLoadingStyle}>Loading recent predictions&hellip;</p>
-        ) : predictionRows.length > 0 ? (
-          <RecentPredictionsTable
-            rows={predictionRows}
-            caption="settled predictions for this player · pitch_outcome_pre (live)"
-          />
+    <div className="ed-page">
+      <div className="ed-col">
+        {isRealPlayer ? (
+          <LiveFile id={Number(id)} enter={enter} />
         ) : (
-          <NoHistoryNote>
-            No settled predictions for this player yet. This table fills in as
-            the pitch model serves this player&rsquo;s live matchups and the
-            observed outcomes settle (24h truth-join). Until then it is empty by
-            design, not an error.
-          </NoHistoryNote>
+          <>
+            <Dateline
+              middle="Showcase file"
+              right="Demonstration, illustrative values"
+            />
+            <ShowcaseFile slug={id} />
+          </>
         )}
-      </section>
-
-      <div className="matchup-report__pair">
-        <section aria-labelledby="calibration-label">
-          <div style={{ marginBottom: 12 }}>
-            <LowerThird id="calibration-label">
-              Calibration · pitch_outcome_pre
-            </LowerThird>
-          </div>
-          {calibration.isError ? (
-            <p style={liveErrorStyle}>
-              Could not load this player&rsquo;s calibration.
-            </p>
-          ) : calibration.isLoading ? (
-            <p style={liveLoadingStyle}>Loading calibration&hellip;</p>
-          ) : calibration.data && calibration.data.length > 0 ? (
-            <BroadcastPanel padding={12}>
-              <ReliabilityDiagram
-                bins={calibration.data}
-                caption="this player · predicted-probability distribution"
-              />
-            </BroadcastPanel>
-          ) : (
-            <NoHistoryNote title="No calibration data yet">
-              Bins appear once enough predictions accumulate for this player to
-              chart the predicted-probability distribution. Observed-frequency
-              calibration awaits a live truth-join.
-            </NoHistoryNote>
-          )}
-        </section>
-        {isRealPlayer ? null : <KeyNotes notes={report.keyNotes} />}
+        <footer className="ed-footer">
+          <span>The Bullpen. Self-hosted, honestly scored.</span>
+          <span>
+            build {BUILD_SHA}, {BUILD_DATE}
+          </span>
+        </footer>
       </div>
-    </PageChrome>
+    </div>
   );
 }

@@ -30,6 +30,8 @@ export type PitchTypeAgateProps = {
   caption: string;
   /** Column header for the share column. */
   valueHeader: string;
+  /** Column header for the label column (default "Pitch"; the batter file ranks hit types). */
+  labelHeader?: string;
   /** Mono provenance line under the table (model + version, or the data source). */
   provenance?: ReactNode;
   /** A sentence shown instead of rows (refusal reason, offline, waiting). */
@@ -44,6 +46,7 @@ export function PitchTypeAgate({
   rows,
   caption,
   valueHeader,
+  labelHeader = "Pitch",
   provenance,
   note,
   busy = false,
@@ -80,7 +83,7 @@ export function PitchTypeAgate({
         <caption>{caption}</caption>
         <thead>
           <tr>
-            <th scope="col">Pitch</th>
+            <th scope="col">{labelHeader}</th>
             <th scope="col" className="ed-barcell">
               <VisuallyHidden>Share bar</VisuallyHidden>
             </th>

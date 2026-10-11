@@ -1283,16 +1283,17 @@ function findPairing(id: string): [string, string] | null {
   return null;
 }
 
+// Scouting notes only. Two earlier notes asserted model calibration results ("ECE about 0.012,
+// n = 1469") that were never measured; a fixture may illustrate scouting, never model performance,
+// so they were removed (players redesign, SPEC-players 6.5).
 const KEY_NOTES_JUDGE_SKUBAL: string[] = [
   "Expect Skubal to elevate the four-seamer early — 42 % usage, 97-mph velo, 31 % whiff rate. Judge's 2-strike xwOBA collapses to .302 vs his .452 vs LHP overall, so the first-pitch heater is the at-bat.",
   "Slider is the put-away pitch — low-arm-side, 41 % whiff, 33 % put-away rate. Judge's pull-side authority means a hung slider middle-in is the homer-risk corridor.",
-  "Calibration on this matchup is honest (ECE ≈ 0.012, n = 1469). Probabilities above 0.45 have been mildly under-confident — read close calls in Judge's favor at the high end.",
 ];
 
 const KEY_NOTES_GENERIC: string[] = [
   "Pitcher leans on the primary fastball early; secondary breaking pitch is the put-away. Watch the first-pitch zone tendency for the at-bat plan.",
   "Batter splits favor the matchup hand; pull-side authority is the dominant homer-risk corridor.",
-  "Calibration on this matchup is broadly trustworthy (ECE < 0.02, n > 1k). Probabilities in the 0.30–0.55 band have been the most reliable.",
 ];
 
 /** Build a MatchupReport with the requested player as `primary`. */
@@ -1330,3 +1331,21 @@ export function getDefaultMatchup(playerId: string | undefined): MatchupReport {
       : `${batter.team} vs ${pitcher.team} · 2026 season aggregate`,
   };
 }
+
+/**
+ * Showcase slug -> the player's real Statcast id, so the showcase file can link each name to its
+ * LIVE /players/:id file. The ids are real MLBAM ids; everything else in this module is
+ * illustrative.
+ */
+export const SHOWCASE_LIVE_IDS: Readonly<Record<string, number>> = {
+  judge_aaron: 592450,
+  trout_mike: 545361,
+  soto_juan: 665742,
+  ohtani_shohei: 660271,
+  bichette_bo: 666182,
+  skubal_tarik: 669373,
+  cole_gerrit: 543037,
+  skenes_paul: 694973,
+  burnes_corbin: 669203,
+  strider_spencer: 675911,
+};

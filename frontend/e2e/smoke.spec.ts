@@ -48,8 +48,12 @@ test("an unknown URL renders the 404 page, not a blank shell (S6)", async ({
 test("player lookup renders its search input", async ({ page }) => {
   const errors = trackPageErrors(page);
   await page.goto("/players");
-  // Mantine's Autocomplete renders a role="combobox" input — target the element directly.
-  await expect(page.locator("input").first()).toBeVisible();
+  // [195] index: the search field carries a VISIBLE label (a Statcast-ID prefix is what a numeric
+  // query matches, so the label says so - never "jersey #").
+  await expect(
+    page.getByRole("combobox", { name: "Name or Statcast ID" }),
+  ).toBeVisible();
+  await expect(page.getByText(/jersey/i)).toHaveCount(0);
   expect(errors, "uncaught errors on /players").toEqual([]);
 });
 

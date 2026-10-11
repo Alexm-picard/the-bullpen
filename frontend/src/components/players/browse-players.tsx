@@ -1,57 +1,25 @@
 /**
- * <BrowsePlayers> - the /players landing's Browse surface. Pick a position or a
- * team and the active roster for that facet loads from GET /v1/players/roster
- * (V024). Single active filter at a time; clicking the active pill clears it.
+ * <BrowsePlayers> - the /players "index" ([195] editorial skin, SPEC-players 2.1): positions as
+ * underlined words, teams as a register by division, and the chosen facet's active roster as an
+ * agate table from GET /v1/players/roster (V024).
  *
- * Real data, not a fixture: the pills query the roster endpoint and link each
- * result to /players/:id. Until the endpoint is live (box deploy) the query
- * errors and the section says "browse unavailable" - honest, never dead pills.
- *
- * Positions are the MLB primary abbreviations the players dimension actually
- * stores (P for every pitcher; no SP/RP split). Team color appears only as the
- * pill dot fill ([160] a11y rule).
+ * One filter at a time; pressing the active one clears it. Nothing is fetched until a facet is
+ * picked, so the index is quiet by default. Positions are the primary abbreviations the players
+ * dimension actually stores (P for every pitcher). Team colour appears ONLY here, as a 7px mark
+ * beside the code (owner decision under [195]); the code carries the meaning, the mark is
+ * decorative and aria-hidden.
  */
-
+import { VisuallyHidden } from "@mantine/core";
 import { useState } from "react";
 import { Link } from "react-router";
 
 import { usePlayerRoster } from "../../api/players";
-import { colors, typography } from "../../design/broadcast";
-import { TEAM_ABBREVIATIONS, teamColor } from "../../design/teamColors";
-import { LowerThird } from "../broadcast/lower-third";
-
-const POSITIONS = ["C", "1B", "2B", "3B", "SS", "LF", "CF", "RF", "DH", "P"];
+import { teamColor } from "../../design/teamColors";
+import { DIVISIONS, POSITIONS, teamPlace } from "../../lib/player-file";
 
 type Filter = { kind: "team" | "position"; value: string };
 
-const h3Style: React.CSSProperties = {
-  margin: "0 0 10px",
-  fontFamily: typography.fonts.mono,
-  fontSize: 11,
-  letterSpacing: typography.tracking.eyebrow,
-  textTransform: "uppercase",
-  color: colors.textMuted,
-};
-
-// Layout and type only: border, background and color (including the pressed
-// state via [aria-pressed="true"]) belong to .bp-surface in interaction.css, so
-// its hover and press rules are not outranked by an inline style.
-const pillStyle: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  gap: 6,
-  fontFamily: typography.fonts.mono,
-  fontSize: 12,
-  fontWeight: typography.weights.medium,
-  padding: "5px 11px",
-};
-
-const noteStyle: React.CSSProperties = {
-  fontFamily: typography.fonts.body,
-  fontSize: 13,
-  color: colors.textMuted,
-};
+const SHELL_ROWS = 8;
 
 export function BrowsePlayers() {
   const [filter, setFilter] = useState<Filter | null>(null);
@@ -61,126 +29,166 @@ export function BrowsePlayers() {
 
   const isActive = (kind: Filter["kind"], value: string) =>
     filter?.kind === kind && filter.value === value;
-
   const toggle = (kind: Filter["kind"], value: string) =>
     setFilter((f) =>
       f?.kind === kind && f.value === value ? null : { kind, value },
     );
 
-  const players = roster.data ?? [];
+  const facetTitle =
+    filter == null
+      ? null
+      : filter.kind === "team"
+        ? (teamPlace(filter.value) ?? filter.value)
+        : (POSITIONS.find((p) => p.code === filter.value)?.word ??
+          filter.value);
 
   return (
-    <section aria-labelledby="browse-label">
-      <div style={{ marginBottom: 14 }}>
-        <LowerThird id="browse-label">Browse</LowerThird>
+    <section className="pl-part" aria-labelledby="pl-index-title">
+      <div className="pl-part__head">
+        <p className="ed-slug" id="pl-index-title">
+          The index
+        </p>
+        <span className="pl-asof">active rosters, refreshed daily</span>
       </div>
 
-      <h3 style={h3Style}>By position</h3>
-      <div
-        style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 22 }}
-      >
+      <h2 className="ed-h2" id="pl-pos-title">
+        By position
+      </h2>
+      <div className="pl-facets" role="group" aria-labelledby="pl-pos-title">
         {POSITIONS.map((p) => (
           <button
-            key={p}
+            key={p.code}
             type="button"
-            aria-pressed={isActive("position", p)}
-            onClick={() => toggle("position", p)}
-            className="bp-surface bp-pressable"
-            style={pillStyle}
+            className="pl-facet"
+            aria-pressed={isActive("position", p.code)}
+            onClick={() => toggle("position", p.code)}
           >
-            {p}
+            {p.word} <small aria-hidden="true">{p.code}</small>
           </button>
         ))}
       </div>
 
-      <h3 style={h3Style}>By team</h3>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(5, 1fr)",
-          gap: 7,
-        }}
-      >
-        {TEAM_ABBREVIATIONS.map((t) => (
-          <button
-            key={t}
-            type="button"
-            aria-pressed={isActive("team", t)}
-            onClick={() => toggle("team", t)}
-            className="bp-surface bp-pressable"
-            style={pillStyle}
-          >
-            <span
-              aria-hidden="true"
-              style={{
-                width: 9,
-                height: 9,
-                flex: "none",
-                backgroundColor: teamColor(t),
-              }}
-            />
-            {t}
-          </button>
-        ))}
-      </div>
-
-      {filter && (
-        <div style={{ marginTop: 20 }}>
-          {roster.isError ? (
-            <p style={{ ...noteStyle, color: colors.goldInk }}>
-              Roster browse unavailable right now.
-            </p>
-          ) : roster.isLoading ? (
-            <p style={noteStyle}>Loading {filter.value} roster&hellip;</p>
-          ) : players.length === 0 ? (
-            <p style={noteStyle}>No active players found for {filter.value}.</p>
-          ) : (
+      <h2 className="ed-h2" style={{ marginTop: "1.75rem" }}>
+        By team
+      </h2>
+      <div className="pl-divs">
+        {DIVISIONS.map((d) => (
+          <div className="pl-div" key={d.name}>
+            <h3 id={`pl-div-${d.name.replace(/\s+/g, "-")}`}>{d.name}</h3>
             <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
-                gap: 8,
-                backgroundColor: colors.panel,
-                border: `1px solid ${colors.rule}`,
-                padding: 12,
-              }}
+              role="group"
+              aria-labelledby={`pl-div-${d.name.replace(/\s+/g, "-")}`}
             >
-              {players.map((p) => (
-                <Link
-                  key={p.id}
-                  to={`/players/${p.id}`}
-                  className="bp-link--ink bp-pressable"
-                  style={{
-                    display: "flex",
-                    alignItems: "baseline",
-                    justifyContent: "space-between",
-                    gap: 8,
-                    padding: "6px 8px",
-                    borderBottom: `1px solid ${colors.fieldSubtle}`,
-                  }}
-                >
-                  <span style={{ fontWeight: typography.weights.semibold }}>
-                    {p.name}
-                  </span>
-                  <span
-                    style={{
-                      fontFamily: typography.fonts.mono,
-                      fontSize: 11,
-                      letterSpacing: "0.04em",
-                      textTransform: "uppercase",
-                      color: colors.textMuted,
-                      whiteSpace: "nowrap",
-                    }}
+              {d.teams.map((t) => (
+                <div className="pl-div__row" key={t}>
+                  <button
+                    type="button"
+                    className="pl-facet"
+                    aria-pressed={isActive("team", t)}
+                    aria-label={`${teamPlace(t) ?? t} (${t})`}
+                    onClick={() => toggle("team", t)}
                   >
-                    {p.primaryPosition}
-                    {p.team ? ` · ${p.team}` : ""}
-                  </span>
-                </Link>
+                    <span
+                      className="pl-mark"
+                      aria-hidden="true"
+                      style={{ backgroundColor: teamColor(t) }}
+                    />
+                    {t}
+                  </button>
+                </div>
               ))}
             </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="pl-split pl-roster">
+        <div aria-live="polite">
+          {filter == null ? null : (
+            <>
+              <p className="pl-mono-slug">
+                {`roster, ${filter.value}, active`}
+              </p>
+              <h3 className="ed-h3">{facetTitle}</h3>
+              <RosterBody roster={roster} />
+            </>
           )}
         </div>
-      )}
+        <aside>
+          <p className="ed-label">One filter at a time</p>
+          <p className="ed-note" style={{ marginTop: "0.375rem" }}>
+            Pick a position or a team; picking it again clears it. Nothing loads
+            until you pick, so the index is quiet by default.
+          </p>
+        </aside>
+      </div>
     </section>
+  );
+}
+
+function RosterBody({
+  roster,
+}: {
+  roster: ReturnType<typeof usePlayerRoster>;
+}) {
+  if (roster.isError) {
+    return <p className="ed-note">Browse is unavailable right now.</p>;
+  }
+  if (roster.isPending) {
+    return (
+      <div role="status" aria-busy="true">
+        <VisuallyHidden>Loading the roster</VisuallyHidden>
+        <div aria-hidden="true">
+          {Array.from({ length: SHELL_ROWS }, (_, i) => (
+            <div
+              key={i}
+              className="ed-shell"
+              style={{ height: "1.25rem", margin: "0.6rem 0" }}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+  const players = roster.data;
+  if (players.length === 0) {
+    return <p className="ed-note">No active players for this filter.</p>;
+  }
+  return (
+    <table className="ed-agate">
+      <caption>Active roster, as the league lists it.</caption>
+      <thead>
+        <tr>
+          <th scope="col">Player</th>
+          <th scope="col">Pos.</th>
+          <th scope="col">Team</th>
+          <th scope="col" className="pl-r pl-hide-phone">
+            Statcast
+          </th>
+          <th scope="col" className="pl-r">
+            File
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {players.map((p) => (
+          <tr key={p.id}>
+            <td>{p.name}</td>
+            <td>{p.primaryPosition.trim() || "-"}</td>
+            <td>{p.team || "-"}</td>
+            <td className="pl-r pl-hide-phone pl-faint">{p.id}</td>
+            <td className="pl-r">
+              <Link
+                className="ed-link"
+                to={`/players/${p.id}`}
+                aria-label={`Open ${p.name}'s file`}
+              >
+                Open
+              </Link>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
