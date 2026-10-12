@@ -1,8 +1,7 @@
 /* Interaction-state layer (craft pass 2026-10, Emil Kowalski design-engineering
- * skills applied within [112]/[160]/[191]/[192]).
+ * skills applied within [112]/[192]; palette re-pointed to [195]'s editorial tokens).
  *
- * Every pressable surface in the app is an inline-styled <Link> / <button>, and an
- * inline style cannot express :hover, :active, :focus-visible or @starting-style.
+ * Inline styles cannot express :hover, :active, :focus-visible or @starting-style.
  * This file owns those states; components opt in with a className and keep their
  * inline LAYOUT styles. The handful of properties a state must be able to change
  * (background, border, color) move out of the inline style and into the class.
@@ -13,14 +12,15 @@
  *     gets no travel.
  *   - Hover is gated to real pointers (`hover: hover` + `pointer: fine`); touch
  *     gets :active only, never a sticky hover.
- *   - One focus ring everywhere: 2px --bp-focus, outset by 2px; inset on surfaces
- *     that clip (clip-path cards, overflow-x table headers).
+ *   - One focus ring everywhere: 2px --ed-accent, outset by 2px (the .ed-page /
+ *     .ed-header rings in editorial.css match it; this is the fallback for what
+ *     sits outside them: the nav drawer, Mantine controls).
  *   - Entrances use CSS transitions + @starting-style (interruptible, retargetable),
  *     never keyframes. The only keyframes left in the app are the delayed
  *     route-pending reveal below (the [160] ticker and LIVE pulse retired with [195]).
  *   - Reduced motion drops TRAVEL and keeps color/opacity feedback - see motion.css.
  *
- * Tokens only: every value here is a var() from tokens.css. */
+ * Tokens only: every value here is a var() from editorial.css. */
 
 /* ── Platform baseline (mobile-native skill) ──────────────────────────────── */
 
@@ -43,14 +43,14 @@ button,
 /* One focus ring. :where() keeps specificity at zero so Mantine's own focus
  * styles (inputs, comboboxes) still win. */
 :where(a[href], button, [tabindex]:not([tabindex="-1"])):focus-visible {
-  outline: 2px solid var(--bp-focus);
+  outline: 2px solid var(--ed-accent);
   outline-offset: 2px;
 }
-/* Mantine controls derive their ring from the primary color (gold #f2a900), which
- * is 1.9:1 on the light field; route them through the per-theme focus token. */
+/* Mantine controls derive their ring from the primary color; route them through the
+ * editorial focus color so every ring in the app is the same. */
 .mantine-focus-auto:focus-visible,
 .mantine-focus-always:focus-visible {
-  outline-color: var(--bp-focus);
+  outline-color: var(--ed-accent);
 }
 
 /* iOS Safari zooms the page into any input under 16px and never zooms back out.
@@ -68,7 +68,7 @@ button,
 /* ── Pressable ─────────────────────────────────────────────────────────────── */
 
 .bp-pressable {
-  --bp-press: 0.97;
+  --press-scale: 0.97;
   cursor: pointer;
   transition:
     transform var(--duration-press) var(--ease-out),
@@ -78,26 +78,11 @@ button,
     opacity var(--duration-fast) var(--ease-color);
 }
 .bp-pressable:active:not(:disabled):not([aria-disabled="true"]) {
-  transform: scale(var(--bp-press));
+  transform: scale(var(--press-scale));
 }
 .bp-pressable:disabled,
 .bp-pressable[aria-disabled="true"] {
   cursor: default;
-}
-
-/* ── Text links ────────────────────────────────────────────────────────────── */
-
-.bp-link {
-  color: var(--bp-gold-ink);
-  text-decoration: none;
-}
-
-/* ── Hover (real pointers only) ────────────────────────────────────────────── */
-
-@media (hover: hover) and (pointer: fine) {
-  .bp-link:hover {
-    color: var(--bp-link-hover);
-  }
 }
 
 /* Route-chunk fallback: invisible for 300ms, then fades in. A chunk that resolves

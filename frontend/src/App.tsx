@@ -20,7 +20,7 @@ import {
 
 import HomePage from "./pages/home-page";
 import { ErrorBoundary } from "./components/shared/error-boundary";
-import { motion } from "./design/broadcast";
+import { motion } from "./design/motion";
 import { ThemeProvider } from "./design/theme-provider";
 import { useTheme } from "./design/use-theme";
 
@@ -282,7 +282,7 @@ function RoutePending() {
       {/* `.route-pending` stays invisible for 300ms: a chunk that resolves
           inside that window never flashes a spinner. */}
       <Group justify="center" py="xl" className="route-pending">
-        <Loader size="sm" color="gold" />
+        <Loader size="sm" />
       </Group>
     </Container>
   );

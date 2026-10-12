@@ -1,18 +1,17 @@
 @import "tailwindcss";
 @import "@mantine/core/styles.css";
 @import "./design/fonts.css";
-@import "./design/tokens.css";
 @import "./design/global.css";
 @import "./design/interaction.css";
 @import "./design/motion.css";
 @import "./design/editorial.css";
 
 :root {
-  font-family: var(--font-body);
+  font-family: var(--ed-sans);
   /* [195]: the shared chrome is editorial, so the ground behind the translucent bar (and any
-     overscroll) is the edition's paper/night, not a page's broadcast field. */
+     overscroll) is the edition's paper/night. */
   background-color: var(--ed-ground);
-  color: var(--bp-text);
+  color: var(--ed-ink);
   font-size: 16px;
   line-height: 1.5;
 }
@@ -20,28 +19,29 @@
 body {
   margin: 0;
   background-color: var(--ed-ground);
-  color: var(--bp-text);
+  color: var(--ed-ink);
 }
 
-/* Bare <h1>..<h4> get the display font; Mantine <Title> already inherits via theme.headings. */
+/* Bare <h1>..<h4> get the editorial serif; the .ed-h* classes and Mantine <Title> (via
+   theme.headings) set their own. */
 h1,
 h2,
 h3,
 h4 {
-  font-family: var(--font-display);
+  font-family: var(--ed-serif);
   line-height: 1.2;
-  color: var(--bp-ink);
+  color: var(--ed-ink);
 }
 
 code,
 kbd,
 samp,
 pre {
-  font-family: var(--font-mono);
+  font-family: var(--ed-mono);
 }
 
 /* D4 (a11y): skip-to-content - visually hidden until keyboard focus, then a
-   chrome-styled pill above the header so keyboard users can bypass the nav.
+   reversed ink pill above the header so keyboard users can bypass the nav.
    The reveal is keyboard-initiated, so it snaps: no transition. */
 .skip-link {
   position: absolute;
@@ -49,9 +49,9 @@ pre {
   top: -48px;
   z-index: 1000;
   padding: 8px 14px;
-  background-color: var(--color-chrome);
-  color: var(--color-textOnChrome);
-  font-family: var(--font-mono);
+  background-color: var(--ed-ink);
+  color: var(--ed-ground);
+  font-family: var(--ed-mono);
   font-size: 13px;
   text-decoration: none;
 }
