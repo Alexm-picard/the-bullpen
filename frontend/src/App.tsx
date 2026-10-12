@@ -47,9 +47,6 @@ const GamePage = lazy(() =>
 // [191] Model Guide - the methodology page; under [195] it follows the Day/Night toggle.
 const ModelGuidePage = lazy(() => import("./pages/model-guide-page"));
 
-// Unlisted in the public nav - operator routing override (B7), reached by URL.
-const AdminRoutingPage = lazy(() => import("./pages/admin-routing-page"));
-
 // S6 — catch-all 404 for any unmatched URL (otherwise the shell renders blank).
 const NotFoundPage = lazy(() => import("./pages/not-found-page"));
 
@@ -303,7 +300,6 @@ export default function App() {
             <Route path="ops" element={<OpsPage />} />
             <Route path="accuracy" element={<AccuracyPage />} />
             <Route path="models/guide" element={<ModelGuidePage />} />
-            <Route path="admin/routing" element={<AdminRoutingPage />} />
             <Route path="about" element={<AboutPage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Route>

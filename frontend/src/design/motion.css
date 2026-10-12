@@ -26,9 +26,6 @@
       color, background-color, border-color, outline-color,
       text-decoration-color, opacity, box-shadow, fill, stroke, filter !important;
   }
-  .bp-pressable:active {
-    transform: none;
-  }
   ::view-transition-group(*),
   ::view-transition-old(*),
   ::view-transition-new(*) {

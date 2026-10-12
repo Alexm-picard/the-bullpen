@@ -33,8 +33,7 @@ a[href],
 
 button,
 [role="button"],
-[role="columnheader"][tabindex],
-.bp-pressable {
+[role="columnheader"][tabindex] {
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none; /* no long-press callout on controls; content stays selectable */
@@ -63,26 +62,6 @@ button,
   textarea {
     font-size: 16px;
   }
-}
-
-/* ── Pressable ─────────────────────────────────────────────────────────────── */
-
-.bp-pressable {
-  --press-scale: 0.97;
-  cursor: pointer;
-  transition:
-    transform var(--duration-press) var(--ease-out),
-    background-color var(--duration-fast) var(--ease-color),
-    border-color var(--duration-fast) var(--ease-color),
-    color var(--duration-fast) var(--ease-color),
-    opacity var(--duration-fast) var(--ease-color);
-}
-.bp-pressable:active:not(:disabled):not([aria-disabled="true"]) {
-  transform: scale(var(--press-scale));
-}
-.bp-pressable:disabled,
-.bp-pressable[aria-disabled="true"] {
-  cursor: default;
 }
 
 /* Route-chunk fallback: invisible for 300ms, then fades in. A chunk that resolves

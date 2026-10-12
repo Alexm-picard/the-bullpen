@@ -22,8 +22,7 @@ async function settle(page: Page): Promise<void> {
  * surrogate" for exactly this axe run) - axe evaluates the live accessibility tree, catching
  * missing form labels, invalid ARIA, landmark/heading structure, name-role-value, etc.
  *
- * Scope: the public routes reachable from the header nav. The /admin/* operator tools are unlisted
- * + auth-gated and out of scope. Impact is filtered to critical/serious so the gate blocks the
+ * Scope: the public routes reachable from the header nav (there is no admin page, [214]). Impact is filtered to critical/serious so the gate blocks the
  * defects that actually lock a user out, not minor/moderate best-practice nits (which can be
  * ratcheted in later).
  */

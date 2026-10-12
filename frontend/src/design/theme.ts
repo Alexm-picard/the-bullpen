@@ -11,9 +11,7 @@
  * Mantine is a thin layer here. What it still renders, and what this theme
  * styles: AppShell + Burger + Drawer (the shell, App.tsx), the route Loader,
  * Slider (/parks) and Autocomplete (/players, both re-skinned by .pk-* /
- * .pl-* classes), VisuallyHidden, and the unlisted operator page
- * /admin/routing (Title, Text, Card, Alert, Badge, Button, SegmentedControl,
- * Select and the text inputs).
+ * .pl-* classes), and VisuallyHidden. There is no admin or login page ([214]).
  */
 
 import {
@@ -88,23 +86,12 @@ export const theme = createTheme({
       },
     },
     // Motion defaults for Mantine's own controls (craft pass 2026-10): the
-    // segmented indicator is an on-screen move, so it gets the fast clock on
-    // the [112] curve; the burger snaps as press feedback before the drawer it
-    // summons settles; Buttons share the app's press feedback.
-    SegmentedControl: {
-      defaultProps: {
-        transitionDuration: motion.durationsMs.fast,
-        transitionTimingFunction: motion.easing.standard,
-      },
-    },
+    // burger snaps as press feedback before the drawer it summons settles.
     Burger: {
       defaultProps: {
         transitionDuration: motion.durationsMs.press,
         transitionTimingFunction: motion.easing.out,
       },
-    },
-    Button: {
-      classNames: { root: "bp-pressable" },
     },
   },
   // Spacing on the 8-point grid.

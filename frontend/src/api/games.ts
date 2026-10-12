@@ -648,7 +648,7 @@ export async function predictPitchType(
     let reason: string;
     try {
       // NESTED: the backend envelope is `record ApiError(Body error)`, so the reason lives at
-      // $.error.message - the path ApiErrorAdviceTest pins and admin.ts already reads. Reading
+      // $.error.message - the path ApiErrorAdviceTest pins. Reading
       // body.message silently yielded "" for EVERY refusal, which rendered as "the server gave no
       // reason" and discarded all four designed explanations. Nothing caught it because the panel
       // tests build GameApiError directly and never exercise this parse.
