@@ -1039,7 +1039,8 @@ metric)` function (§8); pure CSS/React, no chart library.
 > variant, one scorecard-red accent). Migration is complete on every page
 > as of 2026-10-11 (/games and the 404 page were last, [210]/[211]), and the
 > [160] broadcast component layer is retired ([212]); `design/broadcast.ts`
-> remains until its own retirement spec. This section is kept as the
+> and `design/tokens.css` are retired too ([213]), leaving
+> `design/editorial.css` as the only token source. This section is kept as the
 > historical record. See ADR-0017's 2026-10-09 revision.
 
 **Scouting report / broadcast graphics.** The interface looks like a

@@ -82,9 +82,10 @@ session and most "obvious" alternatives have already been considered and rejecte
 - **Frontend visual identity rework is complete.** The identity is [195]'s editorial Front Page
   (paper by default, a Night edition via [192]'s toggle; ADR-0017 IA), migrated on every page
   (the /games scoreboard and the 404 closed it out, [210]-[211]); tokens live in
-  `frontend/src/design/editorial.css`. The [160] broadcast component layer is deleted ([212]);
-  `design/broadcast.ts` survives only for the Mantine theme, the teamColors fallback, App.tsx
-  motion values and the error boundary, and its retirement is a separate follow-up. Light/dark
+  `frontend/src/design/editorial.css`, the only token source: the [160] broadcast layer is
+  gone ([212]), and so are `broadcast.ts` and `tokens.css` ([213]). The Mantine theme
+  (`design/theme.ts`) is built from editorial tokens, and motion values live in
+  `design/motion.ts`, test-pinned to their editorial.css copies. Light/dark
   toggle ([192]) with CSS custom properties + localStorage persistence + system preference
   default. AA contrast verified via axe.
   SHELF markers ([190]) seeded on static metric callouts; `lint-unmarked-claims.sh` runs as a
@@ -123,7 +124,7 @@ matters — see `design.md` §1.
 | Analytical DB | **ClickHouse** (Docker) — pitches, drift metrics, prediction logs                                                                                                                                                  |
 | App state DB  | **SQLite** + Flyway — model registry, A/B config, retraining queue                                                                                                                                                 |
 | Frontend      | **React 19 + TypeScript + Vite**, pure SPA (React 19 in-repo; the "18" floor in early decisions was upgraded). **TanStack Query** for server state, plain React Context for client state. Polling, not WebSockets. |
-| UI            | **Mantine 9 + Tailwind 4** (Tailwind = `@theme` token layer, not utility classes). Broadcast-graphics identity (Barlow Condensed / Inter / JetBrains Mono, decision [160]). Superseded 2026-10-09 by [195] (editorial "Front Page": Source Serif 4 / Inter / JetBrains Mono); migrated on every page ([210]-[212]).                                        |
+| UI            | **Mantine 9 + Tailwind 4** (Tailwind = `@theme` token layer, not utility classes). Editorial "Front Page" identity (Source Serif 4 / Inter / JetBrains Mono, decision [195], superseding [160]'s broadcast identity); tokens in `design/editorial.css` only ([210]-[213]).                                        |
 | Hosting       | Self-hosted in WSL2 (Ubuntu 24.04 LTS) on personal desktop. Cloudflare Tunnel for public access. Frontend on Vercel.                                                                                               |
 | Process mgmt  | systemd (bare-metal for app, Docker for stateful services)                                                                                                                                                         |
 | Observability | Prometheus + Grafana + Actuator (internal); Uptime Robot + Healthchecks.io + Discord webhook (external)                                                                                                            |
