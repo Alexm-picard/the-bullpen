@@ -24,7 +24,7 @@ of silently degraded features on the live pitch path
 - **Model guide**: https://thebullpen.net/models/guide
 - **Repo**: https://github.com/Alexm-picard/the-bullpen
 
-Jump to: [the 25-second tour](#the-25-second-tour) ·
+Jump to: [the 23-second tour](#the-23-second-tour) ·
 [the models, honestly](#the-models-honestly) ·
 [architecture](#architecture) · [how this was built](#how-this-was-built) ·
 [known limitations](#known-limitations) · [operating evidence](#operating-evidence)
@@ -109,13 +109,15 @@ linked artifact disagree, the artifact wins.
 > shown as organic.
 > See [Known limitations](#known-limitations) for the honest caveats.
 
-## The 25-second tour
+## The 23-second tour
 
-[![The Bullpen - 25-second launch video](brag-output/brag.jpg)](brag-output/brag.mp4)
+[![The Bullpen - 23-second launch video](brag-output/brag.jpg)](brag-output/brag.mp4)
 
-[`brag-output/brag.mp4`](brag-output/brag.mp4) - the live pitch path, the ML systems wrapper,
-and the retrain that finished unattended in 96.8 minutes and still was not promoted. Built from
-this repo's own tokens, fonts and components; source and build notes in
+[`brag-output/brag.mp4`](brag-output/brag.mp4) - the site going to press in its editorial
+edition: the games board, a calibrated next-pitch forecast that says it is not an accuracy
+claim, and the systems register, where a retrain that finished unattended in 96.8 minutes
+still waits on a human promotion. Built from this repo's own tokens, fonts and components
+(game rows and probabilities are illustrative); source and build notes in
 [`brag-output/composition/`](brag-output/composition/README.md).
 
 ## Screenshots
