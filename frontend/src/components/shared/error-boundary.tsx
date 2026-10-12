@@ -1,35 +1,34 @@
 /**
- * <ErrorBoundary> — the top-level safety net so a thrown render error degrades
- * to a calm fallback card instead of a white screen.
+ * <ErrorBoundary> - the safety net so a thrown render error degrades to a calm
+ * page instead of a white screen.
  *
  * The app routes via `<BrowserRouter>` + `<Routes>` (not `createBrowserRouter`),
  * so there is no router-native `errorElement`; a React class boundary is the
- * mechanism. It wraps the whole route tree in `App.tsx`. A render that throws
- * (a bad fixture shape, an unexpected null deref, a lazy-chunk eval error)
- * surfaces here rather than blanking the SPA — important because the public
- * site is the first thing a visitor clicks and a white screen is the worst
- * possible first impression.
+ * mechanism. It wraps the whole tree in `main.tsx` and each route in `App.tsx`.
+ * A render that throws (a bad payload shape, an unexpected null deref, a
+ * lazy-chunk eval error) surfaces here rather than blanking the SPA - important
+ * because a white screen is the worst possible first impression.
  *
  * Deliberately dependency-free: no `react-error-boundary`, no Sentry coupling
  * (the optional Sentry SDK in `main.tsx` patches React's own error reporting
  * when a DSN is present; this boundary just logs + renders the fallback).
  *
- * Token discipline: colors come from `design/tokens`; Mantine components carry
- * the theme. No hex in this file.
+ * [195] editorial grammar, the 404 page's at its smallest: dateline, slug,
+ * serif H1, a plain-language dek, then the ways out as links. No Mantine and no
+ * router: the root boundary sits outside both the router and ThemeProvider, so
+ * the ways out are plain buttons and a plain href, and the edition comes from
+ * editorial.css (which follows the OS preference before data-theme is stamped).
  */
 
-import {
-  Anchor,
-  Button,
-  Container,
-  Group,
-  Stack,
-  Text,
-  Title,
-} from "@mantine/core";
 import { Component, type ErrorInfo, type ReactNode } from "react";
 
-import { colors } from "../../design/broadcast";
+const ET_DATE = new Intl.DateTimeFormat("en-US", {
+  weekday: "long",
+  month: "long",
+  day: "numeric",
+  year: "numeric",
+  timeZone: "America/New_York",
+});
 
 type Props = { children: ReactNode };
 type State = { error: Error | null };
@@ -65,32 +64,44 @@ export class ErrorBoundary extends Component<Props, State> {
       return this.props.children;
     }
     return (
-      <Container
-        size="sm"
-        py="xl"
-        style={{ minHeight: "60vh", display: "grid", placeItems: "center" }}
-      >
-        <Stack gap="sm" align="center" ta="center">
-          <Text size="sm" fw={700} style={{ color: colors.goldInk }}>
-            SOMETHING WENT WRONG
-          </Text>
-          <Title order={2}>This page hit an unexpected error</Title>
-          <Text style={{ color: colors.textMuted }} maw={440}>
-            The rest of the site is fine — reloading usually clears it. If it
-            keeps happening, the backend may be briefly unavailable.
-          </Text>
-          <Group gap="sm" mt="xs" justify="center">
-            <Button onClick={this.handleRetry}>Try again</Button>
-            <Button variant="default" onClick={this.handleReload}>
-              Reload the page
-            </Button>
-          </Group>
-          {/* Plain href: the root boundary sits outside the router. */}
-          <Anchor href="/" size="sm" className="bp-link bp-pressable">
-            Back to home
-          </Anchor>
-        </Stack>
-      </Container>
+      <div className="ed-page">
+        <div className="ed-col">
+          <p className="ed-dateline">
+            <span>{ET_DATE.format(new Date())}</span>
+            <span className="ed-dateline__issued">Render error</span>
+            <span>SOMETHING WENT WRONG</span>
+          </p>
+
+          <div className="eb">
+            <p className="ed-slug">Page error</p>
+            <h1 className="ed-h1">This page hit an unexpected error</h1>
+            <p className="ed-dek">
+              The rest of the site is fine, and reloading usually clears it. If
+              it keeps happening, the backend may be briefly unavailable.
+            </p>
+            <p className="nf-links">
+              <button
+                type="button"
+                className="ed-link eb-action"
+                onClick={this.handleRetry}
+              >
+                Try again
+              </button>
+              <button
+                type="button"
+                className="ed-link eb-action"
+                onClick={this.handleReload}
+              >
+                Reload the page
+              </button>
+              {/* Plain href: the root boundary sits outside the router. */}
+              <a className="ed-link" href="/">
+                Back to home
+              </a>
+            </p>
+          </div>
+        </div>
+      </div>
     );
   }
 }
