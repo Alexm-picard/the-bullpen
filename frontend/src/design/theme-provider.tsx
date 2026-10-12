@@ -29,7 +29,7 @@ function getInitialTheme(): Theme {
 /**
  * Stamp the theme on <html> synchronously. Called from the state initializer
  * (before the first paint of the React tree) and from the toggle, so the
- * palette never flips a frame after the content does. tokens.css also follows
+ * palette never flips a frame after the content does. editorial.css also follows
  * the OS preference via @media before any JS runs.
  */
 function applyTheme(theme: Theme): void {

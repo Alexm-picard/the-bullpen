@@ -138,7 +138,8 @@ describe("PitchTypeSection ([183])", () => {
       />,
     );
     expect(out).toContain("Awaiting a settled at-bat.");
-    expect(out).not.toContain("%");
+    // Visible text, not raw markup: Mantine's injected theme <style> carries CSS percentages.
+    expect(visibleText(out)).not.toContain("%");
   });
 
   it("ranks the prior, captions it as a prior, and names the sample it came from", () => {

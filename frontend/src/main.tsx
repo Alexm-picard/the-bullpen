@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import "./index.css";
 import App from "./App";
 import { ErrorBoundary } from "./components/shared/error-boundary";
-import { theme } from "./design/theme";
+import { cssVariablesResolver, theme } from "./design/theme";
 
 // A6 (ADR-0008): error tracking via Sentry → self-hosted GlitchTip. Dynamically
 // imported ONLY when a DSN is configured, so the SDK ships as a lazy chunk (off the
@@ -36,7 +36,11 @@ createRoot(document.getElementById("root")!).render(
     {/* [195]: the paper edition is the default ([192]'s toggle offers the night
         edition); ThemeProvider syncs Mantine's color scheme to the toggle so
         Mantine controls follow the field. */}
-    <MantineProvider theme={theme} defaultColorScheme="light">
+    <MantineProvider
+      theme={theme}
+      cssVariablesResolver={cssVariablesResolver}
+      defaultColorScheme="light"
+    >
       <QueryClientProvider client={queryClient}>
         <ErrorBoundary>
           <App />

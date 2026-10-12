@@ -33,10 +33,9 @@ function render(node: ReactNode): string {
 describe("GamesPage (scoreboard, loading-first)", () => {
   it("renders on the editorial ground, not the broadcast field", () => {
     const html = render(<GamesPage />);
-    const page = html.slice(html.indexOf('<div class="ed-page"'));
-    expect(page).toContain('class="ed-page"');
-    // Scoped to the page: Mantine's injected theme <style> still carries the broadcast vars.
-    expect(page).not.toContain("var(--bp-");
+    expect(html).toContain('class="ed-page"');
+    // Whole document, Mantine's injected theme <style> included: the broadcast palette is retired.
+    expect(html).not.toContain("--bp-");
   });
 
   it("renders exactly one h1", () => {

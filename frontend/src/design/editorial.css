@@ -6,13 +6,14 @@
  * DESIGNED night edition in the same hue family behind the [192]
  * toggle, ink type, one scorecard-red accent (kickers and links ONLY, never
  * data), Source Serif 4 (optical sizes) for display and reading, Inter for UI,
- * JetBrains Mono for agate/data. Migration is page by page, home first; pages
- * not yet migrated keep broadcast.ts and its --bp-* palette.
+ * JetBrains Mono for agate/data. Every page is migrated; this file is the
+ * app's only token layer (broadcast.ts and tokens.css retired after [212]).
  *
  * Tokens live in :root (not @theme) on purpose: Tailwind 4 prunes @theme vars
  * nothing in CSS references, and a few are read from inline TSX styles as
- * var(--ed-*) strings (the nav drawer in App.tsx). Components otherwise style
- * through the .ed-* classes below. Hex lives only in this directory.
+ * var(--ed-*) strings (the nav drawer in App.tsx, the Mantine theme in
+ * theme.ts, teamColor's fallback). Components otherwise style through the
+ * .ed-* classes below. Hex lives only in this directory.
  *
  * Contrast (WCAG, measured on the ground): ink 15.2/14.8, ink2 7.0/8.6,
  * ink3 4.9/6.3, accent 5.6/7.0 (paper/night). Bars use ink2 on the track
@@ -82,6 +83,22 @@
   --ed-track-dateline: 0.06em;
   --ed-gutter: 3.5rem;
   --ed-max: 80rem;
+
+  /* Motion (mirror of motion.ts; motion.test.ts checks). [112]'s default curve
+   * stays the default for color cross-fades and value morphs; the strong
+   * curves beside it serve entrances, exits and press feedback (craft pass
+   * 2026-10). Unlayered :root, so these win over Tailwind's own --ease-out /
+   * --ease-in-out defaults, which it emits inside @layer theme. */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-color: ease;
+  --duration-press: 160ms;
+  --duration-fast: 150ms;
+  --duration-base: 200ms;
+  --duration-enter: 240ms;
+  --duration-slow: 300ms;
 }
 
 /* ── Page ground + browser surfaces ─────────────────────────────────────── */
@@ -3902,6 +3919,30 @@ html:has(.ed-acct) {
   }
   .gm-col[data-empty="true"] .gm-none {
     margin: 0;
+  }
+}
+
+/* ── Error boundary (components/shared/error-boundary.tsx) ─────────────────
+ * The 404's lede column alone: slug, serif H1, dek, then the ways out set as links. Two of them
+ * are actions (retry, reload), so they are <button>s wearing .ed-link. */
+
+.eb {
+  margin-top: 1.75rem;
+  padding-bottom: 3rem;
+}
+.eb .ed-h1 {
+  max-width: 14ch;
+}
+.eb-action {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+@media (max-width: 48em) {
+  .eb {
+    margin-top: 1.25rem;
   }
 }
 

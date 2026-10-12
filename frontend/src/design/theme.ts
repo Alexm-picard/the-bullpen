@@ -1,107 +1,96 @@
 /**
- * Mantine theme built from `./broadcast.ts` — the single source of truth
- * (decision [160], broadcast-package identity; supersedes the [133]
- * scouting-packet theme whose tokens.ts mirror was deleted in the cleanup PR).
+ * Mantine theme in [195]'s editorial terms. editorial.css is the source of
+ * truth; this file only points Mantine at it (replaces the [160] broadcast
+ * theme built from the retired broadcast.ts: gold primary, condensed headings).
  *
- * Two custom Mantine color ramps:
- *   - `gold`: 10-shade ramp around #F2A900 — the broadcast accent.
- *     `primaryColor: "gold"` (anchors, focus, CTAs).
- *   - `chrome`: 10-shade ramp around #0E1B33 — the telecast chrome navy.
+ * Fonts and surfaces are var(--ed-*) references, so they follow the [192]
+ * paper / night toggle with no TS copy. Mantine's color ramps must be literal
+ * colors (it derives hover and alpha variants from them), so the two ramps
+ * below restate editorial.css hex values; keep them in step.
  *
- * Headings render in Barlow Condensed so Mantine <Title> speaks the broadcast
- * voice automatically; body is Inter; mono is JetBrains Mono.
+ * Mantine is a thin layer here. What it still renders, and what this theme
+ * styles: AppShell + Burger + Drawer (the shell, App.tsx), the route Loader,
+ * Slider (/parks) and Autocomplete (/players, both re-skinned by .pk-* /
+ * .pl-* classes), VisuallyHidden, and the unlisted operator page
+ * /admin/routing (Title, Text, Card, Alert, Badge, Button, SegmentedControl,
+ * Select and the text inputs).
  */
 
-import { createTheme, type MantineColorsTuple } from "@mantine/core";
-
 import {
-  colors,
-  motion,
-  radii,
-  shadows,
-  spacing,
-  typography,
-} from "./broadcast";
+  createTheme,
+  type CSSVariablesResolver,
+  type MantineColorsTuple,
+} from "@mantine/core";
 
-// 10-shade ramp around #F2A900 broadcast gold.
-// [0..3] tints, [4..6] core (6 = canonical), [7..9] ink shades for text-on-light.
-const gold: MantineColorsTuple = [
-  "#FFF6E0",
-  "#FCE5B0",
-  "#F9D37E",
-  "#F6C14C",
-  "#F4B526",
-  "#F3AC0F",
-  colors.gold, // 6 — canonical gold (#F2A900)
-  "#C68A00",
-  "#8A5F00", // 8 — goldInk (text-safe on light)
-  "#6E4C00",
+import { motion } from "./motion";
+
+// Neutral ink ramp, paper end to ink end, built from the editorial palette.
+// Light scheme uses shade 8 (= --ed-ink, paper edition); dark uses shade 1
+// (= --ed-ink, night edition). autoContrast picks the opposite end for text.
+const ink: MantineColorsTuple = [
+  "#eceee6", // 0 paper --ed-ground
+  "#e6e9e0", // 1 night --ed-ink
+  "#dcdfd5", // 2 paper --ed-track
+  "#c4c8bb", // 3 paper --ed-rule
+  "#959a8d", // 4 night --ed-ink3
+  "#62666f", // 5 paper --ed-ink3
+  "#4a4f59", // 6 paper --ed-ink2
+  "#30343b", // 7
+  "#16181d", // 8 paper --ed-ink
+  "#0b0c0f", // 9
 ];
 
-// 10-shade ramp around #0E1B33 chrome navy.
-const chrome: MantineColorsTuple = [
-  "#E7EBF3",
-  "#C3CDE1",
-  "#9AAACB",
-  "#7187B2",
-  "#4D6797",
-  "#304C7C",
-  "#1C3258",
-  colors.chrome, // 7 — canonical chrome (#0E1B33)
-  "#080F1F", // 8 — chromeDeep
-  "#040810",
+// Mantine's dark-scheme surface ramp ([0] text ... [7] body), set to the night
+// edition so dark-scheme controls sit on the same grey-green ground.
+const dark: MantineColorsTuple = [
+  "#e6e9e0", // 0 text: night --ed-ink
+  "#b0b4a8", // 1 night --ed-ink2
+  "#959a8d", // 2 dimmed: night --ed-ink3
+  "#6b6f64", // 3
+  "#34382f", // 4 borders: night --ed-rule
+  "#2a2d26", // 5
+  "#22251f", // 6 inputs, dropdowns: night --ed-track
+  "#141612", // 7 body: night --ed-ground
+  "#0f110d", // 8
+  "#0a0b09", // 9
 ];
 
 export const theme = createTheme({
-  // Body and UI font.
-  fontFamily: typography.fonts.body,
-  // Mantine headings use the condensed display face for the broadcast voice.
+  fontFamily: "var(--ed-sans)",
+  fontFamilyMonospace: "var(--ed-mono)",
+  // Headings speak the editorial serif, on the .ed-h1 / .ed-h2 / .ed-h3 scale.
   headings: {
-    fontFamily: typography.fonts.display,
+    fontFamily: "var(--ed-serif)",
     fontWeight: "700",
     sizes: {
-      h1: {
-        fontSize: `${typography.scale[7]}px`, // 64
-        lineHeight: String(typography.lineHeights.display),
-      },
-      h2: {
-        fontSize: `${typography.scale[5]}px`, // 32
-        lineHeight: String(typography.lineHeights.display),
-      },
-      h3: {
-        fontSize: `${typography.scale[4]}px`, // 24
-        lineHeight: String(typography.lineHeights.display),
-      },
-      h4: {
-        fontSize: `${typography.scale[3]}px`, // 20
-        lineHeight: String(typography.lineHeights.display),
-      },
+      h1: { fontSize: "4rem", lineHeight: "1.02" },
+      h2: { fontSize: "1.625rem", lineHeight: "1.1" },
+      h3: { fontSize: "1.375rem", lineHeight: "1.15" },
+      h4: { fontSize: "1.125rem", lineHeight: "1.2" },
     },
   },
-  fontFamilyMonospace: typography.fonts.mono,
-  primaryColor: "gold",
-  // One gold in both schemes (Mantine defaults to a darker shade for dark mode).
-  primaryShade: 6,
-  // Filled gold controls get ink text instead of white (white on #F2A900 is 2.0:1).
+  primaryColor: "ink",
+  primaryShade: { light: 8, dark: 1 },
+  // Filled ink controls get ground-colored text in both editions.
   autoContrast: true,
-  colors: { gold, chrome },
+  colors: { ink, dark },
   // Deliberately false: Mantine's reduce-motion path sets every Transition
   // duration to 0. src/design/motion.css instead turns slides and pops into
   // in-place opacity fades under prefers-reduced-motion (gentler, not zero).
   respectReducedMotion: false,
   components: {
-    // D4 (AA contrast): Mantine's default InputWrapper description gray (#868e96) sits at 3.1:1 on
-    // the field background - retune to the broadcast textMuted token (5.3:1). Applied at the theme
+    // D4 (AA contrast): Mantine's default InputWrapper description gray (#868e96) sits near 3:1
+    // on the ground - retune to editorial ink2 (7.0:1 paper, 8.6:1 night). Applied at the theme
     // so every input description inherits it.
     InputWrapper: {
       styles: {
-        description: { color: colors.textMuted },
+        description: { color: "var(--ed-ink2)" },
       },
     },
     // Motion defaults for Mantine's own controls (craft pass 2026-10): the
-    // segmented indicator is a tens/day on-screen move, so it gets the fast
-    // clock on the [112] curve; the burger snaps as press feedback before the
-    // drawer it summons settles; Buttons share the kit's press feedback.
+    // segmented indicator is an on-screen move, so it gets the fast clock on
+    // the [112] curve; the burger snaps as press feedback before the drawer it
+    // summons settles; Buttons share the app's press feedback.
     SegmentedControl: {
       defaultProps: {
         transitionDuration: motion.durationsMs.fast,
@@ -118,30 +107,46 @@ export const theme = createTheme({
       classNames: { root: "bp-pressable" },
     },
   },
-  // Spacing maps to the 8-point grid: [4, 8, 12, 16, 24, 32, 48, 64, 96].
+  // Spacing on the 8-point grid.
   spacing: {
-    xs: `${spacing[0]}px`, // 4
-    sm: `${spacing[1]}px`, // 8
-    md: `${spacing[3]}px`, // 16
-    lg: `${spacing[4]}px`, // 24
-    xl: `${spacing[5]}px`, // 32
+    xs: "4px",
+    sm: "8px",
+    md: "16px",
+    lg: "24px",
+    xl: "32px",
   },
-  // Broadcast graphics are SHARP — everything sits on the 2px radius.
+  // Editorial rules are square: controls sit at 0, larger surfaces at the 2px
+  // the bar tracks use.
+  defaultRadius: "sm",
   radius: {
-    xs: `${radii.sm}px`,
-    sm: `${radii.sm}px`,
-    md: `${radii.sm}px`,
-    lg: `${radii.sm}px`,
-    xl: `${radii.sm}px`,
+    xs: "0",
+    sm: "0",
+    md: "2px",
+    lg: "2px",
+    xl: "2px",
   },
+  // The one editorial elevation: the search dropdown's soft ink shadow.
   shadows: {
     xs: "none",
     sm: "none",
-    md: shadows.popover,
-    lg: shadows.popover,
-    xl: shadows.popover,
+    md: "0 10px 24px -12px color-mix(in srgb, var(--ed-ink) 35%, transparent)",
+    lg: "0 10px 24px -12px color-mix(in srgb, var(--ed-ink) 35%, transparent)",
+    xl: "0 10px 24px -12px color-mix(in srgb, var(--ed-ink) 35%, transparent)",
   },
-  // Broadcast identity: white panels on the cool field; ink text.
-  white: colors.panel,
-  black: colors.ink,
+  // Literal, not var(): autoContrast puts `black` on a light fill in BOTH schemes (night's
+  // primary shade is light), where var(--ed-ink) would resolve to night's light ink and vanish.
+  // Mantine's light scheme only shows in the paper edition (ThemeProvider keeps them in step).
+  white: "#eceee6", // paper --ed-ground
+  black: "#16181d", // paper --ed-ink
+});
+
+/**
+ * D4 (AA contrast) in editorial terms: Mantine's `c="dimmed"` text defaults to its gray-6
+ * (#868e96, about 2.9:1 on the paper ground). Point it at editorial ink3 (4.9:1 paper, 6.3:1
+ * night). Passed to MantineProvider in main.tsx (a provider prop, not a theme key).
+ */
+export const cssVariablesResolver: CSSVariablesResolver = () => ({
+  variables: {},
+  light: { "--mantine-color-dimmed": "var(--ed-ink3)" },
+  dark: { "--mantine-color-dimmed": "var(--ed-ink3)" },
 });
